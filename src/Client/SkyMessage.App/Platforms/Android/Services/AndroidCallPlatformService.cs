@@ -149,17 +149,17 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     internal bool IsMuted => _callService?.Current?.IsMicMuted ?? false;
 
     /// <summary>
-    /// Whether the proximity screen-off lock belongs to the call right now (<see cref="CallAudioPolicy"/>): audio on the
-    /// earpiece and my camera off. The audio route is read from the system, so the speaker button, a headset plugged
-    /// in or the WebView picking another device all count.
+    /// Whether the proximity screen-off lock belongs to the call right now (<see cref="CallAudioPolicy"/>): call audio on
+    /// the earpiece and my camera off. Route and audio mode are read from the system, so the speaker button, a headset
+    /// plugged in or the WebView picking another device all count.
     /// </summary>
     internal bool WantsProximityLock
     {
         get
         {
-            if (Call is null) return false;
+            if (Call is null || _routes is not { } routes) return false;
             var cameraOn = _callService?.Current?.IsCameraOn ?? CameraOn;
-            return CallAudioPolicy.HoldsProximityLock(_routes?.CurrentKind, cameraOn);
+            return CallAudioPolicy.HoldsProximityLock(routes.CurrentKind, cameraOn, routes.IsInCommunication);
         }
     }
 
@@ -262,12 +262,17 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
         }
     }
 
-    /// <summary>Route changes (the in-call speaker button, headsets coming and going) move the proximity lock.</summary>
+    /// <summary>
+    /// Route changes (the in-call speaker button, headsets coming and going) and the WebView entering or leaving
+    /// communication mode (microphone opened or closed) move the proximity lock.
+    /// </summary>
     private void HookRoutes()
     {
         if (_routes is not null) return;
         _routes = services.GetService<IAudioRouteService>() as AndroidAudioRouteService;
-        if (_routes is not null) _routes.RoutesChanged += UpdateProximity;
+        if (_routes is null) return;
+        _routes.RoutesChanged += UpdateProximity;
+        _routes.ModeChanged += UpdateProximity;
     }
 
     private void HookCallService()
@@ -307,10 +312,15 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     ForegroundServiceType = ForegroundService.TypeMicrophone | ForegroundService.TypeCamera)]
 public sealed class CallForegroundService : Service
 {
+    /// <summary>How often Android 11 and older look at the proximity lock again (see <see cref="StartRechecks"/>).</summary>
+    private const long RecheckMs = 2000;
+
     private static volatile bool _isForeground;
     private static CallForegroundService? _running;
     private PowerManager.WakeLock? _cpuLock;
     private PowerManager.WakeLock? _proximityLock;
+    private Handler? _handler;
+    private Action? _recheck;
 
     /// <summary>True between a successful startForeground() and the service's destruction.</summary>
     internal static bool IsForeground => _isForeground;
@@ -355,6 +365,7 @@ public sealed class CallForegroundService : Service
         }
         AcquireCpuLock();
         SetProximity(platform.WantsProximityLock);
+        if (!OperatingSystem.IsAndroidVersionAtLeast(31)) StartRechecks();
         return StartCommandResult.NotSticky;
     }
 
@@ -368,6 +379,8 @@ public sealed class CallForegroundService : Service
     {
         _isForeground = false;
         if (ReferenceEquals(_running, this)) _running = null;
+        if (_recheck is { } recheck) _handler?.RemoveCallbacks(recheck);
+        _recheck = null;
         Release(ref _cpuLock);
         ReleaseProximity();
         base.OnDestroy();
@@ -437,6 +450,35 @@ public sealed class CallForegroundService : Service
         {
             // Wake locks are best effort.
         }
+    }
+
+    /// <summary>
+    /// Android 11 and older tell nobody when the WebView turns the speakerphone on or off or enters communication mode
+    /// (Android 12+ report both, see AndroidAudioRouteService), so while the call runs the proximity lock is looked at
+    /// again every <see cref="RecheckMs"/> on top of the events: a lock taken or dropped by such a switch follows within
+    /// two seconds instead of staying wrong for the rest of the call.
+    /// </summary>
+    private void StartRechecks()
+    {
+        if (_recheck is not null) return;
+        _handler ??= new Handler(Looper.MainLooper!);
+        _recheck = Recheck;
+        _handler.PostDelayed(_recheck, RecheckMs);
+    }
+
+    private void Recheck()
+    {
+        var recheck = _recheck;
+        if (recheck is null) return;
+        var platform = AppServices.Get<ICallPlatformService>() as AndroidCallPlatformService;
+        if (!_isForeground || platform?.Call is null)
+        {
+            // The call is over (the service stops next); a later start schedules the checks anew.
+            _recheck = null;
+            return;
+        }
+        SetProximity(platform.WantsProximityLock);
+        _handler?.PostDelayed(recheck, RecheckMs);
     }
 
     /// <summary>
