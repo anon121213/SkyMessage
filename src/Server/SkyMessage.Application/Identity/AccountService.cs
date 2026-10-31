@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using SkyMessage.Application.Common.Exceptions;
 using SkyMessage.Application.Common.Interfaces;
 using SkyMessage.Application.Common.Persistence;
+using SkyMessage.Application.Messaging.Rules;
 using SkyMessage.Contracts;
 using SkyMessage.Domain.Entities;
 
@@ -11,7 +12,8 @@ namespace SkyMessage.Application.Identity;
 /// <summary>
 /// Account deletion: the user row becomes an anonymous tombstone (messages stay, shown as from a deleted
 /// account), every session is revoked, groups are left with the usual ownership hand-over, Saved messages,
-/// contacts and own blocks are removed.
+/// contacts and own blocks are removed, and so is the user's part of a private chat's content protection (nobody
+/// else could ever take it back).
 /// </summary>
 public sealed class AccountService(
     IAppDbContext db,
@@ -59,19 +61,29 @@ public sealed class AccountService(
             .Select(m => m.ChatId)
             .OrderBy(id => id)
             .ToListAsync(ct);
+        var protectedChatIds = (await db.Chats.AsNoTracking()
+            .Where(c => c.Type == ChatType.Private && !c.IsDeleted && c.ProtectContentBy.Contains(userId))
+            .Select(c => c.Id)
+            .ToListAsync(ct)).ToHashSet();
 
         // CPU-heavy, so outside the transaction: a hash nobody knows the password of.
         var unusableHash = passwords.Hash(user, RefreshTokens.Generate());
         var now = clock.UtcNow;
         var leftGroups = new List<Guid>();
         var emptiedGroups = new List<Guid>();
+        var protectionChanged = new List<Guid>();
         List<Guid> revokedSessions;
 
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             // Ascending ids = consistent lock order with any other multi-chat transaction.
-            foreach (var chatId in groupIds)
+            foreach (var chatId in groupIds.Concat(protectedChatIds).Order())
             {
+                if (protectedChatIds.Contains(chatId))
+                {
+                    if (await TakeBackProtectionAsync(chatId, userId, now, ct)) protectionChanged.Add(chatId);
+                    continue;
+                }
                 switch (await LeaveGroupAsync(chatId, userId, now, ct))
                 {
                     case GroupLeave.Left:
@@ -100,6 +112,10 @@ public sealed class AccountService(
             await AnnounceLeaveAsync(chatId, userId);
         foreach (var chatId in leftGroups.Concat(emptiedGroups))
             await NotifyObserversAsync(chatId, userId);
+        // No service message: nobody switched it off, the person who wanted it is gone (and a notice would bring
+        // back a chat the other side deleted).
+        foreach (var chatId in protectionChanged)
+            await PublishChatUpdatedAsync(chatId, userId);
         await userChanges.NotifyAsync(userId, related);
         await NotifyContactOwnersAsync(contactOwners);
 
@@ -149,6 +165,19 @@ public sealed class AccountService(
             .SetProperty(c => c.MemberCount, remaining)
             .SetProperty(c => c.UpdatedAt, now), ct);
         return GroupLeave.Left;
+    }
+
+    /// <summary>Removes the user's part of a private chat's content protection; false when it was not on (anymore).</summary>
+    private async Task<bool> TakeBackProtectionAsync(Guid chatId, Guid userId, DateTimeOffset now, CancellationToken ct)
+    {
+        // The same lock ChatService takes to switch it: the other side switching at the same moment goes first or after.
+        await ChatSequence.LockChatAsync(db, chatId, ct);
+        var chat = await db.Chats.FirstAsync(c => c.Id == chatId, ct);
+        if (!chat.ProtectContentBy.Contains(userId)) return false;
+        chat.ProtectContentBy = ContentProtectionRules.Toggle(chat.ProtectContentBy, userId, enabled: false);
+        chat.ProtectContent = ContentProtectionRules.IsProtected(chat.ProtectContentBy);
+        chat.UpdatedAt = now;
+        return true;
     }
 
     private static void Tombstone(User user, string unusablePasswordHash, DateTimeOffset now)
@@ -208,6 +237,23 @@ public sealed class AccountService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to publish membership events for chat {ChatId}", chatId);
+        }
+    }
+
+    private async Task PublishChatUpdatedAsync(Guid chatId, Guid deletedUserId)
+    {
+        try
+        {
+            var members = await db.ChatMembers.AsNoTracking()
+                .Where(m => m.ChatId == chatId && m.UserId != deletedUserId)
+                .Select(m => m.UserId)
+                .ToListAsync();
+            if (members.Count > 0 && await LoadChatInfoAsync(chatId) is { } info)
+                await notifier.Users(members).ChatUpdated(info);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to publish ChatUpdated for chat {ChatId}", chatId);
         }
     }
 

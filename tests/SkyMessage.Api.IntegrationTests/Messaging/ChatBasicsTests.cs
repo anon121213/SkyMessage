@@ -291,6 +291,40 @@ public sealed class ChatBasicsTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Deleting_an_account_takes_back_its_part_of_the_protection()
+    {
+        var alice = await factory.NewUserAsync("Alice");
+        var carol = await factory.NewUserAsync("Carol");
+        var bob = await factory.NewUserAsync("Bob");
+        var withAlice = (await alice.OpenPrivateAsync(bob.Id)).Id;
+        var withCarol = (await carol.OpenPrivateAsync(bob.Id)).Id;
+        var note = await alice.SendAsync(withAlice, "keep this");
+        var group = await bob.NewGroupAsync(alice);
+        await bob.SetContentProtectionAsync(withAlice, true);
+        await bob.SetContentProtectionAsync(withCarol, true);
+        await carol.SetContentProtectionAsync(withCarol, true);
+        await bob.SetContentProtectionAsync(group, true);
+        await using var aliceRt = await alice.ConnectAsync();
+        var seq = (await alice.ChatAsync(withAlice)).LastMessageSeq;
+
+        await bob.PostRawAsync(ApiRoutes.Users.MeDelete, new DeleteAccountRequest { Password = TestKit.Password }).NoContentAsync();
+
+        // Only Bob wanted it in his chat with Alice: it ends with his account (quietly: nobody switched it off).
+        (await aliceRt.WaitAsync<ChatInfoDto>(Ev.ChatUpdated, x => x.Id == withAlice)).ProtectContent.ShouldBeFalse();
+        var mine = await alice.ChatAsync(withAlice);
+        mine.ProtectContent.ShouldBeFalse();
+        mine.ProtectContentBy.ShouldBeEmpty();
+        mine.LastMessageSeq.ShouldBe(seq);
+        (await alice.ForwardAsync(alice.SavedChatId, Forward(withAlice, note.Id))).ShouldHaveSingleItem();
+
+        // Carol's own part stays; a group's protection belongs to the group, not to the admin who set it.
+        var carols = await carol.ChatAsync(withCarol);
+        carols.ProtectContent.ShouldBeTrue();
+        carols.ProtectContentBy.ShouldBe([carol.Id]);
+        (await alice.ChatAsync(group)).ProtectContent.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Saved_messages_cannot_be_protected_and_strangers_see_nothing()
     {
         var alice = await factory.NewUserAsync("Alice");
