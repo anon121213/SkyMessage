@@ -61,7 +61,7 @@
     <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#3D2BD9" />
     <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1245" BaseSize="128,128" />
     <!--
-      Our synthesized sound packs (dotnet run --project tools/tones). iOS/Mac: the IMA4 CAF copies at the bundle root,
+      Our synthesized sound packs, rendered by tools/tones. iOS/Mac: the IMA4 CAF copies at the bundle root,
       used as notification sounds (iOS plays no Ogg there); in-app playback uses Client.UI's wwwroot/sounds.
     -->
     <MauiAsset Include="Resources\Raw\tone_*.caf" LogicalName="%(Filename)%(Extension)"

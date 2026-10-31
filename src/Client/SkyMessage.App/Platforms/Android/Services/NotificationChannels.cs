@@ -6,13 +6,18 @@ using Microsoft.Extensions.Logging;
 using SkyMessage.App.Services;
 using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Settings;
+using AndroidUri = Android.Net.Uri;
 
 namespace SkyMessage.App.Droid;
 
 /// <summary>
-/// Notification channels. A channel's sound/vibration cannot change after creation, so there is one channel
-/// per (tone, vibration) choice; when the user picks another tone the matching channel is created and the
-/// stale ones are deleted. Sounds are our synthesized WAVs in res/raw (tone_&lt;key&gt;).
+/// Notification channels. A channel's sound/vibration cannot change after creation, so there is one channel per
+/// (sound, vibration) choice (<see cref="SoundChoice.Id"/>: pack and key, or the id of the user's own file); when the
+/// user picks another sound, pack or file the matching channel is created and the stale ones are deleted. Pack sounds
+/// are our synthesized Ogg Vorbis files in res/raw (tone_&lt;pack&gt;_&lt;key&gt;); the user's own sound is shared with the
+/// notification system through the FileProvider declared in AndroidManifest.xml (a read grant to the packages that
+/// play notification sounds, renewed whenever the channel is used, since grants do not survive a reboot). When that
+/// file is gone, the pack's sound stands in.
 /// </summary>
 public sealed class NotificationChannels(IServiceProvider services, NativeStrings strings, ILogger<NotificationChannels> logger)
 {
@@ -20,12 +25,19 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
     public const string Background = "service.connection.v1";
     public const string MessagesSilent = "msg.silent.v1";
 
+    /// <summary>Matches the &lt;provider&gt; in AndroidManifest.xml (the application id is fixed: com.skymessage.messenger).</summary>
+    public const string SoundAuthority = "com.skymessage.messenger.sounds";
+
     private const string GroupMessages = "messages";
     private const string GroupCalls = "calls";
     private const string GroupService = "service";
 
-    private static readonly string[] MessageTones = ["chime", "pop", "glass", "none"];
-    private static readonly string[] Ringtones = ["classic", "soft", "bright", "none"];
+    /// <summary>
+    /// Who opens a channel's sound: SystemUI's ringtone player (Android 8+) and the system server. Since Android 9 the
+    /// system also grants itself the sound of a posted notification, as long as the app may grant it.
+    /// </summary>
+    private static readonly string[] SoundPlayers = ["com.android.systemui", "android"];
+
     private static readonly long[] MessageVibration = [0, 180, 120, 180];
     private static readonly long[] CallVibration = [0, 900, 700, 900, 700, 900, 700];
 
@@ -42,11 +54,11 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
         EnsureBase();
         var settings = Settings;
         if (silent || !settings.Sound && !settings.Vibrate) return MessagesSilent;
-        var tone = settings.Sound ? Pick(settings.MessageTone, MessageTones, "chime") : "none";
-        var id = $"msg.{tone}.{(settings.Vibrate ? "v" : "n")}.v1";
         lock (_gate)
         {
-            var name = $"{strings["platform.channel.messages"]} · {ToneName(tone)}{(settings.Vibrate ? ", " + strings["platform.channel.withVibration"] : "")}";
+            var (sound, uri) = Resolve(settings.Sound ? SoundCatalog.MessageSound(settings) : null);
+            var id = $"msg.{sound?.Id ?? SoundCatalog.None}.{(settings.Vibrate ? "v" : "n")}.v2";
+            var name = $"{strings["platform.channel.messages"]} · {SoundName(sound)}{(settings.Vibrate ? ", " + strings["platform.channel.withVibration"] : "")}";
             var channel = new NotificationChannel(id, name, NotificationImportance.High)
             {
                 Description = strings["platform.channel.messages.description"],
@@ -56,13 +68,13 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
             channel.SetShowBadge(true);
             channel.EnableLights(true);
             channel.LightColor = unchecked((int)0xFF6A4BFF);
-            ApplySound(channel, tone, AudioUsageKind.Notification);
+            ApplySound(channel, uri, AudioUsageKind.Notification);
             channel.EnableVibration(settings.Vibrate);
             if (settings.Vibrate) channel.SetVibrationPattern(MessageVibration);
             Create(channel);
             DeleteStale("msg.", id, MessagesSilent);
+            return id;
         }
-        return id;
     }
 
     /// <summary>Ringing channel for incoming calls under the current settings.</summary>
@@ -70,24 +82,24 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
     {
         EnsureBase();
         var settings = Settings;
-        var tone = settings.Sound ? Pick(settings.Ringtone, Ringtones, "classic") : "none";
-        var id = $"call.{tone}.{(settings.Vibrate ? "v" : "n")}.v1";
         lock (_gate)
         {
-            var channel = new NotificationChannel(id, $"{strings["platform.channel.calls"]} · {ToneName(tone)}", NotificationImportance.High)
+            var (sound, uri) = Resolve(settings.Sound ? SoundCatalog.RingtoneSound(settings) : null);
+            var id = $"call.{sound?.Id ?? SoundCatalog.None}.{(settings.Vibrate ? "v" : "n")}.v2";
+            var channel = new NotificationChannel(id, $"{strings["platform.channel.calls"]} · {SoundName(sound)}", NotificationImportance.High)
             {
                 Description = strings["platform.channel.calls.description"],
                 Group = GroupCalls,
                 LockscreenVisibility = NotificationVisibility.Public,
             };
             channel.SetShowBadge(false);
-            ApplySound(channel, tone, AudioUsageKind.NotificationRingtone);
+            ApplySound(channel, uri, AudioUsageKind.NotificationRingtone);
             channel.EnableVibration(settings.Vibrate);
             if (settings.Vibrate) channel.SetVibrationPattern(CallVibration);
             Create(channel);
             DeleteStale("call.", id, OngoingCall);
+            return id;
         }
-        return id;
     }
 
     /// <summary>Static channels (ongoing call, background connection) and groups; refreshes names after a language change.</summary>
@@ -143,20 +155,57 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
         }
     }
 
-    private void ApplySound(NotificationChannel channel, string tone, AudioUsageKind usage)
+    /// <summary>The sound a channel can really play and its URI: the user's own file when it is there and can be shared, else the pack's.</summary>
+    private (SoundChoice? Sound, AndroidUri? Uri) Resolve(SoundChoice? sound)
     {
-        if (tone == "none")
+        if (sound is null) return (null, null);
+        if (sound.Custom is { } custom && SharedUri(custom) is { } shared) return (sound, shared);
+        var pack = sound.Fallback;
+        var context = Android.App.Application.Context;
+        return (pack, AndroidUri.Parse($"android.resource://{context.PackageName}/raw/{SoundCatalog.ResourceName(pack.Pack, pack.Key)}"));
+    }
+
+    private AndroidUri? SharedUri(CustomSound sound)
+    {
+        var path = CustomSoundStore.PathOf(sound);
+        if (!File.Exists(path)) return null;
+        var context = Android.App.Application.Context;
+        AndroidUri uri;
+        try
+        {
+            uri = AndroidX.Core.Content.FileProvider.GetUriForFile(context, SoundAuthority, new Java.IO.File(path))!;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "The custom sound cannot be shared with the notification system");
+            return null;
+        }
+        foreach (var player in SoundPlayers)
+        {
+            try
+            {
+                context.GrantUriPermission(player, uri, ActivityFlags.GrantReadUriPermission);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "No read grant for {Package}", player);
+            }
+        }
+        return uri;
+    }
+
+    private static void ApplySound(NotificationChannel channel, AndroidUri? sound, AudioUsageKind usage)
+    {
+        if (sound is null)
         {
             channel.SetSound(null, null);
             return;
         }
-        var context = Android.App.Application.Context;
-        var uri = Android.Net.Uri.Parse($"android.resource://{context.PackageName}/raw/tone_{tone}");
         var attributes = new AudioAttributes.Builder()
             .SetUsage(usage)!
             .SetContentType(AudioContentType.Sonification)!
             .Build();
-        channel.SetSound(uri, attributes);
+        channel.SetSound(sound, attributes);
     }
 
     private void Create(NotificationChannel channel)
@@ -188,8 +237,11 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
         }
     }
 
-    private string ToneName(string tone) => strings[$"platform.tone.{tone}"];
-
-    private static string Pick(string? value, string[] allowed, string fallback) =>
-        value is not null && allowed.Contains(value, StringComparer.OrdinalIgnoreCase) ? value.ToLowerInvariant() : fallback;
+    /// <summary>"Перезвон (дерево)", "свой звук", "без звука": how the system settings list the channel.</summary>
+    private string SoundName(SoundChoice? sound) => sound switch
+    {
+        null => strings["platform.tone.none"],
+        { IsCustom: true } => strings["platform.tone.custom"],
+        _ => $"{strings[$"platform.tone.{sound.Key}"]} ({strings[$"platform.pack.{sound.Pack}"]})",
+    };
 }

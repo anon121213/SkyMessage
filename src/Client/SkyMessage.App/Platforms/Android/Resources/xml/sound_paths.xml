@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The only folder the sound FileProvider shares: the user's own notification sounds (files/sounds/, AppPaths.Sounds). -->
+<paths>
+    <files-path name="sounds" path="sounds/" />
+</paths>

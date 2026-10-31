@@ -17,6 +17,7 @@ public static class WebPlatformSetup
         services.AddSingleton<ILocalCacheStore, WebLocalCacheStore>();
         services.AddSingleton<IOutboxFileStore, WebOutboxFileStore>();
         services.AddSingleton<IMediaFileStore, WebMediaFileStore>();
+        services.AddSingleton<ICustomSoundStore, WebCustomSoundStore>();
         services.AddSingleton<IFilePickerService, WebFilePickerService>();
         services.AddSingleton<IMediaCompressor, WebMediaCompressor>();
         services.AddSingleton<IPhoneNumberService, WebPhoneNumberService>();
