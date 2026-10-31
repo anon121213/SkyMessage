@@ -16,7 +16,7 @@
 //   src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.ogg          Android res/raw, notification channels
 //   src/Client/SkyMessage.Client.UI/wwwroot/sounds/<pack>/<key>.ogg        in-app playback (js/sounds.js)
 // plus src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.caf (IMA4, iOS/Mac notification sounds) and
-// wwwroot/sounds/sounds.json (lengths, loops). Then the checks: decoded length and peak, loudness after encoding,
+// wwwroot/sounds/sounds.json (lengths, loops, content hashes). Then the checks: decoded length and peak, loudness after encoding,
 // clicks away from strikes, loop seams, energy above 6 kHz. Any failure exits with code 1.
 
 using System.Globalization;
@@ -145,7 +145,9 @@ foreach (var (pack, render) in packs)
         if (tone.Loop && decoded.Length == play.Length && Math.Abs(decoded[0] - decoded[^1]) > 2e-3)
             problems.Add($"decoded loop seam step {Math.Abs(decoded[0] - decoded[^1]):0.0000}");
         loudness[(pack, tone.Key)] = level;
-        entries[tone.Key] = tone.Loop ? new { samples = play.Length, loop = true } : new { samples = play.Length };
+        // The hash versions the file's URL (sounds.js fetches <key>.ogg?v=<hash>): names stay fixed, caches stay right.
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(ogg)))[..12];
+        entries[tone.Key] = tone.Loop ? new { samples = play.Length, loop = true, hash } : new { samples = play.Length, hash };
         Console.WriteLine($"{name,-16} {master.Length / (double)RenderRate,6:0.00} {(tone.Loop ? "yes" : ""),4} {gainDb,6:+0.00;-0.00;0.00} {truePeak,6:0.00} {level,6:0.00} " +
                           $"{Audio.MaxLoudness(master, RenderRate, tone.Loop, 400),6:0.00} {Audio.IntegratedLoudness(master, RenderRate, tone.Loop),6:0.00} " +
                           $"{above6k * 100,7:0.0000} {new FileInfo(raw).Length / 1024.0,6:0.0} {new FileInfo(caf).Length / 1024.0,6:0.0} {decodedPeak,6:0.00}  " +

@@ -60,14 +60,17 @@
     <!-- Our own artwork: soft violet to sky-blue gradient cloud, no speech-bubble tail. -->
     <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#3D2BD9" />
     <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1245" BaseSize="128,128" />
-    <!-- Synthesized tones (tools/tones/render-tones.cs). iOS/Mac: bundle root, used as notification sounds. -->
-    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)"
+    <!--
+      Our synthesized sound packs (dotnet run --project tools/tones). iOS/Mac: the IMA4 CAF copies at the bundle root,
+      used as notification sounds (iOS plays no Ogg there); in-app playback uses Client.UI's wwwroot/sounds.
+    -->
+    <MauiAsset Include="Resources\Raw\tone_*.caf" LogicalName="%(Filename)%(Extension)"
                Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
-    <!-- Notification channels reference sounds as android.resource://<package>/raw/tone_<key>. -->
-    <AndroidResource Include="Resources\Raw\tone_*.wav" Link="Platforms\Android\Resources\raw\%(Filename)%(Extension)" />
+    <!-- Notification channels reference sounds as android.resource://<package>/raw/tone_<pack>_<key> (Ogg Vorbis). -->
+    <AndroidResource Include="Resources\Raw\tone_*.ogg" Link="Platforms\Android\Resources\raw\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
