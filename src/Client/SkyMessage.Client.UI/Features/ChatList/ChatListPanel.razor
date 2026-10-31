@@ -1,8 +1,9 @@
 @* The chat list (phone home screen on the sky / wide list panel): a large title with the gradient compose button, a
    search capsule, the archive folder and airy rows without separators that rise in once when the screen appears.
    The header is pinned at the top of the scroller and turns into floating glass once the list scrolls
-   (js/app.js attachScrollState); rows swipe to reveal actions (attachRowSwipe) and glide when the order changes
-   (attachFlipList). *@
+   (js/app.js attachScrollState); rows swipe to reveal actions (attachRowSwipe), glide when the order changes
+   (attachFlipList), and pinned rows can be dragged into another order (attachPinReorder: long-press on touch, drag
+   with the mouse), which the store keeps on the server for all of my devices. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IChatListStore ChatList
@@ -17,7 +18,7 @@
 
 <div @ref="_root" class="chatlist @(Shell?.IsWide == true ? "chatlist--panel" : null)">
     <div @ref="_scroll" class="chatlist__scroll sm-scroll">
-        <div class="chatlist__head">
+        <div @ref="_head" class="chatlist__head">
             <AppBar Title="@(_archive ? L["chatlist.archive.title"] : L["chatlist.title"])" Large="!_archive" Back="_archive" OnBack="CloseArchiveAsync"
                     GlassActions="true">
                 <Actions>
@@ -84,10 +85,13 @@
         else
         {
             <div @ref="_rows" class="chatlist__rows @(_entering ? "chatlist__rows--enter" : null)" role="list">
+                @{
+                    var reorderable = Items.Count(c => c.IsPinned) > 1;
+                }
                 @foreach (var chat in Items)
                 {
                     <ChatListItem @key="chat.Id" Chat="chat" Selected="@(chat.Id == SelectedChatId)" SwipeActions="@_armed.Contains(chat.Id)"
-                                  OnOpen="Open" OnMenu="OpenMenuAsync" OnAction="RunActionAsync" />
+                                  Reorderable="@(reorderable && chat.IsPinned)" OnOpen="Open" OnMenu="OpenMenuAsync" OnAction="RunActionAsync" />
                 }
             </div>
             @if (_archive)
@@ -147,12 +151,14 @@
     private bool _archive;
     private OverlayHandle? _archiveOverlay;
     private ElementReference _root;
+    private ElementReference _head;
     private ElementReference _scroll;
     private ElementReference _rows;
     private string? _rowsId;
     private DotNetObjectReference<ChatListPanel>? _self;
     private JsHandle? _swipe;
     private JsHandle? _flip;
+    private JsHandle? _reorder;
     private JsHandle? _scrollState;
     private bool _attaching;
     // The rows rise in once when the screen first shows them (cleared after the animation; later changes glide).
@@ -219,7 +225,9 @@
             if (rowsId != _rowsId)
             {
                 if (_flip is not null) await _flip.DisposeAsync();
+                if (_reorder is not null) await _reorder.DisposeAsync();
                 _flip = rowsId is null ? null : await Js.AttachAsync("attachFlipList", _rows, "data-swipe-row");
+                _reorder = rowsId is null ? null : await Js.AttachAsync("attachPinReorder", _rows, _scroll, _self, _head);
                 _rowsId = rowsId;
             }
         }
@@ -246,6 +254,28 @@
     public Task OnRowSwipeArm(string key) => InvokeAsync(() =>
     {
         if (Guid.TryParse(key, out var id) && _armed.Add(id)) StateHasChanged();
+    });
+
+    /// <summary>A pinned row was lifted by a long-press to be dragged.</summary>
+    [JSInvokable]
+    public Task OnReorderLift() => InvokeAsync(Haptics.Tap);
+
+    /// <summary>A pinned row was dropped in a new place: the list's pinned chats, top first.</summary>
+    [JSInvokable]
+    public Task OnPinnedReorder(string[] keys) => InvokeAsync(async () =>
+    {
+        var ids = new List<Guid>(keys.Length);
+        foreach (var key in keys)
+            if (Guid.TryParse(key, out var id)) ids.Add(id);
+        if (ids.Count < 2) return;
+        try
+        {
+            await ChatList.ReorderPinnedAsync(ids);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
     });
 
     /// <summary>A row crossed its full-swipe point.</summary>
@@ -340,6 +370,7 @@
     // Switching between the main list and the archive replaces the rows: no glide, no row left open.
     private async Task SwitchListsAsync()
     {
+        if (_reorder is not null) await _reorder.InvokeVoidAsync("cancel");
         if (_flip is not null) await _flip.InvokeVoidAsync("suppress");
         if (_swipe is not null) await _swipe.InvokeVoidAsync("closeAll");
     }
@@ -383,6 +414,7 @@
         Dispose();
         if (_swipe is not null) await _swipe.DisposeAsync();
         if (_flip is not null) await _flip.DisposeAsync();
+        if (_reorder is not null) await _reorder.DisposeAsync();
         if (_scrollState is not null) await _scrollState.DisposeAsync();
         _self?.Dispose();
     }

@@ -259,24 +259,36 @@ function swallowClickAfterRelease() {
   const timer = setTimeout(cleanup, 8000);
 }
 
+// A container may claim a long-press before it opens anything: the element dispatches a cancelable, bubbling
+// 'sm-longpress' event ({ x, y, fire }) first; a listener that calls preventDefault() owns the gesture from then on and
+// calls detail.fire() later if the usual action should still happen (attachPinReorder lifts a pinned chat and opens its
+// menu only when the finger lets go without dragging).
 function longPress(el, onFire, ms) {
   let timer = 0;
   let startX = 0;
   let startY = 0;
   let firedAt = 0;
+  let held = false;
   const cancel = () => { if (timer) { clearTimeout(timer); timer = 0; } };
+  const fire = () => {
+    cancel();
+    firedAt = Date.now();
+    swallowClickAfterRelease();
+    const x = startX;
+    const y = startY;
+    const claim = new CustomEvent('sm-longpress', { bubbles: true, cancelable: true, detail: { x, y, fire: () => onFire(x, y) } });
+    if (el.dispatchEvent(claim)) onFire(x, y);
+  };
   const down = (e) => {
     if (e.pointerType === 'mouse' || !e.isPrimary) return;
     startX = e.clientX;
     startY = e.clientY;
+    held = true;
+    firedAt = 0;   // a new touch: only a long-press of this one counts as "recently fired" while it is held
     cancel();
-    timer = setTimeout(() => {
-      timer = 0;
-      firedAt = Date.now();
-      swallowClickAfterRelease();
-      onFire(startX, startY);
-    }, ms || 450);
+    timer = setTimeout(() => { timer = 0; fire(); }, ms || 450);
   };
+  const release = () => { held = false; cancel(); };
   const move = (e) => {
     if (!timer) return;
     if (Math.abs(e.clientX - startX) > LONG_PRESS_MOVE_TOLERANCE || Math.abs(e.clientY - startY) > LONG_PRESS_MOVE_TOLERANCE) cancel();
@@ -291,21 +303,26 @@ function longPress(el, onFire, ms) {
   };
   el.addEventListener('pointerdown', down, { passive: true });
   el.addEventListener('pointermove', move, { passive: true });
-  el.addEventListener('pointerup', cancel, { passive: true });
-  el.addEventListener('pointercancel', cancel, { passive: true });
+  el.addEventListener('pointerup', release, { passive: true });
+  el.addEventListener('pointercancel', release, { passive: true });
   el.addEventListener('pointerleave', cancel, { passive: true });
   el.addEventListener('scroll', cancel, { passive: true, capture: true });
   el.addEventListener('click', click, true);
   return {
-    recentlyFired: () => firedAt && Date.now() - firedAt < 900,
+    // While the finger that fired is still down, a native long-press event (late with a long system delay) is the same gesture.
+    recentlyFired: () => firedAt && (held || Date.now() - firedAt < 900),
+    /** Our timer still runs for a touch held on the element (a native long-press event came first). */
+    pending: () => timer !== 0,
+    /** Fires now what the timer would fire (claimable like the timer's). */
+    fireNow: fire,
     // A native long-press menu event won the race: drop our timer and swallow the trailing click.
     claim() { cancel(); firedAt = Date.now(); },
     dispose() {
       cancel();
       el.removeEventListener('pointerdown', down);
       el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', cancel);
-      el.removeEventListener('pointercancel', cancel);
+      el.removeEventListener('pointerup', release);
+      el.removeEventListener('pointercancel', release);
       el.removeEventListener('pointerleave', cancel);
       el.removeEventListener('scroll', cancel, true);
       el.removeEventListener('click', click, true);
@@ -320,6 +337,9 @@ export function attachContextMenu(el, ref, method, ms) {
   const onContext = (e) => {
     e.preventDefault();
     if (lp.recentlyFired()) return; // Android also fires contextmenu after our long-press timer
+    // Android's own long-press (400 ms on recent versions) can beat our timer: it is the same touch long-press, so it
+    // goes the same (claimable) way.
+    if (lp.pending()) { lp.fireNow(); return; }
     lp.claim();
     safeInvoke(ref, method, e.clientX, e.clientY);
   };
@@ -891,6 +911,8 @@ export function attachRowSwipe(list, scroller, ref) {
     const dx = e.clientX - g.x0;
     const dy = e.clientY - g.y0;
     if (!g.claimed) {
+      // A pinned row lifted by a long-press belongs to attachPinReorder (it moves up and down, not sideways).
+      if (g.wrap.hasAttribute('data-reorder-drag')) { g = null; return; }
       if (Math.abs(dx) < ROW_SLOP && Math.abs(dy) < ROW_SLOP) return;
       const side = g.base + dx < 0 ? 'end' : 'start';
       if (Math.abs(dx) <= Math.abs(dy) * 1.5 || (g.base === 0 && !sideEnabled(g.wrap, side))) { g = null; return; }
@@ -1007,6 +1029,359 @@ export function attachRowSwipe(list, scroller, ref) {
   };
 }
 
+// ---- Pinned chats: drag to reorder --------------------------------------------------------------------------
+// Rows marked [data-reorder] (the pinned chats; they sit together at the top of the list) move up and down among
+// themselves. Touch: a long-press lifts the row — the row's own long-press (attachContextMenu) is claimed through its
+// 'sm-longpress' event — and ref.OnReorderLift() ticks; moving then drags it, while letting go without moving (or
+// resting a moment longer) opens the row's menu as before. Mouse: press and move up or down. Only the dragged row
+// follows the pointer; the others glide aside (transform transitions); the list scrolls by itself near its visible
+// edges. On release the dragged row glides into its slot, then the new order goes to ref.OnPinnedReorder(keys); every
+// row stays where it is shown until the list re-renders in that order, so nothing jumps (attachFlipList skips that
+// change: [data-flip-hold]). A lifted row owns its touch: the pinned rows (only they, so scrolling the rest of the list
+// never waits for script) carry a non-passive touchmove listener that keeps the list from scrolling under it; swipe
+// actions leave a lifted row alone. `header`: the sticky header over the top of the scroller (the list scrolls by
+// itself once the row reaches it).
+
+const REORDER_SLOP = 6;           // mouse: px before a press becomes a drag
+const REORDER_TOUCH_SLOP = 8;     // touch: px a lifted row may wobble before it counts as a drag
+const REORDER_HOLD_MENU = 500;    // touch: ms a lifted row may rest before its menu opens anyway
+const REORDER_EDGE = 56;          // px from the visible top/bottom where the list scrolls by itself
+const REORDER_SPEED = 14;         // px per frame at the very edge
+const REORDER_WAIT_MS = 2500;     // how long a dropped order waits for the list to re-render
+
+export function attachPinReorder(container, scroller, ref, header) {
+  if (!container) return { dispose: noop, cancel: noop };
+  let d = null;            // the gesture in progress
+  let settle = null;       // { order, timer } a dropped order waiting for the re-render
+  let swallowUntil = 0;
+  let lastTouch = null;    // { id, x, y } the primary touch currently down on the list
+
+  const rowOf = (target) => {
+    const wrap = target instanceof Element ? target.closest('[data-swipe-row]') : null;
+    return wrap && wrap.parentElement === container ? wrap : null;
+  };
+  const movable = () => Array.from(container.children).filter((el) => el.hasAttribute('data-reorder') && el.getAttribute('data-swipe-row'));
+  const keysOf = (rows) => rows.map((el) => el.getAttribute('data-swipe-row'));
+  const sameOrder = (a, b) => a.length === b.length && a.every((k, i) => k === b[i]);
+
+  const clearRow = (el) => {
+    el.style.transform = '';
+    el.style.transition = '';
+    el.style.zIndex = '';
+    el.style.willChange = '';
+    el.removeAttribute('data-reorder-drag');
+  };
+  const clearAll = () => {
+    for (const el of container.children) clearRow(el);
+    container.removeAttribute('data-reordering');
+  };
+  const releaseHold = () => setTimeout(() => container.removeAttribute('data-flip-hold'), 0);
+
+  // ---- lift / drag / drop ----
+
+  const lift = (wrap, pointerId, touch, x, y, menu) => {
+    const rows = movable();
+    if (rows.length < 2 || !rows.includes(wrap)) return false;
+    finishSettle();
+    // A row still gliding from a list change (attachFlipList) starts from where it rests.
+    for (const el of rows) if (typeof el.getAnimations === 'function') for (const a of el.getAnimations()) { try { a.finish(); } catch (e) { /* gone */ } }
+    // Fractional boxes (offsetTop/offsetHeight round): the rows that close up must land exactly on each other's places.
+    const box = container.getBoundingClientRect();
+    const items = rows.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { el, key: el.getAttribute('data-swipe-row'), top: r.top - box.top, height: r.height };
+    });
+    const gap = items.length > 1 ? Math.max(0, items[1].top - (items[0].top + items[0].height)) : 0;
+    d = {
+      wrap, pointerId, touch, items, gap, x0: x, y0: y, y, scroll0: scroller ? scroller.scrollTop : 0,
+      from: rows.indexOf(wrap), slot: rows.indexOf(wrap), dragging: false, menu, holdTimer: 0, frame: 0,
+    };
+    wrap.setAttribute('data-reorder-drag', '');
+    wrap.style.zIndex = '3';
+    wrap.style.willChange = 'transform';
+    container.setAttribute('data-reordering', '');
+    if (touch) {
+      safeInvoke(ref, 'OnReorderLift');
+      d.holdTimer = setTimeout(openMenu, REORDER_HOLD_MENU);
+    }
+    return true;
+  };
+
+  // Touch: the lifted row rested or was let go without a drag — the menu it would have opened opens now.
+  const openMenu = () => {
+    if (!d || d.dragging) return;
+    const menu = d.menu;
+    drop(false);
+    if (menu) menu();
+  };
+
+  const startDrag = () => {
+    if (!d || d.dragging) return;
+    clearTimeout(d.holdTimer);
+    d.dragging = true;
+    const ms = reduceMotion() ? 0 : cssMs('--sm-dur', 220);
+    for (const item of d.items) {
+      if (item.el !== d.wrap) item.el.style.transition = ms ? `transform ${ms}ms cubic-bezier(0.2, 0.8, 0.2, 1)` : '';
+    }
+    tick();
+  };
+
+  // Where each row of gesture `g` goes when the dragged one sits in `slot`: the rows stack from the first one's top.
+  const targets = (g, slot) => {
+    const order = g.items.filter((_, i) => i !== g.from);
+    order.splice(slot, 0, g.items[g.from]);
+    const tops = new Map();
+    let cursor = g.items[0].top;
+    for (const item of order) {
+      tops.set(item, cursor);
+      cursor += item.height + g.gap;
+    }
+    return { order, tops };
+  };
+
+  const layout = () => {
+    const dragged = d.items[d.from];
+    const scrolled = scroller ? scroller.scrollTop - d.scroll0 : 0;
+    const first = d.items[0];
+    const last = d.items[d.items.length - 1];
+    const min = first.top - dragged.top;
+    const max = last.top + last.height - (dragged.top + dragged.height);
+    const dy = Math.max(min, Math.min(max, d.y - d.y0 + scrolled));
+    dragged.el.style.transform = `translate3d(0, ${dy.toFixed(1)}px, 0)`;
+    // The slot: how many of the other rows have their middle above the dragged row's middle.
+    const middle = dragged.top + dragged.height / 2 + dy;
+    let slot = 0;
+    d.items.forEach((item, i) => { if (i !== d.from && item.top + item.height / 2 < middle) slot++; });
+    if (slot !== d.slot) {
+      d.slot = slot;
+      const { tops } = targets(d, slot);
+      for (const item of d.items) {
+        if (item === dragged) continue;
+        const shift = tops.get(item) - item.top;
+        item.el.style.transform = Math.abs(shift) >= 0.5 ? `translate3d(0, ${shift.toFixed(1)}px, 0)` : '';
+      }
+    }
+  };
+
+  // Near the visible top (under the sticky header) or bottom (above the dock's padding) the list scrolls by itself,
+  // as long as part of the pinned block is hidden that way.
+  const autoScroll = () => {
+    if (!scroller) return false;
+    const rect = scroller.getBoundingClientRect();
+    const head = header && header.isConnected ? header.getBoundingClientRect().bottom : rect.top;
+    const top = Math.max(rect.top, head);
+    const bottom = rect.bottom - (parseFloat(getComputedStyle(scroller).paddingBottom) || 0);
+    const box = container.getBoundingClientRect();
+    const first = d.items[0];
+    const last = d.items[d.items.length - 1];
+    const scrolled = scroller.scrollTop - d.scroll0;
+    const blockTop = box.top + first.top;
+    const blockBottom = box.top + last.top + last.height;
+    let speed = 0;
+    if (d.y < top + REORDER_EDGE && blockTop < top) speed = -REORDER_SPEED * Math.min(1, (top + REORDER_EDGE - d.y) / REORDER_EDGE);
+    else if (d.y > bottom - REORDER_EDGE && blockBottom > bottom) speed = REORDER_SPEED * Math.min(1, (d.y - (bottom - REORDER_EDGE)) / REORDER_EDGE);
+    if (!speed) return false;
+    const before = scroller.scrollTop;
+    scroller.scrollTop = before + speed;
+    return scroller.scrollTop !== before || scrolled !== scroller.scrollTop - d.scroll0;
+  };
+
+  const tick = () => {
+    if (!d || !d.dragging) return;
+    d.frame = 0;
+    const scrolling = autoScroll();
+    layout();
+    if (scrolling) d.frame = requestAnimationFrame(tick);
+  };
+
+  const request = () => {
+    if (d && d.dragging && !d.frame) d.frame = requestAnimationFrame(tick);
+  };
+
+  // Ends the gesture. commit: the dragged row lands in its slot and the new order goes to .NET.
+  const drop = (commit) => {
+    if (!d) return;
+    const s = d;
+    d = null;
+    clearTimeout(s.holdTimer);
+    if (s.frame) cancelAnimationFrame(s.frame);
+    const ms = reduceMotion() ? 0 : cssMs('--sm-dur', 220);
+    const ease = 'cubic-bezier(0.16, 1, 0.3, 1)';
+    if (!s.dragging) { clearAll(); return; }
+    if (!commit || s.slot === s.from) {
+      // Back to its place (the others are already gliding home).
+      for (const item of s.items) {
+        item.el.style.transition = ms ? `transform ${ms}ms ${ease}` : '';
+        item.el.style.transform = '';
+      }
+      const lifted = s.wrap;
+      lifted.removeAttribute('data-reorder-drag');
+      setTimeout(() => { if (!d && !settle) clearAll(); }, ms + 40);
+      return;
+    }
+    const { order, tops } = targets(s, s.slot);
+    const dragged = s.items[s.from];
+    dragged.el.style.transition = ms ? `transform ${ms}ms ${ease}` : '';
+    dragged.el.style.transform = `translate3d(0, ${(tops.get(dragged) - dragged.top).toFixed(1)}px, 0)`;
+    dragged.el.removeAttribute('data-reorder-drag');
+    const keys = order.map((item) => item.key);
+    container.setAttribute('data-flip-hold', '');
+    // The order goes out once the row has landed: the re-render then swaps transforms for the same layout positions.
+    const send = setTimeout(() => safeInvoke(ref, 'OnPinnedReorder', keys), ms);
+    settle = { order: keys, send, timer: setTimeout(() => finishSettle(true), ms + REORDER_WAIT_MS) };
+  };
+
+  // The re-render arrived (or never did: the rows glide back to where the list really has them).
+  const finishSettle = (animateBack) => {
+    if (!settle) return;
+    clearTimeout(settle.timer);
+    settle = null;
+    // (A drop still on its way out is sent anyway: the list then glides into the order the user chose.)
+    if (animateBack && !reduceMotion()) {
+      const ms = cssMs('--sm-dur', 220);
+      for (const el of movable()) { el.style.transition = `transform ${ms}ms cubic-bezier(0.16, 1, 0.3, 1)`; el.style.transform = ''; }
+      setTimeout(() => { if (!d && !settle) clearAll(); }, ms + 40);
+    } else {
+      clearAll();
+    }
+    releaseHold();
+  };
+
+  // Blazor moved the rows: the order we showed is the real one now — drop the transforms in the same frame. A change
+  // while dragging (a chat pinned or unpinned elsewhere) ends the drag where it is.
+  const observer = new MutationObserver(() => {
+    bindRows();
+    const keys = keysOf(movable());
+    if (settle) {
+      if (sameOrder(keys, settle.order)) finishSettle(false);
+      else finishSettle(true);
+      return;
+    }
+    if (d && !sameOrder(keys, d.items.map((item) => item.key))) drop(false);
+  });
+  observer.observe(container, { childList: true });
+
+  // ---- touch ownership of the pinned rows ----
+
+  const bound = new Set();
+  const touchMove = (e) => { if (d && !d.pending && e.cancelable) e.preventDefault(); };
+  const bindRows = () => {
+    const rows = new Set(movable());
+    for (const el of bound) {
+      if (!rows.has(el)) { el.removeEventListener('touchmove', touchMove); bound.delete(el); }
+    }
+    for (const el of rows) {
+      if (!bound.has(el)) { el.addEventListener('touchmove', touchMove, { passive: false }); bound.add(el); }
+    }
+  };
+  // Rows come and go with the order observer below; a chat pinned or unpinned in place flips its attribute.
+  const pins = new MutationObserver(bindRows);
+  pins.observe(container, { subtree: true, attributes: true, attributeFilter: ['data-reorder'] });
+  bindRows();
+
+  // ---- events ----
+
+  const onClaim = (e) => {
+    if (d || !e.detail) return;
+    const wrap = rowOf(e.target);
+    if (!wrap || !wrap.hasAttribute('data-reorder')) return;
+    const touch = lastTouch;
+    if (!touch) return;
+    if (lift(wrap, touch.id, true, touch.x, touch.y, e.detail.fire)) e.preventDefault();
+  };
+
+  const down = (e) => {
+    if (!e.isPrimary) return;
+    if (e.pointerType === 'mouse') {
+      if (e.button !== 0 || d) return;
+      const wrap = rowOf(e.target);
+      if (!wrap || !wrap.hasAttribute('data-reorder') || (e.target instanceof Element && e.target.closest('[data-row-action], button, a'))) return;
+      d = { pending: true, wrap, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY };
+      return;
+    }
+    lastTouch = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  };
+
+  const move = (e) => {
+    if (lastTouch && e.pointerId === lastTouch.id && !d) { lastTouch.x = e.clientX; lastTouch.y = e.clientY; }
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (d.pending) {
+      const dx = e.clientX - d.x0;
+      const dy = e.clientY - d.y0;
+      if (Math.abs(dy) < REORDER_SLOP || Math.abs(dy) < Math.abs(dx)) return;
+      const { wrap, pointerId, x0, y0 } = d;
+      d = null;
+      if (!lift(wrap, pointerId, false, x0, y0, null)) return;
+      try { container.setPointerCapture(pointerId); } catch (err) { /* already released */ }
+      startDrag();
+    }
+    d.y = e.clientY;
+    if (!d.dragging) {
+      if (Math.abs(e.clientY - d.y0) < REORDER_TOUCH_SLOP && Math.abs(e.clientX - d.x0) < REORDER_TOUCH_SLOP) return;
+      startDrag();
+      return;
+    }
+    request();
+  };
+
+  const up = (e) => {
+    if (lastTouch && e.pointerId === lastTouch.id) lastTouch = null;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (d.pending) { d = null; return; }
+    if (d.dragging) {
+      swallowUntil = Date.now() + 400;
+      drop(e.type === 'pointerup');
+    } else if (e.type === 'pointerup') {
+      openMenu();
+    } else {
+      drop(false);
+    }
+  };
+
+  const click = (e) => {
+    if (Date.now() < swallowUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      swallowUntil = 0;
+    }
+  };
+  const onScroll = () => { if (d && d.dragging) request(); };
+
+  container.addEventListener('sm-longpress', onClaim);
+  container.addEventListener('pointerdown', down, { passive: true });
+  container.addEventListener('pointermove', move, { passive: true });
+  container.addEventListener('pointerup', up, { passive: true });
+  container.addEventListener('pointercancel', up, { passive: true });
+  container.addEventListener('click', click, true);
+  if (scroller) scroller.addEventListener('scroll', onScroll, { passive: true });
+  return {
+    /** Puts a gesture or a waiting drop back (switching to the other list). */
+    cancel() {
+      drop(false);
+      if (settle) finishSettle(false);
+      clearAll();
+    },
+    dispose() {
+      observer.disconnect();
+      pins.disconnect();
+      for (const el of bound) el.removeEventListener('touchmove', touchMove);
+      bound.clear();
+      if (d) { clearTimeout(d.holdTimer); if (d.frame) cancelAnimationFrame(d.frame); }
+      d = null;
+      if (settle) { clearTimeout(settle.timer); clearTimeout(settle.send); }
+      settle = null;
+      container.removeAttribute('data-flip-hold');
+      container.removeEventListener('sm-longpress', onClaim);
+      container.removeEventListener('pointerdown', down);
+      container.removeEventListener('pointermove', move);
+      container.removeEventListener('pointerup', up);
+      container.removeEventListener('pointercancel', up);
+      container.removeEventListener('click', click, true);
+      if (scroller) scroller.removeEventListener('scroll', onScroll);
+    }
+  };
+}
+
 // ---- List motion -------------------------------------------------------------------------------------------
 // FLIP for keyed children of `container` (attribute `keyAttr`): when Blazor reorders, adds or removes them, moved items
 // glide from where they were (transform only) and new ones slide in. Nothing animates on the first render, while the
@@ -1063,6 +1438,8 @@ export function attachFlipList(container, keyAttr, options) {
     const next = measure();
     last = next;
     if (suppressed) { suppressed = false; return; }
+    // A dropped drag (attachPinReorder) already shows the new order: the rows must not glide in from the old one.
+    if (container.hasAttribute('data-flip-hold')) return;
     if (!container.isConnected || document.hidden || reduceMotion() || typeof container.animate !== 'function') return;
     if (container.closest('[inert]') || container.offsetParent === null) return;
 
