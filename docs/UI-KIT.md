@@ -328,6 +328,8 @@ Sounds.PlayMessageTone(Settings.Current.Notifications.MessageTone);   // "chime"
 Sounds.StartRingtone(Settings.Current.Notifications.Ringtone);        // "classic" | "soft" | "bright" | "custom" — loops
 Sounds.StartRingback();  Sounds.PlayBusy();  Sounds.PlayCallEnd();  Sounds.Stop();
 Sounds.Preview("soft");  Sounds.PreviewPack("bells");  Sounds.PreviewCustom(CustomSoundSlot.Ringtone);   // settings
+Sounds.StopPreview();    // leaving the settings: ends a preview, never a ringing call
+Sounds.Preload();        // the shell, once: fetches the selected tones ahead of their first use
 Sounds.Tones.Packs / MessageTones / Ringtones / CallProgress            // SoundPackInfo / ToneInfo — names: L[x.NameKey]
 ```
 

@@ -133,6 +133,8 @@
     protected override async Task OnInitializedAsync()
     {
         RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        // A preview (an own ringtone runs up to 12 s) ends with the page; a ringing call does not.
+        OnDispose(Sounds.StopPreview);
         await CheckPermissionAsync();
     }
 

@@ -85,8 +85,16 @@ public interface ISoundService : IAudioDecoder
     void PreviewPack(string pack);
     /// <summary>Settings preview of the user's own sound for a slot.</summary>
     void PreviewCustom(CustomSoundSlot slot);
+    /// <summary>Ends a settings preview (playing or still loading) and nothing else; a ringing call keeps ringing.</summary>
+    void StopPreview();
     /// <summary>Stops loops and previews.</summary>
     void Stop();
+    /// <summary>
+    /// Fetches and decodes what the selected pack plays first (message tone, ringtone, ringback) ahead of its first use,
+    /// and again whenever the pack or those tones change; from then on it also lets go of the user's sound for a slot
+    /// once it is replaced or removed. The signed-in shell calls it once.
+    /// </summary>
+    void Preload();
 }
 
 public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsService settings, ICustomSoundStore customSounds,
@@ -97,10 +105,14 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
     /// <summary>A settings preview of the user's own sound fades out after this long (a ringtone may run a minute).</summary>
     public const double PreviewLimitSeconds = 12;
 
+    private readonly object _gate = new();                               // guards the two maps (settings may change on any thread)
     private readonly Dictionary<CustomSoundSlot, string> _loaded = [];   // slot -> id of the custom sound sounds.js holds
     private readonly Dictionary<CustomSoundSlot, string> _broken = [];   // slot -> id that could not be read or decoded
     private Task<IJSObjectReference>? _module;
     private int _generation;
+    private bool _previewing;                                            // the last loop or one-shot asked for is a settings preview
+    private bool _watching;
+    private string? _preloaded;
     private bool _disposed;
 
     public ToneCatalog Tones => tones;
@@ -128,17 +140,18 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
         if (key == ToneCatalog.Custom && Notifications.CustomRingtone is { } sound)
         {
             _generation++;
+            _previewing = false;
             _ = PlayCustomAsync(CustomSoundSlot.Ringtone, sound, "startLoop", tones.DefaultRingtone, cancellable: true);
             return;
         }
-        Replace("startLoop", tones.IsRingtone(key) ? key : tones.DefaultRingtone, Pack);
+        Replace("startLoop", false, tones.IsRingtone(key) ? key : tones.DefaultRingtone, Pack);
     }
 
-    public void StartRingback() => Replace("startLoop", ToneCatalog.Ringback, Pack);
+    public void StartRingback() => Replace("startLoop", false, ToneCatalog.Ringback, Pack);
 
-    public void PlayBusy() => Replace("playOnce", ToneCatalog.Busy, Pack);
+    public void PlayBusy() => Replace("playOnce", false, ToneCatalog.Busy, Pack);
 
-    public void PlayCallEnd() => Replace("playOnce", ToneCatalog.CallEnd, Pack);
+    public void PlayCallEnd() => Replace("playOnce", false, ToneCatalog.CallEnd, Pack);
 
     public void Preview(string key)
     {
@@ -147,13 +160,13 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
             Stop();
             return;
         }
-        Replace("playOnce", key, Pack);
+        Replace("playOnce", true, key, Pack, 0, true);
     }
 
     public void PreviewPack(string pack)
     {
         var key = tones.IsMessageTone(Notifications.MessageTone) ? Notifications.MessageTone : tones.DefaultMessageTone;
-        Replace("playOnce", key, SoundCatalog.PackOrDefault(pack));
+        Replace("playOnce", true, key, SoundCatalog.PackOrDefault(pack), 0, true);
     }
 
     public void PreviewCustom(CustomSoundSlot slot)
@@ -161,8 +174,66 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
         Stop();
         var sound = slot == CustomSoundSlot.Message ? Notifications.CustomMessageTone : Notifications.CustomRingtone;
         if (sound is null) return;
+        _previewing = true;
         _ = PlayCustomAsync(slot, sound, "playOnce", slot == CustomSoundSlot.Message ? tones.DefaultMessageTone : tones.DefaultRingtone,
-            cancellable: true, limitSeconds: PreviewLimitSeconds);
+            cancellable: true, limitSeconds: PreviewLimitSeconds, preview: true);
+    }
+
+    public void StopPreview()
+    {
+        if (!_previewing) return;
+        _generation++;
+        _previewing = false;
+        Run("stopPreview");
+    }
+
+    public void Preload()
+    {
+        if (_disposed) return;
+        if (!_watching)
+        {
+            _watching = true;
+            settings.Changed += OnSettingsChanged;
+        }
+        PreloadSelected();
+    }
+
+    private void OnSettingsChanged()
+    {
+        if (_disposed) return;
+        ForgetReplacedCustom();
+        PreloadSelected();
+    }
+
+    /// <summary>The pack sounds that may play first; with an own sound selected, the pack's stand-in for it.</summary>
+    private void PreloadSelected()
+    {
+        var n = Notifications;
+        var pack = Pack;
+        var message = n.MessageTone == ToneCatalog.None ? null : tones.IsMessageTone(n.MessageTone) ? n.MessageTone : tones.DefaultMessageTone;
+        var ringtone = tones.IsRingtone(n.Ringtone) ? n.Ringtone : tones.DefaultRingtone;
+        string[] keys = message is null ? [ringtone, ToneCatalog.Ringback] : [message, ringtone, ToneCatalog.Ringback];
+        var signature = $"{pack}:{string.Join(',', keys)}";
+        if (signature == _preloaded) return;
+        _preloaded = signature;
+        Run("preload", keys, pack);
+    }
+
+    /// <summary>sounds.js lets go of the decoded copy of an own sound that was replaced or removed.</summary>
+    private void ForgetReplacedCustom()
+    {
+        foreach (var slot in (CustomSoundSlot[])[CustomSoundSlot.Message, CustomSoundSlot.Ringtone])
+        {
+            var current = (slot == CustomSoundSlot.Message ? Notifications.CustomMessageTone : Notifications.CustomRingtone)?.Id;
+            bool stale;
+            lock (_gate)
+            {
+                stale = _loaded.TryGetValue(slot, out var loaded) && loaded != current;
+                if (stale) _loaded.Remove(slot);
+                if (_broken.TryGetValue(slot, out var broken) && broken != current) _broken.Remove(slot);
+            }
+            if (stale) Run("clearCustom", SlotName(slot));
+        }
     }
 
     public async Task<double?> MeasureAsync(byte[] audio, CancellationToken cancellationToken = default)
@@ -187,6 +258,7 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
     public void Stop()
     {
         _generation++;
+        _previewing = false;
         Run("stop");
     }
 
@@ -196,19 +268,22 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
     /// still loading when <see cref="Stop"/> is called does not start.
     /// </summary>
     private async Task PlayCustomAsync(CustomSoundSlot slot, CustomSound sound, string function, string fallbackKey, bool cancellable,
-        double limitSeconds = 0)
+        double limitSeconds = 0, bool preview = false)
     {
         var generation = _generation;
         var pack = Pack;
         var ready = await LoadCustomAsync(slot, sound);
         if (_disposed || cancellable && generation != _generation) return;
-        await RunAsync(function, [ready ? $"custom:{SlotName(slot)}" : fallbackKey, pack, limitSeconds]);
+        await RunAsync(function, [ready ? $"custom:{SlotName(slot)}" : fallbackKey, pack, limitSeconds, preview]);
     }
 
     private async Task<bool> LoadCustomAsync(CustomSoundSlot slot, CustomSound sound)
     {
-        if (_loaded.TryGetValue(slot, out var loaded) && loaded == sound.Id) return true;
-        if (_broken.TryGetValue(slot, out var broken) && broken == sound.Id) return false;
+        lock (_gate)
+        {
+            if (_loaded.TryGetValue(slot, out var loaded) && loaded == sound.Id) return true;
+            if (_broken.TryGetValue(slot, out var broken) && broken == sound.Id) return false;
+        }
         try
         {
             var bytes = await customSounds.ReadAsync(sound);
@@ -220,8 +295,11 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
             }
             if (seconds is > 0)
             {
-                _loaded[slot] = sound.Id;
-                _broken.Remove(slot);
+                lock (_gate)
+                {
+                    _loaded[slot] = sound.Id;
+                    _broken.Remove(slot);
+                }
                 return true;
             }
             logger.LogInformation("The custom {Slot} sound is {State}; the pack's sound plays instead", slot, bytes is null ? "gone" : "not playable");
@@ -234,8 +312,11 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
         {
             logger.LogDebug(ex, "Loading the custom {Slot} sound failed", slot);
         }
-        _broken[slot] = sound.Id;
-        _loaded.Remove(slot);
+        lock (_gate)
+        {
+            _broken[slot] = sound.Id;
+            _loaded.Remove(slot);
+        }
         return false;
     }
 
@@ -244,9 +325,10 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
     private void Run(string function, params object?[] args) => _ = RunAsync(function, args);
 
     /// <summary>Starts a loop or a one-shot that replaces the current one (and any custom sound still loading for it).</summary>
-    private void Replace(string function, params object?[] args)
+    private void Replace(string function, bool preview, params object?[] args)
     {
         _generation++;
+        _previewing = preview;
         Run(function, args);
     }
 
@@ -271,6 +353,7 @@ public sealed class SoundService(IJSRuntime js, ToneCatalog tones, ISettingsServ
     {
         if (_disposed) return;
         _disposed = true;
+        if (_watching) settings.Changed -= OnSettingsChanged;
         if (_module is null) return;
         try
         {

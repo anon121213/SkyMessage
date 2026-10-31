@@ -4,8 +4,8 @@
 // user's own sounds come in as bytes (setCustom). Every file is fetched and decoded once, then played from memory; a
 // ringtone or the ringback file is exactly one cycle and loops without a seam.
 //
-// API: play(key, pack) · playOnce(key, pack, limit) · startLoop(key, pack) · stop() · unlock()
-//      preload(keys, pack) · setCustom(slot, id, bytes) → seconds | null · hasCustom(slot, id) · clearCustom(slot)
+// API: play(key, pack) · playOnce(key, pack, limit, preview) · startLoop(key, pack) · stop() · stopPreview() · unlock()
+//      preload(keys, pack) · setCustom(slot, id, bytes) → seconds | null · clearCustom(slot)
 //      measure(bytes) → seconds | null (decodes without keeping anything)
 //   pack keys: message tones chime, pop, glass · ringtones classic, soft, bright · call progress ringback, busy, end
 //   the user's own sounds: "custom:message", "custom:ringtone" · pack: "wood" (default), "bells", "piano"
@@ -26,7 +26,9 @@ const custom = new Map();      // slot -> { id, buffer, gain }
 let loop = null;               // { source, gain } of the playing loop
 let loopId = null;             // what startLoop() was asked for last (also while it loads)
 let once = null;               // gain node of the last one-shot that replaces others (previews, busy, call ended)
+let previewing = false;        // the last loop or one-shot asked for is a settings preview (playing or still loading)
 let generation = 0;            // bumped by stop(): a loop or preview still loading when it changes never starts
+let offline = null;            // decodes before the page has an AudioContext of its own (preload)
 
 function ensure() {
   if (!ctx) {
@@ -66,10 +68,27 @@ function loadManifest() {
   return manifest;
 }
 
+// The page's context once there is one; before that a silent offline one, so preloading starts no audio (a browser
+// keeps a context made before any user gesture suspended, and says so in the console). AudioBuffers play in any context.
+function decoder() {
+  if (ctx) return ctx;
+  if (!offline) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    try {
+      offline = OAC ? new OAC(1, 1, 48000) : null;
+    } catch (e) {
+      offline = null;
+    }
+  }
+  return offline || ensure();
+}
+
 function decode(arrayBuffer) {
+  const c = decoder();
+  if (!c) return Promise.reject(new Error('no WebAudio'));
   // Older WebKit has only the callback form.
   return new Promise((resolve, reject) => {
-    const p = ctx.decodeAudioData(arrayBuffer, resolve, reject);
+    const p = c.decodeAudioData(arrayBuffer, resolve, reject);
     if (p && p.then) p.then(resolve, reject);
   });
 }
@@ -121,9 +140,9 @@ async function resolve(key, pack) {
   return { buffer, gain: 1, loopEnd: Math.min(cycle, buffer.duration) };
 }
 
-// Fetches and decodes sounds ahead of their first use (the selected message tone and ringtone).
+// Fetches and decodes sounds ahead of their first use (SoundService: the selected message tone, ringtone and ringback),
+// so the first ring of a session does not wait for the network.
 export function preload(keys, pack) {
-  if (!ensure()) return;
   (keys || []).forEach((key) => { if (typeof key === 'string' && !key.startsWith('custom:')) load(packOf(pack), key); });
 }
 
@@ -180,11 +199,7 @@ export async function setCustom(slot, id, bytes) {
   return buffer.duration;
 }
 
-export function hasCustom(slot, id) {
-  const item = custom.get(slot);
-  return !!item && item.id === id;
-}
-
+// Lets go of a slot's decoded sound once it was replaced or removed (a minute of stereo is about 23 MB).
 export function clearCustom(slot) {
   custom.delete(slot);
 }
@@ -249,9 +264,11 @@ export function play(key, pack) {
 
 // One-shot that replaces any loop or previous preview (busy, call ended, settings previews: a ringtone plays one cycle).
 // `limit` (seconds) fades a long file out early: a preview of the user's own ringtone need not run for a minute.
-export function playOnce(key, pack, limit) {
+// `preview` marks a settings preview, which stopPreview() ends.
+export function playOnce(key, pack, limit, preview) {
   if (!ensure()) return;
   stop();
+  previewing = !!preview;
   const started = generation;
   resolve(key, pack).then((sound) => {
     if (!sound || started !== generation) return;
@@ -285,6 +302,7 @@ export function startLoop(key, pack) {
 export function stop() {
   generation++;
   loopId = null;
+  previewing = false;
   if (loop) {
     silence(loop.gain);
     try { loop.source.stop(ctx.currentTime + 0.05); } catch (e) { /* not started */ }
@@ -294,4 +312,9 @@ export function stop() {
     silence(once);
     once = null;
   }
+}
+
+// Ends a settings preview, playing or still loading, and nothing else: leaving the settings must not cut a ringtone.
+export function stopPreview() {
+  if (previewing) stop();
 }
