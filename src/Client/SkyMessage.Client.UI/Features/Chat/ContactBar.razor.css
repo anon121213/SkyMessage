@@ -132,3 +132,23 @@ html[data-fx="lite"] .cbar {
         --size: 2rem;
     }
 }
+
+/* Narrow phones (360px): a label that still does not fit wraps onto a second line instead of losing its end. */
+@media (max-width: 380px) {
+    .cbar__action {
+        height: auto;
+        min-height: 2.25rem;
+        padding: 4px 8px;
+    }
+
+    .cbar__label {
+        white-space: normal;
+        text-align: center;
+        line-height: 1.15;
+    }
+
+    /* "Заблокировать" is one word: it keeps its width and the other label wraps. */
+    .cbar__action--danger {
+        flex-shrink: 0;
+    }
+}
