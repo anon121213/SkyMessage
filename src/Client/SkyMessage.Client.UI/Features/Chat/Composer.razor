@@ -508,6 +508,26 @@
         _recorderHandle = null;
         if (recorder is not null) await recorder.DisposeAsync();
         if (composer is not null) await composer.DisposeAsync();
+        await EndDetachedRecordingAsync();
+    }
+
+    /// <summary>
+    /// recorder.js's dispose() stops a recording (or one still opening its devices) without telling .NET, so a field
+    /// that went away mid-recording (blocked, read-only) ends it here, as a cancel: music in other apps plays again,
+    /// "recording…" stops for the others and the locked recording's overlay closes.
+    /// </summary>
+    private async Task EndDetachedRecordingAsync()
+    {
+        ReleaseAudioFocus();
+        if (_recordState == "idle") return;
+        _recordState = "idle";
+        _canFlip = false;
+        StopRecordingTyping();
+        Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
+        var overlay = _recordOverlay;
+        _recordOverlay = null;
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+        StateHasChanged();
     }
 
     // ---- Public API (chat page) ----
