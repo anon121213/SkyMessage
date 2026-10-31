@@ -69,11 +69,11 @@ html[data-fx="lite"] .cbar {
     font-size: 0.875rem;
     font-weight: 700;
     letter-spacing: -0.005em;
-    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+    transition: transform var(--sm-dur) var(--sm-spring), filter var(--sm-dur-fast) ease;
 }
 
 .cbar__action--danger {
-    background: color-mix(in srgb, var(--sm-danger) 13%, transparent);
+    background: var(--sm-danger-soft);
     color: var(--sm-danger);
 }
 
@@ -86,13 +86,10 @@ html[data-fx="lite"] .cbar {
     opacity: 0.6;
 }
 
+/* The kit's tonal button hover (.sm-btn--tonal), for both tints. */
 @media (hover: hover) {
     .cbar__action:hover:not(:disabled) {
-        background: color-mix(in srgb, var(--sm-accent) 18%, transparent);
-    }
-
-    .cbar__action--danger:hover:not(:disabled) {
-        background: color-mix(in srgb, var(--sm-danger) 20%, transparent);
+        filter: brightness(0.97) saturate(1.1);
     }
 }
 
