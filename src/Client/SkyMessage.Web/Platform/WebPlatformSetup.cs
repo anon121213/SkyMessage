@@ -24,6 +24,7 @@ public static class WebPlatformSetup
         services.AddSingleton<IPermissionService, WebPermissionService>();
         services.AddSingleton<ILocalNotificationService, WebNotificationService>();
         services.AddSingleton<IAudioRouteService, WebAudioRouteService>();
+        services.AddSingleton<IAudioFocusService, WebAudioFocusService>();
         services.AddSingleton<ICallPlatformService, WebCallPlatformService>();
         services.AddSingleton<IShareService, WebShareService>();
         services.AddSingleton<IFileSaveService, WebFileSaveService>();

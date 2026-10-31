@@ -6,6 +6,12 @@
    Performance: transform/opacity animations only; nothing on this screen uses backdrop-filter (it would re-blur a
    playing video every frame); the sky is hidden behind a full-screen video, still behind the group grid and in lite. */
 
+/* The night palette's warm warning (weak connection, no microphone, connecting), for the screen and the bar. */
+.call-screen,
+.call-bar {
+    --call-warn: #F2C36B;
+}
+
 /* ---- Expanded call screen: above dialogs (900), below banners (960) and toasts (980) ---- */
 
 .call-screen {
@@ -538,7 +544,7 @@ html[data-fx="lite"] .call-sky *::after {
 }
 
 .call-chip--weak ::deep .sm-icon {
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 .call-hero__note {
@@ -740,6 +746,46 @@ html[data-fx="lite"] .call-sky *::after {
     width: 150px;
 }
 
+/* Centered while the tiles fit, scrollable from the first one when they do not (auto margins, not justify-content). */
+.call-share__strip ::deep .call-tile:first-child {
+    margin-left: auto;
+}
+
+.call-share__strip ::deep .call-tile:last-child {
+    margin-right: auto;
+}
+
+/* Wide stages (desktop, a phone turned sideways): the people stand beside the screen, so it keeps the full height. */
+@media (orientation: landscape) {
+    .call-share {
+        flex-direction: row;
+    }
+
+    .call-share__strip {
+        flex-direction: column;
+        width: clamp(132px, 17vw, 236px);
+        height: auto;
+        overflow-x: hidden;
+        overflow-y: auto;
+        touch-action: pan-y;
+    }
+
+    .call-share__strip ::deep .call-tile {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+    }
+
+    .call-share__strip ::deep .call-tile:first-child {
+        margin-left: 0;
+        margin-top: auto;
+    }
+
+    .call-share__strip ::deep .call-tile:last-child {
+        margin-right: 0;
+        margin-bottom: auto;
+    }
+}
+
 /* ---- Top bar ---- */
 
 .call-top {
@@ -819,6 +865,12 @@ html[data-fx="lite"] .call-sky *::after {
     margin-right: 6px;
 }
 
+.call-top__status ::deep .call-top__weak {
+    flex-shrink: 0;
+    margin-left: 6px;
+    color: var(--call-warn);
+}
+
 /* Pull-down hint on touch screens. */
 .call-top__grabber {
     position: absolute;
@@ -856,7 +908,7 @@ html[data-fx="lite"] .call-sky *::after {
 }
 
 .call-top__quality.is-weak {
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 /* ---- Banners: night capsules with the icon in a flat disc ---- */
@@ -917,7 +969,7 @@ html[data-fx="lite"] .call-sky *::after {
 
 .call-banner--warning .call-banner__icon {
     color: #3A2306;
-    background: #F2C36B;
+    background: var(--call-warn);
 }
 
 .call-banner--quiet {
@@ -1014,6 +1066,55 @@ html[data-fx="lite"] .call-sky *::after {
 /* Over a video the deck darkens for contrast (still no blur: the picture moves). */
 .call-screen--video .call-deck {
     background: rgba(8, 10, 26, 0.56);
+}
+
+/* Extras after the deck (showing the screen, desktop): a small capsule of the same glass. On narrow windows it comes
+   next to the deck or on its own line; on wide ones the deck stays centered and the capsule sits right after it. */
+.call-controls--extra {
+    flex-wrap: wrap;
+    /* Side by side, the capsule takes the deck's height (a two-line caption such as "Выключить камеру" makes the deck
+       taller), so their bottom edges line up. */
+    align-items: stretch;
+    gap: 10px 12px;
+}
+
+.call-deck--extra {
+    flex: none;
+    width: auto;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+/* A one-line caption ("Остановить показ" too), so the capsule is never taller than the deck. */
+.call-deck--extra ::deep .call-btn {
+    flex: none;
+    width: auto;
+    min-width: 5.5rem;
+}
+
+.call-deck--extra ::deep .call-btn__label {
+    max-width: none;
+    white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+    .call-controls--extra {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .call-controls--extra .call-deck {
+        grid-column: 2;
+        /* Leaves the capsule room for its one-line caption beside the centered deck. */
+        width: min(470px, calc(100vw - 360px));
+    }
+
+    .call-controls--extra .call-deck--extra {
+        grid-column: 3;
+        justify-self: start;
+        width: auto;
+    }
 }
 
 /* Ringing: decline and answer far apart, big; "Audio only" in between for video calls. */
@@ -1287,7 +1388,7 @@ html[data-fx="lite"] .call-sky *::after {
 
 /* Calling / connecting: amber bars in a travelling wave. */
 .call-bar--connecting .call-bar__live {
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 .call-bar--connecting .call-bar__live i {

@@ -555,15 +555,19 @@ open to receive calls until push lands; tone pickers with preview through `ISoun
 animations, compact list), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
 speed), **devices** (mic select + live level meter + record/playback test; camera select + preview +
 mirror; speaker select + test tone (`setSinkId` where supported); echo cancellation / noise suppression /
-auto gain; call video quality; phones: default audio route via `IAudioRouteService`), data & storage
+auto gain; call video quality; phones: default audio route via `IAudioRouteService`; Android: pause music in other
+apps during calls and note recordings via `IAudioFocusCoordinator`, default on), data & storage
 (auto-download Wi-Fi/mobile, photo/video quality, save to gallery, cache size + clear via
 `IMediaDownloadService`, low data mode), language, connection (server + status/transport, test, custom
 server, fallback addresses, proxy HTTP/SOCKS5 with test via `IServerEndpointService.TestAsync`, hidden when
 `IHttpHandlerFactory.SupportsProxy` is false; text: "The proxy applies to messages and media; calls may not
 work through a proxy"), about (version, server version, licenses of everything
 shipped). Calls: `CallOverlay` (incoming screen with accept audio/video / decline + ringtone; outgoing with
-ringback; 1:1 layout (remote full, draggable local PIP) and group grid with active speaker; controls mute,
-camera, flip, audio output, screen share on desktop, hang up; minimize to a top bar; timer; quality;
+ringback; 1:1 layout (remote full, draggable local PIP) and group grid with active speaker; a shared screen takes
+the stage with the people (presenter first) in a strip, 1:1 and groups (several at once: the newest share, others
+marked in the strip and a tap away, `CallScreenShares`); deck in this order: audio output, camera,
+microphone, hang up (flip in the top bar, screen share on desktop in a capsule after the deck; phones only view
+shared screens); minimize to a top bar; timer; quality;
 reconnecting; ended screen; when the local camera track ends/mutes after the app returns from background,
 offer to re-enable it) executing `ICallService.CommandRequested` and reporting `Report*`;
 `GroupCallBanner`; `/calls` history (icons, call back, missed filter). `calls.js` wraps **livekit-client**
@@ -634,13 +638,18 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   without Google services), DeviceContactsService (with NORMALIZED_NUMBER → E164Numbers), PermissionService
   (incl. Bluetooth, FullScreenIntent, Limited), LocalNotificationService (channels messages/calls,
   full-screen incoming-call notification with Accept/Decline actions, badge), AudioRouteService,
-  CallPlatformService (foreground service microphone|camera, wake lock, ongoing-call notification with
-  Mute/Hang up → `CommandRequested`), BackgroundConnectionService (low-priority persistent foreground service
-  + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
+  CallPlatformService (foreground service microphone|camera, wake lock, proximity screen-off lock only while call
+  audio is on the earpiece in communication mode with my camera off, screen kept on while the call shows a picture
+  (`CallScreenPolicy`), ongoing-call notification with Mute/Hang up → `CommandRequested`), AudioFocusService
+  (transient focus for ringing, calls, recordings), BackgroundConnectionService (low-priority persistent foreground
+  service + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
-  iOS; re-apply the preferred route after publish and on device changes), HttpHandlerFactory
+  iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the
+  call, else a connected headset, else the setting, else earpiece for voice and loudspeaker once the call shows a
+  picture — an audio call moves to the loudspeaker once when my camera or someone's camera/screen appears on the
+  open call screen, which also releases the proximity lock), HttpHandlerFactory
   (`SocketsHttpHandler` with Happy Eyeballs `ConnectCallback` (IPv6 first, IPv4 after 250 ms), HTTP/SOCKS5
   proxy, per-attempt connect timeouts, pooled lifetime 5 min; iOS: `NSUrlSessionHandler` when no proxy (or
   iOS 17+ proxy configurations); `CreateProxy` and `CreateWebSocketConnector` for SignalR; Android WebView

@@ -560,6 +560,7 @@ class CallEngine {
       const S = this.LK.Track.Source;
       if (publication.source === S.Microphone) this.notice('micPublished');
       if (publication.source === S.Camera && publication.track) this.watchCamera(publication.track);
+      if (publication.source === S.ScreenShare && publication.track) this.watchScreen(publication.track);
       this.changed();
     });
     on(E.LocalTrackUnpublished, () => this.changed());
@@ -772,6 +773,27 @@ class CallEngine {
     }
   }
 
+  /**
+   * The browser's own "Stop sharing" ends the capture track. LiveKit unpublishes it by itself (LocalTrackUnpublished
+   * updates the call screen); this makes sure nothing stays published and the screen hears about it either way.
+   */
+  watchScreen(track) {
+    const mst = track && track.mediaStreamTrack;
+    if (!mst || mst.__smScreenWatched) return;
+    mst.__smScreenWatched = true;
+    mst.addEventListener('ended', () => {
+      setTimeout(async () => {
+        if (this.disposed) return;
+        const lp = this.connected && this.room ? this.room.localParticipant : null;
+        const pub = lp && this.LK ? lp.getTrackPublication(this.LK.Track.Source.ScreenShare) : null;
+        if (pub && pub.track && pub.track.mediaStreamTrack === mst) {
+          try { await lp.setScreenShareEnabled(false); } catch (e) { /* already unpublished */ }
+        }
+        this.changed();
+      }, 0);
+    });
+  }
+
   async setSpeaker(deviceId) {
     this.speakerId = deviceId || null;
     if (!this.room) return { ok: true, error: null };
@@ -898,6 +920,15 @@ class CallEngine {
   attachAudio(track) {
     const element = track.attach();
     element.autoplay = true;
+    // Nothing here pauses call audio. When something else does (an audio focus change on a phone), play on — at
+    // most once a second, so a system that insists is not fought in a loop.
+    let resumedAt = 0;
+    element.addEventListener('pause', () => {
+      if (this.disposed || !this.connected || !element.isConnected || performance.now() - resumedAt < 1000) return;
+      resumedAt = performance.now();
+      const playing = element.play();
+      if (playing && playing.catch) playing.catch(() => { });
+    });
     this.ensureAudioHost().appendChild(element);
   }
 

@@ -1,8 +1,10 @@
 @* One person in a group call: a night tile with their squircle face until their video arrives (calls.js attaches a
    <video> to the slot), a name capsule, the muted mark, a weak-connection mark and an accent ring while they speak.
+   With OnPick (the share strip: they show their screen too, but another share is on the stage) a screen mark sits in
+   the corner and the whole tile is a button that puts their screen on the stage.
    The slot element has no Razor children on purpose. *@
 
-<div class="call-tile @(Speaking ? "is-speaking" : null) @(Active ? "is-active" : null) @(HasVideo ? "has-video" : null) @Class">
+<div class="call-tile @(Speaking ? "is-speaking" : null) @(Active ? "is-active" : null) @(HasVideo ? "has-video" : null) @(OnPick.HasDelegate ? "call-tile--pick" : null) @Class">
     @if (!HasVideo)
     {
         <div class="call-tile__avatar">
@@ -21,6 +23,11 @@
             <Icon Name="@IconNames.SignalLow" Size="14" Class="call-tile__weak" Title="@WeakLabel" />
         }
     </div>
+    @if (OnPick.HasDelegate)
+    {
+        <span class="call-tile__screen" aria-hidden="true"><Icon Name="@IconNames.ScreenShare" Size="14" StrokeWidth="2.2" /></span>
+        <button type="button" class="call-tile__pick" aria-label="@PickLabel" title="@PickLabel" @onclick="OnPick"></button>
+    }
     <span class="call-tile__ring" aria-hidden="true"></span>
 </div>
 
@@ -38,4 +45,10 @@
     [Parameter] public string? MutedLabel { get; set; }
     [Parameter] public string? WeakLabel { get; set; }
     [Parameter] public string? Class { get; set; }
+
+    /// <summary>Set when this person's shared screen can be put on the stage (a tap on the tile).</summary>
+    [Parameter] public EventCallback OnPick { get; set; }
+
+    /// <summary>What a tap does, for screen readers and the tooltip ("Watch Mama's screen").</summary>
+    [Parameter] public string? PickLabel { get; set; }
 }

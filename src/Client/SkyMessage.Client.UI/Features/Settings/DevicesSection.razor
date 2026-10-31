@@ -1,11 +1,13 @@
 @* Calls & devices: microphone (choice, live level, record-and-play test), audio processing, camera (choice, preview,
    mirror), output (speaker choice + test tone where the browser supports setSinkId; on phones the default route for
-   calls through IAudioRouteService), call video quality. Nothing is captured until the user presses a test button. *@
+   calls through IAudioRouteService), pausing music in other apps during calls and recordings (phone apps,
+   IAudioFocusCoordinator), call video quality. Nothing is captured until the user presses a test button. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject ISettingsService Settings
 @inject IPermissionService Permissions
 @inject IAudioRouteService AudioRoutes
+@inject IAudioFocusCoordinator AudioFocus
 @inject IPlatformInfo Platform
 @inject IJSRuntime JS
 @inject ToastService Toasts
@@ -164,6 +166,14 @@
         {
             <Section Title="@L["settings.devices.speaker"]" Footer="@L["settings.devices.speakerSystem"]">
                 <ListItem Icon="@IconNames.Volume2" IconColor="@SettingsTones.Mint" Title="@L["settings.devices.speakerTest"]" Disabled="_toneTesting" OnClick="PlayToneAsync" />
+            </Section>
+        }
+
+        @if (AudioFocus.IsSupported)
+        {
+            <Section Title="@L["settings.devices.otherApps"]" DividerInset="64px">
+                <SwitchItem Icon="@IconNames.Music" IconColor="@SettingsTones.Periwinkle" Title="@L["settings.devices.pauseMusic"]" Subtitle="@L["settings.devices.pauseMusicHint"]"
+                            Checked="d.PauseOtherAudio" CheckedChanged="v => Settings.UpdateAsync(s => s.Devices.PauseOtherAudio = v)" />
             </Section>
         }
 

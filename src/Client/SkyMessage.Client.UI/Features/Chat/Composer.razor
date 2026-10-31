@@ -25,6 +25,7 @@
 @inject IPermissionService Permissions
 @inject IPlatformInfo Platform
 @inject ISettingsService Settings
+@inject IAudioFocusCoordinator AudioFocus
 @inject NavigationService Nav
 @inject LayoutService Layout
 @inject DialogService Dialogs
@@ -360,6 +361,8 @@
     private bool _canFlip;
     private CancellationTokenSource? _draftDelay;
     private CancellationTokenSource? _recordTyping;
+    /// <summary>Music in other apps stays paused while this is held (from the start of a recording to its end).</summary>
+    private IDisposable? _audioFocusHold;
     private bool _draftDirty;
     private bool _attached;
     private bool _draftRestored;
@@ -505,6 +508,26 @@
         _recorderHandle = null;
         if (recorder is not null) await recorder.DisposeAsync();
         if (composer is not null) await composer.DisposeAsync();
+        await EndDetachedRecordingAsync();
+    }
+
+    /// <summary>
+    /// recorder.js's dispose() stops a recording (or one still opening its devices) without telling .NET, so a field
+    /// that went away mid-recording (blocked, read-only) ends it here, as a cancel: music in other apps plays again,
+    /// "recording…" stops for the others and the locked recording's overlay closes.
+    /// </summary>
+    private async Task EndDetachedRecordingAsync()
+    {
+        ReleaseAudioFocus();
+        if (_recordState == "idle") return;
+        _recordState = "idle";
+        _canFlip = false;
+        StopRecordingTyping();
+        Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
+        var overlay = _recordOverlay;
+        _recordOverlay = null;
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+        StateHasChanged();
     }
 
     // ---- Public API (chat page) ----
@@ -1242,6 +1265,10 @@
         StateHasChanged();
     }
 
+    /// <summary>recorder.js: a hold turned into a recording (the devices are opening). OnRecordDone follows either way.</summary>
+    [JSInvokable]
+    public Task OnRecordStarting() => InvokeAsync(HoldAudioFocus);
+
     [JSInvokable]
     public Task OnRecordState(string state, string mode, RecordStateInfo? info) => InvokeAsync(() => HandleRecordStateAsync(state, mode, info));
 
@@ -1249,6 +1276,8 @@
     {
         var previous = _recordState;
         _recordState = state is "recording" or "locked" ? state : "idle";
+        if (_recordState == "idle") ReleaseAudioFocus();
+        else HoldAudioFocus();
         _recordMode = mode == "video" ? "video" : "voice";
         _canFlip = info?.CanFlip == true;
         if (_recordState == "recording" && previous == "idle")
@@ -1281,6 +1310,7 @@
 
     private async Task HandleRecordDoneAsync(RecordingResult? result, string reason)
     {
+        ReleaseAudioFocus();
         if (result is null)
         {
             Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
@@ -1352,6 +1382,19 @@
     private async Task FlipCameraAsync()
     {
         if (_recorderHandle is not null) await _recorderHandle.InvokeVoidAsync("flip");
+    }
+
+    /// <summary>Music and videos in other apps pause while recording (Settings › Sound and video; phone apps only).</summary>
+    private void HoldAudioFocus()
+    {
+        if (_audioFocusHold is null && AudioFocus.IsSupported) _audioFocusHold = AudioFocus.HoldForRecording();
+    }
+
+    private void ReleaseAudioFocus()
+    {
+        var hold = _audioFocusHold;
+        _audioFocusHold = null;
+        hold?.Dispose();
     }
 
     private void StartRecordingTyping()
@@ -1427,6 +1470,7 @@
         CancelDraftTimer();
         SaveDraft();
         StopRecordingTyping();
+        ReleaseAudioFocus();
         if (!string.IsNullOrWhiteSpace(_text) && _editing is null) Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
         await DetachEmojiOutsideAsync();
         if (_emojiOverlay is { IsOpen: true } emoji) await emoji.CloseAsync();

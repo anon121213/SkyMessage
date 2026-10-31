@@ -492,3 +492,13 @@ public sealed class WebAudioRouteService : IAudioRouteService
         remove { }
     }
 }
+
+/// <summary>A page cannot pause other apps' or tabs' audio (the "pause music" setting is hidden in the browser).</summary>
+public sealed class WebAudioFocusService : IAudioFocusService
+{
+    public bool IsSupported => false;
+
+    public void SetFocus(AudioFocusKind kind)
+    {
+    }
+}

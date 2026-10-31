@@ -23,22 +23,24 @@
     if (expanded)
     {
         var peer = view.IsGroup ? null : Peer(session);
-        var sharer = ScreenSharer;
+        // Someone shows their screen: it takes the stage, with the people (the presenter's camera first) in a strip.
+        var sharer = !live ? null : view.IsGroup ? ScreenSharer : peer is { HasScreen: true } ? peer : null;
+        var shareStage = sharer is not null;
         string? remoteKey = null;
-        if (live && !view.IsGroup && peer is not null)
-            remoteKey = peer.HasScreen ? $"screen:{peer.UserId}" : peer.HasVideo ? $"cam:{peer.UserId}" : null;
+        if (live && !view.IsGroup && peer is not null && !shareStage)
+            remoteKey = peer.HasVideo ? $"cam:{peer.UserId}" : null;
         var localKey = live && CameraOn ? "local-camera" : null;
         var mainIsLocal = remoteKey is null || (_swapped && localKey is not null);
         var mainKey = mainIsLocal ? localKey : remoteKey;
         var pipKey = remoteKey is null ? null : mainIsLocal ? remoteKey : localKey;
         var groupStage = live && view.IsGroup && _remote.Count > 0;
-        var heroShown = !live || (!view.IsGroup && remoteKey is null) || (view.IsGroup && _remote.Count == 0);
-        var fullBleed = live && !view.IsGroup && mainKey is not null;
+        var heroShown = !live || (!shareStage && ((!view.IsGroup && remoteKey is null) || (view.IsGroup && _remote.Count == 0)));
+        var fullBleed = live && !view.IsGroup && !shareStage && mainKey is not null;
         var incoming = view.Mode == ViewMode.Incoming;
 
         @* Shows through while the screen is dragged down to minimize (calls.js attachMinimize). *@
         <div @ref="_backdrop" class="call-backdrop" aria-hidden="true"></div>
-        <div @ref="_screen" class="call-screen @(fullBleed ? "call-screen--video" : null) @(groupStage ? "call-screen--group" : null) @(incoming ? "call-screen--incoming" : null) @(view.Mode == ViewMode.Ended ? "call-screen--ended" : null) @(leaving ? "call-screen--leaving" : null)"
+        <div @ref="_screen" class="call-screen @(fullBleed ? "call-screen--video" : null) @(groupStage || shareStage ? "call-screen--group" : null) @(incoming ? "call-screen--incoming" : null) @(view.Mode == ViewMode.Ended ? "call-screen--ended" : null) @(leaving ? "call-screen--leaving" : null)"
              role="dialog" aria-modal="true" aria-label="@view.Title" data-no-swipe-back>
             @* The call's own sky: a calm, deep night — darker overhead, a faint haze low down, one soft light drifting
                very slowly and small round stars. Hidden behind a full-screen video, still in lite mode. *@
@@ -52,6 +54,37 @@
                 {
                     @Hero(view, peer)
                 }
+                else if (sharer is not null)
+                {
+                    @* The shared screen, letterboxed and as large as the stage allows; the strip runs under it on tall
+                       screens and beside it on wide ones. *@
+                    <div class="call-share">
+                        <div class="call-share__main">
+                            <div @key="@("share")" class="call-slot" data-slot="@($"screen:{sharer.UserId}")" data-fit="contain"></div>
+                            <div class="call-share__who"><Icon Name="@IconNames.ScreenShare" Size="14" /> <span class="sm-truncate">@L.Format("calls.sharingBy", Users.NameOf(ParseId(sharer.UserId), L))</span></div>
+                        </div>
+                        @* Others sharing at the same time (groups) come right after the presenter, with a screen mark: a tap
+                           puts their screen on the stage. *@
+                        <div class="call-share__strip" data-no-minimize>
+                            @RemoteTile(sharer)
+                            @foreach (var p in _remote)
+                            {
+                                if (p.UserId != sharer.UserId && p.HasScreen)
+                                {
+                                    @RemoteTile(p, pickScreen: true)
+                                }
+                            }
+                            @MyTile()
+                            @foreach (var p in _remote)
+                            {
+                                if (p.UserId != sharer.UserId && !p.HasScreen)
+                                {
+                                    @RemoteTile(p)
+                                }
+                            }
+                        </div>
+                    </div>
+                }
                 else if (view.IsGroup)
                 {
                     @if (_remote.Count == 0)
@@ -63,22 +96,6 @@
                                 <div class="call-slot @(MirrorLocal ? "is-mirrored" : null)" data-slot="local-camera"></div>
                             </div>
                         }
-                    }
-                    else if (sharer is not null)
-                    {
-                        <div class="call-share">
-                            <div class="call-share__main">
-                                <div @key="@("share")" class="call-slot" data-slot="@($"screen:{sharer.UserId}")" data-fit="contain"></div>
-                                <div class="call-share__who"><Icon Name="@IconNames.ScreenShare" Size="14" /> <span class="sm-truncate">@L.Format("calls.sharingBy", Users.NameOf(ParseId(sharer.UserId), L))</span></div>
-                            </div>
-                            <div class="call-share__strip" data-no-minimize>
-                                @MyTile()
-                                @foreach (var p in _remote)
-                                {
-                                    @RemoteTile(p)
-                                }
-                            </div>
-                        </div>
                     }
                     else
                     {
@@ -131,11 +148,20 @@
                                     <span class="call-live-dot" aria-hidden="true"></span>
                                 }
                                 @StatusText(view, view.Status)
+                                @if (live && CanFlip && LocalQuality is 0 or 1)
+                                {
+                                    @* The flip button took the quality's place on the right: a weak connection still shows. *@
+                                    <Icon Name="@IconNames.SignalLow" Size="13" StrokeWidth="2.4" Class="call-top__weak" Title="@L["calls.quality.weak"]" />
+                                }
                             </span>
                         </div>
                     }
                 </div>
-                @if (live && !heroShown && CallUi.QualityIcon(LocalQuality) is { } qualityIcon)
+                @if (live && CanFlip)
+                {
+                    <IconButton Icon="@IconNames.SwitchCamera" Label="@L["calls.flip"]" Variant="IconButtonVariant.OnMedia" Class="call-top__btn" OnClick="SwitchCameraAsync" />
+                }
+                else if (live && !heroShown && CallUi.QualityIcon(LocalQuality) is { } qualityIcon)
                 {
                     <span class="call-top__quality @(LocalQuality <= 1 ? "is-weak" : null)" title="@(LocalQuality <= 1 ? L["calls.quality.weak"] : L["calls.quality.good"])">
                         <Icon Name="@qualityIcon" Size="18" />
@@ -204,7 +230,7 @@
             </div>
 
             @* Once the call ended the deck stays where it was and fades (the face above does not jump). *@
-            <div class="call-controls @(incoming ? "call-controls--incoming" : null) @(view.Mode == ViewMode.Ended ? "call-controls--ended" : null)" inert="@(view.Mode == ViewMode.Ended)">
+            <div class="call-controls @(incoming ? "call-controls--incoming" : null) @(!incoming && OffersScreenShare ? "call-controls--extra" : null) @(view.Mode == ViewMode.Ended ? "call-controls--ended" : null)" inert="@(view.Mode == ViewMode.Ended)">
                 @if (incoming)
                 {
                     <CallButton Icon="@IconNames.PhoneOff" Label="@L["calls.decline"]" Kind="CallButtonKind.Danger" Glow="true" OnClick="DeclineAsync" />
@@ -220,28 +246,28 @@
                 }
                 else if (live || view.Mode == ViewMode.Ended)
                 {
+                    @* The four everyday controls, always in this order: speaker, camera, microphone, hang up. Flipping the
+                       camera lives in the top bar; showing the screen (desktop) in a capsule of its own after the deck. *@
                     <div class="call-deck">
-                        <CallButton Icon="@(MicOn ? IconNames.Mic : IconNames.MicOff)" Label="@(MicOn ? L["calls.mute"] : L["calls.unmute"])" Active="!MicOn" Toggle="true"
-                                    OnClick="ToggleMicAsync" />
-                        <CallButton Icon="@(CameraOn ? IconNames.Video : IconNames.VideoOff)" Label="@(CameraOn ? L["calls.cameraOff"] : L["calls.cameraOn"])" Active="CameraOn"
-                                    Toggle="true" OnClick="ToggleCameraAsync" />
-                        @if (CanFlip)
-                        {
-                            <CallButton Icon="@IconNames.SwitchCamera" Label="@L["calls.flip"]" OnClick="SwitchCameraAsync" />
-                        }
                         @if (HasAudioMenu)
                         {
                             var routeKind = ActiveRouteKind;
                             <CallButton Icon="@CallUi.RouteIcon(routeKind)" Label="@AudioButtonLabel(routeKind)"
                                         Active="@(routeKind is not null and not AudioRouteKind.Earpiece)" OnClick="OpenAudioMenuAsync" />
                         }
-                        @if (CanScreenShare)
-                        {
-                            <CallButton Icon="@(ScreenOn ? IconNames.ScreenShareOff : IconNames.ScreenShare)" Label="@(ScreenOn ? L["calls.screenStop"] : L["calls.screen"])"
-                                        Active="ScreenOn" Toggle="true" OnClick="ToggleScreenAsync" />
-                        }
+                        <CallButton Icon="@(CameraOn ? IconNames.Video : IconNames.VideoOff)" Label="@(CameraOn ? L["calls.cameraOff"] : L["calls.cameraOn"])" Active="CameraOn"
+                                    Toggle="true" OnClick="ToggleCameraAsync" />
+                        <CallButton Icon="@(MicOn ? IconNames.Mic : IconNames.MicOff)" Label="@(MicOn ? L["calls.mute"] : L["calls.unmute"])" Active="!MicOn" Toggle="true"
+                                    OnClick="ToggleMicAsync" />
                         <CallButton Icon="@IconNames.PhoneOff" Label="@L["calls.hangup"]" Kind="CallButtonKind.Danger" Class="call-btn--hangup" OnClick="HangupAsync" />
                     </div>
+                    @if (OffersScreenShare)
+                    {
+                        <div class="call-deck call-deck--extra">
+                            <CallButton Icon="@(ScreenOn ? IconNames.ScreenShareOff : IconNames.ScreenShare)" Label="@(ScreenOn ? L["calls.screenStop"] : L["calls.screen"])"
+                                        Active="ScreenOn" Toggle="true" Disabled="!CanScreenShare" OnClick="ToggleScreenAsync" />
+                        </div>
+                    }
                 }
             </div>
 
@@ -424,11 +450,13 @@
         </CallTile>
     };
 
-    private RenderFragment RemoteTile(RemoteMediaInfo p) => __builder =>
+    private RenderFragment RemoteTile(RemoteMediaInfo p, bool pickScreen = false) => __builder =>
     {
         var id = ParseId(p.UserId);
-        <CallTile @key="p.UserId" SlotKey="@($"cam:{p.UserId}")" Name="@Users.NameOf(id, L)" HasVideo="p.HasVideo" Muted="p.IsMuted" Speaking="p.IsSpeaking"
-                  Active="p.IsActiveSpeaker" Quality="p.Quality" MutedLabel="@L["calls.muted"]" WeakLabel="@L["calls.quality.weak"]">
+        var name = Users.NameOf(id, L);
+        <CallTile @key="p.UserId" SlotKey="@($"cam:{p.UserId}")" Name="@name" HasVideo="p.HasVideo" Muted="p.IsMuted" Speaking="p.IsSpeaking"
+                  Active="p.IsActiveSpeaker" Quality="p.Quality" MutedLabel="@L["calls.muted"]" WeakLabel="@L["calls.quality.weak"]"
+                  OnPick="@(pickScreen ? EventCallback.Factory.Create(this, () => ShowScreenOf(p.UserId)) : default)" PickLabel="@(pickScreen ? L.Format("calls.watchScreenOf", name) : null)">
             <AvatarContent>
                 <UserAvatar UserId="id" Size="@(Layout.IsPhone ? 68 : 92)" />
             </AvatarContent>

@@ -34,7 +34,11 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
             var handler = new Handler(Looper.MainLooper!);
             _audio?.RegisterAudioDeviceCallback(new DeviceCallback(this), handler);
             if (OperatingSystem.IsAndroidVersionAtLeast(31))
-                _audio?.AddOnCommunicationDeviceChangedListener(Java.Util.Concurrent.Executors.NewSingleThreadExecutor()!, new CommunicationListener(this));
+            {
+                var executor = Java.Util.Concurrent.Executors.NewSingleThreadExecutor()!;
+                _audio?.AddOnCommunicationDeviceChangedListener(executor, new CommunicationListener(this));
+                _audio?.AddOnModeChangedListener(executor, new ModeListener(this));
+            }
         }
         catch (Exception ex)
         {
@@ -49,6 +53,12 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
         add { lock (_gate) _handlers += value; }
         remove { lock (_gate) _handlers -= value; }
     }
+
+    /// <summary>
+    /// Android 12+: the audio mode changed (the WebView switches to communication mode when it opens the microphone
+    /// and back when it closes it). Older versions report mode changes to nobody. Raised on a background thread.
+    /// </summary>
+    internal event Action? ModeChanged;
 
     public Task<IReadOnlyList<AudioRoute>> GetRoutesAsync()
     {
@@ -68,6 +78,8 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
         _preferredKind = kind;
         _preferredId = null;
         Apply();
+        // Android 11 and older report speakerphone/SCO switches to nobody: tell the call (proximity lock) and the UI.
+        RaiseChanged();
         return Task.CompletedTask;
     }
 
@@ -76,7 +88,50 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
         _preferredId = routeId;
         _preferredKind = KindOfRouteId(routeId);
         Apply();
+        RaiseChanged();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Where call audio plays right now (null when unknown). Android 12+: the communication device, which defaults to
+    /// the earpiece on phones; older versions: the speakerphone/SCO switches, else a wired headset, else the earpiece.
+    /// </summary>
+    internal AudioRouteKind? CurrentKind
+    {
+        get
+        {
+            try
+            {
+                if (_audio is null) return null;
+                if (OperatingSystem.IsAndroidVersionAtLeast(31)) return _audio.CommunicationDevice is { } device ? KindOf(device.Type) : null;
+                return LegacyRoutes().FirstOrDefault(r => r.IsActive)?.Kind;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Reading the audio route failed");
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether call audio is on the phone's communication path (MODE_IN_COMMUNICATION, set by the WebView while it
+    /// captures the microphone). Only then can it play on the earpiece; otherwise the WebView plays it like media.
+    /// </summary>
+    internal bool IsInCommunication
+    {
+        get
+        {
+            try
+            {
+                return _audio?.Mode == Mode.InCommunication;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Reading the audio mode failed");
+                return false;
+            }
+        }
     }
 
     /// <summary>
@@ -295,5 +350,20 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
     private sealed class CommunicationListener(AndroidAudioRouteService owner) : Java.Lang.Object, AudioManager.IOnCommunicationDeviceChangedListener
     {
         public void OnCommunicationDeviceChanged(AudioDeviceInfo? device) => owner.RaiseChanged();
+    }
+
+    private sealed class ModeListener(AndroidAudioRouteService owner) : Java.Lang.Object, AudioManager.IOnModeChangedListener
+    {
+        public void OnModeChanged(int mode)
+        {
+            try
+            {
+                owner.ModeChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                owner._logger.LogDebug(ex, "Audio mode handler failed");
+            }
+        }
     }
 }
