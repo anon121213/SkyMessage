@@ -151,14 +151,15 @@ internal static class PianoPack
         }
     });
 
-    // Four short, low felt fifths E♭4+B♭4, each a little softer.
+    // Four short, low felt fifths E♭4+B♭4, each a little softer. Held 140 ms (still short beeps, 0.32 s apart): at
+    // 100 ms the strokes were too brief to reach the call-progress loudness under the true-peak ceiling (1 LU short).
     private static Tone Busy() => new(1.5, Loop: false, Wet: 0.18, FadeOut: 0.2, Play: s =>
     {
         for (var i = 0; i < 4; i++)
         {
             double t = 0.012 + i * 0.32, vel = 0.62 - 0.05 * i;
-            s.Felt(t, "Eb4", vel, hold: 0.10, release: 0.045);
-            s.Felt(t + 0.006, "Bb4", vel * 0.85, hold: 0.10, release: 0.045);
+            s.Felt(t, "Eb4", vel, hold: 0.14, release: 0.05);
+            s.Felt(t + 0.006, "Bb4", vel * 0.85, hold: 0.14, release: 0.05);
         }
     });
 

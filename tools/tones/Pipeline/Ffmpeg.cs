@@ -11,7 +11,7 @@ internal static class Ffmpeg
 {
     private const string Executable = "ffmpeg";
 
-    /// <summary>Fails early, with a hint, when ffmpeg or its libopus encoder is missing.</summary>
+    /// <summary>Fails early, with a hint, when ffmpeg or its libvorbis encoder is missing.</summary>
     public static void EnsureAvailable()
     {
         string encoders;
@@ -23,19 +23,20 @@ internal static class Ffmpeg
         {
             throw new InvalidOperationException("ffmpeg is not on PATH (macOS: brew install ffmpeg; Linux: apt install ffmpeg).", ex);
         }
-        if (!encoders.Contains("libopus", StringComparison.Ordinal))
-            throw new InvalidOperationException("This ffmpeg has no libopus encoder; install a build with --enable-libopus.");
+        if (!encoders.Contains("libvorbis", StringComparison.Ordinal))
+            throw new InvalidOperationException("This ffmpeg has no libvorbis encoder; install a build with --enable-libvorbis.");
     }
 
     /// <summary>
-    /// Ogg Opus, mono, 48 kbps VBR at the best encoder effort. Opus runs at 48 kHz, so the input already is 48 kHz:
-    /// ffmpeg resamples nothing, and the stream's pre-skip and end trimming make a decoder return exactly the input
-    /// length (a loop cycle stays a loop cycle).
+    /// Ogg Vorbis, mono, VBR quality 6 (about 40 kbps on these mostly quiet sounds; transparent for mallets and bells).
+    /// Vorbis, not Opus: Android plays Ogg Opus only from Android 10, the app supports Android 8, and every Android
+    /// version's notification player and every browser engine the apps run in decode Ogg Vorbis. A loop gets the
+    /// ANDROID_LOOP tag, which makes Android's player loop it in the extractor, without a gap at the seam.
     /// </summary>
-    public static void EncodeOpus(string wav48k, string ogg) =>
-        Run(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", wav48k,
-            "-c:a", "libopus", "-b:a", "48k", "-vbr", "on", "-compression_level", "10", "-application", "audio", "-frame_duration", "20",
-            "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact", ogg]);
+    public static void EncodeVorbis(string wav, string ogg, bool loop) =>
+        Run(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", wav,
+            "-c:a", "libvorbis", "-q:a", "6", "-map_metadata", "-1", .. (loop ? new[] { "-metadata", "ANDROID_LOOP=true" } : []),
+            "-fflags", "+bitexact", "-flags:a", "+bitexact", ogg]);
 
     /// <summary>
     /// Apple notification sounds: IMA4 ADPCM in CAF at 22.05 kHz (iOS plays only PCM, IMA4, µ-law and a-law

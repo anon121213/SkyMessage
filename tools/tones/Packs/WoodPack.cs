@@ -129,7 +129,9 @@ internal static class WoodPack
 
     // busy «Занято»: the wooden version of the familiar "short beeps": four short, low marimba strokes on an
     // open fifth, A4 (the pitch of the usual busy tone) over a softer D4 that leads by 18 ms (a two-mallet
-    // flam, warmer than a hard unison), one every 0.36 s, each a little softer.
+    // flam, warmer than a hard unison), one every 0.36 s, each a little softer. The bars ring a little longer
+    // than a plain stroke (decay 0.9) so the short strokes reach the call-progress loudness under the true-peak
+    // ceiling (at 0.75 they fell 0.4 LU short).
     //   0.02 · 0.38 · 0.74 · 1.10: D4+A4  f, mf, mf, mp                                                1.50 s
     private static Tone Busy()
     {
@@ -137,8 +139,8 @@ internal static class WoodPack
         double[] velocity = [0.85, 0.80, 0.77, 0.73];
         for (var i = 0; i < 4; i++)
         {
-            hits.Add(Marimba(0.020 + i * 0.36, "D4", velocity[i] * 0.72, decay: 0.75, ring: 0.6));
-            hits.Add(Marimba(0.038 + i * 0.36, "A4", velocity[i], decay: 0.75, ring: 0.6));
+            hits.Add(Marimba(0.020 + i * 0.36, "D4", velocity[i] * 0.72, decay: 0.9, ring: 0.6));
+            hits.Add(Marimba(0.038 + i * 0.36, "A4", velocity[i], decay: 0.9, ring: 0.6));
         }
         return new("busy", 1.5, hits.ToArray()) { FadeOut = 0.16 };
     }

@@ -1,15 +1,18 @@
 // SkyMessage tones: renders the three sound packs and writes every sound file the apps play.
 //
-//   dotnet run --project tools/tones                      regenerate everything in the repository (needs ffmpeg + libopus)
+//   dotnet run --project tools/tones                      regenerate everything in the repository (needs ffmpeg + libvorbis)
 //   dotnet run --project tools/tones -- --out DIR         write the same tree under DIR instead, to compare
 //   dotnet run --project tools/tones -- --masters DIR     also keep the 44.1 kHz float WAV masters (DIR/<pack>/<key>.wav)
+//                                                         and the strike times (DIR/onsets.json)
+//   python3 tools/tones/analyze.py                        independent QA: renders into a temp dir, measures what the apps
+//                                                         decode, and checks the repository holds exactly those files
 //
 // Every sound is our own synthesis from first principles (Packs/*.cs): no samples, no third-party sound assets,
 // nothing modelled on another phone's or messenger's sounds. ffmpeg only encodes.
 //
 // Per sound: render (44.1 kHz mono) -> set its loudness: the BS.1770 K-weighted level of its loudest 200 ms goes to the
 // target of its group, the same in every pack, with the true peak kept at or under -1.5 dBTP -> resample to 48 kHz
-// (windowed sinc; a loop is resampled as a loop, so its seam stays seamless) -> Ogg Opus 48 kbps, the same file twice:
+// (windowed sinc; a loop is resampled as a loop, so its seam stays seamless) -> Ogg Vorbis, the same file twice:
 //   src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.ogg          Android res/raw, notification channels
 //   src/Client/SkyMessage.Client.UI/wwwroot/sounds/<pack>/<key>.ogg        in-app playback (js/sounds.js)
 // plus src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.caf (IMA4, iOS/Mac notification sounds) and
@@ -60,8 +63,9 @@ var failures = new List<string>();
 var manifest = new SortedDictionary<string, SortedDictionary<string, object>>(StringComparer.Ordinal);
 var written = new HashSet<string>(StringComparer.Ordinal);
 var loudness = new Dictionary<(string Pack, string Key), double>();
+var onsets = new SortedDictionary<string, SortedDictionary<string, IReadOnlyList<double>>>(StringComparer.Ordinal);
 
-Console.WriteLine($"{"sound",-16} {"len",6} {"loop",4} {"gain",6} {"tpeak",6} {"S200",6} {"M400",6} {"int",6} {">6k%",7} {"ogg KB",6} {"caf KB",6} {"opusPk",6}  checks");
+Console.WriteLine($"{"sound",-16} {"len",6} {"loop",4} {"gain",6} {"tpeak",6} {"S200",6} {"M400",6} {"int",6} {">6k%",7} {"ogg KB",6} {"caf KB",6} {"oggPk",6}  checks");
 foreach (var (pack, render) in packs)
 {
     var tones = render();
@@ -69,9 +73,11 @@ foreach (var (pack, render) in packs)
     if (!keys.SequenceEqual(ToneKeys.All))
         failures.Add($"{pack}: renders [{string.Join(", ", keys)}], the catalog expects [{string.Join(", ", ToneKeys.All)}]");
     var entries = new SortedDictionary<string, object>(StringComparer.Ordinal);
+    onsets[pack] = new SortedDictionary<string, IReadOnlyList<double>>(StringComparer.Ordinal);
     foreach (var tone in tones)
     {
         var name = $"{pack}/{tone.Key}";
+        onsets[pack][tone.Key] = tone.Onsets;
         var problems = new List<string>();
 
         // Loudness: one target per group, true peak under the ceiling.
@@ -116,7 +122,7 @@ foreach (var (pack, render) in packs)
             File.Copy(wav44, Path.Combine(masters, pack, $"{tone.Key}.wav"), overwrite: true);
         }
         var ogg = Path.Combine(temp.FullName, $"{pack}_{tone.Key}.ogg");
-        Ffmpeg.EncodeOpus(wav48, ogg);
+        Ffmpeg.EncodeVorbis(wav48, ogg, tone.Loop);
         var raw = Path.Combine(rawDir, $"tone_{pack}_{tone.Key}.ogg");
         var web = Path.Combine(webDir, pack, $"{tone.Key}.ogg");
         var caf = Path.Combine(rawDir, $"tone_{pack}_{tone.Key}.caf");
@@ -126,9 +132,11 @@ foreach (var (pack, render) in packs)
         Ffmpeg.EncodeCaf(wav44, caf);
         written.UnionWith([raw, web, caf]);
 
-        // What a player gets back.
+        // What a player gets back. A loop must decode to exactly one cycle. Vorbis's end trimming may leave a one-shot
+        // a block longer or shorter; that is fine while the difference is silence (the end is faded out).
         var decoded = Ffmpeg.Decode(ogg);
-        if (decoded.Length != play.Length) problems.Add($"decodes to {decoded.Length} samples, not {play.Length}");
+        if (tone.Loop && decoded.Length != play.Length) problems.Add($"decodes to {decoded.Length} samples, not {play.Length}");
+        if (!tone.Loop && LengthProblem(decoded, play) is { } lengthProblem) problems.Add(lengthProblem);
         var decodedPeak = Audio.Db(Audio.Peak(decoded));
         if (decodedPeak > -0.5) problems.Add($"decoded peak {decodedPeak:0.00} dBFS");
         var level = measured + gainDb;
@@ -138,7 +146,7 @@ foreach (var (pack, render) in packs)
             problems.Add($"decoded loop seam step {Math.Abs(decoded[0] - decoded[^1]):0.0000}");
         loudness[(pack, tone.Key)] = level;
         entries[tone.Key] = tone.Loop ? new { samples = play.Length, loop = true } : new { samples = play.Length };
-        Console.WriteLine($"{name,-16} {master.Length / (double)RenderRate,6:0.00} {(tone.Loop ? "yes" : ""),4} {gainDb,6:+0.00;-0.00} {truePeak,6:0.00} {level,6:0.00} " +
+        Console.WriteLine($"{name,-16} {master.Length / (double)RenderRate,6:0.00} {(tone.Loop ? "yes" : ""),4} {gainDb,6:+0.00;-0.00;0.00} {truePeak,6:0.00} {level,6:0.00} " +
                           $"{Audio.MaxLoudness(master, RenderRate, tone.Loop, 400),6:0.00} {Audio.IntegratedLoudness(master, RenderRate, tone.Loop),6:0.00} " +
                           $"{above6k * 100,7:0.0000} {new FileInfo(raw).Length / 1024.0,6:0.0} {new FileInfo(caf).Length / 1024.0,6:0.0} {decodedPeak,6:0.00}  " +
                           (problems.Count == 0 ? "ok" : string.Join("; ", problems)));
@@ -160,6 +168,9 @@ var manifestPath = Path.Combine(webDir, "sounds.json");
 File.WriteAllText(manifestPath, JsonSerializer.Serialize(new { version = 1, rate = PlayRate, packs = manifest },
     new JsonSerializerOptions { WriteIndented = true }) + "\n");
 written.Add(manifestPath);
+// The strike times, for analyze.py's click check (it tells a mallet's attack from a defect by them).
+if (masters is not null)
+    File.WriteAllText(Path.Combine(masters, "onsets.json"), JsonSerializer.Serialize(new { rate = RenderRate, onsets }) + "\n");
 
 // Files of sounds that no longer exist, and the single-pack WAVs of earlier versions.
 foreach (var stale in Directory.EnumerateFiles(rawDir, "tone_*").Concat(Directory.EnumerateFiles(webDir, "*", SearchOption.AllDirectories)))
@@ -191,6 +202,18 @@ static double TargetOf(string key) => key switch
     "busy" => -12.0,
     _ => -11.0,
 };
+
+// A one-shot may decode up to 2048 samples (43 ms) longer or shorter than it was encoded, as long as what is added or
+// lost is silence (under -60 dBFS).
+static string? LengthProblem(double[] decoded, double[] encoded)
+{
+    var difference = decoded.Length - encoded.Length;
+    if (difference == 0) return null;
+    if (Math.Abs(difference) > 2048) return $"decodes to {decoded.Length} samples, not {encoded.Length}";
+    var rest = difference > 0 ? decoded[encoded.Length..] : encoded[decoded.Length..];
+    var level = Audio.Db(Audio.Peak(rest));
+    return level > -60 ? $"decodes {difference:+0;-0} samples off, and that part is not silent ({level:0} dBFS)" : null;
+}
 
 static string FindRepoRoot()
 {
