@@ -166,7 +166,7 @@ public sealed class ChunkedMediaStreamTests
         await stream.ReadExactlyAsync(first, TestContext.Current.CancellationToken);
         first.ShouldBe(data.AsSpan(0, ChunkSize).ToArray());
         await Should.ThrowAsync<CryptographicException>(async () =>
-            await stream.ReadAsync(new byte[10], TestContext.Current.CancellationToken));
+            await stream.ReadExactlyAsync(new byte[10], TestContext.Current.CancellationToken));
     }
 
     [Fact]

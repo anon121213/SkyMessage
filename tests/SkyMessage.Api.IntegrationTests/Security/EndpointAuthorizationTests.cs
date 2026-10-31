@@ -17,7 +17,7 @@ namespace SkyMessage.Api.IntegrationTests.Security;
 [Collection(ApiCollection.Name)]
 public sealed partial class EndpointAuthorizationTests(ApiFactory factory)
 {
-    /// <summary>SPEC §3 ("exhaustive") plus the §6.2 failover helpers proof/probe.</summary>
+    /// <summary>SPEC §3 ("exhaustive") plus the §6.2 failover helpers proof/probe and the app update check.</summary>
     private static readonly HashSet<string> AnonymousApi =
     [
         "POST " + ApiRoutes.Auth.Register,
@@ -30,12 +30,15 @@ public sealed partial class EndpointAuthorizationTests(ApiFactory factory)
         "GET " + ApiRoutes.Media.Content,
         "GET " + ApiRoutes.Media.Thumbnail,
         "POST " + ApiRoutes.Calls.LiveKitWebhook,
+        "GET " + ApiRoutes.AppVersion,
+        "GET " + ApiRoutes.LatestApk,
     ];
 
-    /// <summary>Non-API anonymous plumbing: health, the SPA/API fallbacks, the LiveKit proxy (own token) and dev-only docs.</summary>
+    /// <summary>Non-API anonymous plumbing: health, the SPA/API/updates fallbacks, the LiveKit proxy (own token) and dev-only docs.</summary>
     private static bool IsAllowedInfrastructure(string pattern) =>
         pattern == ApiRoutes.Health
         || pattern == "api/{**path}"
+        || pattern == ApiRoutes.Updates + "/{**path}"
         || pattern == "{*path:nonfile}"
         || pattern == HubRoutes.LiveKitProxy.TrimStart('/')
         || pattern.StartsWith(HubRoutes.LiveKitProxy.TrimStart('/') + "/", StringComparison.Ordinal)
