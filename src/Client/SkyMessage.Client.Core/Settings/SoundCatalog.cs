@@ -4,8 +4,8 @@ namespace SkyMessage.Client.Core.Settings;
 /// The app's sounds: three packs of our own synthesized sounds (rendered by tools/tones, no samples), each with the
 /// same keys, plus the user's own sounds (<see cref="CustomSound"/>). The selected pack drives the message tone, the
 /// ringtone and the call-progress sounds; the settings pick a key within it. This class knows the valid values and
-/// repairs anything else, so settings saved by older versions (one set of tones, no pack: the wood sounds of today)
-/// keep their choice.
+/// repairs anything else. Settings saved by older versions (one set of tones, no pack) keep their key in the wood
+/// pack; those keys sound different now, since the earlier set is not one of the packs.
 /// </summary>
 public static class SoundCatalog
 {

@@ -79,8 +79,8 @@ public sealed class NotificationSettings
     public bool MentionsBypassMute { get; set; } = true;
     /// <summary>
     /// Sound pack (<see cref="SoundCatalog.Packs"/>: wood, bells, piano — our own synthesized sounds). It drives the
-    /// message tone, the ringtone and the call sounds. Settings saved before packs existed have none: they get "wood",
-    /// whose sounds are the ones those versions played.
+    /// message tone, the ringtone and the call sounds. Settings saved before packs existed have none: they get "wood"
+    /// and keep their tone's key, though it sounds different there (the earlier single set of tones is gone).
     /// </summary>
     public string SoundPack { get; set; } = SoundCatalog.DefaultPack;
     /// <summary>A key of the pack's message tones, "none", or "custom" (<see cref="CustomMessageTone"/>).</summary>

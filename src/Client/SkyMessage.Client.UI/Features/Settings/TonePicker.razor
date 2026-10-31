@@ -28,7 +28,8 @@
                 }
                 else
                 {
-                    <span class="tone-own__actions">
+                    @* Enter or Space on these buttons must not reach the row's keyboard handler, which selects the sound. *@
+                    <span class="tone-own__actions" @onkeydown:stopPropagation="true">
                         <IconButton Icon="@IconNames.Upload" Label="@L["settings.notifications.customReplace"]" Size="38" StopPropagation="true" OnClick="OnImport" />
                         <IconButton Icon="@IconNames.Trash2" Label="@L["settings.notifications.customRemove"]" Size="38" StopPropagation="true" OnClick="OnRemove" />
                     </span>

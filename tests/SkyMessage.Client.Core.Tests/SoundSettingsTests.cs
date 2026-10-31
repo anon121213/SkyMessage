@@ -48,7 +48,8 @@ public sealed class SoundSettingsTests
     [InlineData("none", "classic")]
     public async Task Settings_saved_before_packs_keep_their_tones_in_the_wood_pack(string messageTone, string ringtone)
     {
-        // What versions with a single set of tones stored: no pack, no own sounds.
+        // What versions with a single set of tones stored: no pack, no own sounds. The key is kept; in the wood pack it
+        // is a different sound from the one those versions played.
         var n = await LoadAsync($$$"""{"notifications":{"enabled":true,"sound":true,"messageTone":"{{{messageTone}}}","ringtone":"{{{ringtone}}}"}}""");
 
         n.SoundPack.ShouldBe(SoundCatalog.Wood);
