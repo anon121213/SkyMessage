@@ -1,5 +1,6 @@
 @* Root component hosted by SkyMessage.App (BlazorWebView) and SkyMessage.Web (WebAssembly): starts Core once,
-   applies theme/layout, gates pages by sign-in state and catches unexpected errors. *@
+   applies theme/layout, gates pages by sign-in state, catches unexpected errors and reloads the web client when the
+   updater asks (a new one was deployed). *@
 @implements IAsyncDisposable
 @inject IClientBootstrapper Bootstrapper
 @inject IAuthService Auth
@@ -10,6 +11,7 @@
 @inject DialogService Dialogs
 @inject AppJs Js
 @inject UiDispatcher Dispatcher
+@inject IAppUpdateService Updates
 @inject ILogger<Routes> Logger
 
 <ErrorBoundary @ref="_boundary">
@@ -77,6 +79,7 @@
         Auth.Changed += OnAuthChanged;
         L.Changed += OnLanguageChanged;
         Nav.Changed += OnNavigated;
+        Updates.ReloadRequested += OnReloadRequested;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -180,11 +183,14 @@
 
     private void Recover() => _boundary?.Recover();
 
+    private void OnReloadRequested() => _ = InvokeAsync(Nav.ReloadAppAsync);
+
     public ValueTask DisposeAsync()
     {
         Auth.Changed -= OnAuthChanged;
         L.Changed -= OnLanguageChanged;
         Nav.Changed -= OnNavigated;
+        Updates.ReloadRequested -= OnReloadRequested;
         return ValueTask.CompletedTask;
     }
 }

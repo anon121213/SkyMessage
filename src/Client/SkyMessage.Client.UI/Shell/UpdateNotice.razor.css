@@ -2,12 +2,13 @@
 .update-card {
     position: relative;
     display: flex;
-    align-items: center;
-    gap: 12px;
+    align-items: flex-start;
+    gap: 14px;
     width: min(100%, 28rem);
-    padding: 10px 6px 10px 12px;
+    padding: 14px 8px 14px 14px;
     border-radius: var(--sm-radius-xl);
     pointer-events: auto;
+    overflow: hidden;
     animation: update-card-in 560ms var(--sm-spring-soft) backwards;
 }
 
@@ -16,24 +17,85 @@
     animation: update-card-out 200ms var(--sm-ease-in) forwards;
 }
 
+/* A flat accent disc; warnings (a required update, a refused one) use the warm gold one. */
 .update-card__disc {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.625rem;
-    height: 2.625rem;
+    width: 2.875rem;
+    height: 2.875rem;
     border-radius: 50%;
+    background: var(--sm-accent);
+    color: #FFFFFF;
+}
+
+.update-card--warning .update-card__disc {
     background: var(--sm-gold);
     color: #4A1A06;
 }
 
-.update-card__text {
+.update-card__body {
     flex: 1 1 auto;
     min-width: 0;
+    padding-top: 1px;
+}
+
+.update-card__title {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+}
+
+.update-card__text {
+    margin-top: 2px;
     font-size: 0.875rem;
+    line-height: 1.42;
+    color: var(--sm-text-2);
+    text-wrap: pretty;
+}
+
+/* The plain warning has no title: its sentence is the message. */
+.update-card__title + .update-card__text { margin-top: 2px; }
+.update-card__body > .update-card__text:first-child {
+    margin-top: 0;
+    padding-top: 2px;
     font-weight: 500;
-    line-height: 1.4;
+    color: var(--sm-text);
+}
+
+/* Download progress: a thin accent thread that grows (transform only). */
+.update-card__progress {
+    position: relative;
+    height: 0.3125rem;
+    margin-top: 10px;
+    margin-right: 6px;
+    border-radius: 999px;
+    background: var(--sm-accent-soft);
+    overflow: hidden;
+}
+
+.update-card__progress-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--sm-grad);
+    transform-origin: left center;
+    transition: transform var(--sm-dur) var(--sm-ease);
+}
+
+.update-card__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.update-card ::deep .update-card__close {
+    position: relative;
+    flex-shrink: 0;
+    margin: -4px 0 0 -6px;
 }
 
 @keyframes update-card-in {

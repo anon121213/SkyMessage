@@ -296,6 +296,24 @@ public sealed class NavigationService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Web: loads the page again (a new web client was deployed). Overlays close first, so no stale overlay entry
+    /// stays in the history; the current address is kept, so the same chat or screen opens.
+    /// </summary>
+    public async Task ReloadAppAsync()
+    {
+        if (_disposed) return;
+        try
+        {
+            if (_overlays.Count > 0) await CloseAllOverlaysAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Closing overlays before the reload failed");
+        }
+        _nav.Refresh(forceReload: true);
+    }
+
     public void OpenUser(Guid userId) => NavigateTo($"/user/{userId}");
 
     public void OpenUsername(string username) => NavigateTo(DeepLinks.UserProfilePath(Uri.EscapeDataString(username.TrimStart('@'))));

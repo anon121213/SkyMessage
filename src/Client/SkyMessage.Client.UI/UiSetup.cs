@@ -44,6 +44,7 @@ public static class UiSetup
         services.TryAddScoped<LinkService>();
         services.TryAddScoped<ShareHelper>();
         services.TryAddScoped<ChatActions>();
+        services.TryAddScoped<AppUpdatePrompts>();
         return services;
     }
 }

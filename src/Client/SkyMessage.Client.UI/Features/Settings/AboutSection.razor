@@ -1,5 +1,5 @@
-@* About: the logo, the name and version, app and server versions, and the licenses of everything third-party that
-   ships in the apps. *@
+@* About: the logo, the name and version, app and server versions, updates (AboutUpdates) and the licenses of
+   everything third-party that ships in the apps. *@
 @inherits UiComponentBase
 @inject IPlatformInfo Platform
 @inject IServerEndpointService Endpoints
@@ -23,6 +23,8 @@
         <ListItem Icon="@IconNames.Hash" IconColor="@SettingsTones.Violet" Title="@L["settings.about.appVersion"]" Meta="@Platform.AppVersion" OnClick="CopyVersionAsync" />
         <ListItem Icon="@PlatformIcon" IconColor="@SettingsTones.Sky" Title="@L["settings.about.platform"]" Meta="@PlatformText" Multiline="true" />
     </Section>
+
+    <AboutUpdates />
 
     <Section Title="@L["settings.about.server"]" DividerInset="64px">
         <ListItem Icon="@IconNames.Server" IconColor="@SettingsTones.Lagoon" Title="@(info?.Name ?? Endpoints.BaseUri.Host)" Subtitle="@Endpoints.BaseUri.ToString()"

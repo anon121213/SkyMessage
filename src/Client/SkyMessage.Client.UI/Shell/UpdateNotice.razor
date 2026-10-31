@@ -1,33 +1,176 @@
-@* "Please update the app" card when the server requires a newer client (ServerInfoDto.MinClientVersion): glass with a
-   flat warm disc, dropping in at the top. Dismissible for this session; shown again on the next start while the app stays
-   outdated. *@
+@* The update card at the top of the chat list: glass with a flat disc, dropping in once. Android: "update ready" with
+   Update (the explainer for the install permission comes first, once by itself), progress while a download the user
+   started or a required one runs, and failures in plain words. Web: a new client was deployed, Update reloads. An
+   app the server no longer supports (ServerInfoDto.MinClientVersion) that cannot update itself keeps the plain
+   warning. Dismissible for this session; automatic background updates never show a card. *@
 @inherits UiComponentBase
+@inject IAppUpdateService Updates
+@inject AppUpdatePrompts Prompts
 @inject IServerEndpointService Endpoints
 @inject IPlatformInfo Platform
+@inject ISettingsService Settings
+@inject FormatService Format
 
-@if (!_dismissed && AppVersionCheck.IsOutdated(Platform.AppVersion, Endpoints.Info?.MinClientVersion))
+@{
+    var card = Current();
+}
+@if (card is { } shown && _dismissed != shown.Key)
 {
-    <div class="update-card sm-glass sm-glass--strong @(_leaving ? "update-card--leaving" : null)" role="status">
-        <span class="update-card__disc" aria-hidden="true"><Icon Name="@IconNames.CloudDownload" Size="22" StrokeWidth="2.2" /></span>
-        <span class="update-card__text">@L["app.updateRequired"]</span>
-        <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="32" Class="update-card__close" OnClick="DismissAsync" />
+    var status = Updates.Status;
+    <div class="update-card sm-glass sm-glass--strong @(_leaving ? "update-card--leaving" : null) @(shown.Warning ? "update-card--warning" : null)"
+         role="status">
+        <span class="update-card__disc" aria-hidden="true"><Icon Name="@shown.Icon" Size="22" StrokeWidth="2.2" /></span>
+        <div class="update-card__body">
+            @if (shown.Title is not null)
+            {
+                <div class="update-card__title">@shown.Title</div>
+            }
+            <div class="update-card__text">@shown.Text</div>
+            @if (shown.Kind == CardKind.Downloading)
+            {
+                <div class="update-card__progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent(status.Progress)">
+                    <span class="update-card__progress-fill" style="@($"transform: scaleX({status.Progress.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)})")"></span>
+                </div>
+            }
+            @if (shown.Action is not null)
+            {
+                <div class="update-card__actions">
+                    <Button Size="ButtonSize.Small" Icon="@shown.ActionIcon" Loading="@(shown.Kind == CardKind.Installing || _busy)"
+                            OnClick="RunAsync">@shown.Action</Button>
+                </div>
+            }
+        </div>
+        @if (shown.Kind != CardKind.Installing)
+        {
+            <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="32" Class="update-card__close" OnClick="() => DismissAsync(shown.Key)" />
+        }
     </div>
 }
 
 @code {
     private const int LeaveMs = 200;
-    private bool _dismissed;
+    private string? _dismissed;
     private bool _leaving;
+    private bool _busy;
+    // The user started this download from the card: its progress stays in view (automatic ones run unseen).
+    private int _startedHere;
+    private bool _permissionAskQueued;
 
-    protected override void OnInitialized() => RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+    private enum CardKind { Web, Ready, Installing, Downloading, Available, Failed, Refused, Outdated }
 
-    private async Task DismissAsync()
+    private sealed record Card(CardKind Kind, string Key, string Icon, string? Title, string Text, string? Action = null,
+        string? ActionIcon = null, bool Warning = false);
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+        RenderOn(h => Updates.Changed += h, h => Updates.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // The first ready update without the install permission: explain it once, by itself.
+        var status = Updates.Status;
+        if (_permissionAskQueued || !Updates.CanSelfUpdate || status.Phase != AppUpdatePhase.Ready || !status.NeedsInstallPermission) return;
+        _permissionAskQueued = true;
+        _ = AskPermissionLaterAsync();
+    }
+
+    private async Task AskPermissionLaterAsync()
+    {
+        // Let the chat list settle first, like the notification prompt.
+        await Task.Delay(1500);
+        if (IsDisposed || !Updates.Status.NeedsInstallPermission || Updates.Status.Phase != AppUpdatePhase.Ready) return;
+        await Prompts.AskPermissionOnceAsync();
+    }
+
+    private Card? Current()
+    {
+        var status = Updates.Status;
+        var outdated = AppVersionCheck.IsOutdated(Platform.AppVersion, Endpoints.Info?.MinClientVersion);
+        if (!Platform.IsNativeApp)
+        {
+            if (status.NewWebVersion is { } web)
+                return new Card(CardKind.Web, "web:" + web, IconNames.RefreshCw, L["app.update.web.title"], L["app.update.web.text"],
+                    L["app.update.action.reload"], IconNames.RefreshCw);
+            return null;
+        }
+
+        if (Updates.CanSelfUpdate && status.Release is { } release)
+        {
+            var required = status.Required || outdated;
+            var userDriven = required || !Settings.Current.Updates.AutoUpdate || _startedHere == release.VersionCode;
+            var key = release.VersionCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var name = release.VersionName;
+            switch (status.Phase)
+            {
+                case AppUpdatePhase.Ready:
+                    return new Card(CardKind.Ready, "ready:" + key, IconNames.RefreshCw, L["app.update.ready.title"],
+                        L.Format("app.update.ready.text", name), L["app.update.action.install"], IconNames.RefreshCw);
+                case AppUpdatePhase.Installing:
+                    return new Card(CardKind.Installing, "ready:" + key, IconNames.RefreshCw, L["app.update.installing.title"],
+                        L["app.update.installing.text"], L["app.update.action.install"], IconNames.RefreshCw);
+                case AppUpdatePhase.Downloading when userDriven:
+                    return new Card(CardKind.Downloading, "offer:" + key, IconNames.CloudDownload, L["app.update.downloading.title"],
+                        L.Format("app.update.downloading.text", name, Percent(status.Progress)));
+                case AppUpdatePhase.Failed when AppUpdatePrompts.IsPermanent(status.Error):
+                    return new Card(CardKind.Refused, "refused:" + key, IconNames.TriangleAlert, L["app.update.failed.title"],
+                        Prompts.ErrorText(status.Error), L["app.update.action.downloadManually"], IconNames.ExternalLink, Warning: true);
+                case AppUpdatePhase.Failed when userDriven:
+                    return new Card(CardKind.Failed, "offer:" + key, IconNames.TriangleAlert, L["app.update.failed.title"],
+                        Prompts.ErrorText(status.Error), L["app.update.action.retry"], IconNames.RotateCw, Warning: required);
+                case AppUpdatePhase.Available when userDriven:
+                    var text = status.WaitingForWifi
+                        ? L.Format("app.update.available.wifi", name)
+                        : L.Format("app.update.available.text", name, Format.FileSize(release.Size));
+                    return new Card(CardKind.Available, "offer:" + key, IconNames.CloudDownload,
+                        required ? L["app.update.required.title"] : L["app.update.available.title"], text,
+                        L["app.update.action.download"], IconNames.Download, Warning: required);
+            }
+        }
+
+        return outdated ? new Card(CardKind.Outdated, "outdated", IconNames.CloudDownload, null, L["app.updateRequired"], Warning: true) : null;
+    }
+
+    private async Task RunAsync()
+    {
+        if (_busy || Current() is not { } card) return;
+        _busy = true;
+        try
+        {
+            switch (card.Kind)
+            {
+                case CardKind.Web:
+                    Updates.ReloadWebNow();
+                    break;
+                case CardKind.Ready:
+                    await Prompts.InstallAsync();
+                    break;
+                case CardKind.Refused:
+                    await Prompts.DownloadManuallyAsync();
+                    break;
+                case CardKind.Available or CardKind.Failed:
+                    _startedHere = Updates.Status.Release?.VersionCode ?? 0;
+                    await Updates.DownloadNowAsync();
+                    break;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DismissAsync(string key)
     {
         if (_leaving) return;
         _leaving = true;
         StateHasChanged();
         await Task.Delay(LeaveMs);
-        _dismissed = true;
+        _dismissed = key;
         _leaving = false;
     }
+
+    private static int Percent(double progress) => (int)Math.Round(Math.Clamp(progress, 0, 1) * 100);
 }

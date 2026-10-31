@@ -1,0 +1,82 @@
+.permission-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* A pale squircle holding the shield, like the empty states (no glow). */
+.permission-sheet__art {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.5rem;
+    height: 4.5rem;
+    margin: 4px auto 2px;
+    color: var(--sm-accent);
+}
+
+.permission-sheet__art::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--sm-grad-soft), var(--sm-card);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.permission-sheet__art ::deep .sm-icon {
+    position: relative;
+}
+
+.permission-sheet__lead {
+    margin: 0;
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: var(--sm-text);
+    text-wrap: pretty;
+}
+
+/* The steps on the system screen, on a quiet card. */
+.permission-sheet__steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 14px 16px;
+    list-style: none;
+    border-radius: var(--sm-radius-l);
+    background: var(--sm-accent-soft);
+}
+
+.permission-sheet__step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    color: var(--sm-text);
+}
+
+.permission-sheet__number {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-top: -1px;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    color: #FFFFFF;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+.permission-sheet__note {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--sm-text-2);
+}
