@@ -219,6 +219,103 @@ public sealed class AppUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_check_that_found_nothing_leaves_wifi_only_in_force_for_the_next_release()
+    {
+        var clock = new ManualClock(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
+        _time = clock;
+        _settings.Updates.WifiOnly = true;
+        _network.Kind = NetworkKind.Cellular;
+        _network.IsMetered = true;
+        var service = Service();
+        await service.CheckNowAsync();
+        service.Status.Phase.ShouldBe(AppUpdatePhase.UpToDate);
+
+        Publish();
+        clock.Advance(TimeSpan.FromHours(5));
+        await service.RunOnceAsync(UpdateTrigger.Periodic, default);
+
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Available);
+        service.Status.WaitingForWifi.ShouldBeTrue();
+        _feed.Opens.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_check_that_found_nothing_leaves_auto_update_off_in_force_for_the_next_release()
+    {
+        var clock = new ManualClock(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
+        _time = clock;
+        _settings.Updates.AutoUpdate = false;
+        var service = Service();
+        await service.CheckNowAsync();
+
+        Publish();
+        clock.Advance(TimeSpan.FromHours(5));
+        await service.RunOnceAsync(UpdateTrigger.Periodic, default);
+
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Available);
+        _feed.Opens.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_manual_check_offers_what_it_finds_within_the_settings()
+    {
+        Publish();
+        _settings.Updates.WifiOnly = true;
+        _network.Kind = NetworkKind.Cellular;
+        _network.IsMetered = true;
+        var service = Service();
+
+        await service.CheckNowAsync();
+        await service.RunOnceAsync(UpdateTrigger.Continue, default);
+
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Available);
+        service.Status.WaitingForWifi.ShouldBeTrue();
+        _feed.Opens.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_download_the_user_asked_for_does_not_carry_over_to_the_next_release()
+    {
+        var clock = new ManualClock(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
+        _time = clock;
+        Publish();
+        _settings.Updates.WifiOnly = true;
+        _network.Kind = NetworkKind.Cellular;
+        _network.IsMetered = true;
+        var service = Service();
+        await service.RunOnceAsync(UpdateTrigger.Start, default);
+        await service.DownloadNowAsync();
+        await service.RunOnceAsync(UpdateTrigger.Continue, default);
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Ready);
+
+        Publish(code: 58);
+        clock.Advance(TimeSpan.FromHours(5));
+        await service.RunOnceAsync(UpdateTrigger.Periodic, default);
+
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Available);
+        service.Status.Release!.VersionCode.ShouldBe(58);
+        _feed.Opens.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_request_for_one_build_does_not_download_the_build_that_replaced_it()
+    {
+        Publish();
+        _settings.Updates.AutoUpdate = false;
+        var service = Service();
+        await service.RunOnceAsync(UpdateTrigger.Start, default);
+        await service.DownloadNowAsync();
+
+        // The server moved on before the download started.
+        Publish(code: 58);
+        await service.RunOnceAsync(UpdateTrigger.Manual, default);
+
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Available);
+        service.Status.Release!.VersionCode.ShouldBe(58);
+        _feed.Opens.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task The_installed_build_is_up_to_date_and_a_withdrawn_release_is_forgotten()
     {
         Publish();

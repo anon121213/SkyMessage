@@ -66,9 +66,15 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
     private UpdateTrigger? _next;
     private bool _looping;
     private CancellationTokenSource? _download;
+    private int _downloadVersionCode;
     private CancellationTokenSource? _backgroundInstall;
     private CancellationTokenSource? _webReload;
-    private bool _downloadRequested;
+    /// <summary>
+    /// The build the user asked for (Download, Update, the install permission): only it downloads regardless of
+    /// "Update automatically", "Wi-Fi only" and the back-off. 0 when none; cleared once it is ready, fails, or another
+    /// build replaces it, so the request never carries over to a later release.
+    /// </summary>
+    private int _requestedVersionCode;
     private bool _installing;
     private int _failures;
     private DateTimeOffset _retryAt = DateTimeOffset.MinValue;
@@ -146,7 +152,6 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
     {
         if (!HasWork) return;
         await EnsureLoadedAsync().ConfigureAwait(false);
-        SetDownloadRequested(_installer.IsSupported);
         bool checkedOk;
         try
         {
@@ -156,25 +161,25 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         {
             checkedOk = false;
         }
-        if (!checkedOk)
-        {
-            SetDownloadRequested(false);
-            return;
-        }
+        if (!checkedOk) return;
+        // A check is not a download: what it found follows the settings (Download overrides them). An attempt waiting
+        // for its back-off goes ahead now, though.
+        lock (_lock) _retryAt = DateTimeOffset.MinValue;
         Kick(UpdateTrigger.Continue);
     }
 
-    public Task DownloadNowAsync()
+    public async Task DownloadNowAsync()
     {
-        if (!_installer.IsSupported) return Task.CompletedTask;
+        if (!_installer.IsSupported) return;
+        await EnsureLoadedAsync().ConfigureAwait(false);
+        if (_state.Release is not { } release) return;
         lock (_lock)
         {
-            _downloadRequested = true;
-            // The user asked: no back-off.
+            // The user asked for this build: no back-off, no settings in the way.
+            _requestedVersionCode = release.VersionCode;
             _retryAt = DateTimeOffset.MinValue;
         }
         Kick(UpdateTrigger.Continue);
-        return Task.CompletedTask;
     }
 
     public async Task InstallNowAsync()
@@ -348,6 +353,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         var release = _state.Release;
         if (release is null || release.VersionCode <= installed)
         {
+            lock (_lock) _requestedVersionCode = 0;
             if (_state.PackageVersionCode != 0) await ForgetPackageAsync().ConfigureAwait(false);
             if (_state.LastCheckAt is not null)
             {
@@ -365,7 +371,9 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         DateTimeOffset retryAt;
         lock (_lock)
         {
-            manual = _downloadRequested;
+            // A request for another build (the server moved on, or rolled back) is not one for this build.
+            if (_requestedVersionCode != release.VersionCode) _requestedVersionCode = 0;
+            manual = _requestedVersionCode != 0;
             retryAt = _retryAt;
         }
         if (_state.BlockedVersionCode == release.VersionCode && !manual)
@@ -409,7 +417,11 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
     {
         var name = AppUpdateRules.PackageFileName(release);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        lock (_lock) _download = cts;
+        lock (_lock)
+        {
+            _download = cts;
+            _downloadVersionCode = release.VersionCode;
+        }
         try
         {
             if (_state.PackageVersionCode != release.VersionCode
@@ -441,11 +453,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
             }
 
             await UpdateStateAsync(s => s with { PackageVerified = true }).ConfigureAwait(false);
-            lock (_lock)
-            {
-                _failures = 0;
-                _downloadRequested = false;
-            }
+            lock (_lock) _failures = 0;
             _logger.LogInformation("Update {VersionCode} downloaded and verified", release.VersionCode);
             BecomeReady(release, required);
         }
@@ -536,6 +544,8 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
 
     private void BecomeReady(AndroidReleaseDto release, bool required)
     {
+        // Downloaded: what the user asked for is done (installing has its own triggers).
+        lock (_lock) _requestedVersionCode = 0;
         Publish(s => s with
         {
             Phase = AppUpdatePhase.Ready, Release = release, Required = required, Progress = 1, WaitingForWifi = false, Error = null,
@@ -556,7 +566,8 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         lock (_lock)
         {
             _failures++;
-            _downloadRequested = false;
+            // The user's attempt is over: retries after the back-off follow the settings again.
+            _requestedVersionCode = 0;
             retryAt = _retryAt = _time.GetUtcNow() + AppUpdateRules.RetryDelay(_failures);
         }
         Publish(s => s with { Phase = AppUpdatePhase.Failed, Release = release, Required = required, Progress = 0, WaitingForWifi = false, Error = code });
@@ -839,7 +850,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         lock (_lock)
         {
             download = _download;
-            manual = _downloadRequested;
+            manual = download is not null && _requestedVersionCode == _downloadVersionCode;
         }
         if (download is not null && !manual && (!updates.AutoUpdate || !DownloadNetworkAllowed(updates)))
         {
@@ -992,15 +1003,6 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Could not delete stored update packages");
-        }
-    }
-
-    private void SetDownloadRequested(bool value)
-    {
-        lock (_lock)
-        {
-            _downloadRequested = value;
-            if (value) _retryAt = DateTimeOffset.MinValue;
         }
     }
 

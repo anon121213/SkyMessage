@@ -78,9 +78,15 @@ public interface IAppUpdateService
     /// <summary>Web: reload the page now to run the new web client (the UI performs the reload).</summary>
     event Action? ReloadRequested;
 
-    /// <summary>"Check for updates": asks the server now; a newer Android build then downloads even off Wi-Fi.</summary>
+    /// <summary>
+    /// "Check for updates": asks the server now and lets a failed attempt retry at once. A newer Android build it finds
+    /// downloads only as the settings allow ("Update automatically", "Wi-Fi only"); Download overrides them.
+    /// </summary>
     Task CheckNowAsync(CancellationToken cancellationToken = default);
-    /// <summary>Downloads the known newer build now (the user tapped Download; ignores "Wi-Fi only").</summary>
+    /// <summary>
+    /// Downloads the known newer build now (the user tapped Download): ignores "Wi-Fi only", "Update automatically" and
+    /// the back-off, for this build only.
+    /// </summary>
     Task DownloadNowAsync();
     /// <summary>Installs the downloaded build now (the user tapped Update). Ask for the install permission first when needed.</summary>
     Task InstallNowAsync();
