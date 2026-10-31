@@ -7,24 +7,27 @@
                                                   analyze a tree written by "dotnet run --project tools/tones -- --out
                                                   DIR --masters DIR/masters" (or the repository itself, --tree .)
 
-What it measures, per sound, on what a player decodes (the Ogg Vorbis files, also the iOS CAF copies) and on the
-44.1 kHz masters:
+What it measures, per sound, on what a player decodes (Android's Ogg Vorbis, the in-app MP3, also the iOS CAF copies)
+and on the 44.1 kHz masters:
   clipping   sample peak and true peak (4x band-limited oversampling): decoded <= -0.5 dBTP, masters <= -1.4 dBTP;
              no flat-topped peaks at any level
   DC         mean <= -80 dBFS and energy under 20 Hz <= -60 dB of the total
   clicks     a jump of the energy above 7 kHz (1 ms frames, +10 dB over the 3 frames before) that no strike explains
-             (strike times come from the renderer's onsets.json; loops are checked across the seam)
+             (strike times come from the renderer's onsets.json; loops are checked across the seam; on decoded files
+             a codec's pre-echo up to 13 ms before a strike belongs to that strike)
   seams      loops: the step from the last sample to the first, and the level 10 ms either side of it (<= -45 dBFS)
   > 6 kHz    share of the energy above 6 kHz <= 0.1 % (nothing shrill or harsh)
   aliasing   every renderer keeps its partials under 12 kHz, so any spectral line above 12.5 kHz (> -90 dB under the
              strongest one) is a folded partial; broadband noise up there (a felt hammer's) stays under -60 dB
   loudness   BS.1770 K-weighted level of the loudest 200 ms on target for its group in every pack (+-0.35 LU), and one
              key at most 0.5 LU apart across the packs
-  files      Android res/raw copy identical to the in-app copy, loops decode to exactly the cycle in sounds.json,
-             one-shots within 2048 samples of it with only silence in the difference, message tones <= 1 s
+  files      the Ogg and the MP3 of a sound decode to the same signal; loops decode to exactly the cycle in
+             sounds.json, one-shots within 2048 samples of it with only silence in the difference; message tones
+             <= 1 s; sounds.json's hash is the MP3's
 Exit code 1 on any failure.
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -133,8 +136,9 @@ def highpass(x, rate, hz):
     return np.fft.irfft(spectrum, len(x))
 
 
-def clicks(x, rate, loop, onsets, floor_db):
-    """Times (s) where the energy above 7 kHz jumps by 10 dB within a millisecond away from every strike."""
+def clicks(x, rate, loop, onsets, floor_db, lead=0.003):
+    """Times (s) where the energy above 7 kHz jumps by 10 dB within a millisecond away from every strike (from `lead`
+    seconds before it to 12 ms after)."""
     pre = 0 if loop else rate // 100
     y = np.concatenate([x, x]) if loop else np.concatenate([np.zeros(pre), x, np.zeros(rate // 10)])
     hf = highpass(y, rate, 7000)
@@ -148,7 +152,7 @@ def clicks(x, rate, loop, onsets, floor_db):
         if level[f] < floor_db or level[f] < level[f - 3:f].max() + 10:
             continue
         t = (f * frame - pre) / rate
-        if len(strikes) and np.any((t >= strikes - 0.003) & (t <= strikes + 0.012)):
+        if len(strikes) and np.any((t >= strikes - lead) & (t <= strikes + 0.012)):
             continue
         found.append(t % cycle if loop else t)
     return found
@@ -177,8 +181,10 @@ def analyze(x, rate, loop, onsets, master):
     if m["above12k"] > -60:
         problems.append(f"noise above 12.5 kHz at {m['above12k']:.0f} dB of the total")
     if onsets is not None:
-        # Masters are clean to the last bit; a decoder adds its own faint noise floor, so judge it from -85 dBFS.
-        found = clicks(x, rate, loop, onsets, -92 if master else -85)
+        # Masters are clean to the last bit; a decoder adds its own faint noise floor, so judge it from -85 dBFS, and
+        # a transform codec smears a strike's attack up to one block (MP3: 576 samples, 12 ms) ahead of it (pre-echo,
+        # masked by the strike that follows).
+        found = clicks(x, rate, loop, onsets, -92 if master else -85, 0.003 if master else 0.013)
         if found:
             problems.append("clicks at " + ", ".join(f"{t:.3f}s" for t in found[:4]))
     if loop:
@@ -223,7 +229,7 @@ def same_files(tree, failures):
             if name.endswith(".json"):
                 failures.append(f"{os.path.join(sub, name)} differs from a fresh render")
                 continue
-            # Another ffmpeg/libvorbis build encodes differently; the sound must still match.
+            # Another ffmpeg, libvorbis or LAME build encodes differently; the sound must still match.
             x, _ = decode(a, 48000)
             y, _ = decode(b, 48000)
             n = min(len(x), len(y))
@@ -259,7 +265,7 @@ def main():
     loud = {}
 
     print(f"{'sound':16} {'len':>5} {'loop':>4} {'peak':>6} {'tpeak':>6} {'S200':>6} {'dc':>5} {'>6k%':>7} {'>12.5k':>6} "
-          f"{'line':>5} {'seam':>5} {'caf':>6}  problems")
+          f"{'line':>5} {'seam':>5} {'ogg/mp3':>7} {'caf':>6}  problems")
     for pack in packs:
         entries = manifest["packs"][pack]
         if list(entries) != sorted(KEYS) and sorted(entries) != sorted(KEYS):
@@ -271,31 +277,43 @@ def main():
             loop = bool(entry.get("loop"))
             name = f"{pack}/{key}"
             strikes = onsets[pack][key] if onsets else None
-            web = os.path.join(tree, WEB, pack, f"{key}.ogg")
+            web = os.path.join(tree, WEB, pack, f"{key}.mp3")
             raw = os.path.join(tree, RAW, f"tone_{pack}_{key}.ogg")
             caf = os.path.join(tree, RAW, f"tone_{pack}_{key}.caf")
             problems = []
-            with open(web, "rb") as a, open(raw, "rb") as b:
-                if a.read() != b.read():
-                    problems.append("res/raw and in-app copies differ")
+            with open(web, "rb") as f:
+                if hashlib.sha256(f.read()).hexdigest()[:12] != entry.get("hash"):
+                    problems.append("sounds.json's hash is not the MP3's")
 
-            x, r = decode(web)
-            if r != rate:
-                problems.append(f"decodes at {r} Hz, the manifest says {rate}")
+            decoded = {}
             expected = entry["samples"]
-            if loop and len(x) != expected:
-                problems.append(f"loop decodes to {len(x)} samples, not {expected}")
-            elif not loop and len(x) != expected:
-                extra = x[expected:] if len(x) > expected else np.zeros(0)
-                if abs(len(x) - expected) > 2048 or (len(extra) and amp_db(np.abs(extra).max()) > -60):
-                    problems.append(f"decodes to {len(x)} samples, not {expected}")
-            if key in MESSAGE_TONES and len(x) / r > 1.0:
-                problems.append(f"{len(x) / r:.2f} s is long for a message tone")
-            m, found = analyze(x, r, loop, strikes, master=False)
-            problems += found
+            for fmt, path in (("ogg", raw), ("mp3", web)):
+                x, r = decode(path)
+                decoded[fmt] = x
+                if r != rate:
+                    problems.append(f"{fmt} decodes at {r} Hz, the manifest says {rate}")
+                if loop and len(x) != expected:
+                    problems.append(f"{fmt} loop decodes to {len(x)} samples, not {expected}")
+                elif not loop and len(x) != expected:
+                    extra = x[expected:] if len(x) > expected else np.zeros(0)
+                    if abs(len(x) - expected) > 2048 or (len(extra) and amp_db(np.abs(extra).max()) > -60):
+                        problems.append(f"{fmt} decodes to {len(x)} samples, not {expected}")
+                if key in MESSAGE_TONES and len(x) / r > 1.0:
+                    problems.append(f"{fmt}: {len(x) / r:.2f} s is long for a message tone")
+                m, found = analyze(x, r, loop, strikes, master=False)
+                problems += [f"{fmt}: {p}" for p in found]
+                if abs(m["s200"] - TARGET[key]) > 0.35:
+                    problems.append(f"{fmt} loudness {m['s200']:.2f} LUFS, target {TARGET[key]}")
+                if fmt == "ogg":
+                    shown = m
+            m = shown
             loud[(pack, key)] = m["s200"]
-            if abs(m["s200"] - TARGET[key]) > 0.35:
-                problems.append(f"loudness {m['s200']:.2f} LUFS, target {TARGET[key]}")
+            # Both encodings carry the same sound: the difference stays far under it.
+            a, b = decoded["ogg"], decoded["mp3"]
+            n = min(len(a), len(b))
+            difference = amp_db(np.sqrt(np.mean((a[:n] - b[:n]) ** 2))) - amp_db(np.sqrt(np.mean(a[:n] ** 2)))
+            if difference > -20:
+                problems.append(f"the Ogg and the MP3 differ by {difference:.0f} dB")
 
             c, cr = decode(caf)
             caf_peak = amp_db(np.abs(c).max())
@@ -309,7 +327,7 @@ def main():
 
             print(f"{name:16} {m['len']:5.2f} {'yes' if loop else '':>4} {m['peak']:6.2f} {m['tpeak']:6.2f} {m['s200']:6.2f} "
                   f"{m['dc']:5.0f} {m['above6k'] * 100:7.4f} {m['above12k']:6.0f} {m['tonal12k']:5.0f} "
-                  f"{m.get('seam', float('nan')):5.0f} {os.path.getsize(caf) / 1024:5.1f}K  {'; '.join(problems) or 'ok'}")
+                  f"{m.get('seam', float('nan')):5.0f} {difference:6.0f}dB {os.path.getsize(caf) / 1024:5.1f}K  {'; '.join(problems) or 'ok'}")
             failures += [f"{name}: {p}" for p in problems]
 
     for key in KEYS:

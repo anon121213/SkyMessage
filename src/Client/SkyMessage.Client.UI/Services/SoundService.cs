@@ -21,8 +21,8 @@ public sealed record SoundPackInfo(string Key, string NameKey, string Descriptio
 
 /// <summary>
 /// Our own sounds: three packs (<see cref="SoundCatalog"/>), synthesized from first principles by tools/tones (no
-/// samples, no third-party sounds) and rendered to wwwroot/sounds/&lt;pack&gt;/&lt;key&gt;.ogg, which js/sounds.js plays; Android's
-/// notification channels use the same files from res/raw. Every pack has the same keys. Singleton, no JS.
+/// samples, no third-party sounds) and rendered to wwwroot/sounds/&lt;pack&gt;/&lt;key&gt;.mp3, which js/sounds.js plays; Android's
+/// notification channels use Ogg copies of the same sounds from res/raw. Every pack has the same keys. Singleton, no JS.
 /// </summary>
 public sealed class ToneCatalog
 {

@@ -333,10 +333,11 @@ Sounds.Tones.Packs / MessageTones / Ringtones / CallProgress            // Sound
 
 Every sound comes from the pack in `Notifications.SoundPack` ("wood" default, "bells", "piano"; keys and repairs in
 Core's `SoundCatalog`): our own synthesis, rendered by `tools/tones` (`dotnet run --project tools/tones`, QA:
-`python3 tools/tones/analyze.py`) to `wwwroot/sounds/<pack>/<key>.ogg`, which `js/sounds.js` fetches, decodes once
-and plays (loops are exactly one cycle). "custom" plays the user's own file (`CustomSoundService` imports it,
-`ICustomSoundStore` keeps it per device) and falls back to the pack's default when it cannot. Callers check the
-settings (InAppSounds / Sound / CallsEnabled). Browsers unlock audio on the first user gesture.
+`python3 tools/tones/analyze.py`) to `wwwroot/sounds/<pack>/<key>.mp3` (every engine decodes MP3; WebKit before 18.4
+has no Ogg), which `js/sounds.js` fetches, decodes once and plays (loops are exactly one cycle). "custom" plays the
+user's own file (`CustomSoundService` imports it, `ICustomSoundStore` keeps it per device) and falls back to the
+pack's default when it cannot. Callers check the settings (InAppSounds / Sound / CallsEnabled). Browsers unlock audio
+on the first user gesture.
 
 ### Links: `LinkService` (scoped), `TextLinker` (static)
 

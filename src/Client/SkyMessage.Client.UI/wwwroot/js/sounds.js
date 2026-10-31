@@ -1,7 +1,8 @@
 // SkyMessage sounds through WebAudio. The packs (wood, bells, piano) are our own synthesis from first principles —
-// no samples, no third-party audio — rendered by tools/tones to ../sounds/<pack>/<key>.ogg (the same files Android's
-// notification channels use). The user's own sounds come in as bytes (setCustom). Every file is fetched and decoded
-// once, then played from memory; a ringtone or the ringback file is exactly one cycle and loops without a seam.
+// no samples, no third-party audio — rendered by tools/tones to ../sounds/<pack>/<key>.mp3 (MP3 because every engine
+// decodes it, WebKit before 18.4 included; Android's notification channels play Ogg copies of the same signal). The
+// user's own sounds come in as bytes (setCustom). Every file is fetched and decoded once, then played from memory; a
+// ringtone or the ringback file is exactly one cycle and loops without a seam.
 //
 // API: play(key, pack) · playOnce(key, pack, limit) · startLoop(key, pack) · stop() · unlock()
 //      preload(keys, pack) · setCustom(slot, id, bytes) → seconds | null · hasCustom(slot, id) · clearCustom(slot)
@@ -86,7 +87,7 @@ function load(pack, key) {
       const entry = entryOf(m, pack, key);
       if (!entry) return null;
       // The hash versions the URL: the file names stay fixed, so caches must not serve an older sound.
-      const response = await fetch(new URL(`${pack}/${key}.ogg?v=${entry.hash || ''}`, SOUNDS));
+      const response = await fetch(new URL(`${pack}/${key}.mp3?v=${entry.hash || ''}`, SOUNDS));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return decode(await response.arrayBuffer());
     }).catch((e) => {
@@ -114,7 +115,8 @@ async function resolve(key, pack) {
   const [m, buffer] = await Promise.all([loadManifest(), load(p, key)]);
   if (!buffer) return null;
   const entry = entryOf(m, p, key);
-  // A loop file is exactly one cycle; the manifest has its length, in case a decoder pads the end.
+  // A loop file is exactly one cycle; the manifest has its length, in case a decoder ignores the MP3's gapless header
+  // and pads it (the cycle then starts 23 ms into the buffer, inside its silent seam, and still repeats exactly).
   const cycle = entry && entry.loop ? entry.samples / m.rate : buffer.duration;
   return { buffer, gain: 1, loopEnd: Math.min(cycle, buffer.duration) };
 }

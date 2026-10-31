@@ -11,7 +11,7 @@ internal static class Ffmpeg
 {
     private const string Executable = "ffmpeg";
 
-    /// <summary>Fails early, with a hint, when ffmpeg or its libvorbis encoder is missing.</summary>
+    /// <summary>Fails early, with a hint, when ffmpeg or its libvorbis or libmp3lame encoder is missing.</summary>
     public static void EnsureAvailable()
     {
         string encoders;
@@ -23,20 +23,35 @@ internal static class Ffmpeg
         {
             throw new InvalidOperationException("ffmpeg is not on PATH (macOS: brew install ffmpeg; Linux: apt install ffmpeg).", ex);
         }
-        if (!encoders.Contains("libvorbis", StringComparison.Ordinal))
-            throw new InvalidOperationException("This ffmpeg has no libvorbis encoder; install a build with --enable-libvorbis.");
+        foreach (var (encoder, flag) in new[] { ("libvorbis", "--enable-libvorbis"), ("libmp3lame", "--enable-libmp3lame") })
+        {
+            if (!encoders.Contains(encoder, StringComparison.Ordinal))
+                throw new InvalidOperationException($"This ffmpeg has no {encoder} encoder; install a build with {flag}.");
+        }
     }
 
     /// <summary>
-    /// Ogg Vorbis, mono, VBR quality 6 (about 40 kbps on these mostly quiet sounds; transparent for mallets and bells).
-    /// Vorbis, not Opus: Android plays Ogg Opus only from Android 10, the app supports Android 8, and every Android
-    /// version's notification player and every browser engine the apps run in decode Ogg Vorbis. A loop gets the
+    /// Android's copy (res/raw, notification channels): Ogg Vorbis, mono, VBR quality 6 (about 40 kbps on these mostly
+    /// quiet sounds; transparent for mallets and bells). Every Android version's notification player decodes Ogg
+    /// Vorbis; Ogg Opus is not guaranteed on the older versions the app supports (Android 8). A loop gets the
     /// ANDROID_LOOP tag, which makes Android's player loop it in the extractor, without a gap at the seam.
     /// </summary>
     public static void EncodeVorbis(string wav, string ogg, bool loop) =>
         Run(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", wav,
             "-c:a", "libvorbis", "-q:a", "6", "-map_metadata", "-1", .. (loop ? new[] { "-metadata", "ANDROID_LOOP=true" } : []),
             "-fflags", "+bitexact", "-flags:a", "+bitexact", ogg]);
+
+    /// <summary>
+    /// The in-app copy (js/sounds.js in every WebView and browser): MP3, mono, LAME VBR quality 4 (smaller than the
+    /// Ogg and, measured against the masters, closer to them). Not Ogg: WebKit (the iOS/Mac app's WebView, Safari)
+    /// decodes Ogg only from 18.4, the app supports iOS 15, and every engine decodes MP3. The Xing/LAME header carries
+    /// the encoder delay and padding, so Chromium and ffmpeg decode exactly the encoded samples; a decoder that ignored
+    /// it would start a loop 1105 samples (23 ms) late, inside its silent seam, with the cycle still exact. No ID3 tags.
+    /// </summary>
+    public static void EncodeMp3(string wav, string mp3) =>
+        Run(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", wav,
+            "-c:a", "libmp3lame", "-q:a", "4", "-map_metadata", "-1", "-id3v2_version", "0", "-write_id3v1", "0",
+            "-fflags", "+bitexact", "-flags:a", "+bitexact", mp3]);
 
     /// <summary>
     /// Apple notification sounds: IMA4 ADPCM in CAF at 22.05 kHz (iOS plays only PCM, IMA4, µ-law and a-law

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using NSubstitute;
 using Shouldly;
@@ -260,10 +261,14 @@ public sealed class SoundFilesTests
             var name = SoundCatalog.ResourceName(pack, key);
             File.Exists(Path.Combine(Raw, name + ".ogg")).ShouldBeTrue(name + ".ogg");
             File.Exists(Path.Combine(Raw, name + ".caf")).ShouldBeTrue(name + ".caf");
-            File.Exists(Path.Combine(Web, pack, key + ".ogg")).ShouldBeTrue($"{pack}/{key}.ogg");
+            File.Exists(Path.Combine(Web, pack, key + ".mp3")).ShouldBeTrue($"{pack}/{key}.mp3");
         }
         Directory.EnumerateFiles(Raw, "tone_*.wav").ShouldBeEmpty("the single-pack WAVs are gone");
         Directory.EnumerateFiles(Raw, "tone_*").Count().ShouldBe(SoundCatalog.Packs.Count * SoundCatalog.Keys.Count * 2);
+        // In-app: MP3 only (WebKit before 18.4 cannot decode Ogg), one per pack and key, plus the manifest.
+        Directory.EnumerateFiles(Web, "*", SearchOption.AllDirectories).Select(f => Path.GetFileName(f) == "sounds.json" ? ".json" : Path.GetExtension(f))
+            .Distinct().Order().ShouldBe([".json", ".mp3"]);
+        Directory.EnumerateFiles(Web, "*.mp3", SearchOption.AllDirectories).Count().ShouldBe(SoundCatalog.Packs.Count * SoundCatalog.Keys.Count);
     }
 
     [Fact]
@@ -281,10 +286,9 @@ public sealed class SoundFilesTests
                 var entry = entries.GetProperty(key);
                 var loop = entry.TryGetProperty("loop", out var l) && l.GetBoolean();
                 loop.ShouldBe(SoundCatalog.Ringtones.Contains(key) || key == SoundCatalog.Ringback, $"{pack}/{key}");
-                entry.GetProperty("hash").GetString().ShouldNotBeNullOrEmpty();
-                // Raw and in-app copies are the same file.
-                File.ReadAllBytes(Path.Combine(Raw, SoundCatalog.ResourceName(pack, key) + ".ogg"))
-                    .ShouldBe(File.ReadAllBytes(Path.Combine(Web, pack, key + ".ogg")));
+                // The hash versions the in-app file's URL, so it must be that file's (sounds.js fetches <key>.mp3?v=<hash>).
+                var hash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(Web, pack, key + ".mp3"))))[..12];
+                entry.GetProperty("hash").GetString().ShouldBe(hash, $"{pack}/{key}");
             }
         }
     }

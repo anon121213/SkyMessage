@@ -6,126 +6,126 @@
       "bright": {
         "samples": 144000,
         "loop": true,
-        "hash": "13ef6d444f23"
+        "hash": "9ae9765427e2"
       },
       "busy": {
         "samples": 72000,
-        "hash": "53453f70466d"
+        "hash": "f610282063d4"
       },
       "chime": {
         "samples": 42240,
-        "hash": "d5ce39f1490a"
+        "hash": "fa255bc9ccd8"
       },
       "classic": {
         "samples": 144000,
         "loop": true,
-        "hash": "53c8177b6758"
+        "hash": "7f326745801f"
       },
       "end": {
         "samples": 37440,
-        "hash": "1f8106ac21fe"
+        "hash": "3e3246e3d7f7"
       },
       "glass": {
         "samples": 43200,
-        "hash": "6b0d348ac6dd"
+        "hash": "b28e9b90920b"
       },
       "pop": {
         "samples": 31200,
-        "hash": "ebbfae0341ed"
+        "hash": "be145e2d9f92"
       },
       "ringback": {
         "samples": 192000,
         "loop": true,
-        "hash": "87a64c325c6e"
+        "hash": "bb495f20f546"
       },
       "soft": {
         "samples": 180000,
         "loop": true,
-        "hash": "e01fb16be0a1"
+        "hash": "53e456408dc5"
       }
     },
     "piano": {
       "bright": {
         "samples": 144000,
         "loop": true,
-        "hash": "46022b3442b8"
+        "hash": "edc3f981c9ce"
       },
       "busy": {
         "samples": 72000,
-        "hash": "75d1ffdf9155"
+        "hash": "e21b8a1d5f56"
       },
       "chime": {
         "samples": 42240,
-        "hash": "2ea658809951"
+        "hash": "3ef0f8736eba"
       },
       "classic": {
         "samples": 144000,
         "loop": true,
-        "hash": "aa81851778f5"
+        "hash": "e3a65fd32a18"
       },
       "end": {
         "samples": 38400,
-        "hash": "d0b4d2869613"
+        "hash": "fbf34f171a69"
       },
       "glass": {
         "samples": 42240,
-        "hash": "f7cfb001484f"
+        "hash": "8da2de139e0d"
       },
       "pop": {
         "samples": 24000,
-        "hash": "7cd40043d888"
+        "hash": "1293913ef839"
       },
       "ringback": {
         "samples": 192000,
         "loop": true,
-        "hash": "44fc4362b14b"
+        "hash": "c479e0c77e64"
       },
       "soft": {
         "samples": 192000,
         "loop": true,
-        "hash": "625de28d1808"
+        "hash": "5f4159f744a1"
       }
     },
     "wood": {
       "bright": {
         "samples": 153600,
         "loop": true,
-        "hash": "22ef24d57bd0"
+        "hash": "8a0709f96123"
       },
       "busy": {
         "samples": 72000,
-        "hash": "46b2807bf72b"
+        "hash": "1ca699c37ba0"
       },
       "chime": {
         "samples": 43200,
-        "hash": "e12a495e65bf"
+        "hash": "73540494ed48"
       },
       "classic": {
         "samples": 144000,
         "loop": true,
-        "hash": "8c92875807fa"
+        "hash": "24cec60f661a"
       },
       "end": {
         "samples": 38400,
-        "hash": "01d00f4a5b70"
+        "hash": "6eb80aa5a7dc"
       },
       "glass": {
         "samples": 43200,
-        "hash": "82e66c869ae9"
+        "hash": "c4fd89038cab"
       },
       "pop": {
         "samples": 21600,
-        "hash": "75ea03d070c5"
+        "hash": "93881027383a"
       },
       "ringback": {
         "samples": 192000,
         "loop": true,
-        "hash": "4f90806dde6c"
+        "hash": "4f0ab4c4febe"
       },
       "soft": {
         "samples": 192000,
         "loop": true,
-        "hash": "7635ff1ce4ae"
+        "hash": "a8e3fbd21c9d"
       }
     }
   }

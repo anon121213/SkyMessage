@@ -1,6 +1,7 @@
 // SkyMessage tones: renders the three sound packs and writes every sound file the apps play.
 //
-//   dotnet run --project tools/tones                      regenerate everything in the repository (needs ffmpeg + libvorbis)
+//   dotnet run --project tools/tones                      regenerate everything in the repository (needs ffmpeg with
+//                                                         libvorbis and libmp3lame)
 //   dotnet run --project tools/tones -- --out DIR         write the same tree under DIR instead, to compare
 //   dotnet run --project tools/tones -- --masters DIR     also keep the 44.1 kHz float WAV masters (DIR/<pack>/<key>.wav)
 //                                                         and the strike times (DIR/onsets.json)
@@ -12,12 +13,13 @@
 //
 // Per sound: render (44.1 kHz mono) -> set its loudness: the BS.1770 K-weighted level of its loudest 200 ms goes to the
 // target of its group, the same in every pack, with the true peak kept at or under -1.5 dBTP -> resample to 48 kHz
-// (windowed sinc; a loop is resampled as a loop, so its seam stays seamless) -> Ogg Vorbis, the same file twice:
-//   src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.ogg          Android res/raw, notification channels
-//   src/Client/SkyMessage.Client.UI/wwwroot/sounds/<pack>/<key>.ogg        in-app playback (js/sounds.js)
-// plus src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.caf (IMA4, iOS/Mac notification sounds) and
-// wwwroot/sounds/sounds.json (lengths, loops, content hashes). Then the checks: decoded length and peak, loudness after encoding,
-// clicks away from strikes, loop seams, energy above 6 kHz. Any failure exits with code 1.
+// (windowed sinc; a loop is resampled as a loop, so its seam stays seamless) -> three encodings of that one signal:
+//   src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.ogg          Ogg Vorbis: Android res/raw, notification channels
+//   src/Client/SkyMessage.Client.UI/wwwroot/sounds/<pack>/<key>.mp3        MP3: in-app playback (js/sounds.js; every engine)
+//   src/Client/SkyMessage.App/Resources/Raw/tone_<pack>_<key>.caf          IMA4: iOS/Mac notification sounds
+// plus wwwroot/sounds/sounds.json (lengths, loops, content hashes of the MP3s). Then the checks: clicks away from
+// strikes, loop seams, energy above 6 kHz on the master; decoded length, peak and loudness of the Ogg and the MP3.
+// Any failure exits with code 1.
 
 using System.Globalization;
 using System.Text.Json;
@@ -65,7 +67,7 @@ var written = new HashSet<string>(StringComparer.Ordinal);
 var loudness = new Dictionary<(string Pack, string Key), double>();
 var onsets = new SortedDictionary<string, SortedDictionary<string, IReadOnlyList<double>>>(StringComparer.Ordinal);
 
-Console.WriteLine($"{"sound",-16} {"len",6} {"loop",4} {"gain",6} {"tpeak",6} {"S200",6} {"M400",6} {"int",6} {">6k%",7} {"ogg KB",6} {"caf KB",6} {"oggPk",6}  checks");
+Console.WriteLine($"{"sound",-16} {"len",6} {"loop",4} {"gain",6} {"tpeak",6} {"S200",6} {"M400",6} {"int",6} {">6k%",7} {"ogg KB",6} {"mp3 KB",6} {"caf KB",6} {"decPk",6}  checks");
 foreach (var (pack, render) in packs)
 {
     var tones = render();
@@ -121,36 +123,41 @@ foreach (var (pack, render) in packs)
             Directory.CreateDirectory(Path.Combine(masters, pack));
             File.Copy(wav44, Path.Combine(masters, pack, $"{tone.Key}.wav"), overwrite: true);
         }
-        var ogg = Path.Combine(temp.FullName, $"{pack}_{tone.Key}.ogg");
-        Ffmpeg.EncodeVorbis(wav48, ogg, tone.Loop);
         var raw = Path.Combine(rawDir, $"tone_{pack}_{tone.Key}.ogg");
-        var web = Path.Combine(webDir, pack, $"{tone.Key}.ogg");
+        var web = Path.Combine(webDir, pack, $"{tone.Key}.mp3");
         var caf = Path.Combine(rawDir, $"tone_{pack}_{tone.Key}.caf");
         Directory.CreateDirectory(Path.GetDirectoryName(web)!);
-        File.Copy(ogg, raw, overwrite: true);
-        File.Copy(ogg, web, overwrite: true);
+        Ffmpeg.EncodeVorbis(wav48, raw, tone.Loop);
+        Ffmpeg.EncodeMp3(wav48, web);
         Ffmpeg.EncodeCaf(wav44, caf);
         written.UnionWith([raw, web, caf]);
 
-        // What a player gets back. A loop must decode to exactly one cycle. Vorbis's end trimming may leave a one-shot
-        // a block longer or shorter; that is fine while the difference is silence (the end is faded out).
-        var decoded = Ffmpeg.Decode(ogg);
-        if (tone.Loop && decoded.Length != play.Length) problems.Add($"decodes to {decoded.Length} samples, not {play.Length}");
-        if (!tone.Loop && LengthProblem(decoded, play) is { } lengthProblem) problems.Add(lengthProblem);
-        var decodedPeak = Audio.Db(Audio.Peak(decoded));
-        if (decodedPeak > -0.5) problems.Add($"decoded peak {decodedPeak:0.00} dBFS");
+        // What a player gets back, from each encoding.
         var level = measured + gainDb;
-        var decodedLoudness = Audio.MaxLoudness(decoded, PlayRate, tone.Loop, 200);
-        if (Math.Abs(decodedLoudness - level) > 0.35) problems.Add($"loudness after encoding {decodedLoudness:0.00} LUFS, not {level:0.00}");
-        if (tone.Loop && decoded.Length == play.Length && Math.Abs(decoded[0] - decoded[^1]) > 2e-3)
-            problems.Add($"decoded loop seam step {Math.Abs(decoded[0] - decoded[^1]):0.0000}");
+        var peaks = new List<double>();
+        foreach (var (format, file) in new[] { ("ogg", raw), ("mp3", web) })
+        {
+            var decoded = Ffmpeg.Decode(file);
+            // A loop must decode to exactly one cycle. End trimming may leave a one-shot a block longer or shorter;
+            // that is fine while the difference is silence (the end is faded out).
+            if (tone.Loop && decoded.Length != play.Length) problems.Add($"{format} decodes to {decoded.Length} samples, not {play.Length}");
+            if (!tone.Loop && LengthProblem(decoded, play) is { } lengthProblem) problems.Add($"{format} {lengthProblem}");
+            var decodedPeak = Audio.Db(Audio.Peak(decoded));
+            peaks.Add(decodedPeak);
+            if (decodedPeak > -0.5) problems.Add($"{format} decoded peak {decodedPeak:0.00} dBFS");
+            var decodedLoudness = Audio.MaxLoudness(decoded, PlayRate, tone.Loop, 200);
+            if (Math.Abs(decodedLoudness - level) > 0.35) problems.Add($"{format} loudness after encoding {decodedLoudness:0.00} LUFS, not {level:0.00}");
+            if (tone.Loop && decoded.Length == play.Length && Math.Abs(decoded[0] - decoded[^1]) > 2e-3)
+                problems.Add($"{format} decoded loop seam step {Math.Abs(decoded[0] - decoded[^1]):0.0000}");
+        }
         loudness[(pack, tone.Key)] = level;
-        // The hash versions the file's URL (sounds.js fetches <key>.ogg?v=<hash>): names stay fixed, caches stay right.
-        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(ogg)))[..12];
+        // The hash versions the in-app file's URL (sounds.js fetches <key>.mp3?v=<hash>): names stay fixed, caches stay right.
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(web)))[..12];
         entries[tone.Key] = tone.Loop ? new { samples = play.Length, loop = true, hash } : new { samples = play.Length, hash };
         Console.WriteLine($"{name,-16} {master.Length / (double)RenderRate,6:0.00} {(tone.Loop ? "yes" : ""),4} {gainDb,6:+0.00;-0.00;0.00} {truePeak,6:0.00} {level,6:0.00} " +
                           $"{Audio.MaxLoudness(master, RenderRate, tone.Loop, 400),6:0.00} {Audio.IntegratedLoudness(master, RenderRate, tone.Loop),6:0.00} " +
-                          $"{above6k * 100,7:0.0000} {new FileInfo(raw).Length / 1024.0,6:0.0} {new FileInfo(caf).Length / 1024.0,6:0.0} {decodedPeak,6:0.00}  " +
+                          $"{above6k * 100,7:0.0000} {new FileInfo(raw).Length / 1024.0,6:0.0} {new FileInfo(web).Length / 1024.0,6:0.0} " +
+                          $"{new FileInfo(caf).Length / 1024.0,6:0.0} {peaks.Max(),6:0.00}  " +
                           (problems.Count == 0 ? "ok" : string.Join("; ", problems)));
         failures.AddRange(problems.Select(p => $"{name}: {p}"));
     }
