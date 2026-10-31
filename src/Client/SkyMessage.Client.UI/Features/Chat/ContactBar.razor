@@ -1,0 +1,162 @@
+@* The "add to contacts / block" strip of a private chat with someone who is not in my contacts (ContactBarRules): a
+   slim glass capsule under the header with two tonal capsules — add (accent) and block (rose, after a confirmation) —
+   and a close button that hides it for this chat on all my devices. It goes away once the person is added or blocked.
+   A strip that appears while the chat is open drops in; one that goes away fades out. *@
+@inherits UiComponentBase
+@inject IChatListStore ChatList
+@inject IContactStore Contacts
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ILogger<ContactBar> Logger
+
+@if (Prepare() || _leaving)
+{
+    <div class="cbar @_motion" role="region" aria-label="@L["chat.contactBar.label"]">
+        <button type="button" class="cbar__action" disabled="@(_busy || _leaving)" @onclick="AddAsync">
+            <Icon Name="@IconNames.UserRoundPlus" Size="18" StrokeWidth="2.2" />
+            <span class="cbar__label">@L["chat.contactBar.add"]</span>
+        </button>
+        <button type="button" class="cbar__action cbar__action--danger" disabled="@(_busy || _leaving)" @onclick="BlockAsync">
+            <Icon Name="@IconNames.ShieldBan" Size="18" StrokeWidth="2.2" />
+            <span class="cbar__label">@L["chat.contactBar.block"]</span>
+        </button>
+        <IconButton Icon="@IconNames.X" Label="@L["chat.contactBar.close"]" Size="36" Class="cbar__close" Disabled="@(_busy || _leaving)" OnClick="CloseAsync" />
+    </div>
+}
+
+@code {
+    private const int LeaveMs = 160;
+    private bool _shown;
+    private bool _rendered;
+    private bool _leaving;
+    private bool _busy;
+    private string? _motion;
+    private Guid _loadedFor;
+
+    [Parameter, EditorRequired] public ChatSummaryDto? Chat { get; set; }
+
+    private UserSummaryDto? Peer => Chat?.Peer is { } embedded ? Users.Get(embedded.Id) ?? embedded : null;
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == Chat?.Peer?.Id);
+    }
+
+    protected override void OnParametersSet()
+    {
+        // The bar needs the contact and block lists (cached ones until the server's arrive; ContactsChanged keeps them).
+        if (Chat is { Type: ChatType.Private } chat && chat.Id != _loadedFor)
+        {
+            _loadedFor = chat.Id;
+            _ = LoadContactsAsync();
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _rendered = true;
+    }
+
+    private async Task LoadContactsAsync()
+    {
+        try
+        {
+            await Contacts.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Contacts not loaded for the contact bar");
+        }
+    }
+
+    /// <summary>Whether the bar shows now, noting a change since the last render (it drops in, or fades out).</summary>
+    private bool Prepare()
+    {
+        var peer = Peer;
+        var show = ContactBarRules.ShouldShow(Chat, peer, Auth.UserId, Contacts.IsLoaded,
+            peer is not null && Contacts.IsContact(peer.Id), peer is not null && Contacts.IsBlocked(peer.Id));
+        if (show == _shown) return show;
+        _shown = show;
+        if (!_rendered)
+        {
+            _motion = null;
+            return show;
+        }
+        if (show)
+        {
+            _leaving = false;
+            _motion = "cbar--enter";
+        }
+        else
+        {
+            _leaving = true;
+            _motion = "cbar--leave";
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Delay(LeaveMs);
+                if (_shown || IsDisposed) return;
+                _leaving = false;
+                StateHasChanged();
+            });
+        }
+        return show;
+    }
+
+    private string PeerName => Chat is { } chat ? ChatList.TitleOf(chat) : "";
+
+    private async Task AddAsync()
+    {
+        if (Peer is not { } peer) return;
+        _busy = true;
+        try
+        {
+            await Contacts.AddAsync(peer.Id);
+            Toasts.Success(L.Format("contacts.added", PeerName));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task BlockAsync()
+    {
+        if (Peer is not { } peer) return;
+        if (!await Dialogs.ConfirmAsync(L.Format("profile.blockTitle", PeerName), L["profile.blockText"], L["profile.block"], danger: true))
+            return;
+        _busy = true;
+        try
+        {
+            await Contacts.BlockAsync(peer.Id);
+            Toasts.Success(L["profile.blocked"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (Chat is not { } chat) return;
+        try
+        {
+            await ChatList.SetContactBarDismissedAsync(chat.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

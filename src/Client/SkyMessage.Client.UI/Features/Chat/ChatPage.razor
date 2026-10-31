@@ -2,7 +2,8 @@
 @* The chat screen. Owns IChatListStore.ActiveChatId while it is on screen (cleared while another page covers it, see
    ShellContext.IsCovered), opens the message window (or jumps to ?seq= from search, then catches up), and wires the
    header, the group call banner, pinned messages, in-chat search, the message list, selection mode, the message menu,
-   the media viewer and the composer. On wide screens MainLayout renders it itself and keeps it mounted under
+   the media viewer and the composer; a private chat with a stranger gets the "add to contacts / block" strip under
+   the header (ContactBar). On wide screens MainLayout renders it itself and keeps it mounted under
    info/media/profile pages. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
@@ -59,6 +60,10 @@
             {
                 <ChatHeader Chat="_chat" ChatId="ChatId" Back="@(Shell?.IsPhone ?? true)" OnSearch="OpenSearchAsync" OnSelect="() => EnterSelectionAsync(null)"
                             Class="@(_headerReturns ? "chead--return" : null)" />
+            }
+            @if (!_selecting && _chat is { Type: ChatType.Private })
+            {
+                <ContactBar Chat="_chat" />
             }
             <GroupCallBanner ChatId="ChatId" />
             @if (!_selecting)
