@@ -44,6 +44,19 @@ public sealed class UnsupportedAudioRouteService : IAudioRouteService
     }
 }
 
+/// <summary>
+/// iOS and macOS have no supported way to keep an app out of screenshots (iOS only tells afterwards); protected chats
+/// still hide their copy, forward and save actions.
+/// </summary>
+public sealed class UnsupportedScreenSecurityService : IScreenSecurityService
+{
+    public bool IsSupported => false;
+
+    public void SetSecure(bool secure)
+    {
+    }
+}
+
 public sealed class UnsupportedHapticsService : IHapticsService
 {
     public bool IsSupported => false;

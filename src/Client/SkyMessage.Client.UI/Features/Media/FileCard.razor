@@ -1,6 +1,7 @@
 @* A file attachment: icon (or play button for audio), name, size, download progress through IMediaDownloadService.
    Tap downloads and opens it (the browser downloads it); a tap during the download cancels it. Also renders files that
-   are still being sent. The icon sits on a squircle tile tinted by the kind of file (PDF rose, documents blue,
+   are still being sent. In a chat with content protection a file is not downloaded or handed to other apps (a tap
+   explains why; audio still plays in place). The icon sits on a squircle tile tinted by the kind of file (PDF rose, documents blue,
    sheets green, slides orange, archives gold, pictures pink, videos orchid, anything else the accent). *@
 @inherits UiComponentBase
 @inject IMediaDownloadService Downloads
@@ -33,7 +34,7 @@
     else
     {
         <button type="button" class="file__icon" aria-label="@ActionLabel" title="@ActionLabel" disabled="@(!Interactive || !Playable)" @onclick="OpenAsync" @onclick:stopPropagation="true">
-            <Icon Name="@(State.Phase == MediaDownloadPhase.Downloaded ? FileIconName : IconNames.ArrowDownToLine)" Size="22" />
+            <Icon Name="@(State.Phase == MediaDownloadPhase.Downloaded || Protected ? FileIconName : IconNames.ArrowDownToLine)" Size="22" />
             @if (Extension.Length > 0)
             {
                 <span class="file__ext">@Extension</span>
@@ -72,6 +73,8 @@
     [Parameter] public EventCallback OnCancel { get; set; }
     /// <summary>False in selection mode: taps belong to the row.</summary>
     [Parameter] public bool Interactive { get; set; } = true;
+    /// <summary>The chat has content protection: no download, no opening in another app.</summary>
+    [Parameter] public bool Protected { get; set; }
     [Parameter] public RenderFragment? Trailing { get; set; }
     [Parameter] public string? Class { get; set; }
 
@@ -114,7 +117,8 @@
 
     private MediaDownloadState State => Media is null ? new MediaDownloadState(MediaDownloadPhase.NotDownloaded) : Downloads.GetState(Media.Id);
 
-    private string ActionLabel => State.Phase == MediaDownloadPhase.Downloaded ? L["media.file.open"] : L["media.file.download"];
+    private string ActionLabel => Protected ? L["chat.protected.noFiles"]
+        : State.Phase == MediaDownloadPhase.Downloaded ? L["media.file.open"] : L["media.file.download"];
 
     private string SizeText
     {
@@ -138,6 +142,11 @@
     private async Task OpenAsync()
     {
         if (!Interactive || Media is not { Status: MediaStatus.Ready } media) return;
+        if (Protected)
+        {
+            Toasts.Info(L["chat.protected.noFiles"]);
+            return;
+        }
         if (State.Phase == MediaDownloadPhase.Downloading)
         {
             CancelDownload();

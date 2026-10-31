@@ -72,6 +72,10 @@ public interface ISkyApi
     Task<ChatInvitePreviewDto> GetInvitePreviewAsync(string token, CancellationToken ct = default);
     Task<ChatSummaryDto> JoinByInviteAsync(string token, CancellationToken ct = default);
     Task<ChatUserSettingsDto> UpdateChatSettingsAsync(Guid chatId, UpdateChatSettingsRequest request, CancellationToken ct = default);
+    /// <summary>My pinned chats in the order I want them (top first); returns every pinned chat's new order.</summary>
+    Task<PinnedChatsOrderDto> ReorderPinnedChatsAsync(IReadOnlyList<Guid> chatIdsTopFirst, CancellationToken ct = default);
+    /// <summary>No forwarding/copying/saving: groups for everyone (admins), private chats my own part.</summary>
+    Task<ChatInfoDto> SetContentProtectionAsync(Guid chatId, bool enabled, CancellationToken ct = default);
     Task MarkReadAsync(Guid chatId, long upToSeq, CancellationToken ct = default);
     Task ClearHistoryAsync(Guid chatId, bool forEveryone, CancellationToken ct = default);
     Task DeleteChatAsync(Guid chatId, bool forEveryone, CancellationToken ct = default);

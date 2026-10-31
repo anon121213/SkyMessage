@@ -88,6 +88,14 @@ public sealed class ChatsController(IChatService chats, IChatMemberService membe
     public Task<ChatUserSettingsDto> UpdateSettings(Guid chatId, [FromBody] UpdateChatSettingsRequest request, CancellationToken ct) =>
         chats.UpdateSettingsAsync(chatId, request, ct);
 
+    [HttpPut(ApiRoutes.Chats.PinnedOrder)]
+    public Task<PinnedChatsOrderDto> ReorderPinned([FromBody] ReorderPinnedChatsRequest request, CancellationToken ct) =>
+        chats.ReorderPinnedAsync(request, ct);
+
+    [HttpPut(ApiRoutes.Chats.ContentProtection)]
+    public Task<ChatInfoDto> SetContentProtection(Guid chatId, [FromBody] SetContentProtectionRequest request, CancellationToken ct) =>
+        chats.SetContentProtectionAsync(chatId, request, ct);
+
     [HttpPost(ApiRoutes.Chats.Read)]
     public async Task<IActionResult> MarkRead(Guid chatId, [FromBody] MarkReadRequest request, CancellationToken ct)
     {

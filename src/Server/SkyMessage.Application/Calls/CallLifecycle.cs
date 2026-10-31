@@ -374,6 +374,8 @@ internal sealed class CallLifecycle(
                 MemberCount = chat.MemberCount,
                 Permissions = CallMapping.ToDto(chat.Permissions),
                 ActiveCallId = activeCallId,
+                ProtectContent = chat.ProtectContent,
+                ProtectContentBy = chat.ProtectContentBy,
             };
         }
         catch (Exception ex)

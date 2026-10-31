@@ -76,7 +76,8 @@ Api `AddLiveKitProxy/MapLiveKitProxy`. Controllers are discovered automatically.
   Match the style of the foundation files.
 - IDs: `Guid.CreateVersion7()`. Times: `IClock.UtcNow` (UTC, truncated to microseconds = PostgreSQL
   precision, so values round-trip exactly). Never `DateTimeOffset.UtcNow` in services.
-- JSON: `SkyJson` everywhere (camelCase, enums as strings).
+- JSON: `SkyJson` everywhere (camelCase, enums as strings). `SystemEventType` grows with releases: apps read an
+  unknown name as `Unknown` (`TolerantEnumConverter`) and show a generic service message.
 - Routes: actions use `ApiRoutes.*` template constants on the action attribute (no controller-level
   `[Route]`): `[HttpGet(ApiRoutes.Chats.ById)]`. Clients use the `*Path(...)` builders.
 - Auth: the fallback policy requires an authenticated user. **Anonymous endpoints (exhaustive):**
@@ -255,6 +256,13 @@ Chats:
   and invalid tokens → 404 `invite_invalid`).
 - `PUT .../settings` → `ChatSettingsChanged` to the caller. `POST .../read {upToSeq}`: clamp, only up,
   `MessagesRead` to members. `POST .../clear-history`, `DELETE api/chats/{id}?forEveryone=`.
+- `PUT api/chats/pinned-order {chatIds}`: my own order of pinned chats (`PinOrder`, higher first; a new pin goes on
+  top) → `PinnedChatsReordered` to my devices.
+- `PUT api/chats/{id}/content-protection {enabled}`: groups — admins; private chats — each side turns their own part
+  on or off (`ProtectContentBy`, protected while anyone's part is on); Saved → 400. Blocked either way → switching
+  on is 403 `user_blocked`, taking one's own part back still works but posts no notice. Deleting an account removes
+  its part (no notice). A real change → `ChatUpdated` + system `ContentProtectionEnabled/Disabled`. Forwarding out
+  of a protected chat → 403 `forward_restricted`.
 
 Messages:
 - `GET .../messages?beforeSeq|afterSeq|aroundSeq&limit` → `MessagesPageDto` (ascending, default 50/max 100,
@@ -360,10 +368,11 @@ Messages:
 | MessagesRead | chat members | read up to seq |
 | Typing | other members (not blockers) | hub SendTyping |
 | ChatAdded | the user(s) | new group, added, joined, first private message, unhide |
-| ChatUpdated | members | title/description/avatar/permissions/member count/active call |
+| ChatUpdated | members | title/description/avatar/permissions/member count/active call/content protection |
 | ChatRemoved | the user(s) | left, removed, group deleted |
 | ChatMembersChanged | members | add/remove/role |
-| ChatSettingsChanged | caller's user | pin/archive/mute |
+| ChatSettingsChanged | caller's user | pin/archive/mute/contact bar closed |
+| PinnedChatsReordered | caller's user (all devices) | pinned chats rearranged (`PUT api/chats/pinned-order`) |
 | HistoryCleared | caller / both | clear history |
 | PinnedMessagesChanged | members | pin/unpin |
 | PresenceChanged | related users (per-viewer privacy, not blocked) | online/offline |

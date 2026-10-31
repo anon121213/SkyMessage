@@ -8,7 +8,7 @@ namespace SkyMessage.Application.Messaging;
 /// <summary>Chat list, chat lifecycle and per-user chat state.</summary>
 public interface IChatService
 {
-    /// <summary>Visible (not hidden) chats, pinned first, then by last activity.</summary>
+    /// <summary>Visible (not hidden) chats, pinned first (in my pin order), then by last activity.</summary>
     Task<IReadOnlyList<ChatSummaryDto>> GetChatsAsync(CancellationToken cancellationToken = default);
     Task<ChatSummaryDto> GetChatAsync(Guid chatId, CancellationToken cancellationToken = default);
     Task<ChatDetailsDto> GetDetailsAsync(Guid chatId, CancellationToken cancellationToken = default);
@@ -23,6 +23,13 @@ public interface IChatService
     Task<ChatInfoDto> RemoveAvatarAsync(Guid chatId, CancellationToken cancellationToken = default);
 
     Task<ChatUserSettingsDto> UpdateSettingsAsync(Guid chatId, UpdateChatSettingsRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Rearranges my pinned chats (top first); returns every pinned chat's new order and tells all my devices.</summary>
+    Task<PinnedChatsOrderDto> ReorderPinnedAsync(ReorderPinnedChatsRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Content protection on/off: groups for everyone (admins), private chats the caller's own part (either side).
+    /// ChatUpdated to the members, plus a service message when the chat's protection actually flips.
+    /// </summary>
+    Task<ChatInfoDto> SetContentProtectionAsync(Guid chatId, SetContentProtectionRequest request, CancellationToken cancellationToken = default);
     Task MarkReadAsync(Guid chatId, MarkReadRequest request, CancellationToken cancellationToken = default);
     Task ClearHistoryAsync(Guid chatId, bool forEveryone, CancellationToken cancellationToken = default);
     /// <summary>

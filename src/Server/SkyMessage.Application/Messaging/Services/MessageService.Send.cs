@@ -147,6 +147,9 @@ internal sealed partial class MessageService
             throw new ConflictException(ErrorCodes.Conflict, "A ClientMessageId was already used in another chat.");
         var done = existing.Select(e => e.ClientMessageId).ToHashSet();
         var pendingSourceIds = clientIdBySource.Where(p => !done.Contains(p.Value)).Select(p => p.Key).ToList();
+        // Content protection: nothing more leaves the chat, whoever asks and wherever to (Saved Messages and the chat
+        // itself included). A retry of a forward made before protection was turned on still gets its copies back.
+        if (pendingSourceIds.Count > 0 && source.ProtectContent) throw new ForbiddenException(ErrorCodes.ForwardRestricted);
 
         var created = new List<Message>();
         List<Guid> unhidden = [];

@@ -55,6 +55,7 @@ Rules:
 | Chat list item | swipe left | reveals Mute and Archive; full swipe archives (Undo toast) |
 | Chat list item | swipe right | reveals Pin and Read; full swipe toggles pin |
 | Chat list item | long-press | context menu (existing) |
+| Pinned chat list item (2+ pinned) | long-press, then drag up/down (mouse: drag) | lifts the row and reorders the pinned chats; letting go without moving (or resting) opens the menu |
 | Message | swipe left | reply (existing) |
 | Message (not on media) | double-tap | toggle the quick reaction (Settings › Chats › Quick reaction) |
 | Message | long-press | message menu with reactions (existing); the bubble lifts slightly |
@@ -66,6 +67,8 @@ Rules:
 | Toast | swipe sideways | dismiss |
 
 Coexistence:
+- A pinned row lifted by its long-press owns the touch: it moves only vertically, the row swipe leaves it alone and the
+  list does not scroll under it (it scrolls by itself near the edges). Before the lift, swipes and scrolling win.
 - Swipe-back only claims **rightward** horizontal pans; message swipe-to-reply only **leftward**; chat list items
   claim both but live on a root page (no swipe-back there).
 - An element that owns horizontal drags itself (sliders, horizontal scrollers, the PiP window, the media viewer, the

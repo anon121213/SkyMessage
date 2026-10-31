@@ -33,6 +33,7 @@ public static class WebPlatformSetup
         services.AddSingleton<IDeepLinkSource, WebDeepLinkSource>();
         services.AddSingleton<INetworkStatusService, WebNetworkStatusService>();
         services.AddSingleton<ISystemUiService, WebSystemUiService>();
+        services.AddSingleton<IScreenSecurityService, WebScreenSecurityService>();
         services.AddSingleton<IHapticsService, WebHapticsService>();
         services.AddSingleton<IBackgroundConnectionService, WebBackgroundConnectionService>();
         services.AddSingleton<IInterProcessLock, WebInterProcessLock>();

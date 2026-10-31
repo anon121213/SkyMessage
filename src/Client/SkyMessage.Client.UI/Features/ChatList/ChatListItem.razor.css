@@ -44,6 +44,16 @@
     transition: background-color var(--sm-dur-fast) ease, box-shadow var(--sm-dur) ease;
 }
 
+/* Lifted to be dragged among the pinned chats (app.js attachPinReorder moves the wrapper): a solid card (it passes
+   over the other rows, which must not show through), a touch bigger and floating above its neighbours, which glide
+   aside. */
+.chat-row-wrap[data-reorder-drag] ::deep .chat-row {
+    background-color: var(--sm-card-solid);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    transform: scale(1.02);
+    cursor: grabbing;
+}
+
 html[data-compact="true"] .chat-row-wrap ::deep .chat-row {
     gap: 12px;
     min-height: 3.875rem;

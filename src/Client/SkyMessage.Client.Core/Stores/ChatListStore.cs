@@ -104,6 +104,7 @@ internal sealed class ChatListStore : IChatListStore, IAccountScoped
         realtime.ChatRemoved += e => Apply(() => _chats.Remove(e.ChatId));
         realtime.ChatMembersChanged += e => ScheduleRefetch(e.ChatId);
         realtime.ChatSettingsChanged += e => Apply(() => Update(e.ChatId, c => ChatRules.WithSettings(c, e.Settings)));
+        realtime.PinnedChatsReordered += e => Apply(() => ChatRules.ApplyPinOrders(_chats, e.Chats));
         realtime.HistoryCleared += e => Apply(() => OnHistoryCleared(e.ChatId, e.UpToSeq));
         realtime.Resynced += OnResynced;
         users.UserChanged += OnUserChanged;
@@ -312,8 +313,66 @@ internal sealed class ChatListStore : IChatListStore, IAccountScoped
     }
 
     public Task SetPinnedAsync(Guid chatId, bool pinned) =>
-        UpdateSettingsAsync(chatId, new UpdateChatSettingsRequest { IsPinned = pinned },
-            c => c with { IsPinned = pinned, PinnedAt = pinned ? c.PinnedAt ?? _time.GetUtcNow() : null });
+        UpdateSettingsAsync(chatId, new UpdateChatSettingsRequest { IsPinned = pinned }, c => c.IsPinned == pinned ? c : c with
+        {
+            IsPinned = pinned,
+            PinnedAt = pinned ? c.PinnedAt ?? _time.GetUtcNow() : null,
+            // A new pin goes on top (the server gives it the same place).
+            PinOrder = pinned ? PinnedOrderRules.NextPin(_chats.Values) : 0,
+        });
+
+    public async Task ReorderPinnedAsync(IReadOnlyList<Guid> chatIdsTopFirst)
+    {
+        if (chatIdsTopFirst.Count == 0) return;
+        List<ChatPinOrderDto>? before = null;
+        await MutateAsync(() =>
+        {
+            before = _chats.Values.Where(c => c.IsPinned).Select(c => new ChatPinOrderDto { ChatId = c.Id, PinOrder = c.PinOrder }).ToList();
+            return ChatRules.ApplyPinOrders(_chats, PinnedOrderRules.Renumber(_chats.Values, chatIdsTopFirst));
+        }).ConfigureAwait(false);
+
+        try
+        {
+            // The answer has every pinned chat's place (it also comes to all my devices as PinnedChatsReordered).
+            var order = await _api.ReorderPinnedChatsAsync(chatIdsTopFirst).ConfigureAwait(false);
+            await MutateAsync(() => ChatRules.ApplyPinOrders(_chats, order.Chats)).ConfigureAwait(false);
+        }
+        catch (ApiException)
+        {
+            if (before is { } original) await MutateAsync(() => ChatRules.ApplyPinOrders(_chats, original)).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public Task SetContactBarDismissedAsync(Guid chatId) =>
+        UpdateSettingsAsync(chatId, new UpdateChatSettingsRequest { ContactBarDismissed = true }, c => c with { ContactBarDismissed = true });
+
+    public async Task SetContentProtectionAsync(Guid chatId, bool enabled)
+    {
+        var me = _auth.UserId ?? throw new ApiException(401, ErrorCodes.Unauthorized, "Not signed in");
+        ChatSummaryDto? before = null;
+        await MutateAsync(() =>
+        {
+            if (!_chats.TryGetValue(chatId, out var chat)) return false;
+            before = chat;
+            return Update(chatId, c => ContentProtectionRules.Apply(c, me, enabled));
+        }).ConfigureAwait(false);
+
+        try
+        {
+            var info = await _api.SetContentProtectionAsync(chatId, enabled).ConfigureAwait(false);
+            await MutateAsync(() => OnChatUpdated(info)).ConfigureAwait(false);
+        }
+        catch (ApiException)
+        {
+            if (before is { } original)
+            {
+                await MutateAsync(() => Update(chatId, c => c with { ProtectContent = original.ProtectContent, ProtectContentBy = original.ProtectContentBy }))
+                    .ConfigureAwait(false);
+            }
+            throw;
+        }
+    }
 
     public Task SetArchivedAsync(Guid chatId, bool archived) =>
         UpdateSettingsAsync(chatId, new UpdateChatSettingsRequest { IsArchived = archived }, c => c with { IsArchived = archived });
@@ -501,16 +560,7 @@ internal sealed class ChatListStore : IChatListStore, IAccountScoped
         return true;
     }
 
-    private bool OnChatUpdated(ChatInfoDto info) => Update(info.Id, chat => chat.Type == ChatType.Group
-        ? chat with
-        {
-            Title = info.Title ?? chat.Title,
-            AvatarMediaId = info.AvatarMediaId,
-            MemberCount = info.MemberCount,
-            Permissions = info.Permissions,
-            ActiveCallId = info.ActiveCallId,
-        }
-        : chat with { MemberCount = info.MemberCount, ActiveCallId = info.ActiveCallId });
+    private bool OnChatUpdated(ChatInfoDto info) => Update(info.Id, chat => ChatRules.WithInfo(chat, info));
 
     private bool OnHistoryCleared(Guid chatId, long upToSeq)
     {
@@ -694,15 +744,7 @@ internal sealed class ChatListStore : IChatListStore, IAccountScoped
         catch (ApiException)
         {
             if (before is { } original)
-            {
-                await MutateAsync(() => Update(chatId, c => ChatRules.WithSettings(c, new ChatUserSettingsDto
-                {
-                    IsPinned = original.IsPinned,
-                    PinnedAt = original.PinnedAt,
-                    IsArchived = original.IsArchived,
-                    MutedUntil = original.MutedUntil,
-                }))).ConfigureAwait(false);
-            }
+                await MutateAsync(() => Update(chatId, c => ChatRules.WithSettings(c, ChatRules.SettingsOf(original)))).ConfigureAwait(false);
             throw;
         }
     }

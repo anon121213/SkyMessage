@@ -1,0 +1,151 @@
+/* The new-contact strip: a slim glass capsule of the chat's top stack (under the header, like the pinned strip) with
+   two tonal capsules — "Add to contacts" in the accent tint, "Block" in the rose one — and a quiet close button. */
+
+.cbar {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 2.875rem;
+    padding: 5px 4px 5px 5px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+}
+
+html[data-fx="lite"] .cbar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* Appears while the chat is open (a stranger wrote first, contacts changed): drops in from under the header. */
+.cbar--enter {
+    animation: cbar-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+/* Added, blocked or closed: shrinks away a little faster than it came. */
+.cbar--leave {
+    pointer-events: none;
+    animation: cbar-out 160ms var(--sm-ease-in) forwards;
+}
+
+@keyframes cbar-in {
+    from {
+        opacity: 0;
+        transform: translateY(-40%) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes cbar-out {
+    to {
+        opacity: 0;
+        transform: translateY(-30%) scale(0.96);
+    }
+}
+
+/* Each capsule as wide as its words, the room left shared between them. */
+.cbar__action {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 2.25rem;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    transition: transform var(--sm-dur) var(--sm-spring), filter var(--sm-dur-fast) ease;
+}
+
+.cbar__action--danger {
+    background: var(--sm-danger-soft);
+    color: var(--sm-danger);
+}
+
+.cbar__action:active:not(:disabled) {
+    transform: scale(0.96);
+    transition-duration: 90ms;
+}
+
+.cbar__action:disabled {
+    opacity: 0.6;
+}
+
+/* The kit's tonal button hover (.sm-btn--tonal), for both tints. */
+@media (hover: hover) {
+    .cbar__action:hover:not(:disabled) {
+        filter: brightness(0.97) saturate(1.1);
+    }
+}
+
+.cbar__action ::deep .sm-icon {
+    flex-shrink: 0;
+}
+
+.cbar__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbar ::deep .cbar__close {
+    --size: 2.25rem;
+    flex-shrink: 0;
+    color: var(--sm-text-2);
+}
+
+/* Phones: both labels in full ("Добавить в контакты" is long) win over the icons. */
+@media (max-width: 480px) {
+    .cbar {
+        gap: 4px;
+    }
+
+    .cbar__action {
+        padding: 0 8px;
+        font-size: 0.8125rem;
+    }
+
+    .cbar__action ::deep .sm-icon {
+        display: none;
+    }
+
+    .cbar ::deep .cbar__close {
+        --size: 2rem;
+    }
+}
+
+/* Narrow phones (360px): a label that still does not fit wraps onto a second line instead of losing its end. */
+@media (max-width: 380px) {
+    .cbar__action {
+        height: auto;
+        min-height: 2.25rem;
+        padding: 4px 8px;
+    }
+
+    .cbar__label {
+        white-space: normal;
+        text-align: center;
+        line-height: 1.15;
+    }
+
+    /* "Заблокировать" is one word: it keeps its width and the other label wraps. */
+    .cbar__action--danger {
+        flex-shrink: 0;
+    }
+}

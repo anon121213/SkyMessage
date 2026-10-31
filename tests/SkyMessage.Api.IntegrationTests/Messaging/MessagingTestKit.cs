@@ -286,6 +286,18 @@ internal static class MessagingApi
     public static Task DeleteChatAsync(this TestUser user, Guid chatId, bool forEveryone) =>
         user.DeleteRawAsync(ApiRoutes.Chats.DeletePath(chatId, forEveryone)).NoContentAsync();
 
+    public static Task<HttpResponseMessage> TryReorderPinnedAsync(this TestUser user, params Guid[] chatIds) =>
+        user.PutRawAsync(ApiRoutes.Chats.PinnedOrder, new ReorderPinnedChatsRequest { ChatIds = chatIds });
+
+    public static async Task<PinnedChatsOrderDto> ReorderPinnedAsync(this TestUser user, params Guid[] chatIds) =>
+        await (await user.TryReorderPinnedAsync(chatIds)).ReadAsync<PinnedChatsOrderDto>();
+
+    public static Task<HttpResponseMessage> TrySetContentProtectionAsync(this TestUser user, Guid chatId, bool enabled) =>
+        user.PutRawAsync(ApiRoutes.Chats.ContentProtectionPath(chatId), new SetContentProtectionRequest { Enabled = enabled });
+
+    public static async Task<ChatInfoDto> SetContentProtectionAsync(this TestUser user, Guid chatId, bool enabled) =>
+        await (await user.TrySetContentProtectionAsync(chatId, enabled)).ReadAsync<ChatInfoDto>();
+
     // ---- messages ----
 
     public static SendMessageRequest Text(string text, Guid? replyTo = null, IReadOnlyList<MessageEntityDto>? entities = null) => new()
@@ -391,6 +403,7 @@ internal static class Ev
     public const string ChatRemoved = nameof(IRealtimeClient.ChatRemoved);
     public const string ChatMembersChanged = nameof(IRealtimeClient.ChatMembersChanged);
     public const string ChatSettingsChanged = nameof(IRealtimeClient.ChatSettingsChanged);
+    public const string PinnedChatsReordered = nameof(IRealtimeClient.PinnedChatsReordered);
     public const string HistoryCleared = nameof(IRealtimeClient.HistoryCleared);
     public const string PinnedMessagesChanged = nameof(IRealtimeClient.PinnedMessagesChanged);
     public const string PresenceChanged = nameof(IRealtimeClient.PresenceChanged);
@@ -454,6 +467,7 @@ public sealed class RealtimeProbe : IAsyncDisposable
         Listen<ChatRefEvent>(Ev.ChatRemoved);
         Listen<ChatRefEvent>(Ev.ChatMembersChanged);
         Listen<ChatSettingsChangedEvent>(Ev.ChatSettingsChanged);
+        Listen<PinnedChatsOrderDto>(Ev.PinnedChatsReordered);
         Listen<HistoryClearedEvent>(Ev.HistoryCleared);
         Listen<ChatRefEvent>(Ev.PinnedMessagesChanged);
         Listen<PresenceChangedEvent>(Ev.PresenceChanged);

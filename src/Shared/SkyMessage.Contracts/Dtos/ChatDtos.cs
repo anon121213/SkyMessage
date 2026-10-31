@@ -45,11 +45,26 @@ public sealed record ChatSummaryDto
 
     public bool IsPinned { get; init; }
     public DateTimeOffset? PinnedAt { get; init; }
+    /// <summary>
+    /// My order of pinned chats: higher comes first. A new pin gets the highest (it goes on top);
+    /// <see cref="ApiRoutes.Chats.PinnedOrder"/> rearranges them. 0 when not pinned.
+    /// </summary>
+    public long PinOrder { get; init; }
     public bool IsArchived { get; init; }
     public DateTimeOffset? MutedUntil { get; init; }
+    /// <summary>Private chats: I closed the "add to contacts / block" bar of this chat.</summary>
+    public bool ContactBarDismissed { get; init; }
     /// <summary>Private chat where either side blocked the other.</summary>
     public bool IsBlocked { get; init; }
     public Guid? ActiveCallId { get; init; }
+    /// <summary>
+    /// Forwarding, copying and saving this chat's messages is turned off for everyone (the server rejects forwards
+    /// from it; clients also block screenshots where they can). Groups: switched by admins; private chats: on while
+    /// either participant has it on.
+    /// </summary>
+    public bool ProtectContent { get; init; }
+    /// <summary>Private chats: the participants who turned <see cref="ProtectContent"/> on (each can only take back their own).</summary>
+    public IReadOnlyList<Guid> ProtectContentBy { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }
 }
 
@@ -64,6 +79,10 @@ public sealed record ChatInfoDto
     public int MemberCount { get; init; }
     public ChatPermissionsDto Permissions { get; init; } = new();
     public Guid? ActiveCallId { get; init; }
+    /// <summary>See <see cref="ChatSummaryDto.ProtectContent"/>.</summary>
+    public bool ProtectContent { get; init; }
+    /// <summary>See <see cref="ChatSummaryDto.ProtectContentBy"/>.</summary>
+    public IReadOnlyList<Guid> ProtectContentBy { get; init; } = [];
 }
 
 public sealed record ChatMemberDto
@@ -147,8 +166,12 @@ public sealed record ChatUserSettingsDto
 {
     public bool IsPinned { get; init; }
     public DateTimeOffset? PinnedAt { get; init; }
+    /// <summary>See <see cref="ChatSummaryDto.PinOrder"/>.</summary>
+    public long PinOrder { get; init; }
     public bool IsArchived { get; init; }
     public DateTimeOffset? MutedUntil { get; init; }
+    /// <summary>See <see cref="ChatSummaryDto.ContactBarDismissed"/>.</summary>
+    public bool ContactBarDismissed { get; init; }
 }
 
 /// <summary>PATCH semantics: null fields are left unchanged.</summary>
@@ -158,6 +181,40 @@ public sealed record UpdateChatSettingsRequest
     public bool? IsArchived { get; init; }
     /// <summary>null = no change, 0 = unmute, -1 = mute forever, &gt;0 = mute for N seconds.</summary>
     public int? MuteForSeconds { get; init; }
+    /// <summary>Private chats only: true closes the "add to contacts / block" bar of this chat (on every device).</summary>
+    public bool? ContactBarDismissed { get; init; }
+}
+
+/// <summary>PUT <see cref="ApiRoutes.Chats.PinnedOrder"/>: my pinned chats in the order I want them, top first.</summary>
+public sealed record ReorderPinnedChatsRequest
+{
+    /// <summary>
+    /// Pinned chats, top first (at most <see cref="Limits.MaxPinnedChatsReorder"/>). Ids that are not (or no longer)
+    /// pinned are ignored; pinned chats left out keep their places and the listed ones fill the rest in this order.
+    /// </summary>
+    public IReadOnlyList<Guid> ChatIds { get; init; } = [];
+}
+
+public sealed record ChatPinOrderDto
+{
+    public Guid ChatId { get; init; }
+    public long PinOrder { get; init; }
+}
+
+/// <summary>Every pinned chat of the user with its <see cref="ChatSummaryDto.PinOrder"/>, top first.</summary>
+public sealed record PinnedChatsOrderDto
+{
+    public IReadOnlyList<ChatPinOrderDto> Chats { get; init; } = [];
+}
+
+/// <summary>PUT <see cref="ApiRoutes.Chats.ContentProtection"/>.</summary>
+public sealed record SetContentProtectionRequest
+{
+    /// <summary>
+    /// Groups (admins): on/off for everyone. Private chats: turns the caller's own part on/off; the chat stays protected
+    /// while the other participant has theirs on.
+    /// </summary>
+    public bool Enabled { get; init; }
 }
 
 public sealed record MarkReadRequest

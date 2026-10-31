@@ -18,7 +18,8 @@ internal sealed record MemberContext(
     long ClearedUpToSeq,
     bool IsHidden,
     long LastMessageSeq,
-    string? InviteToken)
+    string? InviteToken,
+    bool ProtectContent)
 {
     public bool IsAdmin => ChatPolicy.IsAdmin(Role);
     public bool IsGroup => Type == ChatType.Group;
@@ -39,6 +40,7 @@ internal static class ChatAccess
                 m.Chat!.Type,
                 m.Chat.LastMessageSeq,
                 m.Chat.InviteToken,
+                m.Chat.ProtectContent,
                 m.Chat.Permissions.SendMessages,
                 m.Chat.Permissions.SendMedia,
                 m.Chat.Permissions.AddMembers,
@@ -57,7 +59,7 @@ internal static class ChatAccess
             ChangeInfo = row.ChangeInfo,
         };
         return new MemberContext(chatId, userId, row.Type, row.Role, permissions, row.LastReadSeq, row.ClearedUpToSeq,
-            row.IsHidden, row.LastMessageSeq, row.InviteToken);
+            row.IsHidden, row.LastMessageSeq, row.InviteToken, row.ProtectContent);
     }
 
     /// <summary>The caller's membership; anything else is 404 chat_not_found (never leak existence).</summary>
@@ -117,6 +119,8 @@ internal static class ChatAccess
                     .OrderByDescending(x => x.CreatedAt)
                     .Select(x => (Guid?)x.Id)
                     .FirstOrDefault(),
+                ProtectContent = c.ProtectContent,
+                ProtectContentBy = c.ProtectContentBy,
             })
             .FirstOrDefaultAsync(ct);
 

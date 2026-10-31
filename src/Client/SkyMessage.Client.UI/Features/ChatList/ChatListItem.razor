@@ -2,7 +2,8 @@
    message status, two-line preview (typing / draft / sender), badges. No separators: air between rows, a rounded
    press highlight. Touch: swipe left for Mute/Archive, right for Pin/Read (js/app.js attachRowSwipe on the list; the
    buttons are rendered once the row is first swiped, see SwipeActions): colored squircle chips come out of the edge,
-   and a full swipe fills the space with the primary one's color. *@
+   and a full swipe fills the space with the primary one's color. Pinned rows can be dragged up and down among the
+   pinned ones (Reorderable: long-press, or drag with the mouse; js/app.js attachPinReorder on the list). *@
 @inherits UiComponentBase
 @inject IChatListStore ChatList
 @inject ITypingStore Typing
@@ -13,7 +14,8 @@
 @inject IMessagePreviewFormatter Preview
 @inject ISettingsService Settings
 
-<div class="chat-row-wrap" role="listitem" data-swipe-row="@Chat.Id" data-swipe-start="@(StartActions.Count > 0 ? "true" : "false")">
+<div class="chat-row-wrap" role="listitem" data-swipe-row="@Chat.Id" data-swipe-start="@(StartActions.Count > 0 ? "true" : "false")"
+     data-reorder="@(Reorderable ? "" : null)">
     @if (SwipeActions)
     {
         @* Behind the row, inner button first (the last one is the side's primary action, run by a full swipe). They
@@ -123,6 +125,8 @@
     [Parameter] public bool Selected { get; set; }
     /// <summary>Render the swipe buttons (the list asks for them when the row is first swiped).</summary>
     [Parameter] public bool SwipeActions { get; set; }
+    /// <summary>A pinned chat that can be dragged among the other pinned ones of the list.</summary>
+    [Parameter] public bool Reorderable { get; set; }
     [Parameter] public EventCallback<ChatSummaryDto> OnOpen { get; set; }
     [Parameter] public EventCallback<(ChatSummaryDto Chat, MenuPosition Position)> OnMenu { get; set; }
     /// <summary>A swipe button was tapped.</summary>

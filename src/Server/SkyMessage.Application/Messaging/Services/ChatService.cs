@@ -28,6 +28,7 @@ internal sealed class ChatService(
         var chats = await summaries.BuildAsync(me, chatIds: null, visibleOnly: true, cancellationToken);
         return chats
             .OrderByDescending(c => c.IsPinned)
+            .ThenByDescending(c => c.PinOrder)
             .ThenByDescending(c => c.PinnedAt)
             .ThenByDescending(c => c.LastActivityAt)
             .ThenByDescending(c => c.Id)
@@ -379,9 +380,11 @@ internal sealed class ChatService(
     public async Task<ChatUserSettingsDto> UpdateSettingsAsync(Guid chatId, UpdateChatSettingsRequest request, CancellationToken cancellationToken = default)
     {
         var me = currentUser.UserId;
-        await db.RequireMemberAsync(chatId, me, cancellationToken);
+        var member = await db.RequireMemberAsync(chatId, me, cancellationToken);
         if (request.MuteForSeconds is { } seconds && !MuteRules.IsValidDuration(seconds))
             throw MessagingErrors.Validation("muteForSeconds", "Use 0 to unmute, -1 to mute forever or a positive number of seconds.");
+        if (request.ContactBarDismissed is not null && member.Type != ChatType.Private)
+            throw MessagingErrors.Validation("contactBarDismissed", "Only private chats have the contact bar.");
 
         var row = await db.ChatMembers.FirstAsync(m => m.ChatId == chatId && m.UserId == me, cancellationToken);
         var now = clock.UtcNow;
@@ -389,17 +392,24 @@ internal sealed class ChatService(
         {
             if (pinned && !row.IsPinned)
             {
+                // On top of my other pins. Two pins at the same moment may tie; PinnedAt orders them.
+                var highest = await db.ChatMembers.AsNoTracking()
+                    .Where(m => m.UserId == me && m.IsPinned)
+                    .MaxAsync(m => (long?)m.PinOrder, cancellationToken);
                 row.IsPinned = true;
                 row.PinnedAt = now;
+                row.PinOrder = PinOrderRules.NextPin(highest);
             }
             else if (!pinned && row.IsPinned)
             {
                 row.IsPinned = false;
                 row.PinnedAt = null;
+                row.PinOrder = 0;
             }
         }
         if (request.IsArchived is { } archived) row.IsArchived = archived;
         if (request.MuteForSeconds is { } mute) row.MutedUntil = MuteRules.MutedUntil(now, mute);
+        if (request.ContactBarDismissed is { } dismissed) row.ContactBarDismissed = dismissed;
 
         var changed = db.ChangeTracker.HasChanges();
         if (changed) await db.SaveChangesAsync(cancellationToken);
@@ -408,14 +418,131 @@ internal sealed class ChatService(
         {
             IsPinned = row.IsPinned,
             PinnedAt = row.PinnedAt,
+            PinOrder = row.PinOrder,
             IsArchived = row.IsArchived,
             MutedUntil = row.MutedUntil,
+            ContactBarDismissed = row.ContactBarDismissed,
         };
         db.ChangeTracker.Clear();
 
         if (changed)
             await events.ToUserAsync(me, "ChatSettingsChanged", c => c.ChatSettingsChanged(new ChatSettingsChangedEvent { ChatId = chatId, Settings = settings }));
         return settings;
+    }
+
+    public async Task<PinnedChatsOrderDto> ReorderPinnedAsync(ReorderPinnedChatsRequest request, CancellationToken cancellationToken = default)
+    {
+        var me = currentUser.UserId;
+        var requested = request.ChatIds ?? [];
+        if (requested.Count is 0 or > Limits.MaxPinnedChatsReorder)
+            throw MessagingErrors.Validation("chatIds", $"List 1 to {Limits.MaxPinnedChatsReorder} pinned chats.");
+        if (requested.Contains(Guid.Empty) || requested.Distinct().Count() != requested.Count)
+            throw MessagingErrors.Validation("chatIds", "Chat ids must be distinct and not empty.");
+
+        PinnedChatsOrderDto order;
+        bool changed;
+        await using (var tx = await db.Database.BeginTransactionAsync(cancellationToken))
+        {
+            // Reorders from several devices run one after another, each starting from the order the previous one left.
+            await db.Database
+                .SqlQuery<Guid>($"SELECT chat_id AS \"Value\" FROM chat_members WHERE user_id = {me} AND is_pinned ORDER BY chat_id FOR UPDATE")
+                .ToListAsync(cancellationToken);
+            var rows = await db.ChatMembers
+                .Where(m => m.UserId == me && m.IsPinned && !m.Chat!.IsDeleted)
+                .Select(m => new { Member = m, m.Chat!.LastActivityAt })
+                .ToListAsync(cancellationToken);
+            // The order the chat list shows them in (ties as in GetChatsAsync).
+            var current = rows
+                .OrderByDescending(r => r.Member.PinOrder)
+                .ThenByDescending(r => r.Member.PinnedAt)
+                .ThenByDescending(r => r.LastActivityAt)
+                .ThenByDescending(r => r.Member.ChatId)
+                .Select(r => r.Member)
+                .ToList();
+            var byChat = current.ToDictionary(m => m.ChatId);
+            var arranged = PinOrderRules.Arrange(current.Select(m => m.ChatId).ToList(), requested);
+            for (var i = 0; i < arranged.Count; i++)
+                byChat[arranged[i]].PinOrder = PinOrderRules.OrderAt(i, arranged.Count);
+
+            changed = db.ChangeTracker.HasChanges();
+            if (changed) await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            order = new PinnedChatsOrderDto
+            {
+                Chats = arranged.Select((id, i) => new ChatPinOrderDto { ChatId = id, PinOrder = PinOrderRules.OrderAt(i, arranged.Count) }).ToList(),
+            };
+        }
+        db.ChangeTracker.Clear();
+
+        if (changed)
+            await events.ToUserAsync(me, "PinnedChatsReordered", c => c.PinnedChatsReordered(order));
+        return order;
+    }
+
+    public async Task<ChatInfoDto> SetContentProtectionAsync(Guid chatId, SetContentProtectionRequest request, CancellationToken cancellationToken = default)
+    {
+        var me = currentUser.UserId;
+        var member = await db.RequireMemberAsync(chatId, me, cancellationToken);
+        if (member.Type == ChatType.Saved)
+            throw MessagingErrors.Validation("enabled", "Saved Messages cannot be protected.");
+        if (!ChatPolicy.CanSetContentProtection(member.Type, member.Role))
+            throw new ForbiddenException(ErrorCodes.NotChatAdmin);
+        // The on/off notice is a message into the other side's chat (it even brings back a chat the blocker deleted),
+        // like a pin: blocked either way → no switching on. Taking one's own part back stays allowed, without the notice.
+        var blocked = member.Type == ChatType.Private
+                      && await db.PeerIdAsync(chatId, me, cancellationToken) is { } peerId
+                      && await privacy.IsBlockedEitherWayAsync(me, peerId, cancellationToken);
+        if (blocked && request.Enabled)
+            throw new ForbiddenException(ErrorCodes.UserBlocked);
+
+        bool wasProtected;
+        bool isProtected;
+        bool changed;
+        await using (var tx = await db.Database.BeginTransactionAsync(cancellationToken))
+        {
+            // Both sides of a private chat may switch at the same moment: the chat row lock puts them in order.
+            await ChatSequence.LockChatAsync(db, chatId, cancellationToken);
+            var chat = await db.Chats.FirstAsync(c => c.Id == chatId, cancellationToken);
+            wasProtected = chat.ProtectContent;
+            if (member.Type == ChatType.Private)
+            {
+                var by = ContentProtectionRules.Toggle(chat.ProtectContentBy, me, request.Enabled);
+                changed = !by.ToHashSet().SetEquals(chat.ProtectContentBy);
+                if (changed)
+                {
+                    chat.ProtectContentBy = by;
+                    chat.ProtectContent = ContentProtectionRules.IsProtected(by);
+                }
+            }
+            else
+            {
+                changed = chat.ProtectContent != request.Enabled;
+                chat.ProtectContent = request.Enabled;
+            }
+            isProtected = chat.ProtectContent;
+            if (changed)
+            {
+                chat.UpdatedAt = clock.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            await tx.CommitAsync(cancellationToken);
+        }
+        db.ChangeTracker.Clear();
+
+        var info = await db.LoadChatInfoAsync(chatId, CancellationToken.None) ?? throw new NotFoundException(ErrorCodes.ChatNotFound);
+        if (!changed) return info;
+
+        await PublishChatUpdatedAsync(info);
+        // One notice per real change of the chat's state (a second participant joining in changes nothing visible).
+        if (isProtected != wasProtected && !blocked)
+        {
+            await events.PostSystemEventAsync(chatId, new SystemEventDto
+            {
+                Type = isProtected ? SystemEventType.ContentProtectionEnabled : SystemEventType.ContentProtectionDisabled,
+                ActorId = me,
+            });
+        }
+        return info;
     }
 
     public async Task MarkReadAsync(Guid chatId, MarkReadRequest request, CancellationToken cancellationToken = default)
@@ -494,6 +621,7 @@ internal sealed class ChatService(
                 .SetProperty(m => m.ClearedUpToSeq, m => Math.Max(m.ClearedUpToSeq, upTo))
                 .SetProperty(m => m.IsPinned, false)
                 .SetProperty(m => m.PinnedAt, (DateTimeOffset?)null)
+                .SetProperty(m => m.PinOrder, 0L)
                 .SetProperty(m => m.IsArchived, false), ct);
 
         await events.ToUserAsync(me, "ChatRemoved", c => c.ChatRemoved(new ChatRefEvent { ChatId = chatId }));

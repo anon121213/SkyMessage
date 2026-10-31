@@ -103,8 +103,13 @@ public static class ApiRoutes
         public const string ClearHistory = "api/chats/{chatId:guid}/clear-history";
         /// <summary>GET → pinned MessageDto[] (newest first).</summary>
         public const string Pinned = "api/chats/{chatId:guid}/pinned";
+        /// <summary>PUT <see cref="ReorderPinnedChatsRequest"/> → <see cref="PinnedChatsOrderDto"/> (my pinned chats' order).</summary>
+        public const string PinnedOrder = "api/chats/pinned-order";
+        /// <summary>PUT <see cref="SetContentProtectionRequest"/> → <see cref="ChatInfoDto"/> (no forwarding/copying/saving).</summary>
+        public const string ContentProtection = "api/chats/{chatId:guid}/content-protection";
 
         public static string PinnedPath(Guid chatId) => $"api/chats/{chatId}/pinned";
+        public static string ContentProtectionPath(Guid chatId) => $"api/chats/{chatId}/content-protection";
 
         public static string ByIdPath(Guid chatId) => $"api/chats/{chatId}";
         /// <summary>DELETE ?forEveryone=</summary>

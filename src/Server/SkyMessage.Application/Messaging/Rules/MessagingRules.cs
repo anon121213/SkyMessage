@@ -94,6 +94,30 @@ internal static class MuteRules
     public static bool IsMuted(DateTimeOffset? mutedUntil, DateTimeOffset now) => mutedUntil is { } until && until > now;
 }
 
+/// <summary>A user's order of pinned chats (<c>ChatMember.PinOrder</c>: higher comes first, 0 = not pinned).</summary>
+internal static class PinOrderRules
+{
+    /// <summary>
+    /// The top-first order after a reorder request: the requested chats that are still pinned take the places the
+    /// requested chats held, in the requested order; pinned chats left out of the request (pinned meanwhile on another
+    /// device, or in the other list — main vs archive) keep their places. Unknown and repeated ids are ignored.
+    /// </summary>
+    public static IReadOnlyList<Guid> Arrange(IReadOnlyList<Guid> currentTopFirst, IReadOnlyList<Guid> requestedTopFirst)
+    {
+        var pinned = currentTopFirst.ToHashSet();
+        var requested = requestedTopFirst.Where(pinned.Contains).Distinct().ToList();
+        var moved = requested.ToHashSet();
+        var next = new Queue<Guid>(requested);
+        return currentTopFirst.Select(id => moved.Contains(id) ? next.Dequeue() : id).ToList();
+    }
+
+    /// <summary>PinOrder of the item at <paramref name="index"/> of a top-first list of <paramref name="count"/> (count … 1).</summary>
+    public static long OrderAt(int index, int count) => count - index;
+
+    /// <summary>A new pin goes on top.</summary>
+    public static long NextPin(long? highestPinned) => Math.Max(highestPinned ?? 0, 0) + 1;
+}
+
 /// <summary>Cursor hand-out rules for <c>GET .../messages/changes</c>.</summary>
 internal static class ChangesCursorRules
 {

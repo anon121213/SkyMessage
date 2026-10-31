@@ -3,7 +3,8 @@
    the chrome: a glass top bar (sender, date, actions) and a bottom stack (counter chip, caption, and for videos our own
    controls — a glass play orb, a gradient progress line; never the native <video controls>, viewer.js drives them).
    It opens out of the tapped thumbnail and closes back into it (viewer.js finds it by the media id). Save goes through
-   IMediaDownloadService; forward and "show in chat" are delegated to the owner. *@
+   IMediaDownloadService; forward and "show in chat" are delegated to the owner. Media of a protected chat (Protected)
+   has neither forward nor save, and the browser's own image menu is held back. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @using SkyMessage.Client.UI.Features.Chat
@@ -20,7 +21,7 @@
 {
     var isVideo = item.IsVideo;
     <div class="viewer @(_chrome ? null : "viewer--bare") @(isVideo ? "viewer--video" : null)" data-viewer-open data-no-swipe-back role="dialog" aria-modal="true"
-         aria-label="@L["media.viewer.title"]">
+         aria-label="@L["media.viewer.title"]" @oncontextmenu:preventDefault="Protected">
         <div class="viewer__stage" @ref="_stage">
             <div class="viewer__backdrop"></div>
             <div class="viewer__track" data-track>
@@ -68,11 +69,14 @@
                     {
                         <IconButton Icon="@IconNames.MessageCircle" Label="@L["media.showInChat"]" Class="viewer__btn" OnClick="ShowInChatAsync" />
                     }
-                    @if (OnForward.HasDelegate)
+                    @if (OnForward.HasDelegate && !Protected)
                     {
                         <IconButton Icon="@IconNames.Forward" Label="@L["chat.menu.forward"]" Class="viewer__btn" OnClick="ForwardAsync" />
                     }
-                    <IconButton Icon="@IconNames.Download" Label="@L["media.save"]" Class="viewer__btn" OnClick="SaveAsync" />
+                    @if (!Protected)
+                    {
+                        <IconButton Icon="@IconNames.Download" Label="@L["media.save"]" Class="viewer__btn" OnClick="SaveAsync" />
+                    }
                 </div>
             </div>
         </div>
@@ -140,6 +144,8 @@
     [Parameter] public EventCallback<MediaViewerItem> OnForward { get; set; }
     /// <summary>Open the chat at the shown item's message.</summary>
     [Parameter] public EventCallback<MediaViewerItem> OnShowInChat { get; set; }
+    /// <summary>The chat has content protection: no forward, no save.</summary>
+    [Parameter] public bool Protected { get; set; }
     /// <summary>The viewer opened (true) or closed (false): it covers the screen below completely.</summary>
     [Parameter] public EventCallback<bool> OnOpenChanged { get; set; }
 
@@ -290,7 +296,7 @@
 
     private async Task SaveAsync()
     {
-        if (Current is not { } item) return;
+        if (Protected || Current is not { } item) return;
         try
         {
             if (await Downloads.SaveToDeviceAsync(item.Media)) Toasts.Success(L["media.saved"]);
@@ -306,7 +312,7 @@
 
     private async Task ForwardAsync()
     {
-        if (Current is not { } item) return;
+        if (Protected || Current is not { } item) return;
         await OnForward.InvokeAsync(item);
     }
 

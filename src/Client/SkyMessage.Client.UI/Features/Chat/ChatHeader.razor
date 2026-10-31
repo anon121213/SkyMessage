@@ -1,6 +1,6 @@
 @* Chat header: a floating frosted capsule over the chat sky — back (phones), squircle avatar + name + status line
-   (typing / presence / members), call buttons, search (wide) and the chat menu (info, shared media, mute, clear history,
-   leave/delete). Tap on the avatar or the name opens the chat info. The back button carries data-shell-back: the phone
+   (typing / presence / members; a bell or shield after the name for a muted or protected chat), call buttons, search
+   (wide) and the chat menu (info, shared media, mute, clear history, leave/delete). Tap on the avatar or the name opens the chat info. The back button carries data-shell-back: the phone
    shell's swipe back (and its animated back tap) runs this very button (app.js attachSwipeBack). *@
 @inherits UiComponentBase
 @inject IChatListStore ChatList
@@ -36,6 +36,10 @@
                 @if (Chat is { } c && c.IsMuted(DateTimeOffset.UtcNow))
                 {
                     <Icon Name="@IconNames.BellOff" Size="14" Class="chead__muted" Title="@L["chatlist.muted"]" />
+                }
+                @if (ContentProtectionRules.IsProtected(Chat))
+                {
+                    <Icon Name="@IconNames.ShieldCheck" Size="14" Class="chead__muted" Title="@L["chat.protected.badge"]" />
                 }
             </div>
             @if (TypingText is { } typing)
