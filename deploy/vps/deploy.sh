@@ -8,7 +8,9 @@
 # Environment (all optional):
 #   SKY_HOST user@host, SKY_SSH_PORT, SKY_SSH_KEY  where and how to connect
 #   SKY_KNOWN_HOSTS     a known_hosts file to verify the server against (CI); no prompts then
-#   SKY_BUILD_NUMBER    the release build number (version 0.2.<n>, see Directory.Build.props); CI passes it
+#   SKY_BUILD_NUMBER    the release build number (version 0.2.<n>, see Directory.Build.props); CI passes it. The
+#                       Android release of that number staged by publish-update.sh --stage is offered to the apps
+#                       right after this server has started
 #   SKY_REBUILD_CADDY=1 build and upload Caddy even though the server already has it
 set -euo pipefail
 
@@ -66,8 +68,9 @@ rsync -az --checksum --delete -e "$SSH" "$OUT/app/" "$HOST:$REMOTE/app/"
 rsync -az -e "$SSH" "$ROOT"/deploy/vps/{docker-compose.yml,Caddyfile,livekit.yaml,Dockerfile.api,Dockerfile.caddy,init-env.sh,backup.sh} "$HOST:$REMOTE/"
 
 echo "== start on the server"
-# Only this project: its compose file, its containers and the API image it replaces. Nothing else on the host.
-$SSH "$HOST" "sh -s -- '$REMOTE' '$DOMAIN' '$NODE_IP' '$SERVICES'" <<'REMOTE_SCRIPT'
+# Only this project: its compose file, its containers, the API image it replaces and its updates directory. Nothing
+# else on the host.
+$SSH "$HOST" "sh -s -- '$REMOTE' '$DOMAIN' '$NODE_IP' '$SERVICES' '${SKY_BUILD_NUMBER:-}'" <<'REMOTE_SCRIPT'
 set -eu
 cd "$1"
 SKY_DOMAIN="$2" NODE_IP="$3" sh init-env.sh
@@ -75,6 +78,17 @@ old_api=$(docker image inspect -f '{{.Id}}' skymessage-api:prod 2>/dev/null || t
 # $4 (the services) stays unquoted on purpose: empty means all of them.
 docker compose build $4
 docker compose up -d --remove-orphans $4
+# The Android build of this release goes live only now, with its server: the old one never offered it, and the apps
+# that reconnect to the new one (still starting, a few seconds) find it at once. A failed "up" stops before this.
+if [ -n "$5" ] && [ -f "updates/staged-$5.json" ]; then
+    if [ -f updates/latest.json ] && cmp -s updates/latest.json "updates/staged-$5.json"; then
+        rm -f -- "updates/staged-$5.json"
+    else
+        if [ -f updates/latest.json ]; then cp -p updates/latest.json updates/latest.json.prev; fi
+        mv -f -- "updates/staged-$5.json" updates/latest.json
+    fi
+    echo "== the apps are offered release $5"
+fi
 docker compose ps
 new_api=$(docker image inspect -f '{{.Id}}' skymessage-api:prod 2>/dev/null || true)
 if [ -n "$old_api" ] && [ "$old_api" != "$new_api" ]; then

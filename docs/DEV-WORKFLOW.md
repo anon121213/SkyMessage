@@ -80,7 +80,7 @@ Every feature adds tests for its server rules and client stores. A feature is do
 ## Releases
 
 Merging `develop` into `main` is a release (only with the owner's go-ahead). CI (`.github/workflows/ci.yml`) builds
-and tests every push and pull request; on `main`, `release.yml` runs CI, builds the signed APK and publishes it with
-its version manifest, then deploys the server; installed apps and open web pages notice the new version and update
-themselves. The release number is the commit count of `main` (version `0.2.<n>`, Android versionCode `<n>`), so `main`
+and tests every push and pull request; on `main`, `release.yml` runs CI, builds the signed APK and uploads it, deploys
+the server and only then offers the APK (its version manifest goes live right after the new server starts; a failed
+deploy withdraws it); installed apps and open web pages notice the new version and update themselves. The release number is the commit count of `main` (version `0.2.<n>`, Android versionCode `<n>`), so `main`
 is never rewritten. Secrets, the server side and the whole flow: `deploy/vps/README.md`, "CI, releases and auto-update".

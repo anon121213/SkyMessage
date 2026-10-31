@@ -1,7 +1,8 @@
 # A push to main is a release (docs/DEV-WORKFLOW.md "Releases", deploy/vps/README.md "CI, releases and
-# auto-update"): CI runs, then the signed APK is built and published with its manifest in the server's updates
-# directory, then the server (API + web client) is deployed. Installed apps and open web pages pick the release up by
-# themselves. Until every secret below is configured the release jobs are skipped (the run stays green, with a notice).
+# auto-update"): CI runs, then the signed APK is built and uploaded to the server's updates directory, the server
+# (API + web client) is deployed, and only once the new server runs are the apps offered the APK. Installed apps and
+# open web pages pick the release up by themselves; a failed deploy withdraws the offer. Until every secret below is
+# configured the release jobs are skipped (the run stays green, with a notice).
 #
 # Secrets (Settings → Secrets and variables → Actions → Secrets):
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD  APK signing
@@ -150,7 +151,7 @@ jobs:
 
       - name: Verify the signature and the version code
         run: |
-          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           "$tools/apksigner" verify --print-certs "dist/SkyMessage-$VERSION.apk" | grep -v '^WARNING' || true
           "$tools/apksigner" verify "dist/SkyMessage-$VERSION.apk"
           badging="$("$tools/aapt2" dump badging "dist/SkyMessage-$VERSION.apk" | head -n 1)"
@@ -202,17 +203,18 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/skymessage_ci"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$RUNNER_TEMP/skymessage_known_hosts"
 
-      # The APK first: the server restart that follows makes every app reconnect and check right away, so phones see
-      # the new release at once. The scripts only touch ~/skymessage and the "skymessage" compose project.
-      - name: Publish the APK and its manifest
+      # The APK is uploaded and checked first, but not offered yet: deploy.sh offers it right after the new server has
+      # started (the old server must never offer a client built for the new one), and that restart makes every app
+      # reconnect and check at once. The scripts only touch ~/skymessage and the "skymessage" compose project.
+      - name: Upload the APK and stage its manifest
         env:
           SKY_HOST: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
           SKY_SSH_PORT: ${{ secrets.VPS_PORT }}
           SKY_SSH_KEY: ${{ runner.temp }}/skymessage_ci
           SKY_KNOWN_HOSTS: ${{ runner.temp }}/skymessage_known_hosts
-        run: deploy/vps/publish-update.sh "dist/SkyMessage-$VERSION.apk" dist/latest.json
+        run: deploy/vps/publish-update.sh --stage "dist/SkyMessage-$VERSION.apk" dist/latest.json
 
-      - name: Deploy the server and the web client
+      - name: Deploy the server and the web client, then offer the APK
         env:
           SKY_HOST: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
           SKY_SSH_PORT: ${{ secrets.VPS_PORT }}
@@ -224,7 +226,7 @@ jobs:
       - name: Check that the new release is live
         run: |
           url="${SERVER_URL%/}/api/app/version"
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             body="$(curl -fsS --max-time 10 "$url" || true)"
             if printf '%s' "$body" | python3 -I -c 'import json, os, sys; v = json.load(sys.stdin); a = v.get("android") or {}; sys.exit(0 if v.get("serverVersion") == os.environ["VERSION"] and a.get("versionCode") == int(os.environ["BUILD_NUMBER"]) else 1)' 2>/dev/null; then
               echo "Live: $body"
@@ -234,6 +236,17 @@ jobs:
           done
           echo "::error::$url does not report $VERSION yet: $body"
           exit 1
+
+      # Whatever failed above, the apps must not move to a build whose server is not the one running: the staged or
+      # already offered manifest is dropped and the previous release is offered again.
+      - name: Withdraw the APK after a failure
+        if: failure() || cancelled()
+        env:
+          SKY_HOST: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+          SKY_SSH_PORT: ${{ secrets.VPS_PORT }}
+          SKY_SSH_KEY: ${{ runner.temp }}/skymessage_ci
+          SKY_KNOWN_HOSTS: ${{ runner.temp }}/skymessage_known_hosts
+        run: deploy/vps/publish-update.sh --withdraw dist/latest.json
 
       - name: Remove the SSH key
         if: always()
