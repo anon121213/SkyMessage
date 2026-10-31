@@ -19,9 +19,13 @@ public sealed class AppController(AppVersionService versions, IWebHostEnvironmen
         return versions.Get(ServesWebClient());
     }
 
-    /// <summary>The current APK under a fixed address (to send to someone installing SkyMessage for the first time).</summary>
+    /// <summary>
+    /// The current APK under a fixed address (to send to someone installing SkyMessage for the first time). HEAD too:
+    /// download managers and link checkers probe with it before they fetch.
+    /// </summary>
     [AllowAnonymous]
     [HttpGet(ApiRoutes.LatestApk)]
+    [HttpHead(ApiRoutes.LatestApk)]
     public IActionResult LatestApk()
     {
         var release = versions.LatestAndroid() ?? throw new NotFoundException();

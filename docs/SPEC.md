@@ -236,7 +236,7 @@ MediaSignature.CreateProof(session.MediaKey, nonce, Request.Host.Host)}` for an 
 the newest Android build from the manifest CI writes into `Updates:Path` (`latest.json`: versionCode, versionName,
 file, sha256, size, notes, minVersionCode; offered only when the named APK exists with exactly that size) and the
 web client version (= the server build). APKs are static files under `/updates/*.apk` (Range support, nothing else
-in the directory is served); `GET updates/latest.apk` redirects to the current one. Clients: `IAppUpdateService`
+in the directory is served); `GET|HEAD updates/latest.apk` redirects to the current one. Clients: `IAppUpdateService`
 (Android downloads, verifies and installs through `IAppUpdateInstaller`; the browser reloads into a new web client).
 Releases and CI: `deploy/vps/README.md`.
 

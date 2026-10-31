@@ -32,6 +32,7 @@ public sealed partial class EndpointAuthorizationTests(ApiFactory factory)
         "POST " + ApiRoutes.Calls.LiveKitWebhook,
         "GET " + ApiRoutes.AppVersion,
         "GET " + ApiRoutes.LatestApk,
+        "HEAD " + ApiRoutes.LatestApk,
     ];
 
     /// <summary>Non-API anonymous plumbing: health, the SPA/API/updates fallbacks, the LiveKit proxy (own token) and dev-only docs.</summary>

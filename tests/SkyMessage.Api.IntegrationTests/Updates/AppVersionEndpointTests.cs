@@ -106,6 +106,15 @@ public sealed class AppVersionEndpointTests(ApiFactory factory) : IAsyncDisposab
 
         response.StatusCode.ShouldBe(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.ShouldBe($"/updates/{ApkName}");
+
+        // Download managers and link checkers probe with HEAD first.
+        using var linkProbe = new HttpRequestMessage(HttpMethod.Head, "/" + ApiRoutes.LatestApk);
+        using var head = await client.SendAsync(linkProbe, Ct);
+        head.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        head.Headers.Location!.OriginalString.ShouldBe($"/updates/{ApkName}");
+        using var apkProbe = new HttpRequestMessage(HttpMethod.Head, $"/updates/{ApkName}");
+        using var apkHead = await client.SendAsync(apkProbe, Ct);
+        apkHead.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]
