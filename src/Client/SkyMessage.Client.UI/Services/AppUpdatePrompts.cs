@@ -49,7 +49,7 @@ public sealed class AppUpdatePrompts(
     {
         await RememberAskedAsync();
         var result = await dialogs.ShowAsync<InstallPermissionSheet>(localizer["app.update.permission.title"],
-            options: new DialogOptions { Size = DialogSize.Small, Presentation = OverlayPresentation.Sheet });
+            options: new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Sheet });
         if (result is not true) return false;
         await updates.RequestInstallPermissionAsync();
         return true;

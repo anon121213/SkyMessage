@@ -19,9 +19,9 @@
     </ol>
     <p class="permission-sheet__note">@L["app.update.permission.note"]</p>
 </div>
-<DialogActions>
+<DialogActions Stack="true">
     <Button Variant="ButtonVariant.Ghost" OnClick="() => Dialog.Close(false)">@L["app.update.permission.later"]</Button>
-    <Button Icon="@IconNames.Settings" OnClick="() => Dialog.Close(true)" autofocus="autofocus">@L["app.update.permission.open"]</Button>
+    <Button Icon="@IconNames.Settings" OnClick="() => Dialog.Close(true)">@L["app.update.permission.open"]</Button>
 </DialogActions>
 
 @code {
