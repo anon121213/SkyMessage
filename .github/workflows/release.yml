@@ -1,0 +1,240 @@
+# A push to main is a release (docs/DEV-WORKFLOW.md "Releases", deploy/vps/README.md "CI, releases and
+# auto-update"): CI runs, then the signed APK is built and published with its manifest in the server's updates
+# directory, then the server (API + web client) is deployed. Installed apps and open web pages pick the release up by
+# themselves. Until every secret below is configured the release jobs are skipped (the run stays green, with a notice).
+#
+# Secrets (Settings → Secrets and variables → Actions → Secrets):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD  APK signing
+#   VPS_SSH_KEY, VPS_HOST, VPS_PORT, VPS_USER, VPS_KNOWN_HOSTS                                    deployment
+# Variables (optional, same page → Variables): SKY_SERVER_URL (default https://chat.skye.estate:8443/),
+#   ANDROID_MIN_VERSION_CODE (default 0: installed builds below it must update).
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One release at a time, never cancelled halfway through a deploy.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  SERVER_URL: ${{ vars.SKY_SERVER_URL || 'https://chat.skye.estate:8443/' }}
+
+jobs:
+  plan:
+    name: Version and secrets
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.secrets.outputs.ready }}
+      build-number: ${{ steps.version.outputs.build-number }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The build number is the commit count of main: it grows with every release (main is never rewritten), is the
+      # same for a re-run of the same commit, and becomes the Android versionCode installed apps compare.
+      - name: Compute the version
+        id: version
+        run: |
+          count="$(git rev-list --count HEAD)"
+          prefix="$(sed -n 's:.*<SkyMessageVersionPrefix>\(.*\)</SkyMessageVersionPrefix>.*:\1:p' Directory.Build.props)"
+          # Local builds are versionCode 2; assembly versions allow up to 65534 per part.
+          if [ "$count" -le 2 ] || [ "$count" -gt 65534 ] || [ -z "$prefix" ]; then
+            echo "::error::Cannot derive a release version (commit count $count, prefix '$prefix')"
+            exit 1
+          fi
+          echo "build-number=$count" >> "$GITHUB_OUTPUT"
+          echo "version=$prefix.$count" >> "$GITHUB_OUTPUT"
+          echo "Release $prefix.$count (versionCode $count)"
+
+      - name: Check the release secrets
+        id: secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD \
+                      VPS_SSH_KEY VPS_HOST VPS_PORT VPS_USER VPS_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::notice title=Release skipped::Only main is released ($GITHUB_REF was not)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$missing" ]; then
+            echo "::notice title=Release skipped::Not configured yet:$missing. See deploy/vps/README.md, section \"CI, releases and auto-update\"."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  android:
+    name: Signed APK
+    needs: [plan, ci]
+    if: needs.plan.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      BUILD_NUMBER: ${{ needs.plan.outputs.build-number }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install the .NET MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Install the Android SDK packages the app needs
+        run: >
+          dotnet build src/Client/SkyMessage.App/SkyMessage.App.csproj -f net10.0-android -t:InstallAndroidDependencies
+          -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME" -p:AcceptAndroidSDKLicenses=True
+
+      - name: Build the signed release APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          keystore="$RUNNER_TEMP/skymessage-release.keystore"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          # The passwords stay in the environment (env: prefix), never on a command line.
+          dotnet publish src/Client/SkyMessage.App/SkyMessage.App.csproj -f net10.0-android -c Release \
+            -p:AndroidPackageFormat=apk \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$keystore" \
+            -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD \
+            -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
+            -p:SkyMessageBuildNumber="$BUILD_NUMBER" \
+            -p:SkyMessageDefaultServerUrl="$SERVER_URL" \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME" \
+            -o "$RUNNER_TEMP/apk"
+          signed="$(find "$RUNNER_TEMP/apk" -name '*-Signed.apk' | head -n 1)"
+          [ -n "$signed" ] || { echo "::error::No signed APK was produced"; exit 1; }
+          mkdir -p dist
+          cp "$signed" "dist/SkyMessage-$VERSION.apk"
+
+      - name: Verify the signature and the version code
+        run: |
+          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          "$tools/apksigner" verify --print-certs "dist/SkyMessage-$VERSION.apk" | grep -v '^WARNING' || true
+          "$tools/apksigner" verify "dist/SkyMessage-$VERSION.apk"
+          badging="$("$tools/aapt2" dump badging "dist/SkyMessage-$VERSION.apk" | head -n 1)"
+          echo "$badging"
+          echo "$badging" | grep -q "versionCode='$BUILD_NUMBER'" || { echo "::error::The APK is not versionCode $BUILD_NUMBER"; exit 1; }
+
+      - name: Write the release manifest
+        env:
+          MIN_VERSION_CODE: ${{ vars.ANDROID_MIN_VERSION_CODE || '0' }}
+        run: |
+          python3 -I deploy/vps/release-manifest.py --apk "dist/SkyMessage-$VERSION.apk" \
+            --version-code "$BUILD_NUMBER" --version-name "$VERSION" --min-version-code "$MIN_VERSION_CODE" \
+            --notes "$(git log -1 --format=%s)" --out dist/latest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
+  deploy:
+    name: Publish the APK and deploy the server
+    needs: [plan, android]
+    if: needs.plan.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      BUILD_NUMBER: ${{ needs.plan.outputs.build-number }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-release
+          path: dist
+
+      - name: SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/skymessage_ci"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$RUNNER_TEMP/skymessage_known_hosts"
+
+      # The APK first: the server restart that follows makes every app reconnect and check right away, so phones see
+      # the new release at once. The scripts only touch ~/skymessage and the "skymessage" compose project.
+      - name: Publish the APK and its manifest
+        env:
+          SKY_HOST: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+          SKY_SSH_PORT: ${{ secrets.VPS_PORT }}
+          SKY_SSH_KEY: ${{ runner.temp }}/skymessage_ci
+          SKY_KNOWN_HOSTS: ${{ runner.temp }}/skymessage_known_hosts
+        run: deploy/vps/publish-update.sh "dist/SkyMessage-$VERSION.apk" dist/latest.json
+
+      - name: Deploy the server and the web client
+        env:
+          SKY_HOST: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+          SKY_SSH_PORT: ${{ secrets.VPS_PORT }}
+          SKY_SSH_KEY: ${{ runner.temp }}/skymessage_ci
+          SKY_KNOWN_HOSTS: ${{ runner.temp }}/skymessage_known_hosts
+          SKY_BUILD_NUMBER: ${{ needs.plan.outputs.build-number }}
+        run: deploy/vps/deploy.sh
+
+      - name: Check that the new release is live
+        run: |
+          url="${SERVER_URL%/}/api/app/version"
+          for attempt in $(seq 1 30); do
+            body="$(curl -fsS --max-time 10 "$url" || true)"
+            if printf '%s' "$body" | python3 -I -c 'import json, os, sys; v = json.load(sys.stdin); a = v.get("android") or {}; sys.exit(0 if v.get("serverVersion") == os.environ["VERSION"] and a.get("versionCode") == int(os.environ["BUILD_NUMBER"]) else 1)' 2>/dev/null; then
+              echo "Live: $body"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$url does not report $VERSION yet: $body"
+          exit 1
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/skymessage_ci"
