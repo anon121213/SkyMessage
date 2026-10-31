@@ -7,7 +7,14 @@
     <NoWarn>$(NoWarn);CS1591;NU1507</NoWarn>
     <Company>SkyMessage</Company>
     <Product>SkyMessage</Product>
-    <SkyMessageVersion>0.2.0</SkyMessageVersion>
+    <!--
+      Version = <prefix>.<build number>. Release builds (CI, .github/workflows/release.yml) pass
+      -p:SkyMessageBuildNumber=N, which grows with every release from main: it is also the Android versionCode that
+      installed apps compare to update themselves. Local builds use 0. Bump the prefix for notable releases.
+    -->
+    <SkyMessageVersionPrefix>0.2</SkyMessageVersionPrefix>
+    <SkyMessageBuildNumber Condition="'$(SkyMessageBuildNumber)' == ''">0</SkyMessageBuildNumber>
+    <SkyMessageVersion Condition="'$(SkyMessageVersion)' == ''">$(SkyMessageVersionPrefix).$(SkyMessageBuildNumber)</SkyMessageVersion>
     <Version>$(SkyMessageVersion)</Version>
   </PropertyGroup>
 </Project>

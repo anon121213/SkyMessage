@@ -6,6 +6,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using SkyMessage.Api.Calls;
@@ -92,6 +96,7 @@ public static class ApiSetup
         // Blazor WebAssembly web client served from the same origin as the API.
         app.UseBlazorFrameworkFiles();
         app.UseStaticFiles(RevalidatedStaticFiles);
+        app.UseUpdateFiles();
 
         app.UseRouting();
         app.UseCors(CorsPolicy);
@@ -119,14 +124,55 @@ public static class ApiSetup
             app.MapScalarApiReference().AllowAnonymous();
         }
 
-        // Unknown API routes must 404 instead of falling through to the SPA.
-        app.MapFallback("/api/{**path}", (HttpContext ctx) => Results.Problem(
-                statusCode: StatusCodes.Status404NotFound,
-                title: "Not found",
-                extensions: new Dictionary<string, object?> { ["code"] = ErrorCodes.NotFound }))
-            .AllowAnonymous();
+        // Unknown API routes (and missing update files) must 404 instead of falling through to the SPA.
+        app.MapFallback("/api/{**path}", NotFoundProblem).AllowAnonymous();
+        app.MapFallback("/" + ApiRoutes.Updates + "/{**path}", NotFoundProblem).AllowAnonymous();
         app.MapFallbackToFile("index.html", RevalidatedStaticFiles).AllowAnonymous();
         return app;
+    }
+
+    private static IResult NotFoundProblem(HttpContext ctx) => Results.Problem(
+        statusCode: StatusCodes.Status404NotFound,
+        title: "Not found",
+        extensions: new Dictionary<string, object?> { ["code"] = ErrorCodes.NotFound });
+
+    /// <summary>
+    /// APKs CI publishes into <see cref="UpdatesOptions.Path"/>, under /updates with HTTP Range support (phones resume
+    /// interrupted downloads). Only *.apk files are served: the manifest is read through api/app/version.
+    /// </summary>
+    private static void UseUpdateFiles(this WebApplication app)
+    {
+        var path = app.Services.GetRequiredService<IOptions<UpdatesOptions>>().Value.Path;
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var root = Path.GetFullPath(path);
+        try
+        {
+            Directory.CreateDirectory(root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            app.Logger.LogWarning(ex, "The updates directory {Path} is not available; app updates are off", root);
+            return;
+        }
+
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            RequestPath = "/" + ApiRoutes.Updates,
+            FileProvider = new PhysicalFileProvider(root),
+            ContentTypeProvider = new FileExtensionContentTypeProvider(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [".apk"] = "application/vnd.android.package-archive",
+            }),
+            ServeUnknownFileTypes = false,
+            OnPrepareResponse = ctx =>
+            {
+                // A rebuilt release may reuse a file name; the ETag lets clients revalidate cheaply.
+                ctx.Context.Response.Headers.CacheControl = "no-cache";
+                ctx.Context.Response.Headers.ContentDisposition =
+                    new ContentDispositionHeaderValue("attachment") { FileName = ctx.File.Name }.ToString();
+            },
+        });
+        app.Logger.LogInformation("Serving app updates from {Path}", root);
     }
 
     /// <summary>

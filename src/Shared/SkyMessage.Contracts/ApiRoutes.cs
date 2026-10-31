@@ -17,6 +17,16 @@ public static class ApiRoutes
     /// </summary>
     public const string ServerProbe = "api/server/probe";
 
+    /// <summary>GET → <see cref="AppVersionDto"/>: the newest app builds this deployment offers (anonymous, no-cache).</summary>
+    public const string AppVersion = "api/app/version";
+    /// <summary>
+    /// APKs published by CI into the server's updates directory, served as static files with HTTP Range support;
+    /// <see cref="AndroidReleaseDto.ApkUrl"/> points below it.
+    /// </summary>
+    public const string Updates = "updates";
+    /// <summary>GET → redirect to the current APK: a stable link for installing the app the first time.</summary>
+    public const string LatestApk = "updates/latest.apk";
+
     public static string ServerProofPath(Guid sessionId, string nonce) =>
         $"{ServerProof}?sid={sessionId:N}&nonce={Uri.EscapeDataString(nonce)}";
     public static string ServerProbePath(int size) => $"{ServerProbe}?size={size}";

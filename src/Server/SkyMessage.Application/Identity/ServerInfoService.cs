@@ -1,8 +1,8 @@
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SkyMessage.Application.Common;
 using SkyMessage.Application.Common.Exceptions;
 using SkyMessage.Application.Common.Interfaces;
 using SkyMessage.Application.Common.Options;
@@ -37,7 +37,7 @@ public sealed class ServerInfoService(
     public const int NonceMinLength = 8;
     public const int NonceMaxLength = 128;
 
-    private static readonly string ServerVersion = ReadVersion();
+    private static readonly string ServerVersion = ServerBuild.Version;
 
     public async Task<ServerInfoDto> GetAsync(CancellationToken ct)
     {
@@ -143,13 +143,4 @@ public sealed class ServerInfoService(
     private static bool CallsEnabled(LiveKitOptions options) =>
         options.Enabled && !string.IsNullOrWhiteSpace(options.ApiKey)
         && System.Text.Encoding.UTF8.GetByteCount(options.ApiSecret ?? "") >= 32;
-
-    private static string ReadVersion()
-    {
-        var assembly = typeof(ServerInfoService).Assembly;
-        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        if (!string.IsNullOrEmpty(informational))
-            return informational.Split('+')[0];
-        return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-    }
 }

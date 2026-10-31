@@ -428,3 +428,54 @@ public interface IHttpHandlerFactory
     /// </summary>
     Func<Uri, Action<ClientWebSocketOptions>?, CancellationToken, ValueTask<WebSocket>>? CreateWebSocketConnector(ConnectionSettings settings);
 }
+
+public enum AppInstallStatus
+{
+    /// <summary>Committed: Android installs it, or shows its confirmation ("Update this app?"); the outcome follows.</summary>
+    Pending,
+    /// <summary>Android wants a confirmation but the app is in the background: ask again from the foreground.</summary>
+    NeedsConfirmation,
+    /// <summary>Installed: the running app is being replaced (its process ends).</summary>
+    Succeeded,
+    /// <summary>The user declined the confirmation (or the system abandoned the session).</summary>
+    Cancelled,
+    /// <summary>The install failed; <see cref="AppInstallResult.Error"/> says why (one of the update error codes).</summary>
+    Failed,
+}
+
+public sealed record AppInstallResult(AppInstallStatus Status, string? Error = null);
+
+/// <summary>
+/// Self-update of the installed app. Android: packages downloaded by Core into app-private storage, installed through
+/// a PackageInstaller session (silently on Android 12+ once allowed, else with the system confirmation). Every other
+/// host (browser: the server serves the new client; iOS/Mac: the stores) has a no-op with <see cref="IsSupported"/> = false.
+/// </summary>
+public interface IAppUpdateInstaller
+{
+    bool IsSupported { get; }
+    /// <summary>Build number of the running app (Android versionCode); 0 when unknown or unsupported.</summary>
+    int InstalledVersionCode { get; }
+    /// <summary>The user allowed SkyMessage to install apps ("Install unknown apps", Android 8+).</summary>
+    bool CanInstallPackages { get; }
+    /// <summary>Updates are expected to install without a confirmation (Android 12+, installs allowed).</summary>
+    bool CanInstallSilently { get; }
+    /// <summary>Opens the system screen where the user allows installs; completes when they are back. True if now allowed.</summary>
+    Task<bool> RequestInstallPermissionAsync();
+
+    /// <summary>Length of a stored package, -1 when there is none.</summary>
+    Task<long> GetPackageLengthAsync(string fileName);
+    /// <summary>Opens a stored package for writing at <paramref name="offset"/> (the file is cut there; 0 starts over).</summary>
+    Task<Stream> OpenPackageWriteAsync(string fileName, long offset, CancellationToken cancellationToken = default);
+    /// <summary>Opens a stored package for reading, null when there is none.</summary>
+    Task<Stream?> OpenPackageReadAsync(string fileName, CancellationToken cancellationToken = default);
+    /// <summary>Deletes stored packages (all, or all but <paramref name="keep"/>).</summary>
+    Task DeletePackagesAsync(string? keep = null);
+
+    /// <summary>
+    /// Hands a stored, verified package to the system installer. Returns the first outcome (pending, needs a
+    /// confirmation from the foreground, failed); later ones (succeeded, cancelled, failed) arrive through
+    /// <see cref="InstallStatusChanged"/>. A succeeded install ends the process.
+    /// </summary>
+    Task<AppInstallResult> InstallAsync(string fileName, CancellationToken cancellationToken = default);
+    event Action<AppInstallResult>? InstallStatusChanged;
+}

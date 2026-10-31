@@ -14,7 +14,12 @@
     <ApplicationTitle>SkyMessage</ApplicationTitle>
     <ApplicationId>com.skymessage.messenger</ApplicationId>
     <ApplicationDisplayVersion>$(SkyMessageVersion)</ApplicationDisplayVersion>
-    <ApplicationVersion>2</ApplicationVersion>
+    <!--
+      Android versionCode / Apple build number: the release build number CI passes (-p:SkyMessageBuildNumber, see
+      Directory.Build.props), which grows with every release so installed apps can update themselves. Local builds: 2.
+    -->
+    <ApplicationVersion Condition="'$(SkyMessageBuildNumber)' != '' And '$(SkyMessageBuildNumber)' != '0'">$(SkyMessageBuildNumber)</ApplicationVersion>
+    <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">2</ApplicationVersion>
 
     <!--
       Server used until the user picks one in the app. Empty = development defaults
