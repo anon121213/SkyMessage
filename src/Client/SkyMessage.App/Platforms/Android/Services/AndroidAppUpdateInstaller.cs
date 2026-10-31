@@ -28,8 +28,7 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
     private static readonly TimeSpan FirstStatusTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan RelaunchWindow = TimeSpan.FromMinutes(15);
 
-    private readonly object _gate = new();
-    private readonly Dictionary<int, TaskCompletionSource<AppInstallResult>> _firstStatus = [];
+    private readonly InstallStatusRouter _statuses = new();
 
     public event Action<AppInstallResult>? InstallStatusChanged;
 
@@ -147,12 +146,12 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
         var path = PathOf(fileName);
         if (!File.Exists(path)) return new AppInstallResult(AppInstallStatus.Failed, AppUpdateErrors.Invalid);
 
-        var first = new TaskCompletionSource<AppInstallResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         // Started while the user looks at the app: it vanishes when replaced, so a notification brings it back.
         if (lifecycle.IsForeground) RememberRelaunch();
+        InstallStatusRouter.FirstStatus first;
         try
         {
-            await Task.Run(() => Commit(path, first), cancellationToken).ConfigureAwait(false);
+            first = await Task.Run(() => Commit(path), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -161,12 +160,13 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
             return new AppInstallResult(AppInstallStatus.Failed, ex is IOException ? AppUpdateErrors.Storage : AppUpdateErrors.InstallFailed);
         }
 
-        // The first status usually arrives within seconds; a silent install may end the process before any.
-        var finished = await Task.WhenAny(first.Task, Task.Delay(FirstStatusTimeout, cancellationToken)).ConfigureAwait(false);
-        return finished == first.Task ? await first.Task.ConfigureAwait(false) : new AppInstallResult(AppInstallStatus.Pending);
+        // The first status usually arrives within seconds; a silent install may end the process before any. Past the
+        // timeout the session's statuses (a late failure too) arrive through InstallStatusChanged.
+        return await first.WaitAsync(FirstStatusTimeout, TimeProvider.System, cancellationToken).ConfigureAwait(false)
+               ?? new AppInstallResult(AppInstallStatus.Pending);
     }
 
-    private void Commit(string path, TaskCompletionSource<AppInstallResult> first)
+    private InstallStatusRouter.FirstStatus Commit(string path)
     {
         var context = Android.App.Application.Context;
         var installer = context.PackageManager!.PackageInstaller;
@@ -181,8 +181,9 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
             parameters.SetRequireUserAction((int)PackageInstallUserAction.NotRequired);
 
         var sessionId = installer.CreateSession(parameters);
-        lock (_gate) _firstStatus[sessionId] = first;
         using var session = installer.OpenSession(sessionId);
+        // Before the commit: its first status may be broadcast at once.
+        var first = _statuses.Expect(sessionId);
         try
         {
             using (var input = File.OpenRead(path))
@@ -199,10 +200,11 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
             var pending = PendingIntent.GetBroadcast(context, sessionId, status, flags)!;
             session.Commit(pending.IntentSender);
             logger.LogInformation("Update committed to the package installer (session {Session})", sessionId);
+            return first;
         }
         catch
         {
-            lock (_gate) _firstStatus.Remove(sessionId);
+            first.Abandon();
             try
             {
                 session.Abandon();
@@ -256,11 +258,7 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
         };
         if (result.Status is AppInstallStatus.Cancelled or AppInstallStatus.Failed or AppInstallStatus.NeedsConfirmation) ForgetRelaunch();
 
-        TaskCompletionSource<AppInstallResult>? first;
-        lock (_gate)
-        {
-            if (_firstStatus.Remove(sessionId, out first) && first.TrySetResult(result)) return;
-        }
+        if (_statuses.TryHandToWaiter(sessionId, result)) return;
         var handlers = InstallStatusChanged;
         if (handlers is null) return;
         foreach (var handler in handlers.GetInvocationList())

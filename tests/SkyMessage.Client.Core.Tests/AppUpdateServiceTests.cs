@@ -426,6 +426,27 @@ public sealed class AppUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_refusal_reported_after_the_install_call_returned_is_recorded()
+    {
+        // The installer stopped waiting for the first status (a slow silent install); Android's answer comes later.
+        Publish();
+        _installer.Results.Enqueue(new AppInstallResult(AppInstallStatus.Pending));
+        var service = Service();
+        service.Start();
+        await service.RunOnceAsync(UpdateTrigger.Start, default);
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Ready);
+        await service.InstallNowAsync();
+        service.Status.Phase.ShouldBe(AppUpdatePhase.Installing);
+
+        _installer.RaiseStatus(new AppInstallResult(AppInstallStatus.Failed, AppUpdateErrors.Conflict));
+
+        await Wait.UntilAsync(() => service.Status.Phase == AppUpdatePhase.Failed, "refused");
+        service.Status.Error.ShouldBe(AppUpdateErrors.Conflict);
+        StoredState().BlockedVersionCode.ShouldBe(57);
+        _installer.Packages.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task A_failed_install_is_not_retried_before_its_back_off()
     {
         Publish();
