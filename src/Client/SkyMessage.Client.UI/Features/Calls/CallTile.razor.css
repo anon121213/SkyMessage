@@ -124,5 +124,5 @@
 
 .call-tile__label ::deep .call-tile__weak {
     flex-shrink: 0;
-    color: #F2C36B;
+    color: var(--call-warn);
 }

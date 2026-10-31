@@ -6,6 +6,12 @@
    Performance: transform/opacity animations only; nothing on this screen uses backdrop-filter (it would re-blur a
    playing video every frame); the sky is hidden behind a full-screen video, still behind the group grid and in lite. */
 
+/* The night palette's warm warning (weak connection, no microphone, connecting), for the screen and the bar. */
+.call-screen,
+.call-bar {
+    --call-warn: #F2C36B;
+}
+
 /* ---- Expanded call screen: above dialogs (900), below banners (960) and toasts (980) ---- */
 
 .call-screen {
@@ -538,7 +544,7 @@ html[data-fx="lite"] .call-sky *::after {
 }
 
 .call-chip--weak ::deep .sm-icon {
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 .call-hero__note {
@@ -862,7 +868,7 @@ html[data-fx="lite"] .call-sky *::after {
 .call-top__status ::deep .call-top__weak {
     flex-shrink: 0;
     margin-left: 6px;
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 /* Pull-down hint on touch screens. */
@@ -902,7 +908,7 @@ html[data-fx="lite"] .call-sky *::after {
 }
 
 .call-top__quality.is-weak {
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 /* ---- Banners: night capsules with the icon in a flat disc ---- */
@@ -963,7 +969,7 @@ html[data-fx="lite"] .call-sky *::after {
 
 .call-banner--warning .call-banner__icon {
     color: #3A2306;
-    background: #F2C36B;
+    background: var(--call-warn);
 }
 
 .call-banner--quiet {
@@ -1382,7 +1388,7 @@ html[data-fx="lite"] .call-sky *::after {
 
 /* Calling / connecting: amber bars in a travelling wave. */
 .call-bar--connecting .call-bar__live {
-    color: #F2C36B;
+    color: var(--call-warn);
 }
 
 .call-bar--connecting .call-bar__live i {
