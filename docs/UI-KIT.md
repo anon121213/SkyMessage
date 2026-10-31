@@ -160,8 +160,12 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
   little spring, follows the finger on a swipe up (hides it) and slides away when it goes.
 * `<CallOverlay />` (ui-settings-calls) is rendered once by MainLayout above everything; `DialogHost`,
   `ToastHost` too (AuthLayout also has `DialogHost`/`ToastHost`).
-* `UpdateNotice` — warning strip when `ServerInfoDto.MinClientVersion` is newer than `IPlatformInfo.AppVersion`
-  (`AppVersionCheck.IsOutdated(app, min)`); the signed-out `ServerStatus` shows the same warning.
+* `UpdateNotice` — the update card on the chat list, driven by `IAppUpdateService`: Android "update ready" (Update,
+  through `AppUpdatePrompts`, which shows our `InstallPermissionSheet` before Android's "Install unknown apps"),
+  progress/errors for required or user-started downloads; web "new version" (reload). Apps that cannot update
+  themselves keep the plain warning when `ServerInfoDto.MinClientVersion` is newer than `IPlatformInfo.AppVersion`
+  (`AppVersionCheck.IsOutdated(app, min)`); the signed-out `ServerStatus` shows the same warning. Settings › About ›
+  Updates is `Features/Settings/AboutUpdates.razor`.
 * `NotificationPermissionPrompt` — asks once per device for notification permission after the signed-in shell
   appears (native: the system dialog via `ILocalNotificationService.RequestPermissionAsync`; browser: a strip with
   a button, because browsers need a tap). Remembered in `IPreferencesStore` under
