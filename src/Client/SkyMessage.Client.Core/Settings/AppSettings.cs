@@ -169,6 +169,6 @@ public sealed class ConnectionSettings
 public sealed class UpdateSettings
 {
     public bool AutoUpdate { get; set; } = true;
-    /// <summary>Download automatically only on unmetered Wi-Fi/Ethernet (a manual "Check for updates" still downloads).</summary>
+    /// <summary>Download automatically only on unmetered Wi-Fi/Ethernet (the user's Download goes ahead on any network).</summary>
     public bool WifiOnly { get; set; }
 }
