@@ -1,0 +1,236 @@
+/* Sound packs: three scenes in a row, like the theme picker (Appearance). Illustration colors live here (flat, few
+   colors, warm wood / gold / violet keys); everything around them comes from tokens. */
+.snd-packs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 11rem));
+    justify-content: center;
+    gap: 12px;
+    padding: 12px 10px 10px;
+
+    --snd-wood-bg: #FBE7D8;
+    --snd-wood-a: #D8935E;
+    --snd-wood-b: #C27A45;
+    --snd-wood-cord: #7A4B2C;
+    --snd-bells-bg: #ECE6FF;
+    --snd-bell: #E2AE4C;
+    --snd-bell-handle: #B67A4D;
+    --snd-bell-clapper: #B8862F;
+    --snd-bell-arc: #9C8BE0;
+    --snd-piano-bg: #E3DEFF;
+    --snd-key: #FFFFFF;
+    --snd-key-edge: #C9C0F2;
+    --snd-key-black: #3B2F7A;
+}
+
+html[data-theme="dark"] .snd-packs {
+    --snd-wood-bg: #3A2B33;
+    --snd-wood-a: #C98A57;
+    --snd-wood-b: #A86A3D;
+    --snd-wood-cord: #E7C3A1;
+    --snd-bells-bg: #2C2650;
+    --snd-bell: #D9A443;
+    --snd-bell-handle: #A9744C;
+    --snd-bell-clapper: #F0C873;
+    --snd-bell-arc: #8C7BE0;
+    --snd-piano-bg: #282357;
+    --snd-key: #ECE8FF;
+    --snd-key-edge: #4E4596;
+    --snd-key-black: #141036;
+}
+
+.snd-pack {
+    position: relative;
+    min-width: 0;
+}
+
+.snd-pack__pick {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: var(--sm-text-2);
+    background: none;
+    cursor: pointer;
+}
+
+.snd-pack__pick:focus-visible {
+    outline: none;
+}
+
+.snd-pack__art {
+    position: relative;
+    display: block;
+    margin-bottom: 6px;
+    aspect-ratio: 4 / 3;
+    border-radius: 18px;
+    box-shadow: var(--sm-shadow-1);
+    transition: transform 260ms var(--sm-spring);
+}
+
+.snd-pack__pick:active .snd-pack__art {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+/* Selection ring: grows in around the picked pack, shrinks away from the old one. */
+.snd-pack__art::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 23px;
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.92);
+    pointer-events: none;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.snd-pack.is-selected .snd-pack__art::after,
+.snd-pack__pick:focus-visible .snd-pack__art::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+.snd-pack__check {
+    position: absolute;
+    z-index: 1;
+    right: -6px;
+    bottom: -6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    color: var(--sm-on-accent);
+    background: var(--sm-accent);
+    box-shadow: 0 0 0 2.5px var(--sm-card-solid);
+}
+
+.snd-packs.is-live .snd-pack__check {
+    animation: sm-pop 320ms var(--sm-spring);
+}
+
+/* Long names break at their soft hyphen ("Колоколь-чики" on narrow phones), never mid-syllable. */
+.snd-pack__name {
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    text-align: center;
+    color: var(--sm-text);
+    overflow-wrap: anywhere;
+}
+
+.snd-pack.is-selected .snd-pack__name {
+    color: var(--sm-accent);
+}
+
+.snd-pack__hint {
+    font-size: 0.75rem;
+    line-height: 1.3;
+    text-align: center;
+    color: var(--sm-text-3);
+    overflow-wrap: anywhere;
+}
+
+/* Listen without picking: a small pearl button on the scene's corner. */
+.snd-pack__play {
+    position: absolute;
+    z-index: 1;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0 0 0 2px;
+    border: 0;
+    border-radius: 50%;
+    color: var(--sm-accent);
+    background: var(--sm-card-solid);
+    box-shadow: var(--sm-shadow-1);
+    cursor: pointer;
+    transition: transform 220ms var(--sm-spring);
+}
+
+.snd-pack__play:active {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+}
+
+.snd-pack__play:focus-visible {
+    outline: 2px solid var(--sm-accent);
+    outline-offset: 2px;
+}
+
+.snd-scene {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 18px;
+}
+
+.snd-pack__art--wood .snd-scene__bg { fill: var(--snd-wood-bg); }
+.snd-pack__art--bells .snd-scene__bg { fill: var(--snd-bells-bg); }
+.snd-pack__art--piano .snd-scene__bg { fill: var(--snd-piano-bg); }
+
+.snd-wood--a { fill: var(--snd-wood-a); }
+.snd-wood--b { fill: var(--snd-wood-b); }
+
+.snd-wood__cord {
+    fill: none;
+    stroke: var(--snd-wood-cord);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    opacity: 0.75;
+}
+
+.snd-bell { fill: var(--snd-bell); }
+.snd-bell__handle { fill: var(--snd-bell-handle); }
+.snd-bell__clapper { fill: var(--snd-bell-clapper); }
+
+.snd-bell__arc {
+    fill: none;
+    stroke: var(--snd-bell-arc);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.snd-key {
+    fill: var(--snd-key);
+    stroke: var(--snd-key-edge);
+    stroke-width: 1;
+}
+
+.snd-key--black {
+    fill: var(--snd-key-black);
+    stroke: none;
+}
+
+.snd-key__board {
+    fill: var(--snd-key-black);
+    opacity: 0.85;
+}
+
+/* Narrow phones: smaller text, the scenes keep their shape. */
+@media (max-width: 380px) {
+    .snd-packs {
+        gap: 10px;
+        padding-inline: 6px;
+    }
+
+    .snd-pack__hint {
+        font-size: 0.6875rem;
+    }
+}

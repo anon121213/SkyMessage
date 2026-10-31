@@ -1,0 +1,82 @@
+@* One tone choice (message tone or ringtone): the pack's tones as radio rows (a tap picks and plays), and the user's
+   own sound below them. Without one, the last row offers to choose a file; with one, it is a radio row of its own
+   with its name and length, plus replace and remove. *@
+@inherits UiComponentBase
+@inject HapticFeedback Haptics
+@inject FormatService Format
+
+@foreach (var option in Options)
+{
+    var selected = option.Value == Value;
+    <ListItem @key="option.Value" Title="@option.Label" Multiline="true" OnClick="() => PickAsync(option.Value)" aria-checked="@(selected ? "true" : "false")">
+        <Leading>@Radio(selected)</Leading>
+    </ListItem>
+}
+@if (CustomSupported)
+{
+    @if (Custom is { } sound)
+    {
+        var selected = Value == ToneCatalog.Custom;
+        <ListItem Multiline="true" OnClick="() => PickAsync(ToneCatalog.Custom)" aria-checked="@(selected ? "true" : "false")" Class="tone-own">
+            <Leading>@Radio(selected)</Leading>
+            <TitleContent><div class="sm-list-item__title">@(string.IsNullOrWhiteSpace(sound.Name) ? L["settings.notifications.custom"] : sound.Name)</div></TitleContent>
+            <SubtitleContent><div class="sm-list-item__subtitle">@L["settings.notifications.custom"] · @Length(sound)</div></SubtitleContent>
+            <Trailing>
+                @if (Busy)
+                {
+                    <Spinner Size="20" />
+                }
+                else
+                {
+                    <span class="tone-own__actions">
+                        <IconButton Icon="@IconNames.Upload" Label="@L["settings.notifications.customReplace"]" Size="38" StopPropagation="true" OnClick="OnImport" />
+                        <IconButton Icon="@IconNames.Trash2" Label="@L["settings.notifications.customRemove"]" Size="38" StopPropagation="true" OnClick="OnRemove" />
+                    </span>
+                }
+            </Trailing>
+        </ListItem>
+    }
+    else
+    {
+        <ListItem Multiline="true" OnClick="OnImport" Class="tone-add" Disabled="Busy">
+            <Leading><span class="tone-add__plus" aria-hidden="true"><Icon Name="@IconNames.Plus" Size="16" StrokeWidth="2.6" /></span></Leading>
+            <TitleContent><div class="sm-list-item__title">@L["settings.notifications.customPick"]</div></TitleContent>
+            <SubtitleContent><div class="sm-list-item__subtitle">@PickHint</div></SubtitleContent>
+            <Trailing>
+                @if (Busy)
+                {
+                    <Spinner Size="20" />
+                }
+            </Trailing>
+        </ListItem>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<string>> Options { get; set; } = [];
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public bool CustomSupported { get; set; }
+    [Parameter] public CustomSound? Custom { get; set; }
+    /// <summary>"MP3, M4A, OGG or WAV, up to 10 seconds" under the row that picks a file.</summary>
+    [Parameter] public string? PickHint { get; set; }
+    /// <summary>A file is being read and checked.</summary>
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnImport { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private async Task PickAsync(string key)
+    {
+        Haptics.Selection();
+        await ValueChanged.InvokeAsync(key);
+    }
+
+    // At least a second, so a short click of a sound never reads 0:00.
+    private string Length(CustomSound sound) => Format.Duration(Math.Max(1, (int)Math.Ceiling(sound.DurationMs / 1000.0)));
+
+    private static RenderFragment Radio(bool selected) =>
+        @<span class="sm-check sm-radio" aria-hidden="true">
+            <input type="radio" tabindex="-1" checked="@selected" />
+            <span class="sm-check__box"><span class="sm-check__dot"></span></span>
+        </span>;
+}
