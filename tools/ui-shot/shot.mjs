@@ -24,9 +24,13 @@ const steps = args.steps ? JSON.parse(readFileSync(args.steps, 'utf8')) : [];
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 mkdirSync(out, { recursive: true });
 
-const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// CHROME_PATH wins; otherwise the macOS Chrome install or the Linux (CI / cloud container) Chromium.
+const chromePath = process.env.CHROME_PATH
+  || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/opt/pw-browsers/chromium');
+// Chromium refuses to start its sandbox as root (containers); the page is our own local dev server.
+const sandboxArgs = process.getuid?.() === 0 ? ['--no-sandbox'] : [];
 const profile = mkdtempSync(join(tmpdir(), 'ui-shot-'));
-const chrome = spawn(chromePath, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+const chrome = spawn(chromePath, ['--headless=new', ...sandboxArgs, `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   `--window-size=${width},${height}`, '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
   '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', 'about:blank'],
   { stdio: 'ignore' });
