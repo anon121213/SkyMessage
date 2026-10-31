@@ -133,6 +133,19 @@ public sealed class ChatBasicsRulesTests
     }
 
     [Fact]
+    public void A_block_leaves_only_my_own_part_to_take_back()
+    {
+        var blocked = PrivateChat() with { IsBlocked = true };
+        ContentProtectionRules.Describe(blocked, Me).ShouldBe(new ContentProtectionState(false, false, false, false));
+
+        var mine = blocked with { ProtectContent = true, ProtectContentBy = [Me] };
+        ContentProtectionRules.Describe(mine, Me).ShouldBe(new ContentProtectionState(true, true, true, false));
+
+        var theirs = blocked with { ProtectContent = true, ProtectContentBy = [Peer] };
+        ContentProtectionRules.Describe(theirs, Me).ShouldBe(new ContentProtectionState(true, false, false, true));
+    }
+
+    [Fact]
     public void Saved_messages_are_never_protected()
     {
         var saved = new ChatSummaryDto { Id = Guid.NewGuid(), Type = ChatType.Saved, ProtectContent = true };

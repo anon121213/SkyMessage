@@ -487,6 +487,13 @@ internal sealed class ChatService(
             throw MessagingErrors.Validation("enabled", "Saved Messages cannot be protected.");
         if (!ChatPolicy.CanSetContentProtection(member.Type, member.Role))
             throw new ForbiddenException(ErrorCodes.NotChatAdmin);
+        // The on/off notice is a message into the other side's chat (it even brings back a chat the blocker deleted),
+        // like a pin: blocked either way → no switching on. Taking one's own part back stays allowed, without the notice.
+        var blocked = member.Type == ChatType.Private
+                      && await db.PeerIdAsync(chatId, me, cancellationToken) is { } peerId
+                      && await privacy.IsBlockedEitherWayAsync(me, peerId, cancellationToken);
+        if (blocked && request.Enabled)
+            throw new ForbiddenException(ErrorCodes.UserBlocked);
 
         bool wasProtected;
         bool isProtected;
@@ -527,7 +534,7 @@ internal sealed class ChatService(
 
         await PublishChatUpdatedAsync(info);
         // One notice per real change of the chat's state (a second participant joining in changes nothing visible).
-        if (isProtected != wasProtected)
+        if (isProtected != wasProtected && !blocked)
         {
             await events.PostSystemEventAsync(chatId, new SystemEventDto
             {

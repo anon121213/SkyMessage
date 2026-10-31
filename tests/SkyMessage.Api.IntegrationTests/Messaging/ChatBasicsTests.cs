@@ -257,6 +257,39 @@ public sealed class ChatBasicsTests(ApiFactory factory)
             .ShouldFailAsync(HttpStatusCode.Forbidden, ErrorCodes.ForwardRestricted);
     }
 
+    /// <summary>
+    /// The on/off notice is a message into the other side's chat, so in a private chat it is a channel the block closes:
+    /// it must neither reach the blocker nor bring back a chat they deleted.
+    /// </summary>
+    [Fact]
+    public async Task A_block_stops_protection_being_switched_on_and_taking_a_part_back_posts_nothing()
+    {
+        var alice = await factory.NewUserAsync("Alice");
+        var bob = await factory.NewUserAsync("Bob");
+        var chat = (await bob.OpenPrivateAsync(alice.Id)).Id;
+        await bob.SendAsync(chat, "hi");
+        await bob.SetContentProtectionAsync(chat, true);
+        await alice.DeleteChatAsync(chat, forEveryone: false);
+        await alice.BlockAsync(bob.Id);
+        var seq = (await bob.ChatAsync(chat)).LastMessageSeq;
+        await using var aliceRt = await alice.ConnectAsync();
+
+        // Neither the blocked side nor the blocker switches it on.
+        await (await bob.TrySetContentProtectionAsync(chat, true)).ShouldFailAsync(HttpStatusCode.Forbidden, ErrorCodes.UserBlocked);
+        await (await alice.TrySetContentProtectionAsync(chat, true)).ShouldFailAsync(HttpStatusCode.Forbidden, ErrorCodes.UserBlocked);
+        (await bob.ChatAsync(chat)).ProtectContentBy.ShouldBe([bob.Id]);
+
+        // Bob still takes his own part back; the chat is no longer protected, and nobody hears of it through a notice.
+        var off = await bob.SetContentProtectionAsync(chat, false);
+        off.ProtectContent.ShouldBeFalse();
+        off.ProtectContentBy.ShouldBeEmpty();
+        await aliceRt.BarrierAsync();
+        aliceRt.All<MessageDto>(Ev.MessageCreated, m => m.ChatId == chat).ShouldBeEmpty();
+        aliceRt.All<ChatRefEvent>(Ev.ChatAdded, e => e.ChatId == chat).ShouldBeEmpty();
+        (await alice.ChatsAsync()).ShouldNotContain(c => c.Id == chat);
+        (await bob.ChatAsync(chat)).LastMessageSeq.ShouldBe(seq);
+    }
+
     [Fact]
     public async Task Saved_messages_cannot_be_protected_and_strangers_see_nothing()
     {

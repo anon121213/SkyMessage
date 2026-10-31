@@ -105,8 +105,9 @@ public static class ContentProtectionRules
             case ChatType.Private:
                 var byMe = chat.ProtectContentBy.Contains(me);
                 var byOthers = chat.ProtectContentBy.Any(id => id != me);
-                // Turning it on is always possible; turning it off only takes my own part back.
-                var canChange = !(chat.ProtectContent || byOthers) || byMe;
+                // Turning it on is possible unless either side blocked the other (the server refuses: its notice would
+                // reach the other side); turning it off only takes my own part back.
+                var canChange = byMe || (!chat.IsBlocked && !(chat.ProtectContent || byOthers));
                 return new ContentProtectionState(IsProtected(chat), canChange, byMe, byOthers);
             default:
                 return new ContentProtectionState(false, false, false, false);
