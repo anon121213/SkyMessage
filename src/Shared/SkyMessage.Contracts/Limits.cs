@@ -15,6 +15,9 @@ public static class Limits
     public const int BioMaxLength = 200;
     public const int ContactNameMaxLength = 64;
 
+    /// <summary>Chat ids in one <see cref="ReorderPinnedChatsRequest"/>.</summary>
+    public const int MaxPinnedChatsReorder = 1000;
+
     public const int GroupTitleMaxLength = 128;
     public const int GroupDescriptionMaxLength = 500;
     public const int MaxGroupMembers = 1000;

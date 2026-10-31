@@ -41,6 +41,8 @@ public sealed class ChatIdorTests(ApiFactory factory)
             (HttpMethod.Post, ApiRoutes.Chats.InviteLinkPath(chat.Id), null),
             (HttpMethod.Delete, ApiRoutes.Chats.InviteLinkPath(chat.Id), null),
             (HttpMethod.Put, ApiRoutes.Chats.SettingsPath(chat.Id), new UpdateChatSettingsRequest { IsPinned = true, MuteForSeconds = -1 }),
+            (HttpMethod.Put, ApiRoutes.Chats.SettingsPath(chat.Id), new UpdateChatSettingsRequest { ContactBarDismissed = true }),
+            (HttpMethod.Put, ApiRoutes.Chats.ContentProtectionPath(chat.Id), new SetContentProtectionRequest { Enabled = true }),
             (HttpMethod.Post, ApiRoutes.Chats.ReadPath(chat.Id), new MarkReadRequest { UpToSeq = 100 }),
             (HttpMethod.Post, ApiRoutes.Chats.ClearHistoryPath(chat.Id), new ClearHistoryRequest { ForEveryone = true }),
             (HttpMethod.Delete, ApiRoutes.Chats.DeletePath(chat.Id, forEveryone: true), null),

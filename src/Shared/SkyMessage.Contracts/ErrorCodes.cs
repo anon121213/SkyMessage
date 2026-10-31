@@ -46,6 +46,8 @@ public static class ErrorCodes
     public const string MessageEditExpired = "message_edit_expired";
     public const string MessageNotEditable = "message_not_editable";
     public const string SendForbidden = "send_forbidden";
+    /// <summary>The source chat has content protection on: its messages cannot be forwarded.</summary>
+    public const string ForwardRestricted = "forward_restricted";
 
     // Media
     public const string MediaNotFound = "media_not_found";

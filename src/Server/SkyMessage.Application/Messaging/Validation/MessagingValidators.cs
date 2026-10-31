@@ -169,6 +169,19 @@ internal sealed class UpdateChatSettingsRequestValidator : AbstractValidator<Upd
     }
 }
 
+internal sealed class ReorderPinnedChatsRequestValidator : AbstractValidator<ReorderPinnedChatsRequest>
+{
+    public ReorderPinnedChatsRequestValidator()
+    {
+        RuleFor(x => x.ChatIds)
+            .NotNull()
+            .Must(ids => ids.Count is > 0 and <= Limits.MaxPinnedChatsReorder)
+            .WithMessage($"List 1 to {Limits.MaxPinnedChatsReorder} pinned chats.")
+            .Must(ids => ids.Distinct().Count() == ids.Count && !ids.Contains(Guid.Empty))
+            .WithMessage("Chat ids must be distinct and not empty.");
+    }
+}
+
 internal sealed class MarkReadRequestValidator : AbstractValidator<MarkReadRequest>
 {
     public MarkReadRequestValidator()

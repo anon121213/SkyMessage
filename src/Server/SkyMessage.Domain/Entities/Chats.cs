@@ -33,6 +33,14 @@ public sealed class Chat
     public string? InviteToken { get; set; }
     public bool IsDeleted { get; set; }
 
+    /// <summary>
+    /// No forwarding, copying or saving of this chat's messages. Groups: switched by admins. Private chats: kept equal
+    /// to "<see cref="ProtectContentBy"/> is not empty", so readers never need the list.
+    /// </summary>
+    public bool ProtectContent { get; set; }
+    /// <summary>Private chats: the participants who turned protection on; each can only take back their own.</summary>
+    public List<Guid> ProtectContentBy { get; set; } = [];
+
     public List<ChatMember> Members { get; set; } = [];
 
     public static string PrivateKeyFor(Guid a, Guid b)
@@ -85,7 +93,11 @@ public sealed class ChatMember
     public DateTimeOffset? MutedUntil { get; set; }
     public bool IsPinned { get; set; }
     public DateTimeOffset? PinnedAt { get; set; }
+    /// <summary>Place among the member's pinned chats: higher comes first, a new pin gets the highest; 0 when not pinned.</summary>
+    public long PinOrder { get; set; }
     public bool IsArchived { get; set; }
     /// <summary>Private chat deleted "for me"; becomes visible again when a new message arrives.</summary>
     public bool IsHidden { get; set; }
+    /// <summary>Private chats: the member closed the "add to contacts / block" bar.</summary>
+    public bool ContactBarDismissed { get; set; }
 }

@@ -34,8 +34,12 @@ internal sealed class ChatSummaryBuilder(IAppDbContext db, MessageDtoLoader load
         public long ClearedUpToSeq { get; init; }
         public bool IsPinned { get; init; }
         public DateTimeOffset? PinnedAt { get; init; }
+        public long PinOrder { get; init; }
         public bool IsArchived { get; init; }
         public DateTimeOffset? MutedUntil { get; init; }
+        public bool ContactBarDismissed { get; init; }
+        public bool ProtectContent { get; init; }
+        public List<Guid> ProtectContentBy { get; init; } = [];
         public Guid? LastMessageId { get; init; }
         public int UnreadCount { get; init; }
         public int UnreadMentionCount { get; init; }
@@ -83,8 +87,12 @@ internal sealed class ChatSummaryBuilder(IAppDbContext db, MessageDtoLoader load
                 ClearedUpToSeq = cm.ClearedUpToSeq,
                 IsPinned = cm.IsPinned,
                 PinnedAt = cm.PinnedAt,
+                PinOrder = cm.PinOrder,
                 IsArchived = cm.IsArchived,
                 MutedUntil = cm.MutedUntil,
+                ContactBarDismissed = cm.ContactBarDismissed,
+                ProtectContent = cm.Chat.ProtectContent,
+                ProtectContentBy = cm.Chat.ProtectContentBy,
                 // Newest message this viewer can see (after their clear-history mark, not deleted, not hidden).
                 LastMessageId = db.Messages
                     .Where(m => m.ChatId == cm.ChatId && m.Seq > cm.ClearedUpToSeq && m.DeletedAt == null
@@ -196,10 +204,14 @@ internal sealed class ChatSummaryBuilder(IAppDbContext db, MessageDtoLoader load
                 ClearedUpToSeq = r.ClearedUpToSeq,
                 IsPinned = r.IsPinned,
                 PinnedAt = r.PinnedAt,
+                PinOrder = r.IsPinned ? r.PinOrder : 0,
                 IsArchived = r.IsArchived,
                 MutedUntil = r.MutedUntil,
+                ContactBarDismissed = r.ContactBarDismissed,
                 IsBlocked = r.Type == ChatType.Private && r.PeerId is { } p && blockedPeers.Contains(p),
                 ActiveCallId = activeCalls.TryGetValue(r.ChatId, out var callId) ? callId : null,
+                ProtectContent = r.ProtectContent,
+                ProtectContentBy = r.ProtectContentBy,
                 CreatedAt = r.CreatedAt,
             };
         }).ToList();

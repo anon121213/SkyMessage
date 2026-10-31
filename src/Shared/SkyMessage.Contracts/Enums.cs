@@ -131,6 +131,10 @@ public enum SystemEventType
     MessagePinned = 10,
     GroupCallStarted = 11,
     GroupCallEnded = 12,
+    /// <summary>The actor turned content protection on (no forwarding, copying, saving; groups and private chats).</summary>
+    ContentProtectionEnabled = 13,
+    /// <summary>The actor turned it off and the chat is no longer protected.</summary>
+    ContentProtectionDisabled = 14,
 }
 
 public enum CallKind

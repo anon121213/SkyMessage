@@ -33,6 +33,9 @@ public interface IRealtimeClient
     /// <summary>Pin / archive / mute changed on another device of the same user.</summary>
     Task ChatSettingsChanged(ChatSettingsChangedEvent e);
 
+    /// <summary>The user rearranged their pinned chats (sent to all of the user's devices, the acting one included).</summary>
+    Task PinnedChatsReordered(PinnedChatsOrderDto order);
+
     Task HistoryCleared(HistoryClearedEvent e);
 
     Task PinnedMessagesChanged(ChatRefEvent e);

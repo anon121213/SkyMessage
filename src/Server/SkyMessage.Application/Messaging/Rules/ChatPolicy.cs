@@ -53,6 +53,32 @@ internal static class ChatPolicy
     /// <summary>Deleting the whole chat for every member: either side of a private chat, the owner of a group.</summary>
     public static bool CanDeleteChatForEveryone(ChatType type, ChatRole role) =>
         type != ChatType.Group || role == ChatRole.Owner;
+
+    /// <summary>
+    /// Content protection (no forwarding, copying, saving): admins switch it for a group; either side of a private chat
+    /// turns their own part on or off; Saved Messages has nobody to protect from.
+    /// </summary>
+    public static bool CanSetContentProtection(ChatType type, ChatRole role) => type switch
+    {
+        ChatType.Group => IsAdmin(role),
+        ChatType.Private => true,
+        _ => false,
+    };
+}
+
+/// <summary>How a private chat's protection follows its participants' choices (see <see cref="Chat.ProtectContentBy"/>).</summary>
+internal static class ContentProtectionRules
+{
+    /// <summary>The participants who want protection after <paramref name="userId"/> turned their part on or off.</summary>
+    public static List<Guid> Toggle(IReadOnlyCollection<Guid> protectedBy, Guid userId, bool enabled)
+    {
+        var next = protectedBy.Where(id => id != userId).ToList();
+        if (enabled) next.Add(userId);
+        return next;
+    }
+
+    /// <summary>A private chat is protected while anyone has their part on.</summary>
+    public static bool IsProtected(IReadOnlyCollection<Guid> protectedBy) => protectedBy.Count > 0;
 }
 
 /// <summary>Who becomes the owner when the owner leaves.</summary>

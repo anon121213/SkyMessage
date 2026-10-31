@@ -20,6 +20,8 @@ internal sealed class ChatConfiguration : IEntityTypeConfiguration<Chat>
         b.HasOne<Media>().WithMany().HasForeignKey(x => x.AvatarMediaId).OnDelete(DeleteBehavior.SetNull);
         b.OwnsOne(x => x.Permissions);
         b.Navigation(x => x.Permissions).IsRequired();
+        // Private chats only (at most two ids): a native uuid[] read together with the chat row.
+        b.Property(x => x.ProtectContentBy).HasDefaultValueSql("'{}'::uuid[]");
         b.HasMany(x => x.Members).WithOne(x => x.Chat).HasForeignKey(x => x.ChatId).OnDelete(DeleteBehavior.Cascade);
     }
 }

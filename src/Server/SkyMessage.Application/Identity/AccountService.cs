@@ -264,6 +264,8 @@ public sealed class AccountService(
                     .OrderByDescending(x => x.CreatedAt)
                     .Select(x => (Guid?)x.Id)
                     .FirstOrDefault(),
+                ProtectContent = c.ProtectContent,
+                ProtectContentBy = c.ProtectContentBy,
             })
             .FirstOrDefaultAsync();
 }
