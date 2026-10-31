@@ -41,6 +41,7 @@ public static class UiSetup
         services.TryAddScoped<ToastService>();
         services.TryAddScoped<SoundService>();
         services.TryAddScoped<ISoundService>(sp => sp.GetRequiredService<SoundService>());
+        services.TryAddScoped<IAudioDecoder>(sp => sp.GetRequiredService<ISoundService>());
         services.TryAddScoped<CustomSoundService>();
         services.TryAddScoped<LinkService>();
         services.TryAddScoped<ShareHelper>();

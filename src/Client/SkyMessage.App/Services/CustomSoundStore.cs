@@ -79,6 +79,40 @@ public sealed class CustomSoundStore(ILogger<CustomSoundStore> logger) : ICustom
         }
     }
 
+    /// <summary>
+    /// Android: the media framework that plays notification channel sounds (SystemSoundCheck) opens a copy of the file.
+    /// Apple: notifications keep the pack's sound, so nothing outside the app plays the file.
+    /// </summary>
+    public Task<bool> IsSystemPlayableAsync(byte[] content, string extension, CancellationToken cancellationToken = default) =>
+#if ANDROID
+        CheckWithAndroidAsync(content, extension, cancellationToken);
+#else
+        Task.FromResult(true);
+#endif
+
+#if ANDROID
+    private static async Task<bool> CheckWithAndroidAsync(byte[] content, string extension, CancellationToken cancellationToken)
+    {
+        var path = AppPaths.NewTempFile(extension);
+        try
+        {
+            await File.WriteAllBytesAsync(path, content, cancellationToken).ConfigureAwait(false);
+            return await Task.Run(() => SkyMessage.App.Droid.SystemSoundCheck.CanPlay(path), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+                // The temp folder is cleaned up with the cache.
+            }
+        }
+    }
+#endif
+
     public Task DeleteAsync(CustomSound sound)
     {
         try

@@ -175,6 +175,7 @@
   "settings.notifications.customError.tooShort": "Звук слишком короткий.",
   "settings.notifications.customError.tooLongMessage": "Для сообщения нужен звук до 10 секунд.",
   "settings.notifications.customError.tooLongRingtone": "Мелодия длиннее минуты. Выберите отрывок покороче.",
+  "settings.notifications.customError.system": "Android на этом телефоне не воспроизводит такой файл в уведомлениях. Выберите MP3 или M4A.",
   "settings.notifications.calls": "Звонки",
   "settings.notifications.callsEnabled": "Входящие звонки",
   "settings.notifications.callsHint": "Звонить и показывать звонок на весь экран",

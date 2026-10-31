@@ -20,5 +20,12 @@ public interface ICustomSoundStore
     /// <summary>The file's bytes; null when it is gone.</summary>
     Task<byte[]?> ReadAsync(CustomSound sound, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Whether the system player that rings notifications outside the app can play this file. Android: its media
+    /// framework, which supports fewer formats than the WebView on some versions (e.g. Ogg Opus or 24-bit WAV on
+    /// older ones). True where notifications keep the pack's sound (Apple) or there is no system player (browser).
+    /// </summary>
+    Task<bool> IsSystemPlayableAsync(byte[] content, string extension, CancellationToken cancellationToken = default);
+
     Task DeleteAsync(CustomSound sound);
 }

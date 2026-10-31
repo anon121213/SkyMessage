@@ -1,16 +1,25 @@
 using Microsoft.Extensions.Logging;
 using SkyMessage.Client.Core.Platform;
-using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Settings;
 
-namespace SkyMessage.Client.UI.Services;
+namespace SkyMessage.Client.Core.Services;
+
+/// <summary>The in-app player as a decoder (the UI's ISoundService): a file's length in seconds when it decodes, else null.</summary>
+public interface IAudioDecoder
+{
+    /// <summary>Decodes a file the way the player would: its length in seconds, or null when it cannot be played.</summary>
+    Task<double?> MeasureAsync(byte[] audio, CancellationToken cancellationToken = default);
+}
 
 /// <summary>
-/// The user's own message tone and ringtone: picking a file, checking it (<see cref="CustomSoundRules"/>: type and size
-/// first, then whether the player decodes it and how long it is), keeping it on this device and selecting it. The
-/// file of a sound that is replaced or reset is deleted. Scoped (decoding goes through <see cref="ISoundService"/>).
+/// The user's own message tone and ringtone: picking a file, checking it (<see cref="CustomSoundRules"/>), keeping it on
+/// this device and selecting it. The checks run cheapest first: type and size before the file is read; container and
+/// length from its headers before it is decoded (a decoder turns the whole file into raw samples at once, so an hour of
+/// low-bitrate audio must never get that far); the system player where it rings notifications; then the decode, for
+/// the exact length. The file of a sound that is replaced or reset is deleted. Scoped (decoding goes through the UI's
+/// player).
 /// </summary>
-public sealed class CustomSoundService(ICustomSoundStore store, ISoundService sounds, ISettingsService settings, ILogger<CustomSoundService> logger)
+public sealed class CustomSoundService(ICustomSoundStore store, IAudioDecoder decoder, ISettingsService settings, ILogger<CustomSoundService> logger)
 {
     public bool IsSupported => store.IsSupported;
 
@@ -32,7 +41,21 @@ public sealed class CustomSoundService(ICustomSoundStore store, ISoundService so
         if (bytes is null) return CustomSoundProblem.TooLarge;
         if (bytes.Length == 0) return CustomSoundProblem.Empty;
 
-        var seconds = await sounds.MeasureAsync(bytes, cancellationToken);
+        var info = AudioFileProbe.Probe(bytes);
+        problem = CustomSoundRules.CheckHeaders(slot, info);
+        if (problem != CustomSoundProblem.None)
+        {
+            logger.LogInformation("Custom sound refused before decoding: {Problem} ({Container}, {Codec}, {Seconds} s)",
+                problem, info.Container, info.Codec, info.Seconds);
+            return problem;
+        }
+        if (!await store.IsSystemPlayableAsync(bytes, extension, cancellationToken))
+        {
+            logger.LogInformation("Custom sound refused: the system player cannot play it ({Container}, {Codec})", info.Container, info.Codec);
+            return CustomSoundProblem.SystemCannotPlay;
+        }
+
+        var seconds = await decoder.MeasureAsync(bytes, cancellationToken);
         problem = CustomSoundRules.CheckDuration(slot, seconds);
         if (problem != CustomSoundProblem.None) return problem;
 

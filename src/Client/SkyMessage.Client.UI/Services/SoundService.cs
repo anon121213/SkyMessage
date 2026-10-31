@@ -66,7 +66,7 @@ public sealed class ToneCatalog
 /// is wanted (settings: Notifications.InAppSounds, Sound, CallsEnabled). Methods never throw. Scoped (JS wrapper over
 /// js/sounds.js).
 /// </summary>
-public interface ISoundService
+public interface ISoundService : IAudioDecoder
 {
     ToneCatalog Tones { get; }
     /// <summary>One short message tone of the selected pack ("custom" = the user's own; "none" is silent; unknown keys fall back to the default).</summary>
@@ -85,8 +85,6 @@ public interface ISoundService
     void PreviewPack(string pack);
     /// <summary>Settings preview of the user's own sound for a slot.</summary>
     void PreviewCustom(CustomSoundSlot slot);
-    /// <summary>Decodes a file the way the player would: its length in seconds, or null when it cannot be played.</summary>
-    Task<double?> MeasureAsync(byte[] audio, CancellationToken cancellationToken = default);
     /// <summary>Stops loops and previews.</summary>
     void Stop();
 }

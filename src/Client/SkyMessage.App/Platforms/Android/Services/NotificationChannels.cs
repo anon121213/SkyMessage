@@ -17,7 +17,8 @@ namespace SkyMessage.App.Droid;
 /// are our synthesized Ogg Vorbis files in res/raw (tone_&lt;pack&gt;_&lt;key&gt;); the user's own sound is shared with the
 /// notification system through the FileProvider declared in AndroidManifest.xml (a read grant to the packages that
 /// play notification sounds, renewed whenever the channel is used, since grants do not survive a reboot). When that
-/// file is gone, the pack's sound stands in.
+/// file is gone, or the system's media framework cannot play it (<see cref="SystemSoundCheck"/>), the pack's sound
+/// stands in.
 /// </summary>
 public sealed class NotificationChannels(IServiceProvider services, NativeStrings strings, ILogger<NotificationChannels> logger)
 {
@@ -42,6 +43,7 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
     private static readonly long[] CallVibration = [0, 900, 700, 900, 700, 900, 700];
 
     private readonly object _gate = new();
+    private readonly Dictionary<string, bool> _playable = new(StringComparer.Ordinal);   // custom sound id -> the system plays it
     private string? _language;
 
     private NotificationManager Manager => (NotificationManager)Android.App.Application.Context.GetSystemService(Context.NotificationService)!;
@@ -169,6 +171,13 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
     {
         var path = CustomSoundStore.PathOf(sound);
         if (!File.Exists(path)) return null;
+        // Import refuses such files; this keeps the channel audible if one gets here anyway. Once per file and process.
+        if (!_playable.TryGetValue(sound.Id, out var playable)) _playable[sound.Id] = playable = SystemSoundCheck.CanPlay(path);
+        if (!playable)
+        {
+            logger.LogWarning("The system cannot play the custom sound; its channel rings with the pack's sound");
+            return null;
+        }
         var context = Android.App.Application.Context;
         AndroidUri uri;
         try

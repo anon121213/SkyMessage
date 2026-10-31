@@ -239,6 +239,7 @@
         CustomSoundProblem.Empty => L["settings.notifications.customError.empty"],
         CustomSoundProblem.TooLarge => L.Format("settings.notifications.customError.tooLarge", CustomSoundRules.MaxBytes / (1024 * 1024)),
         CustomSoundProblem.TooShort => L["settings.notifications.customError.tooShort"],
+        CustomSoundProblem.SystemCannotPlay => L["settings.notifications.customError.system"],
         CustomSoundProblem.TooLong => slot == CustomSoundSlot.Message
             ? L["settings.notifications.customError.tooLongMessage"]
             : L["settings.notifications.customError.tooLongRingtone"],

@@ -38,13 +38,18 @@ public enum CustomSoundProblem
     Format,
     Empty,
     TooLarge,
-    /// <summary>The player could not decode it.</summary>
+    /// <summary>The player could not decode it, or its headers do not say how long it is.</summary>
     Unreadable,
     TooShort,
     TooLong,
+    /// <summary>The app plays it, but this device's system player, which rings notifications, cannot (Android).</summary>
+    SystemCannotPlay,
 }
 
-/// <summary>What a custom sound may be. Checked before the file is read (type, size) and after it is decoded (length).</summary>
+/// <summary>
+/// What a custom sound may be. Checked before the file is read (type, size), on its headers before it is decoded
+/// (container, length), by the system player where it rings notifications, and after it is decoded (exact length).
+/// </summary>
 public static class CustomSoundRules
 {
     /// <summary>4 MB: a minute of a typical MP3; keeps decoding quick on budget phones.</summary>
@@ -115,6 +120,22 @@ public static class CustomSoundRules
         if (size == 0) return CustomSoundProblem.Empty;
         return size > MaxBytes ? CustomSoundProblem.TooLarge : CustomSoundProblem.None;
     }
+
+    /// <summary>
+    /// Before decoding, on what the headers say (<see cref="AudioFileProbe"/>). The player decodes a whole file into raw
+    /// samples at once (about 12 MB a minute per channel), so a file must be one of the containers we accept, say how long it is,
+    /// and be at most a quarter (plus a second) over the limit (an MP3's constant-bitrate estimate can be a little off);
+    /// the exact length is checked after decoding.
+    /// </summary>
+    public static CustomSoundProblem CheckHeaders(CustomSoundSlot slot, AudioFileInfo info)
+    {
+        if (info.Container == AudioContainer.Unknown) return CustomSoundProblem.Format;
+        if (info.Seconds is not { } s || double.IsNaN(s) || double.IsInfinity(s) || s < 0) return CustomSoundProblem.Unreadable;
+        return s * 1000 > MaxDecodeMs(slot) ? CustomSoundProblem.TooLong : CustomSoundProblem.None;
+    }
+
+    /// <summary>The longest file, by its headers, that is decoded to measure it.</summary>
+    public static double MaxDecodeMs(CustomSoundSlot slot) => MaxDurationMs(slot) * 1.25 + 1000;
 
     /// <summary>After decoding: <paramref name="seconds"/> null means the player could not decode it.</summary>
     public static CustomSoundProblem CheckDuration(CustomSoundSlot slot, double? seconds)

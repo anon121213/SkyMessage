@@ -45,6 +45,9 @@ public sealed class WebCustomSoundStore(WebBridge bridge, WebBlobs blobs, ILogge
         }
     }
 
+    /// <summary>A browser has no system player of its own: notifications here play no custom file.</summary>
+    public Task<bool> IsSystemPlayableAsync(byte[] content, string extension, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
     public async Task DeleteAsync(CustomSound sound)
     {
         try

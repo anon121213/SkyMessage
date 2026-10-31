@@ -175,6 +175,7 @@
   "settings.notifications.customError.tooShort": "The sound is too short.",
   "settings.notifications.customError.tooLongMessage": "A message sound can be up to 10 seconds long.",
   "settings.notifications.customError.tooLongRingtone": "The ringtone is longer than a minute. Choose a shorter part.",
+  "settings.notifications.customError.system": "Android on this phone can't play this kind of file in notifications. Choose an MP3 or M4A.",
   "settings.notifications.calls": "Calls",
   "settings.notifications.callsEnabled": "Incoming calls",
   "settings.notifications.callsHint": "Ring and show the call full screen",
