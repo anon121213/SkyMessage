@@ -25,8 +25,8 @@ and ownership.
    Telegram or any other messenger, and **never port, translate or paraphrase code or layout algorithms
    from any messenger's client source** (several are GPL). Describe and build UX from first principles.
    Our brand: **SkyMessage**, default accent violet `#6C5CE7`, logo = a soft gradient cloud (violet → sky
-   blue) without a speech-bubble tail, our own gradient/pattern wallpapers, sounds synthesized with
-   WebAudio. Icons: Lucide (ISC) from the `lucide-static` npm package, license shipped in `wwwroot/licenses/`.
+   blue) without a speech-bubble tail, our own gradient/pattern wallpapers, sounds synthesized from
+   first principles (`tools/tones`, no samples). Icons: Lucide (ISC) from the `lucide-static` npm package, license shipped in `wwwroot/licenses/`.
 2. **License policy.** Only MIT / Apache-2.0 / BSD / ISC / OFL dependencies. Do **not** add MediatR,
    AutoMapper, FluentAssertions, MassTransit, ImageSharp, Moq. Exception: Google Play services / Firebase
    Android SDKs (free, proprietary) are allowed for platform integration (phone-number hint now, push later).
@@ -497,8 +497,9 @@ right-click), Toast, Tabs, SegmentedControl, ProgressRing, QrCode (QRCoder PNG d
 **EmojiPicker** + `Kit/Emoji/EmojiCatalog.cs` (curated Unicode by category, recent emoji via
 `IAccountLocalStore`)), services (`Services/`: `ILocalizer` (+ Russian plural rules), `ThemeService` (+
 `Accents` and `Wallpapers` catalogs), `NavigationService`, `DialogService`, `ToastService`, `ISoundService`
-(`Tones` catalog incl. message tones "chime"/"pop"/"glass", ringtones "classic"/"soft"/"bright", ringback,
-busy, call-end; `PlayMessageTone(key)`, `StartRingtone(key)`, `StartRingback()`, `Stop()`), `FormatService`
+(`Tones` catalog: packs "wood"/"bells"/"piano", each with message tones "chime"/"pop"/"glass", ringtones
+"classic"/"soft"/"bright", ringback, busy, call-end, plus the user's own sounds; `PlayMessageTone(key)`,
+`StartRingtone(key)`, `StartRingback()`, `Stop()`), `FormatService`
 (times, durations, sizes, last-seen phrases), `IMessagePreviewFormatter`, JS wrapper for `app.js`), and
 features: Auth (welcome with server picker + connection test, login, register with live username check
 and invite code when required), ChatList (avatar, title, preview incl. "Draft:", sender for groups, time,
@@ -542,7 +543,7 @@ name, username with availability, bio), phone (detect via `IPhoneNumberService` 
 region, unlink, "who can find me by number"), privacy & security (all levels, blocked users, active
 sessions, change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
 in background + battery exemption via `IBackgroundConnectionService`; on iOS a hint that the app must stay
-open to receive calls until push lands; tone pickers with preview through `ISoundService`), appearance (theme, accents, wallpapers with live preview, font size, bubble radius,
+open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, wallpapers with live preview, font size, bubble radius,
 animations, compact list), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
 speed), **devices** (mic select + live level meter + record/playback test; camera select + preview +
 mirror; speaker select + test tone (`setSinkId` where supported); echo cancellation / noise suppression /
@@ -599,8 +600,9 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   DEBUG-only `UsesCleartextTraffic`; `skymessage://` and notification deep links. Call service type derived
   from granted permissions (microphone; camera added only in foreground); Accept/AcceptVideo notification
   actions are Activity PendingIntents (bring MainActivity forward, then start the service); Decline/Hang up
-  may be broadcasts. Notification sounds: render our synthesized tones to small WAV files (script) in
-  Resources/Raw; one channel per tone key (recreate on change); incoming calls ring with FLAG_INSISTENT or a
+  may be broadcasts. Notification sounds: our synthesized packs as Ogg Vorbis in Resources/Raw
+  (tone_<pack>_<key>, written by `tools/tones`), or the user's own file through a FileProvider; one channel per
+  sound (recreate on change); incoming calls ring with FLAG_INSISTENT or a
   looping ringtone stopped on accept/decline/foreground.
 - Apple: Mac `Entitlements.plist` camera, audio-input, addressbook, user-selected + downloads read-write,
   `keychain-access-groups` = `$(AppIdentifierPrefix)com.skymessage.messenger`; iOS Entitlements with the

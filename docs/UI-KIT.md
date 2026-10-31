@@ -324,15 +324,19 @@ compose button steps up while a toast covers its corner.
 
 ```csharp
 @inject ISoundService Sounds
-Sounds.PlayMessageTone(Settings.Current.Notifications.MessageTone);   // "chime" | "pop" | "glass" ("none" = silent)
-Sounds.StartRingtone(Settings.Current.Notifications.Ringtone);        // "classic" | "soft" | "bright" — loops
+Sounds.PlayMessageTone(Settings.Current.Notifications.MessageTone);   // "chime" | "pop" | "glass" | "custom" ("none" = silent)
+Sounds.StartRingtone(Settings.Current.Notifications.Ringtone);        // "classic" | "soft" | "bright" | "custom" — loops
 Sounds.StartRingback();  Sounds.PlayBusy();  Sounds.PlayCallEnd();  Sounds.Stop();
-Sounds.Preview("soft");                                               // settings pickers (one cycle)
-Sounds.Tones.MessageTones / Ringtones / CallProgress                   // ToneInfo(Key, NameKey, Kind) — names: L[tone.NameKey]
+Sounds.Preview("soft");  Sounds.PreviewPack("bells");  Sounds.PreviewCustom(CustomSoundSlot.Ringtone);   // settings
+Sounds.Tones.Packs / MessageTones / Ringtones / CallProgress            // SoundPackInfo / ToneInfo — names: L[x.NameKey]
 ```
 
-Tones are synthesized with WebAudio (`js/sounds.js`; same recipes as `tools/tones/render-tones.cs`). Callers
-check the settings (InAppSounds / Sound / CallsEnabled). Browsers unlock audio on the first user gesture.
+Every sound comes from the pack in `Notifications.SoundPack` ("wood" default, "bells", "piano"; keys and repairs in
+Core's `SoundCatalog`): our own synthesis, rendered by `tools/tones` (`dotnet run --project tools/tones`, QA:
+`python3 tools/tones/analyze.py`) to `wwwroot/sounds/<pack>/<key>.ogg`, which `js/sounds.js` fetches, decodes once
+and plays (loops are exactly one cycle). "custom" plays the user's own file (`CustomSoundService` imports it,
+`ICustomSoundStore` keeps it per device) and falls back to the pack's default when it cannot. Callers check the
+settings (InAppSounds / Sound / CallsEnabled). Browsers unlock audio on the first user gesture.
 
 ### Links: `LinkService` (scoped), `TextLinker` (static)
 
