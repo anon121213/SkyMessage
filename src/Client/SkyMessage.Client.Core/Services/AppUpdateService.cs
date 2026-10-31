@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SkyMessage.Client.Core.Infrastructure;
 using SkyMessage.Client.Core.Platform;
+using SkyMessage.Client.Core.Settings;
 using SkyMessage.Client.Core.Stores;
 using SkyMessage.Contracts;
 
@@ -146,7 +147,20 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         if (!HasWork) return;
         await EnsureLoadedAsync().ConfigureAwait(false);
         SetDownloadRequested(_installer.IsSupported);
-        if (!await CheckAsync(manual: true, cancellationToken).ConfigureAwait(false)) SetDownloadRequested(false);
+        bool checkedOk;
+        try
+        {
+            checkedOk = await CheckAsync(manual: true, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            checkedOk = false;
+        }
+        if (!checkedOk)
+        {
+            SetDownloadRequested(false);
+            return;
+        }
         Kick(UpdateTrigger.Continue);
     }
 
@@ -283,6 +297,12 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
                 if (manual) Publish(s => s with { Error = ex.Code });
                 return false;
             }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Update check failed");
+                if (manual) Publish(s => s with { Error = ClientErrorCodes.Unknown });
+                return false;
+            }
             await ApplyOfferAsync(offer).ConfigureAwait(false);
             return true;
         }
@@ -306,14 +326,18 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
             if (newWeb is not null && string.Equals(newWeb, _state.WebReloadTarget, StringComparison.OrdinalIgnoreCase)) newWeb = null;
         }
         await UpdateStateAsync(s => s with { LastCheckAt = now, Release = release }).ConfigureAwait(false);
+        // Nothing newer: up to date right away (a manual check shows it at once). With a newer build AdvanceAsync decides.
+        var upToDate = release is null && !(_installer.IsSupported && _status.Phase == AppUpdatePhase.Installing);
         Publish(s => s with
         {
             LastCheckedAt = now,
             Release = release,
             Required = AppUpdateRules.IsRequired(release, installed),
             NewWebVersion = newWeb,
-            Phase = _installer.IsSupported ? s.Phase : AppUpdatePhase.UpToDate,
-            Error = s.Phase == AppUpdatePhase.Failed ? s.Error : null,
+            Phase = upToDate ? AppUpdatePhase.UpToDate : s.Phase,
+            Progress = upToDate ? 0 : s.Progress,
+            WaitingForWifi = !upToDate && s.WaitingForWifi,
+            Error = !upToDate && s.Phase == AppUpdatePhase.Failed ? s.Error : null,
         });
     }
 
@@ -353,22 +377,28 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
             });
             return;
         }
+        var retryDue = _time.GetUtcNow() >= retryAt;
         if (await HasVerifiedPackageAsync(release).ConfigureAwait(false))
         {
+            // A failed install waits for its back-off (or the user) before the next automatic attempt.
+            if (!manual && !retryDue && _status.Phase == AppUpdatePhase.Failed)
+            {
+                Publish(s => s with { Release = release, Required = required, Progress = 1, WaitingForWifi = false });
+                return;
+            }
             BecomeReady(release, required);
             return;
         }
 
         var updates = _settings.Current.Updates;
-        var networkAllows = AppUpdateRules.NetworkAllows(updates.WifiOnly, _network.Kind, _network.IsMetered);
-        var retryDue = _time.GetUtcNow() >= retryAt;
+        var networkAllows = DownloadNetworkAllowed(updates);
         if (!manual && !(updates.AutoUpdate && networkAllows && retryDue))
         {
             Publish(s => s with
             {
                 Phase = s.Phase == AppUpdatePhase.Failed && !retryDue ? AppUpdatePhase.Failed : AppUpdatePhase.Available,
                 Release = release, Required = required, Progress = 0,
-                WaitingForWifi = updates.AutoUpdate && !networkAllows,
+                WaitingForWifi = WaitsForWifi(updates),
             });
             return;
         }
@@ -422,12 +452,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             // Paused because the network or the settings no longer allow it; the partial file stays for later.
-            var updates = _settings.Current.Updates;
-            Publish(s => s with
-            {
-                Phase = AppUpdatePhase.Available, Progress = 0,
-                WaitingForWifi = updates.AutoUpdate && !AppUpdateRules.NetworkAllows(updates.WifiOnly, _network.Kind, _network.IsMetered),
-            });
+            Publish(s => s with { Phase = AppUpdatePhase.Available, Progress = 0, WaitingForWifi = WaitsForWifi(_settings.Current.Updates) });
         }
         catch (StorageException ex)
         {
@@ -449,6 +474,12 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         {
             _logger.LogInformation("Update download interrupted: {Error}", ex is ApiException api ? api.Code : ex.Message);
             Fail(release, required, ex is ApiException { IsNetworkError: false } other ? other.Code : ClientErrorCodes.Network);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Anything else (a timeout surfacing as a cancellation, a disposed stream): retried like a network failure.
+            _logger.LogWarning(ex, "Update download failed");
+            Fail(release, required, ClientErrorCodes.Network);
         }
         finally
         {
@@ -810,8 +841,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
             download = _download;
             manual = _downloadRequested;
         }
-        if (download is not null && !manual
-            && (!updates.AutoUpdate || !AppUpdateRules.NetworkAllows(updates.WifiOnly, _network.Kind, _network.IsMetered)))
+        if (download is not null && !manual && (!updates.AutoUpdate || !DownloadNetworkAllowed(updates)))
         {
             try
             {
@@ -840,6 +870,12 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
     }
 
     private bool InCall => _calls.Current is not null || _calls.Incoming is not null;
+
+    private bool DownloadNetworkAllowed(UpdateSettings updates) =>
+        AppUpdateRules.NetworkAllows(updates.WifiOnly, _network.IsConnected, _network.Kind, _network.IsMetered);
+
+    /// <summary>Connected, but only through mobile data (or a hotspot) while "Wi-Fi only" is on.</summary>
+    private bool WaitsForWifi(UpdateSettings updates) => updates.AutoUpdate && updates.WifiOnly && _network.IsConnected && !DownloadNetworkAllowed(updates);
 
     // ---- State -------------------------------------------------------------------------------------------------------
 

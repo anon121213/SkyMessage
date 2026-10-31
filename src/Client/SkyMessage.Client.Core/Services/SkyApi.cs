@@ -18,9 +18,6 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
     public Task<ServerInfoDto> GetServerInfoAsync(CancellationToken ct = default) =>
         transport.SendJsonAsync<ServerInfoDto>(ApiRequest.Get(ApiRoutes.ServerInfo), null, ct);
 
-    public Task<AppVersionDto> GetAppVersionAsync(CancellationToken ct = default) =>
-        transport.SendJsonAsync<AppVersionDto>(ApiRequest.Get(ApiRoutes.AppVersion), null, ct);
-
     // Auth
 
     public Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default) =>

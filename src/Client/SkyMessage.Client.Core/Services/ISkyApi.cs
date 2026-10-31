@@ -10,8 +10,6 @@ public interface ISkyApi
 {
     // Server
     Task<ServerInfoDto> GetServerInfoAsync(CancellationToken ct = default);
-    /// <summary>GET api/app/version: the newest app builds the server offers (404 on servers from before app updates).</summary>
-    Task<AppVersionDto> GetAppVersionAsync(CancellationToken ct = default);
 
     // Auth (normally used through IAuthService)
     Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default);

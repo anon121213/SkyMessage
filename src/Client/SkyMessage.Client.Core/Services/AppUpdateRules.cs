@@ -30,8 +30,11 @@ internal static class AppUpdateRules
     public static readonly TimeSpan TimerPeriod = TimeSpan.FromMinutes(30);
     public static readonly TimeSpan PeriodicInterval = TimeSpan.FromHours(4);
     public static readonly TimeSpan ResumeInterval = TimeSpan.FromHours(1);
-    /// <summary>Reconnects are frequent on lossy networks; a deploy is caught by the first one after it anyway.</summary>
-    public static readonly TimeSpan ReconnectInterval = TimeSpan.FromMinutes(10);
+    /// <summary>
+    /// A deploy restarts the server, so every client reconnects right after it: that check finds the new release. The
+    /// short spacing only keeps a flapping connection from asking on every reconnect (the check is one small GET).
+    /// </summary>
+    public static readonly TimeSpan ReconnectInterval = TimeSpan.FromMinutes(1);
     /// <summary>The app must stay in the background this long before an update installs silently (quick app switches).</summary>
     public static readonly TimeSpan BackgroundInstallDelay = TimeSpan.FromSeconds(30);
     /// <summary>Web: the page must stay hidden this long before it reloads by itself.</summary>
@@ -60,23 +63,28 @@ internal static class AppUpdateRules
         _ => TimeSpan.FromHours(3),
     };
 
-    /// <summary>"Wi-Fi only" allows unmetered Wi-Fi/Ethernet (a phone's hotspot is metered); without it any network goes.</summary>
-    public static bool NetworkAllows(bool wifiOnly, NetworkKind kind, bool metered) =>
-        !wifiOnly || (kind is NetworkKind.Wifi or NetworkKind.Ethernet && !metered);
+    /// <summary>
+    /// Automatic downloads need a connection; "Wi-Fi only" further needs unmetered Wi-Fi/Ethernet (a phone's hotspot is
+    /// metered). Without it any network goes.
+    /// </summary>
+    public static bool NetworkAllows(bool wifiOnly, bool connected, NetworkKind kind, bool metered) =>
+        connected && (!wifiOnly || (kind is NetworkKind.Wifi or NetworkKind.Ethernet && !metered));
 
     /// <summary>
-    /// An offer we can act on: positive versionCode and size, a SHA-256, and a download address on this server (a
-    /// relative path) or over https. Anything else is ignored rather than failing later.
+    /// An offer we can act on: positive versionCode and size, a SHA-256, and a download path on this server (relative,
+    /// so it follows the active address and its failover; never another host). Anything else is ignored rather than
+    /// failing later.
     /// </summary>
     public static bool IsValid(AndroidReleaseDto? release)
     {
         if (release is null || release.VersionCode <= 0 || release.Size <= 0) return false;
         if (release.Sha256 is not { Length: 64 } sha || !sha.All(char.IsAsciiHexDigit)) return false;
         var url = release.ApkUrl?.Trim();
-        if (string.IsNullOrEmpty(url) || url.StartsWith("//", StringComparison.Ordinal) || url.Contains('\\')) return false;
-        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute) && !url.StartsWith('/'))
-            return absolute.Scheme == Uri.UriSchemeHttps;
-        return !url.Split('/').Contains("..");
+        if (string.IsNullOrEmpty(url) || url.StartsWith("//", StringComparison.Ordinal) || url.Contains('\\') || url.Contains(':')
+            || url.IndexOfAny(['?', '#']) >= 0)
+            return false;
+        var segments = url.TrimStart('/').Split('/');
+        return segments.All(segment => segment.Length > 0 && segment is not "." and not "..");
     }
 
     /// <summary>A valid offer above the installed build.</summary>
