@@ -117,8 +117,15 @@ public enum TypingAction
     UploadingFile = 6,
 }
 
+/// <summary>
+/// Grows with the server: an app reads a name it does not know as <see cref="Unknown"/> (<see cref="TolerantEnumConverter{TEnum}"/>)
+/// and shows a generic service message. Apps built before that converter (0.2.0) fail on unknown names instead, so the
+/// release that adds a value ships the server and the app together and raises <c>Server:MinClientVersion</c>.
+/// </summary>
 public enum SystemEventType
 {
+    /// <summary>Never sent: what an app reads for a type added after it was built.</summary>
+    Unknown = 0,
     ChatCreated = 1,
     MembersAdded = 2,
     MemberLeft = 3,
