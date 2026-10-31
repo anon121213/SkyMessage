@@ -555,7 +555,8 @@ server, fallback addresses, proxy HTTP/SOCKS5 with test via `IServerEndpointServ
 work through a proxy"), about (version, server version, licenses of everything
 shipped). Calls: `CallOverlay` (incoming screen with accept audio/video / decline + ringtone; outgoing with
 ringback; 1:1 layout (remote full, draggable local PIP) and group grid with active speaker; a shared screen takes
-the stage with the people (presenter first) in a strip, 1:1 and groups; deck in this order: audio output, camera,
+the stage with the people (presenter first) in a strip, 1:1 and groups (several at once: the newest share, others
+marked in the strip and a tap away, `CallScreenShares`); deck in this order: audio output, camera,
 microphone, hang up (flip in the top bar, screen share on desktop in a capsule after the deck; phones only view
 shared screens); minimize to a top bar; timer; quality;
 reconnecting; ended screen; when the local camera track ends/mutes after the app returns from background,

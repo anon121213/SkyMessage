@@ -63,12 +63,21 @@
                             <div @key="@("share")" class="call-slot" data-slot="@($"screen:{sharer.UserId}")" data-fit="contain"></div>
                             <div class="call-share__who"><Icon Name="@IconNames.ScreenShare" Size="14" /> <span class="sm-truncate">@L.Format("calls.sharingBy", Users.NameOf(ParseId(sharer.UserId), L))</span></div>
                         </div>
+                        @* Others sharing at the same time (groups) come right after the presenter, with a screen mark: a tap
+                           puts their screen on the stage. *@
                         <div class="call-share__strip" data-no-minimize>
                             @RemoteTile(sharer)
+                            @foreach (var p in _remote)
+                            {
+                                if (p.UserId != sharer.UserId && p.HasScreen)
+                                {
+                                    @RemoteTile(p, pickScreen: true)
+                                }
+                            }
                             @MyTile()
                             @foreach (var p in _remote)
                             {
-                                if (p.UserId != sharer.UserId)
+                                if (p.UserId != sharer.UserId && !p.HasScreen)
                                 {
                                     @RemoteTile(p)
                                 }
@@ -441,11 +450,13 @@
         </CallTile>
     };
 
-    private RenderFragment RemoteTile(RemoteMediaInfo p) => __builder =>
+    private RenderFragment RemoteTile(RemoteMediaInfo p, bool pickScreen = false) => __builder =>
     {
         var id = ParseId(p.UserId);
-        <CallTile @key="p.UserId" SlotKey="@($"cam:{p.UserId}")" Name="@Users.NameOf(id, L)" HasVideo="p.HasVideo" Muted="p.IsMuted" Speaking="p.IsSpeaking"
-                  Active="p.IsActiveSpeaker" Quality="p.Quality" MutedLabel="@L["calls.muted"]" WeakLabel="@L["calls.quality.weak"]">
+        var name = Users.NameOf(id, L);
+        <CallTile @key="p.UserId" SlotKey="@($"cam:{p.UserId}")" Name="@name" HasVideo="p.HasVideo" Muted="p.IsMuted" Speaking="p.IsSpeaking"
+                  Active="p.IsActiveSpeaker" Quality="p.Quality" MutedLabel="@L["calls.muted"]" WeakLabel="@L["calls.quality.weak"]"
+                  OnPick="@(pickScreen ? EventCallback.Factory.Create(this, () => ShowScreenOf(p.UserId)) : default)" PickLabel="@(pickScreen ? L.Format("calls.watchScreenOf", name) : null)">
             <AvatarContent>
                 <UserAvatar UserId="id" Size="@(Layout.IsPhone ? 68 : 92)" />
             </AvatarContent>

@@ -18,6 +18,7 @@
   "calls.unknownChat": "Звонок",
   "calls.peerMuted": "Собеседник выключил микрофон",
   "calls.sharingBy": "{0} показывает экран",
+  "calls.watchScreenOf": "Смотреть экран — {0}",
   "calls.participants.one": "{0} участник",
   "calls.participants.few": "{0} участника",
   "calls.participants.many": "{0} участников",

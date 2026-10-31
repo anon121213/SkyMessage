@@ -18,6 +18,7 @@
   "calls.unknownChat": "Call",
   "calls.peerMuted": "The other person muted their microphone",
   "calls.sharingBy": "{0} is sharing the screen",
+  "calls.watchScreenOf": "Show {0}'s screen",
   "calls.participants.one": "{0} participant",
   "calls.participants.few": "{0} participants",
   "calls.participants.many": "{0} participants",

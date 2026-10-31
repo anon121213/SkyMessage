@@ -82,6 +82,8 @@ public partial class CallOverlay : IAsyncDisposable
     private bool _wantCamera;
     private LocalMediaInfo? _local;
     private IReadOnlyList<RemoteMediaInfo> _remote = [];
+    // Several people may share their screens at once in a group: whose is on the stage.
+    private CallScreenShares _shares = CallScreenShares.None;
     private bool _audioBlocked;
     private bool _cameraInterrupted;
     private bool _replaced;
@@ -221,7 +223,16 @@ public partial class CallOverlay : IAsyncDisposable
         return _remote.FirstOrDefault(r => r.UserId == key) ?? _remote.FirstOrDefault();
     }
 
-    private RemoteMediaInfo? ScreenSharer => _remote.FirstOrDefault(r => r.HasScreen);
+    /// <summary>The person whose shared screen is on the stage of a group call (<see cref="CallScreenShares"/>).</summary>
+    private RemoteMediaInfo? ScreenSharer =>
+        _shares.Shown is { } shown ? _remote.FirstOrDefault(r => r.UserId == shown && r.HasScreen) : null;
+
+    /// <summary>Another screen shared at the same time goes on the stage (a tap on its tile in the strip).</summary>
+    private void ShowScreenOf(string userId)
+    {
+        _shares = _shares.Pick(userId);
+        StateHasChanged();
+    }
 
     private static Guid ParseId(string id) => Guid.TryParse(id, out var value) ? value : Guid.Empty;
 
@@ -392,6 +403,7 @@ public partial class CallOverlay : IAsyncDisposable
         {
             await CollapseAsync();
             _remote = [];
+            _shares = CallScreenShares.None;
             _local = null;
             _replaced = false;
             _audioBlocked = false;
@@ -410,6 +422,7 @@ public partial class CallOverlay : IAsyncDisposable
         _wantCamera = session.IsCameraOn;
         _local = null;
         _remote = [];
+        _shares = CallScreenShares.None;
         _audioBlocked = false;
         _cameraInterrupted = false;
         _replaced = false;
@@ -452,6 +465,7 @@ public partial class CallOverlay : IAsyncDisposable
         if (wanted is null)
         {
             _remote = [];
+            _shares = CallScreenShares.None;
             return;
         }
         _replaced = false;
@@ -584,6 +598,7 @@ public partial class CallOverlay : IAsyncDisposable
     {
         if (IsDisposed || _engineToken is null || !CallUi.IsLive(Calls.Current)) return;
         _remote = participants;
+        _shares = _shares.Update(participants.Where(p => p.HasScreen).Select(p => p.UserId));
         var states = new List<CallParticipantState>(participants.Count);
         foreach (var p in participants)
         {
