@@ -1066,6 +1066,9 @@ html[data-fx="lite"] .call-sky *::after {
    next to the deck or on its own line; on wide ones the deck stays centered and the capsule sits right after it. */
 .call-controls--extra {
     flex-wrap: wrap;
+    /* Side by side, the capsule takes the deck's height (a two-line caption such as "Выключить камеру" makes the deck
+       taller), so their bottom edges line up. */
+    align-items: stretch;
     gap: 10px 12px;
 }
 
@@ -1076,7 +1079,7 @@ html[data-fx="lite"] .call-sky *::after {
     padding-right: 14px;
 }
 
-/* A one-line caption ("Остановить показ" too), so the capsule keeps the deck's height. */
+/* A one-line caption ("Остановить показ" too), so the capsule is never taller than the deck. */
 .call-deck--extra ::deep .call-btn {
     flex: none;
     width: auto;
@@ -1092,7 +1095,7 @@ html[data-fx="lite"] .call-sky *::after {
     .call-controls--extra {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        align-items: start;
+        align-items: stretch;
     }
 
     .call-controls--extra .call-deck {
