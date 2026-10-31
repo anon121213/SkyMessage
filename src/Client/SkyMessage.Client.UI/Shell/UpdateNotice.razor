@@ -1,7 +1,8 @@
 @* The update card at the top of the chat list: glass with a flat disc, dropping in once. Android: "update ready" with
    Update (the explainer for the install permission comes first, once by itself), progress while a download the user
-   started or a required one runs, and failures in plain words. Web: a new client was deployed, Update reloads. An
-   app the server no longer supports (ServerInfoDto.MinClientVersion) that cannot update itself keeps the plain
+   started or a required one runs, and failures in plain words. Web: a new client was deployed, Update reloads. A
+   client the server no longer supports (ServerInfoDto.MinClientVersion) with nothing to update to here (an app that
+   cannot update itself, a page whose check failed or whose reload brought the old client back) keeps the plain
    warning. Dismissible for this session; automatic background updates never show a card. *@
 @inherits UiComponentBase
 @inject IAppUpdateService Updates
@@ -89,13 +90,9 @@
     {
         var status = Updates.Status;
         var outdated = AppVersionCheck.IsOutdated(Platform.AppVersion, Endpoints.Info?.MinClientVersion);
-        if (!Platform.IsNativeApp)
-        {
-            if (status.NewWebVersion is { } web)
-                return new Card(CardKind.Web, "web:" + web, IconNames.RefreshCw, L["app.update.web.title"], L["app.update.web.text"],
-                    L["app.update.action.reload"], IconNames.RefreshCw);
-            return null;
-        }
+        if (!Platform.IsNativeApp && status.NewWebVersion is { } web)
+            return new Card(CardKind.Web, "web:" + web, IconNames.RefreshCw, L["app.update.web.title"], L["app.update.web.text"],
+                L["app.update.action.reload"], IconNames.RefreshCw);
 
         if (Updates.CanSelfUpdate && status.Release is { } release)
         {

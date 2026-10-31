@@ -68,7 +68,7 @@
     margin-top: -1px;
     border-radius: 50%;
     background: var(--sm-accent);
-    color: #FFFFFF;
+    color: var(--sm-on-accent);
     font-family: var(--sm-font-display);
     font-size: 0.8125rem;
     font-weight: 700;

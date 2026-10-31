@@ -27,7 +27,7 @@
     height: 2.875rem;
     border-radius: 50%;
     background: var(--sm-accent);
-    color: #FFFFFF;
+    color: var(--sm-on-accent);
 }
 
 .update-card--warning .update-card__disc {
