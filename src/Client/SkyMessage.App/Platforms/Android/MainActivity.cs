@@ -49,6 +49,9 @@ public class MainActivity : MauiAppCompatActivity
         base.OnResume();
         // In the foreground a foreground service may start: revive the background connection if its process died.
         AndroidBackgroundConnectionService.EnsureRunning(ApplicationContext ?? this);
+        // A call showing a picture keeps the screen on, also on a window created meanwhile.
+        if (AppServices.Get<ICallPlatformService>() is AndroidCallPlatformService { KeepsScreenAwake: true } calls)
+            calls.ApplyKeepAwake(this);
         // Accept actions are delivered once the activity is resumed, i.e. the app is in the foreground, so the
         // call's microphone/camera foreground service is allowed to start (Android 14+ rule).
         if (_pendingCallAction is { } pending)

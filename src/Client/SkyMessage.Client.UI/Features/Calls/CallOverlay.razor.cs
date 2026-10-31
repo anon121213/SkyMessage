@@ -583,7 +583,7 @@ public partial class CallOverlay : IAsyncDisposable
         foreach (var p in participants)
         {
             if (Guid.TryParse(p.UserId, out var id))
-                states.Add(new CallParticipantState(id, p.IsSpeaking, p.HasVideo, p.IsMuted, p.Quality));
+                states.Add(new CallParticipantState(id, p.IsSpeaking, p.HasVideo, p.IsMuted, p.Quality, p.HasScreen));
         }
         Calls.ReportParticipants(states);
         StateHasChanged();

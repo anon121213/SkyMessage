@@ -277,8 +277,11 @@ public enum CallMediaState
     Failed,
 }
 
-/// <summary>Remote participant as reported by the media engine (LiveKit identity = "{userId:N}.{sessionId:N}").</summary>
-public sealed record CallParticipantState(Guid UserId, bool IsSpeaking, bool HasVideo, bool IsMuted, int ConnectionQuality);
+/// <summary>
+/// Remote participant as reported by the media engine (LiveKit identity = "{userId:N}.{sessionId:N}"). HasVideo: their
+/// camera; HasScreen: a screen they share.
+/// </summary>
+public sealed record CallParticipantState(Guid UserId, bool IsSpeaking, bool HasVideo, bool IsMuted, int ConnectionQuality, bool HasScreen = false);
 
 public sealed record CallSession
 {

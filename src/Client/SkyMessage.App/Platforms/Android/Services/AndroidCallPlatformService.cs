@@ -3,6 +3,7 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using Android.Views;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     private AndroidAudioRouteService? _routes;
     private bool? _notifiedMuted;
     private bool? _seenCameraOn;
+    private bool _keepAwake;
 
     internal CallDto? Call { get; private set; }
 
@@ -92,6 +94,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
 
     public Task OnCallEndedAsync()
     {
+        UpdateKeepAwake(false);
         try
         {
             Call = null;
@@ -149,9 +152,10 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     internal bool IsMuted => _callService?.Current?.IsMicMuted ?? false;
 
     /// <summary>
-    /// Whether the proximity screen-off lock belongs to the call right now (<see cref="CallAudioPolicy"/>): call audio on
-    /// the earpiece and my camera off. Route and audio mode are read from the system, so the speaker button, a headset
-    /// plugged in or the WebView picking another device all count.
+    /// Whether the proximity screen-off lock belongs to the call right now
+    /// (<see cref="CallScreenPolicy.HoldsProximityLock"/>): call audio on the earpiece and my camera off. Route and
+    /// audio mode are read from the system, so the speaker button, a headset plugged in or the WebView picking another
+    /// device all count.
     /// </summary>
     internal bool WantsProximityLock
     {
@@ -159,7 +163,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
         {
             if (Call is null || _routes is not { } routes) return false;
             var cameraOn = _callService?.Current?.IsCameraOn ?? CameraOn;
-            return CallAudioPolicy.HoldsProximityLock(routes.CurrentKind, cameraOn, routes.IsInCommunication);
+            return CallScreenPolicy.HoldsProximityLock(routes.CurrentKind, cameraOn, routes.IsInCommunication);
         }
     }
 
@@ -178,6 +182,40 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
                 logger.LogDebug(ex, "Updating the proximity lock failed");
             }
         });
+    }
+
+    /// <summary>
+    /// Keeps the app's window from timing out while the call shows a picture
+    /// (<see cref="CallScreenPolicy.KeepsScreenAwake"/>): call video plays muted (the voice comes through separate
+    /// audio elements) and the WebView's own screen wake handling cannot be relied on for it, so someone watching a
+    /// face or a shared screen would see the screen go dark.
+    /// </summary>
+    private void UpdateKeepAwake(bool keep)
+    {
+        lock (_gate)
+        {
+            if (keep == _keepAwake) return;
+            _keepAwake = keep;
+        }
+        MainThread.BeginInvokeOnMainThread(() => ApplyKeepAwake(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity));
+    }
+
+    /// <summary>Whether the call keeps the screen on right now (<see cref="UpdateKeepAwake"/>).</summary>
+    internal bool KeepsScreenAwake => _keepAwake;
+
+    /// <summary>Sets or clears the keep-screen-on flag of <paramref name="activity"/>'s window (main thread).</summary>
+    internal void ApplyKeepAwake(Activity? activity)
+    {
+        try
+        {
+            if (activity?.Window is not { } window) return;
+            if (_keepAwake) window.AddFlags(WindowManagerFlags.KeepScreenOn);
+            else window.ClearFlags(WindowManagerFlags.KeepScreenOn);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Keeping the screen on failed");
+        }
     }
 
     /// <summary>The user swiped the app away mid-call: the WebView (media) is gone, so end the call cleanly.</summary>
@@ -283,6 +321,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
         _callService.Changed += () =>
         {
             var current = _callService.Current;
+            UpdateKeepAwake(Call is not null && CallScreenPolicy.KeepsScreenAwake(current));
             if (Call is null || current is null) return;
             // The camera turned on or off (also in background, where OnCallMediaChangedAsync is not called).
             if (current.IsCameraOn != _seenCameraOn)

@@ -11,17 +11,17 @@ using Xunit;
 namespace SkyMessage.Client.Core.Tests;
 
 /// <summary>
-/// Call audio on phones: when the screen may go dark at the ear (proximity lock) and when music in other apps pauses
-/// (audio focus) — the decisions the Android host applies.
+/// Calls on phones: when the screen may go dark at the ear (proximity lock), when it must not time out (a picture on
+/// the call screen) and when music in other apps pauses (audio focus) — the decisions the Android host applies.
 /// </summary>
-public sealed class CallAudioTests
+public sealed class CallPhoneRulesTests
 {
     // ---- proximity lock ----
 
     [Fact]
     public void The_screen_goes_dark_only_with_the_call_at_the_ear()
     {
-        CallAudioPolicy.HoldsProximityLock(AudioRouteKind.Earpiece, cameraOn: false, inCommunication: true).ShouldBeTrue();
+        CallScreenPolicy.HoldsProximityLock(AudioRouteKind.Earpiece, cameraOn: false, inCommunication: true).ShouldBeTrue();
     }
 
     [Theory]
@@ -30,34 +30,63 @@ public sealed class CallAudioTests
     [InlineData(AudioRouteKind.Wired)]
     public void Speaker_and_headsets_keep_the_screen_on(AudioRouteKind route)
     {
-        CallAudioPolicy.HoldsProximityLock(route, cameraOn: false, inCommunication: true).ShouldBeFalse();
+        CallScreenPolicy.HoldsProximityLock(route, cameraOn: false, inCommunication: true).ShouldBeFalse();
     }
 
     [Fact]
     public void An_unknown_route_keeps_the_screen_on()
     {
-        CallAudioPolicy.HoldsProximityLock(null, cameraOn: false, inCommunication: true).ShouldBeFalse();
+        CallScreenPolicy.HoldsProximityLock(null, cameraOn: false, inCommunication: true).ShouldBeFalse();
     }
 
     [Fact]
     public void My_camera_on_keeps_the_screen_on_even_on_the_earpiece()
     {
-        CallAudioPolicy.HoldsProximityLock(AudioRouteKind.Earpiece, cameraOn: true, inCommunication: true).ShouldBeFalse();
+        CallScreenPolicy.HoldsProximityLock(AudioRouteKind.Earpiece, cameraOn: true, inCommunication: true).ShouldBeFalse();
     }
 
     [Fact]
     public void Voice_played_like_media_keeps_the_screen_on_whatever_the_call_route_says()
     {
         // No microphone open yet (a call started muted): the WebView plays the voice on the loudspeaker.
-        CallAudioPolicy.HoldsProximityLock(AudioRouteKind.Earpiece, cameraOn: false, inCommunication: false).ShouldBeFalse();
+        CallScreenPolicy.HoldsProximityLock(AudioRouteKind.Earpiece, cameraOn: false, inCommunication: false).ShouldBeFalse();
     }
 
     [Fact]
     public void Switching_to_the_speaker_and_back_drops_and_takes_the_lock_again()
     {
         var timeline = new[] { AudioRouteKind.Earpiece, AudioRouteKind.Speaker, AudioRouteKind.Earpiece, AudioRouteKind.Bluetooth };
-        timeline.Select(r => CallAudioPolicy.HoldsProximityLock(r, cameraOn: false, inCommunication: true))
+        timeline.Select(r => CallScreenPolicy.HoldsProximityLock(r, cameraOn: false, inCommunication: true))
             .ShouldBe([true, false, true, false]);
+    }
+
+    // ---- screen timeout ----
+
+    [Fact]
+    public void A_voice_call_lets_the_screen_sleep()
+    {
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.Active)).ShouldBeFalse();
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.Active) with { Participants = [Peer()] }).ShouldBeFalse();
+        CallScreenPolicy.KeepsScreenAwake(null).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Watching_a_shared_screen_or_a_face_keeps_the_screen_on()
+    {
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.Active) with { Participants = [Peer(), Peer(screen: true)] }).ShouldBeTrue();
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.Active) with { Participants = [Peer(video: true)] }).ShouldBeTrue();
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.Reconnecting) with { IsCameraOn = true }).ShouldBeTrue();
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.OutgoingRinging) with { IsCameraOn = true }).ShouldBeTrue("my own preview while it rings");
+        CallScreenPolicy.KeepsScreenAwake(Session(CallPhase.Active) with { IsScreenSharing = true }).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(CallPhase.IncomingRinging)]
+    [InlineData(CallPhase.Ended)]
+    [InlineData(CallPhase.Idle)]
+    public void Ringing_in_and_ended_calls_do_not_keep_the_screen_on(CallPhase phase)
+    {
+        CallScreenPolicy.KeepsScreenAwake(Session(phase) with { IsCameraOn = true, Participants = [Peer(video: true)] }).ShouldBeFalse();
     }
 
     // ---- audio focus: the decision ----
@@ -194,6 +223,9 @@ public sealed class CallAudioTests
         Call = new CallDto { Id = Guid.CreateVersion7(), ChatId = Guid.CreateVersion7(), Kind = CallKind.Private },
         Phase = phase,
     };
+
+    private static CallParticipantState Peer(bool video = false, bool screen = false) =>
+        new(Guid.CreateVersion7(), IsSpeaking: false, HasVideo: video, IsMuted: false, ConnectionQuality: 3, HasScreen: screen);
 
     private sealed class FakeFocus(bool supported) : IAudioFocusService
     {
