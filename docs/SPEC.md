@@ -81,7 +81,7 @@ Api `AddLiveKitProxy/MapLiveKitProxy`. Controllers are discovered automatically.
   `[Route]`): `[HttpGet(ApiRoutes.Chats.ById)]`. Clients use the `*Path(...)` builders.
 - Auth: the fallback policy requires an authenticated user. **Anonymous endpoints (exhaustive):**
   register, login, refresh, username-available, server/info, health, media content/thumbnail (signature
-  or bearer), LiveKit webhook (own signature). JWT `sub` = user id `ToString()`, `sid` = session id; the
+  or bearer), LiveKit webhook (own signature), app/version and the APK downloads under `/updates`. JWT `sub` = user id `ToString()`, `sid` = session id; the
   session must belong to `sub` (checked on every request via `ISessionValidator`).
 - Errors: throw `NotFoundException(ErrorCodes.ChatNotFound)` etc. → problem details `{status, title,
   code, errors?}`. Validators: FluentValidation `<Request>Validator`, `internal sealed`, auto-run.
@@ -231,6 +231,14 @@ limits, `CallsEnabled`, server time, features, `MirrorUrls` (`Server:MirrorUrls`
 `GET api/server/proof?sid=&nonce=` (anonymous, rate-limited): `ServerProofDto{InstanceId, Proof =
 MediaSignature.CreateProof(session.MediaKey, nonce, Request.Host.Host)}` for an active session, else 404.
 `GET api/server/probe?size=` (anonymous, rate-limited, ≤ 256 KB of random bytes, `no-store`).
+
+**App updates** `GET api/app/version` (anonymous, `no-cache`) → `AppVersionDto{Android?, Web?, ServerVersion}`:
+the newest Android build from the manifest CI writes into `Updates:Path` (`latest.json`: versionCode, versionName,
+file, sha256, size, notes, minVersionCode; offered only when the named APK exists with exactly that size) and the
+web client version (= the server build). APKs are static files under `/updates/*.apk` (Range support, nothing else
+in the directory is served); `GET updates/latest.apk` redirects to the current one. Clients: `IAppUpdateService`
+(Android downloads, verifies and installs through `IAppUpdateInstaller`; the browser reloads into a new web client).
+Releases and CI: `deploy/vps/README.md`.
 
 ### 6.3 Messaging (backend-messaging)
 
