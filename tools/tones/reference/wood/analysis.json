@@ -1,0 +1,228 @@
+{
+  "palette": "Тёплое дерево — marimba, kalimba, soft wood blocks (modal synthesis)",
+  "format": "44.1 kHz, 16-bit PCM, mono",
+  "rmsDefinition": "whole-file RMS in dBFS (full-scale square = 0 dB); for loops = one cycle. -120 dB = digital silence. shortTermMaxRmsDb = loudest 300 ms window.",
+  "loopCheck": "the file is played three times back to back; seamJumpLsb = sample step across the join, rms20ms* = level either side of the join, hfNearSeamDb = >8 kHz energy within 5 ms of the join",
+  "tones": {
+    "chime": {
+      "description": "Marimba, three soft notes: D5, up a fifth to A5, settling on F#5 (do-sol-mi); a warm D-major chord rings and is damped.",
+      "seconds": 0.9,
+      "peakDb": -1.5,
+      "rmsDb": -14.08,
+      "shortTermMaxRmsDb": -10.61,
+      "centroidHz": 757.2,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": -0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -98.8,
+      "maxHfBurstDb": -102.3
+    },
+    "pop": {
+      "description": "One round, hollow wooden 'bloop' on A5 whose pitch lifts about a semitone in its first 25 ms; the most minimal.",
+      "seconds": 0.45,
+      "peakDb": -1.5,
+      "rmsDb": -14.25,
+      "shortTermMaxRmsDb": -12.5,
+      "centroidHz": 886.6,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": 0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -98.4,
+      "maxHfBurstDb": -102.2
+    },
+    "glass": {
+      "description": "Two kalimba tines plucked together a fifth apart (A5 + E6): a clear 'tink' and a pure, slowly shimmering ring.",
+      "seconds": 0.9,
+      "peakDb": -1.5,
+      "rmsDb": -14.29,
+      "shortTermMaxRmsDb": -10.76,
+      "centroidHz": 961.3,
+      "energyAbove6kPct": 0.001,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": 0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -93.8,
+      "maxHfBurstDb": -102.2
+    },
+    "classic": {
+      "description": "Ring-ring made of wood: two 0.42 s bursts of a fast marimba trill A5/F#5 (~15 strikes/s) over a soft D5, then a pause; 3.0 s loop.",
+      "seconds": 3.0,
+      "peakDb": -1.5,
+      "rmsDb": -16.37,
+      "shortTermMaxRmsDb": -10.08,
+      "centroidHz": 844.0,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0001,
+      "dcOffset": -0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -120.0,
+      "maxHfBurstDb": -101.6,
+      "loop": {
+        "seamJumpLsb": 0.0,
+        "maxStepElsewhereLsb": 4615.0,
+        "rms20msBeforeSeamDb": -120.0,
+        "rms20msAfterSeamDb": -120.0,
+        "levelStepDb": 0.0,
+        "hfNearSeamDb": -120.0,
+        "seamless": true
+      }
+    },
+    "soft": {
+      "description": "Kalimba lullaby in 3/4, one bar per second: A5-F#5 | A5-F#5-E5 | D5+A4 rings | rest (sol-mi, sol-mi-re, do); soft thumbs; 4.0 s loop.",
+      "seconds": 4.0,
+      "peakDb": -1.5,
+      "rmsDb": -16.01,
+      "shortTermMaxRmsDb": -10.65,
+      "centroidHz": 731.3,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": 0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -120.0,
+      "maxHfBurstDb": -101.8,
+      "loop": {
+        "seamJumpLsb": 0.0,
+        "maxStepElsewhereLsb": 2634.0,
+        "rms20msBeforeSeamDb": -120.0,
+        "rms20msAfterSeamDb": -120.0,
+        "levelStepDb": 0.0,
+        "hfNearSeamDb": -120.0,
+        "seamless": true
+      }
+    },
+    "bright": {
+      "description": "Cheerful marimba phrase at 150 bpm with a syncopated 3+3+2 start: D6 A5 B5 D6 E6 D6 B5 A5, soft wood block on 2 and 4, a bar of rest; 3.2 s loop.",
+      "seconds": 3.2,
+      "peakDb": -1.5,
+      "rmsDb": -16.09,
+      "shortTermMaxRmsDb": -12.49,
+      "centroidHz": 1039.6,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0001,
+      "dcOffset": -0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -120.0,
+      "maxHfBurstDb": -95.4,
+      "loop": {
+        "seamJumpLsb": 0.0,
+        "maxStepElsewhereLsb": 5605.0,
+        "rms20msBeforeSeamDb": -120.0,
+        "rms20msAfterSeamDb": -99.0,
+        "levelStepDb": 21.03,
+        "hfNearSeamDb": -120.0,
+        "seamless": true
+      }
+    },
+    "ringback": {
+      "description": "One soft marimba roll on an open fifth A4/E5 (~13 strikes/s) swelling and fading over ~1 s, then ~2.5 s of quiet; 4.0 s loop.",
+      "seconds": 4.0,
+      "peakDb": -1.5,
+      "rmsDb": -17.98,
+      "shortTermMaxRmsDb": -10.55,
+      "centroidHz": 597.5,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": 0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -120.0,
+      "maxHfBurstDb": -101.9,
+      "loop": {
+        "seamJumpLsb": 0.0,
+        "maxStepElsewhereLsb": 3155.0,
+        "rms20msBeforeSeamDb": -120.0,
+        "rms20msAfterSeamDb": -120.0,
+        "levelStepDb": 0.0,
+        "hfNearSeamDb": -120.0,
+        "seamless": true
+      }
+    },
+    "busy": {
+      "description": "Four short low marimba strokes, A4 over a softer D4 (a slight flam), every 0.36 s, each a little softer: wooden 'short beeps'.",
+      "seconds": 1.5,
+      "peakDb": -1.5,
+      "rmsDb": -15.4,
+      "shortTermMaxRmsDb": -13.08,
+      "centroidHz": 421.6,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": 0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -89.3,
+      "maxHfBurstDb": -102.0
+    },
+    "end": {
+      "description": "Soft falling marimba cadence A5 - E5 (short passing note) - D5 (sol-re-do), ending on a clean fifth.",
+      "seconds": 0.8,
+      "peakDb": -1.5,
+      "rmsDb": -12.4,
+      "shortTermMaxRmsDb": -10.12,
+      "centroidHz": 730.5,
+      "energyAbove6kPct": 0.0,
+      "energyAbove8kPct": 0.0,
+      "dcOffset": 0.0,
+      "firstSample": 0,
+      "lastSample": 0,
+      "first5msDb": -120.0,
+      "last5msDb": -92.3,
+      "maxHfBurstDb": -102.1
+    }
+  },
+  "groups": {
+    "message": {
+      "keys": [
+        "chime",
+        "pop",
+        "glass"
+      ],
+      "rmsSpreadDb": 0.21,
+      "limitDb": 1.0
+    },
+    "ringtone": {
+      "keys": [
+        "classic",
+        "soft",
+        "bright"
+      ],
+      "rmsSpreadDb": 0.36,
+      "limitDb": 1.0
+    },
+    "callProgress": {
+      "keys": [
+        "ringback",
+        "busy",
+        "end"
+      ],
+      "note": "not loudness-matched: different jobs (ringback is mostly silence)"
+    }
+  },
+  "checks": {
+    "allPeaksAt-1.5dBFS": true,
+    "messageTonesAtMost0.9s": true,
+    "ringtonesLoop2.5to4s": true,
+    "endAtMost0.8s": true,
+    "messageRmsWithin1dB": true,
+    "ringtoneRmsWithin1dB": true,
+    "energyAbove8kUnder0.1pct": true,
+    "loopsSeamless": true,
+    "noClicks(HF bursts < -80 dBFS)": true,
+    "filesStartAndEndAtZero": true
+  }
+}

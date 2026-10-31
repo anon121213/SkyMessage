@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Renders SkyMessage's three sound packs (wood, bells, piano) and writes every file the apps play.
+    From the repository root: "dotnet run (project tools/tones)", see Program.cs; needs ffmpeg with libopus on PATH.
+    Not part of SkyMessage.slnx: a developer tool, run when a sound changes.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SkyMessage.Tones</RootNamespace>
+    <AssemblyName>render-tones</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
