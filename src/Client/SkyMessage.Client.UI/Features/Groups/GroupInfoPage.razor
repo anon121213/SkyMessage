@@ -1,7 +1,8 @@
 @page "/chat/{ChatId:guid}/info"
 @* Chat info for every chat type: group (members, roles, invite link, edit, leave/delete), private chat (the
    peer's profile + chat actions), Saved Messages. The same hero as a profile: a big squircle avatar in a thin
-   accent ring, title in the display font, actions as glass circles, glass cards with pastel tiles. Wide screens
+   accent ring, title in the display font, actions as glass circles, glass cards with pastel tiles. Groups and private
+   chats carry the content-protection switch (no forwarding, copying, saving; ContentProtectionRules). Wide screens
    show it in the info column. Once the large header has scrolled away the app bar shows the chat's (or the peer's)
    avatar and name. *@
 @inherits UiComponentBase
@@ -114,6 +115,7 @@
     private ElementReference _titleEl;
     private HeaderTitleWatcher? _titleWatcher;
     private bool _headerHidden;
+    private bool _protectionBusy;
 
     [Parameter] public Guid ChatId { get; set; }
 
@@ -251,6 +253,19 @@
                             Checked="!muted" CheckedChanged="_ => Actions.ToggleMuteAsync(chat)" />
             }
         </Section>
+        @if (chat.Type is ChatType.Private or ChatType.Group && Me is { } me)
+        {
+            var protection = ContentProtectionRules.Describe(chat, me);
+            @* Members of a group see the switch only while the admins have it on (and cannot change it). *@
+            @if (protection.CanChange || protection.IsProtected)
+            {
+                <Section DividerInset="64px" Footer="@L["groups.info.protectFooter"]">
+                    <SwitchItem Icon="@IconNames.ShieldCheck" IconColor="@SettingsTones.Violet" Title="@L["groups.info.protect"]"
+                                Subtitle="@ProtectionText(chat, protection)" Checked="protection.IsProtected"
+                                Disabled="@(!protection.CanChange || _protectionBusy)" CheckedChanged="on => SetProtectionAsync(chat, on)" />
+                </Section>
+            }
+        }
         <Section DividerInset="64px">
             <ListItem Icon="@IconNames.Eraser" IconColor="@SettingsTones.Mauve" Title="@L["chatlist.menu.clear"]" OnClick="() => Actions.ClearHistoryAsync(chat)" />
             @if (chat.Type == ChatType.Private)
@@ -393,6 +408,35 @@
             </div>
         </div>
     };
+
+    /// <summary>Who keeps the protection on (a private chat's switch only takes back my own part).</summary>
+    private string? ProtectionText(ChatSummaryDto chat, ContentProtectionState state)
+    {
+        if (chat.Type == ChatType.Group)
+            return state.IsProtected && !state.CanChange ? L["groups.info.protectByAdmins"] : null;
+        var peer = ChatList.TitleOf(chat);
+        if (state.ByMe && state.ByOthers) return L.Format("groups.info.protectByBoth", peer);
+        if (state.ByOthers) return L.Format("groups.info.protectByPeer", peer);
+        return state.ByMe ? L["groups.info.protectByMe"] : L["groups.info.protectForBoth"];
+    }
+
+    private async Task SetProtectionAsync(ChatSummaryDto chat, bool enabled)
+    {
+        if (_protectionBusy) return;
+        _protectionBusy = true;
+        try
+        {
+            await ChatList.SetContentProtectionAsync(chat.Id, enabled);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _protectionBusy = false;
+        }
+    }
 
     private string MutedText(ChatSummaryDto chat) =>
         chat.IsMutedForever() ? L["groups.info.mutedForever"] : L.Format("groups.info.mutedUntil", Format.DateTime(chat.MutedUntil!.Value));

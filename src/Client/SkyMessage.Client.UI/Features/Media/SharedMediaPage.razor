@@ -1,7 +1,8 @@
 @page "/chat/{ChatId:guid}/media"
 @* Shared media of a chat: photos & videos (grid by month), files, voice messages, links and round video messages, each
    paged newest first (GET api/chats/{id}/media). Items open in the viewer / play in place; the item menu offers
-   "Show in chat", forward and save. Wide screens show it in the info column. *@
+   "Show in chat", forward and save (neither for a chat with content protection, whose media also keeps the window out of
+   screenshots while the page is open). Wide screens show it in the info column. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @using SkyMessage.Client.UI.Features.Chat
@@ -14,6 +15,7 @@
 @inject ICallService Calls
 @inject IMediaUrlBuilder MediaUrls
 @inject IMediaDownloadService Downloads
+@inject IScreenCaptureGuard ScreenGuard
 @inject IAccountLocalStore LocalStore
 @inject ISettingsService Settings
 @inject NavigationService Nav
@@ -80,18 +82,18 @@
     @if (_menuMessage is { } message)
     {
         <MenuItem Icon="@IconNames.MessageCircle" Label="@L["media.showInChat"]" OnClick="() => ShowInChat(message)" />
-        @if (message.Type is not (MessageType.System or MessageType.Call))
+        @if (message.Type is not (MessageType.System or MessageType.Call) && !Protected)
         {
             <MenuItem Icon="@IconNames.Forward" Label="@L["chat.menu.forward"]" OnClick="() => ForwardAsync(message)" />
         }
-        @if (message.Attachments.Count > 0)
+        @if (message.Attachments.Count > 0 && !Protected)
         {
             <MenuItem Icon="@IconNames.Download" Label="@L["media.save"]" OnClick="() => SaveAsync(message)" />
         }
     }
 </ContextMenu>
 
-<MediaViewer @ref="_viewer" OnForward="item => ForwardAsync(item.Message)" OnShowInChat="item => ShowInChat(item.Message)" />
+<MediaViewer @ref="_viewer" OnForward="item => ForwardAsync(item.Message)" OnShowInChat="item => ShowInChat(item.Message)" Protected="Protected" />
 
 @code {
     private sealed class TabState
@@ -129,6 +131,13 @@
 
     private ChatSummaryDto? Chat => ChatList.Get(ChatId);
 
+    private bool Protected => ContentProtectionRules.IsProtected(Chat);
+
+    /// <summary>Held while the media of a protected chat is on screen (no screenshots on Android).</summary>
+    private IDisposable? _screenGuard;
+    private bool _guardClosed;
+    private readonly object _guardLock = new();
+
     private string? ChatTitle => Chat is { } chat ? (chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat)) : null;
 
     private IReadOnlyList<ChoiceOption<SharedMediaFilter>> Tabs =>
@@ -161,6 +170,9 @@
     protected override void OnInitialized()
     {
         RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        Action protection = UpdateScreenGuard;
+        ChatList.Changed += protection;
+        OnDispose(() => ChatList.Changed -= protection);
         Action<MessagesDeletedEvent> deleted = e =>
         {
             if (e.ChatId != ChatId) return;
@@ -214,6 +226,7 @@
                 Logger.LogDebug(ex, "Chat summary for shared media not loaded");
             }
         }
+        UpdateScreenGuard();
         await LoadMoreAsync(_filter);
     }
 
@@ -400,7 +413,7 @@
                 {
                     var owner = message;
                     <ContextMenuArea @key="(owner.Id, media.Id)" Class="smedia__row" OnContextMenu="pos => OpenMenuAsync(owner, pos)">
-                        <FileCard Media="media" Trailing="@DateLine(owner)" />
+                        <FileCard Media="media" Protected="Protected" Trailing="@DateLine(owner)" />
                     </ContextMenuArea>
                 }
             }
@@ -524,6 +537,7 @@
 
     private async Task ForwardAsync(MessageDto message)
     {
+        if (Protected) return;
         var result = await Dialogs.ShowAsync<ForwardDialog>(L["chat.forward.title"], null,
             new DialogOptions { Size = DialogSize.Medium, Flush = true, Presentation = OverlayPresentation.Auto });
         if (result is not IReadOnlyList<Guid> { Count: > 0 } targets) return;
@@ -544,6 +558,7 @@
 
     private async Task SaveAsync(MessageDto message)
     {
+        if (Protected) return;
         var saved = 0;
         foreach (var media in message.Attachments.Where(a => a.Status == MediaStatus.Ready))
         {
@@ -563,8 +578,29 @@
         if (saved > 0) Toasts.Success(saved > 1 ? L.Format("chat.toast.savedMany", saved) : L["chat.toast.saved"]);
     }
 
+    private void UpdateScreenGuard()
+    {
+        var want = Protected;
+        lock (_guardLock)
+        {
+            if (_guardClosed) return;
+            if (want && _screenGuard is null) _screenGuard = ScreenGuard.Protect();
+            else if (!want && _screenGuard is not null)
+            {
+                _screenGuard.Dispose();
+                _screenGuard = null;
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        lock (_guardLock)
+        {
+            _guardClosed = true;
+            _screenGuard?.Dispose();
+            _screenGuard = null;
+        }
         if (_pageMotion is not null) await _pageMotion.DisposeAsync();
         if (_viewerJs is not null) await _viewerJs.DisposeAsync();
         if (_sentinelWatch is not null) await _sentinelWatch.DisposeAsync();

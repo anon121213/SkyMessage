@@ -35,6 +35,7 @@
   "error.message_edit_expired": "Это сообщение уже нельзя изменить.",
   "error.message_not_editable": "Это сообщение нельзя изменить.",
   "error.send_forbidden": "В этом чате нельзя отправлять сообщения.",
+  "error.forward_restricted": "Сообщения из этого чата нельзя пересылать.",
   "error.media_not_found": "Файл не найден.",
   "error.media_not_ready": "Файл ещё обрабатывается. Подождите немного.",
   "error.media_too_large": "Файл слишком большой.",

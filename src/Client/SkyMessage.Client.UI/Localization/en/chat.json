@@ -57,6 +57,8 @@
   "chat.contactBar.add": "Add to contacts",
   "chat.contactBar.block": "Block",
   "chat.contactBar.close": "Hide",
+  "chat.protected.badge": "Forwarding and copying are off",
+  "chat.protected.noFiles": "Files in this chat can’t be downloaded or opened in other apps",
   "chat.pinned.unpin": "Unpin",
   "chat.pinned.unpinTitle": "Unpin this message?",
   "chat.pinned.unpinText": "The message stays in the chat but is no longer pinned for anyone.",

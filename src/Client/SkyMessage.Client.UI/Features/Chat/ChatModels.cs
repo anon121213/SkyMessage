@@ -33,7 +33,8 @@ public sealed record ChatView(
     bool SelectionMode,
     bool AutoplayNotes,
     bool AutoplayVideos,
-    int MediaVersion);
+    int MediaVersion,
+    bool Protected = false);
 
 /// <summary>Grouping and status of one message row in the list.</summary>
 public sealed record MessageRow(

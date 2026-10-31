@@ -90,6 +90,8 @@ public sealed class MessagePreviewFormatter(ILocalizer localizer, FormatService 
             SystemEventType.MessagePinned => "message.system.messagePinned",
             SystemEventType.GroupCallStarted => "message.system.groupCallStarted",
             SystemEventType.GroupCallEnded => "message.system.groupCallEnded",
+            SystemEventType.ContentProtectionEnabled => "message.system.protectionOn",
+            SystemEventType.ContentProtectionDisabled => "message.system.protectionOff",
             _ => "message.system.unknown",
         };
         // Left/joined events name the actor when the server sends no explicit targets.

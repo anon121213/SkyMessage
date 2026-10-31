@@ -350,7 +350,8 @@
             SelectionMode,
             Settings.Current.Chats.AutoplayVideoNotes,
             Settings.Current.Chats.AutoplayVideos,
-            _mediaVersion);
+            _mediaVersion,
+            ContentProtectionRules.IsProtected(chat));
 
         var rows = new List<ListRow>(Math.Min(items.Count, MaxRendered) + 16);
         if (items.Count == 0)

@@ -66,6 +66,13 @@
     background: linear-gradient(to top, var(--sm-chat-bg) 10%, transparent);
 }
 
+/* Content protection: messages cannot be selected, copied or dragged out (mouse and the long-press callout alike). */
+.chat--protected ::deep .mlist {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
 /* ---------- Floating chrome ---------- */
 
 .chat__top {

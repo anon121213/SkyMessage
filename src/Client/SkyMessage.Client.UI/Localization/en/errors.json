@@ -35,6 +35,7 @@
   "error.message_edit_expired": "This message can no longer be edited.",
   "error.message_not_editable": "This message can't be edited.",
   "error.send_forbidden": "You can't send messages in this chat.",
+  "error.forward_restricted": "Messages from this chat can’t be forwarded.",
   "error.media_not_found": "File not found.",
   "error.media_not_ready": "The file is still being processed. Please wait a moment.",
   "error.media_too_large": "The file is too large.",

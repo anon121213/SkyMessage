@@ -358,7 +358,8 @@ else
                 {
                     var media = Attachments[i];
                     var last = i == Attachments.Count - 1;
-                    <FileCard @key="media.Id" Media="media" Interactive="Interactive" Trailing="@(last && Placement == MetaPlacement.Trailing ? MetaInline : null)" />
+                    <FileCard @key="media.Id" Media="media" Interactive="Interactive" Protected="View.Protected"
+                              Trailing="@(last && Placement == MetaPlacement.Trailing ? MetaInline : null)" />
                 }
             }
             else
