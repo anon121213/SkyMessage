@@ -1072,13 +1072,20 @@ html[data-fx="lite"] .call-sky *::after {
 .call-deck--extra {
     flex: none;
     width: auto;
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-left: 14px;
+    padding-right: 14px;
 }
 
+/* A one-line caption ("Остановить показ" too), so the capsule keeps the deck's height. */
 .call-deck--extra ::deep .call-btn {
     flex: none;
-    width: 5.5rem;
+    width: auto;
+    min-width: 5.5rem;
+}
+
+.call-deck--extra ::deep .call-btn__label {
+    max-width: none;
+    white-space: nowrap;
 }
 
 @media (min-width: 768px) {
@@ -1090,7 +1097,8 @@ html[data-fx="lite"] .call-sky *::after {
 
     .call-controls--extra .call-deck {
         grid-column: 2;
-        width: min(470px, calc(100vw - 280px));
+        /* Leaves the capsule room for its one-line caption beside the centered deck. */
+        width: min(470px, calc(100vw - 360px));
     }
 
     .call-controls--extra .call-deck--extra {
