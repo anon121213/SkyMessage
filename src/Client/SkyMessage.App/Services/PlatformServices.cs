@@ -46,6 +46,7 @@ public static class PlatformServices
         services.AddSingleton<ICallPlatformService, AndroidCallPlatformService>();
         services.AddSingleton<IBackgroundConnectionService, AndroidBackgroundConnectionService>();
         services.AddSingleton<IFileSaveService, AndroidFileSaveService>();
+        services.AddSingleton<IAppUpdateInstaller, AndroidAppUpdateInstaller>();
 #elif IOS || MACCATALYST
         services.AddSingleton<IPermissionService, ApplePermissionService>();
         services.AddSingleton<INetworkStatusService, AppleNetworkStatusService>();
@@ -58,6 +59,8 @@ public static class PlatformServices
         services.AddSingleton<ICallPlatformService, AppleCallPlatformService>();
         services.AddSingleton<IBackgroundConnectionService, UnsupportedBackgroundConnectionService>();
         services.AddSingleton<IFileSaveService, AppleFileSaveService>();
+        // Store builds update through the store.
+        services.AddSingleton<IAppUpdateInstaller, UnsupportedAppUpdateInstaller>();
 #if IOS
         services.AddSingleton<IHapticsService, AppleHapticsService>();
         services.AddSingleton<IAudioRouteService, AppleAudioRouteService>();

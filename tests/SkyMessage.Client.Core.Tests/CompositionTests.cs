@@ -37,7 +37,7 @@ public sealed class CompositionTests
                      typeof(IDeviceContactsService), typeof(IPermissionService), typeof(ILocalNotificationService), typeof(IAudioRouteService),
                      typeof(ICallPlatformService), typeof(IShareService), typeof(IFileSaveService), typeof(IFileOpener), typeof(IAppLifecycle),
                      typeof(IExternalLauncher), typeof(IDeepLinkSource), typeof(ISystemUiService), typeof(IHapticsService),
-                     typeof(IBackgroundConnectionService),
+                     typeof(IBackgroundConnectionService), typeof(IAppUpdateInstaller),
                  })
         {
             services.AddSingleton(type, Substitute.For([type], []));

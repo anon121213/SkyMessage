@@ -18,6 +18,8 @@ internal static class AppIntents
     public const int IncomingCallNotificationId = 2;
     public const int OngoingCallNotificationId = 3;
     public const int BackgroundNotificationId = 4;
+    /// <summary>"SkyMessage updated, tap to open" (AndroidAppUpdateInstaller); also its PendingIntent request code.</summary>
+    public const int UpdatedNotificationId = 5;
     public const int MessagesSummaryNotificationId = 1;
 
     public static PendingIntentFlags ImmutableUpdate => PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable;

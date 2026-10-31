@@ -479,3 +479,38 @@ public interface IAppUpdateInstaller
     Task<AppInstallResult> InstallAsync(string fileName, CancellationToken cancellationToken = default);
     event Action<AppInstallResult>? InstallStatusChanged;
 }
+
+/// <summary>
+/// Hosts that do not install their own updates: the browser (a reload brings the new client the server serves) and
+/// iOS/Mac (the stores). <see cref="Services.IAppUpdateService"/> then only watches the web client version.
+/// </summary>
+public sealed class UnsupportedAppUpdateInstaller : IAppUpdateInstaller
+{
+    public bool IsSupported => false;
+
+    public int InstalledVersionCode => 0;
+
+    public bool CanInstallPackages => false;
+
+    public bool CanInstallSilently => false;
+
+    public Task<bool> RequestInstallPermissionAsync() => Task.FromResult(false);
+
+    public Task<long> GetPackageLengthAsync(string fileName) => Task.FromResult(-1L);
+
+    public Task<Stream> OpenPackageWriteAsync(string fileName, long offset, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This host does not install app updates.");
+
+    public Task<Stream?> OpenPackageReadAsync(string fileName, CancellationToken cancellationToken = default) => Task.FromResult<Stream?>(null);
+
+    public Task DeletePackagesAsync(string? keep = null) => Task.CompletedTask;
+
+    public Task<AppInstallResult> InstallAsync(string fileName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AppInstallResult(AppInstallStatus.Failed, Services.AppUpdateErrors.InstallFailed));
+
+    public event Action<AppInstallResult>? InstallStatusChanged
+    {
+        add { }
+        remove { }
+    }
+}

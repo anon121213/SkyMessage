@@ -19,6 +19,7 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
     public const string OngoingCall = "call.ongoing.v1";
     public const string Background = "service.connection.v1";
     public const string MessagesSilent = "msg.silent.v1";
+    public const string Updates = "app.updates.v1";
 
     private const string GroupMessages = "messages";
     private const string GroupCalls = "calls";
@@ -135,6 +136,18 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
                 background.EnableVibration(false);
                 background.SetShowBadge(false);
                 Create(background);
+
+                // "Updated, tap to open" after a self-update the user started: shown on top, but silent.
+                var updates = new NotificationChannel(Updates, strings["platform.channel.updates"], NotificationImportance.High)
+                {
+                    Description = strings["platform.channel.updates.description"],
+                    Group = GroupService,
+                    LockscreenVisibility = NotificationVisibility.Public,
+                };
+                updates.SetSound(null, null);
+                updates.EnableVibration(false);
+                updates.SetShowBadge(false);
+                Create(updates);
             }
             catch (Exception ex)
             {

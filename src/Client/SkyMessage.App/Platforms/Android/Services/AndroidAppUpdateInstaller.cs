@@ -178,7 +178,7 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
         parameters.SetSize(length);
         parameters.SetInstallReason(PackageInstallReason.User);
         if (OperatingSystem.IsAndroidVersionAtLeast(31))
-            parameters.SetRequireUserAction(PackageInstaller.SessionParams.UserActionNotRequired);
+            parameters.SetRequireUserAction((int)PackageInstallUserAction.NotRequired);
 
         var sessionId = installer.CreateSession(parameters);
         lock (_gate) _firstStatus[sessionId] = first;
@@ -367,7 +367,7 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
                 .SetPriority(NotificationCompat.PriorityHigh)!
                 .SetCategory(NotificationCompat.CategoryStatus)!
                 .Build()!;
-            NotificationManagerCompat.From(context).Notify(AppIntents.UpdatedNotificationId, notification);
+            NotificationManagerCompat.From(context)?.Notify(AppIntents.UpdatedNotificationId, notification);
         }
         catch (Exception)
         {
