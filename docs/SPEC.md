@@ -360,10 +360,11 @@ Messages:
 | MessagesRead | chat members | read up to seq |
 | Typing | other members (not blockers) | hub SendTyping |
 | ChatAdded | the user(s) | new group, added, joined, first private message, unhide |
-| ChatUpdated | members | title/description/avatar/permissions/member count/active call |
+| ChatUpdated | members | title/description/avatar/permissions/member count/active call/content protection |
 | ChatRemoved | the user(s) | left, removed, group deleted |
 | ChatMembersChanged | members | add/remove/role |
-| ChatSettingsChanged | caller's user | pin/archive/mute |
+| ChatSettingsChanged | caller's user | pin/archive/mute/contact bar closed |
+| PinnedChatsReordered | caller's user (all devices) | pinned chats rearranged (`PUT api/chats/pinned-order`) |
 | HistoryCleared | caller / both | clear history |
 | PinnedMessagesChanged | members | pin/unpin |
 | PresenceChanged | related users (per-viewer privacy, not blocked) | online/offline |
