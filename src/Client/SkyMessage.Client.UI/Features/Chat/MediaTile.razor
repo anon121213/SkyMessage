@@ -1,0 +1,111 @@
+@* One photo or video inside a message (alone or as an album tile): blurred mini thumbnail first, then the thumbnail,
+   then (single photos, when the auto-download policy allows) the full image. Videos show a play mark and duration and
+   may autoplay muted while visible. Pending tiles show the local preview with upload progress. *@
+@inherits UiComponentBase
+@inject IMediaUrlBuilder MediaUrls
+@inject IMediaDownloadService Downloads
+@inject FormatService Format
+
+<div class="tile @(IsVideo ? "tile--video" : null) @(CanOpen ? "tile--open" : null) @(Small ? "tile--small" : null) @Class" @onclick="OpenAsync">
+    @if (MiniUrl is { } mini)
+    {
+        <img class="tile__mini" src="@mini" alt="" aria-hidden="true" draggable="false" />
+    }
+    @if (ImageUrl is { } image)
+    {
+        <img class="tile__img" data-fade src="@image" alt="@Alt" loading="lazy" decoding="async" draggable="false" />
+    }
+    @if (FullUrl is { } full)
+    {
+        <img class="tile__img" data-fade src="@full" alt="" loading="lazy" decoding="async" draggable="false" />
+    }
+    @if (AutoplayUrl is { } video)
+    {
+        <video class="tile__video" data-src="@video" data-autoplay muted playsinline loop preload="none" disablepictureinpicture disableremoteplayback></video>
+    }
+    @if (ImageUrl is null && MiniUrl is null)
+    {
+        <span class="tile__placeholder"><Icon Name="@(IsVideo ? IconNames.Film : IconNames.Image)" Size="28" /></span>
+    }
+    @if (IsVideo && !Pending)
+    {
+        <span class="tile__play" aria-hidden="true"><Icon Name="@IconNames.Play" Size="@(Small ? 18 : 24)" /></span>
+        @if (DurationMs > 0)
+        {
+            <span class="tile__badge sm-nums">@Format.DurationMs(DurationMs)</span>
+        }
+    }
+    @if (Pending)
+    {
+        <div class="tile__progress" @onclick:stopPropagation="true">
+            <ProgressRing Value="Progress" Size="@(Small ? 36 : 48)" Indeterminate="@(Progress <= 0.01)" OnCancel="OnCancel" CancelLabel="@L["chat.pending.cancel"]" />
+        </div>
+    }
+    @Overlay
+</div>
+
+@code {
+    private const int ThumbnailSide = 480;
+
+    [Parameter] public MediaDto? Media { get; set; }
+    [Parameter] public LocalAttachmentPreview? Local { get; set; }
+    /// <summary>Shown alone in a bubble: load the full image when the auto-download policy allows it.</summary>
+    [Parameter] public bool Large { get; set; }
+    /// <summary>Small album tile (smaller marks).</summary>
+    [Parameter] public bool Small { get; set; }
+    /// <summary>Videos: muted autoplay while visible (settings and auto-download policy).</summary>
+    [Parameter] public bool Autoplay { get; set; }
+    [Parameter] public bool Pending { get; set; }
+    [Parameter] public double Progress { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback OnOpen { get; set; }
+    [Parameter] public bool Interactive { get; set; } = true;
+    /// <summary>Content drawn over the tile (the time of a media-only bubble).</summary>
+    [Parameter] public RenderFragment? Overlay { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private bool IsVideo => (Media?.Kind ?? Local?.Kind) is MediaKind.Video or MediaKind.VideoNote
+                            || (Media?.ContentType ?? "").StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+
+    private bool Ready => Media is { Status: MediaStatus.Ready };
+
+    private bool CanOpen => Interactive && !Pending && Ready;
+
+    private string Alt => IsVideo ? L["message.preview.video"] : L["message.preview.photo"];
+
+    private int DurationMs => Media?.DurationMs ?? Local?.DurationMs ?? 0;
+
+    private string? MiniUrl => Media is null ? null : MediaUrls.MiniThumbnailDataUrl(Media);
+
+    private bool IsGif => Media is not null && Media.ContentType.Equals("image/gif", StringComparison.OrdinalIgnoreCase);
+
+    private string? ImageUrl
+    {
+        get
+        {
+            if (Media is null) return Local?.PreviewUrl;
+            if (!Ready) return null;
+            if (Media.HasThumbnail) return MediaUrls.ThumbnailUrl(Media.Id);
+            return !IsVideo && Downloads.ShouldAutoDownload(Media) ? MediaUrls.ContentUrl(Media) : null;
+        }
+    }
+
+    private string? FullUrl
+    {
+        get
+        {
+            if (!Large || IsVideo || Media is null || !Ready || !Media.HasThumbnail) return null;
+            if (!Downloads.ShouldAutoDownload(Media)) return null;
+            var big = IsGif || Media.Width is null || Media.Height is null || Math.Max(Media.Width.Value, Media.Height.Value) > ThumbnailSide;
+            return big ? MediaUrls.ContentUrl(Media) : null;
+        }
+    }
+
+    private string? AutoplayUrl => Autoplay && IsVideo && Media is not null && Ready && Downloads.ShouldAutoDownload(Media)
+        ? MediaUrls.ContentUrl(Media)
+        : null;
+
+    protected override void OnInitialized() => RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+
+    private Task OpenAsync() => CanOpen ? OnOpen.InvokeAsync() : Task.CompletedTask;
+}

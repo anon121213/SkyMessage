@@ -1,0 +1,121 @@
+.banner-wrap {
+    position: fixed;
+    z-index: 960;
+    top: calc(8px + var(--sm-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(32rem, calc(100vw - 16px));
+    pointer-events: none;
+}
+
+/* Glass card (.sm-glass--strong, solid in lite mode). */
+.banner {
+    position: relative;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 6px 12px 10px;
+    border-radius: 24px;
+    overflow: hidden;
+    color: var(--sm-text);
+    cursor: pointer;
+    touch-action: pan-x;
+    transition: transform var(--sm-dur-fast) var(--sm-ease);
+    animation: banner-in 560ms var(--sm-spring-soft);
+}
+
+.banner:active {
+    transform: scale(0.98);
+}
+
+/* Leaves upward from where it is (a swipe may have dragged it already). */
+.banner--leaving {
+    pointer-events: none;
+    animation: banner-out var(--sm-dur) var(--sm-ease-in) forwards;
+}
+
+.banner__avatar {
+    position: relative;
+    flex-shrink: 0;
+}
+
+/* A small speech mark on the avatar's corner. */
+.banner__bubble {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    color: #FFFFFF;
+    box-shadow: 0 0 0 2px var(--sm-glass-solid);
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) 220ms backwards;
+}
+
+.banner__text {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.banner__title {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.banner__body {
+    margin-top: 1px;
+    font-size: 0.875rem;
+    line-height: 1.35;
+    color: var(--sm-text-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.banner ::deep .banner__close {
+    position: relative;
+    align-self: flex-start;
+}
+
+/* The time left before it goes away on its own (NotificationBanner hides it after 4.5 s). */
+.banner__timer {
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    bottom: 4px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--sm-accent);
+    opacity: 0.3;
+    transform-origin: left center;
+    animation: banner-timer 4.5s linear forwards;
+}
+
+/* Drops in with a few pixels of overshoot. */
+@keyframes banner-in {
+    from { transform: translateY(calc(-100% - 16px)) scale(0.96); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+
+@keyframes banner-out {
+    to { transform: translateY(calc(-100% - 24px)) scale(0.96); opacity: 0; }
+}
+
+@keyframes banner-timer {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}

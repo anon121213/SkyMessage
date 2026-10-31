@@ -1,0 +1,76 @@
+/* My photo: a large squircle in a thin accent ring, actions under it. */
+.profile-photo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    margin: 18px 0 26px;
+}
+
+.profile-photo__frame {
+    position: relative;
+    display: flex;
+}
+
+/* A squircle outline (the outer shape minus a slightly smaller one): the sky shows through the gap to the photo. */
+.profile-photo__ring {
+    position: absolute;
+    inset: -7px;
+    background: var(--sm-accent);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+}
+
+.profile-photo__frame ::deep .sm-avatar {
+    position: relative;
+}
+
+/* Upload in progress: the photo dims in its own squircle shape, a white ring and a calm cancel button over it. */
+.profile-photo__progress {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14, 8, 40, 0.5);
+    color: #FFFFFF;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    animation: sm-fade-in var(--sm-dur) ease;
+}
+
+.profile-photo__progress ::deep .sm-progress-ring {
+    color: #FFFFFF;
+}
+
+.profile-photo__progress ::deep .sm-progress-ring__cancel {
+    width: 46%;
+    height: 46%;
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.profile-photo__progress ::deep .sm-progress-ring__cancel .sm-icon {
+    width: 50%;
+    height: 50%;
+}
+
+.profile-photo__actions {
+    justify-content: center;
+}
+
+/* The focused field lights its label and icon (as on the sign-in screens). */
+.profile-form ::deep .sm-field__label,
+.profile-form ::deep .sm-field__prefix {
+    transition: color var(--sm-dur-fast) ease;
+}
+
+.profile-form ::deep .sm-field:focus-within .sm-field__label,
+.profile-form ::deep .sm-field__box:focus-within .sm-field__prefix {
+    color: var(--sm-accent);
+}
+
+/* The live username check: free / taken icons pop in. */
+.profile-form ::deep .profile-form__check {
+    animation: sm-pop 260ms var(--sm-ease-out) both;
+}

@@ -1,0 +1,29 @@
+@* DialogService content around UserPicker. Result: UserSummaryDto (single) or IReadOnlyList<UserSummaryDto> (multiple). *@
+<div class="picker-dialog">
+    <UserPicker Multiple="Multiple" @bind-Selected="_selected" OnPick="Pick" Exclude="Exclude" ExcludedLabel="@ExcludedLabel" />
+    @if (Multiple)
+    {
+        <DialogActions>
+            <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+            <Button Disabled="@(_selected.Count == 0)" OnClick="Done">
+                @(ConfirmText ?? L["common.done"])@(_selected.Count > 0 ? $" ({_selected.Count})" : null)
+            </Button>
+        </DialogActions>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<UserSummaryDto> _selected = [];
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    [Parameter] public bool Multiple { get; set; }
+    [Parameter] public IReadOnlySet<Guid>? Exclude { get; set; }
+    [Parameter] public string? ExcludedLabel { get; set; }
+    [Parameter] public string? ConfirmText { get; set; }
+
+    private void Pick(UserSummaryDto user) => Dialog.Close(user);
+
+    private void Done() => Dialog.Close(_selected);
+}

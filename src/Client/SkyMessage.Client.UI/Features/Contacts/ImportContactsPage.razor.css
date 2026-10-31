@@ -1,0 +1,87 @@
+.import__privacy {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 10px 14px;
+    border-radius: 18px;
+    background: var(--sm-card);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    font-size: 0.8125rem;
+    color: var(--sm-text-2);
+    line-height: 1.45;
+    text-align: left;
+}
+
+.import__privacy ::deep .sm-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--sm-success);
+}
+
+/* Searching: the phone book in a glass squircle with the comet spinner circling it. */
+.import__orb {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 6rem;
+    height: 6rem;
+    margin-bottom: 14px;
+    color: var(--sm-accent);
+}
+
+.import__orb::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--sm-grad-soft), var(--sm-card);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.import__orb ::deep .sm-icon {
+    position: relative;
+    animation: sm-float 3.2s ease-in-out infinite;
+}
+
+.import__orb ::deep .import__spinner {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+}
+
+/* "Found 5 friends" as a small headline. */
+.import__summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 22px 10px;
+    font-family: var(--sm-font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    animation: sm-rise-in var(--sm-dur-slow) var(--sm-ease-out) backwards;
+}
+
+.import__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 8px;
+}
+
+.import__rows ::deep .import__row {
+    min-height: 4rem;
+    border-radius: 22px;
+}
+
+.import__rows ::deep .import__row.sm-list-item--selected {
+    background: var(--sm-grad-soft);
+}
+
+.import__lead {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}

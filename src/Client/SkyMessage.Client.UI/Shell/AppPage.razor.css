@@ -1,0 +1,91 @@
+/* A screen: transparent over the shell's sky, or (pages pushed on phones) over its own still sky. That sky reaches up
+   under the status bar and out to the side insets the shell layer pads, so the layer stays one opaque piece. */
+.app-page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.app-page ::deep .app-page__sky {
+    top: calc(-1 * var(--sm-inset-top));
+    left: calc(-1 * var(--sm-inset-left));
+    right: calc(-1 * var(--sm-inset-right));
+}
+
+/* Above the sky. */
+.app-page__body,
+.app-page__head--static,
+.app-page__footer {
+    position: relative;
+    z-index: 1;
+}
+
+.app-page__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-bottom: var(--sm-page-bottom, var(--sm-bottom-space));
+}
+
+.app-page__body--fixed {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ---- Header: pinned at the top of the scrolling body, the content passes under it ---- */
+
+.app-page__head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+}
+
+.app-page__head--static {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.app-page__toolbar {
+    position: relative;
+    padding: 2px 16px 12px;
+}
+
+/* Bar + toolbar (tabs, search) share one floating glass card once the page scrolls. */
+.app-page--toolbar .app-page__head::before {
+    content: "";
+    position: absolute;
+    inset: 6px 8px 0;
+    border-radius: 26px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px) scale(0.985);
+    pointer-events: none;
+    transition: opacity var(--sm-dur) var(--sm-ease), transform var(--sm-dur-slow) var(--sm-spring-soft), visibility 0s linear var(--sm-dur);
+}
+
+.app-page--toolbar[data-scrolled] .app-page__head::before {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+}
+
+html[data-fx="lite"] .app-page--toolbar .app-page__head::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* ---- Footer: the main action, floating over the sky ---- */
+
+.app-page__footer {
+    flex-shrink: 0;
+    padding: 10px 16px calc(14px + var(--sm-page-bottom, var(--sm-bottom-space)));
+    animation: sm-rise-in var(--sm-dur-slow) var(--sm-ease-out) backwards;
+}

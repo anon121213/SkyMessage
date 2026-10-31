@@ -1,0 +1,30 @@
+@* Placeholder rows for list screens while the first load is in progress. *@
+<div class="sm-skeleton-list @Class" aria-busy="true">
+    @for (var i = 0; i < Rows; i++)
+    {
+        var width = Widths[i % Widths.Length];
+        <div class="sm-skeleton-row">
+            @if (Avatar)
+            {
+                <Skeleton Shape="SkeletonShape.Circle" Height="@AvatarSize" />
+            }
+            <div class="sm-skeleton-row__lines">
+                <Skeleton Width="@width" Height="0.9rem" />
+                @if (TwoLines)
+                {
+                    <Skeleton Width="@Widths[(i + 2) % Widths.Length]" Height="0.75rem" />
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] Widths = ["62%", "44%", "71%", "53%", "38%", "66%"];
+
+    [Parameter] public int Rows { get; set; } = 8;
+    [Parameter] public bool Avatar { get; set; } = true;
+    [Parameter] public string AvatarSize { get; set; } = "3.25rem";
+    [Parameter] public bool TwoLines { get; set; } = true;
+    [Parameter] public string? Class { get; set; }
+}

@@ -1,0 +1,85 @@
+@* About: the logo, the name and version, app and server versions, and the licenses of everything third-party that
+   ships in the apps. *@
+@inherits UiComponentBase
+@inject IPlatformInfo Platform
+@inject IServerEndpointService Endpoints
+@inject DialogService Dialogs
+@inject ShareHelper Share
+
+<SettingsScaffold Title="@L["settings.about.title"]">
+    @{
+        var info = Endpoints.Info;
+    }
+    <div class="about-hero">
+        <div class="about-hero__logo" aria-hidden="true">
+            <Logo Size="96" Animated="true" />
+        </div>
+        <div class="about-hero__name">SkyMessage</div>
+        <div class="about-hero__version sm-nums">@L.Format("settings.about.version", Platform.AppVersion)</div>
+        <div class="about-hero__tagline">@L["app.tagline"]</div>
+    </div>
+
+    <Section Title="@L["settings.about.app"]" DividerInset="64px">
+        <ListItem Icon="@IconNames.Hash" IconColor="@SettingsTones.Violet" Title="@L["settings.about.appVersion"]" Meta="@Platform.AppVersion" OnClick="CopyVersionAsync" />
+        <ListItem Icon="@PlatformIcon" IconColor="@SettingsTones.Sky" Title="@L["settings.about.platform"]" Meta="@PlatformText" Multiline="true" />
+    </Section>
+
+    <Section Title="@L["settings.about.server"]" DividerInset="64px">
+        <ListItem Icon="@IconNames.Server" IconColor="@SettingsTones.Lagoon" Title="@(info?.Name ?? Endpoints.BaseUri.Host)" Subtitle="@Endpoints.BaseUri.ToString()"
+                  Meta="@(info is null ? L["settings.about.serverUnknown"] : info.Version)" Multiline="true" />
+        @if (info is not null && AppVersionCheck.IsOutdated(Platform.AppVersion, info.MinClientVersion))
+        {
+            <ListItem Icon="@IconNames.TriangleAlert" IconColor="@SettingsTones.Gold" Title="@L["app.updateRequired"]" Multiline="true" />
+        }
+    </Section>
+
+    <Section Title="@L["settings.about.licenses"]" Footer="@L["settings.about.licensesHint"]">
+        @foreach (var license in LicenseCatalog.All)
+        {
+            <ListItem @key="license.Name" Title="@license.Name" Subtitle="@($"{license.License} · {license.Copyright}")" Multiline="true" Chevron="true"
+                      OnClick="() => ShowLicenseAsync(license)" />
+        }
+    </Section>
+
+    <p class="about-own">@L["settings.about.own"]</p>
+</SettingsScaffold>
+
+@code {
+    private string PlatformIcon => Platform.Platform switch
+    {
+        ClientPlatform.Android or ClientPlatform.iOS => IconNames.Smartphone,
+        ClientPlatform.MacOS => IconNames.Laptop,
+        ClientPlatform.Web => IconNames.Globe,
+        _ => IconNames.Monitor,
+    };
+
+    private string PlatformText
+    {
+        get
+        {
+            var name = Platform.Platform switch
+            {
+                ClientPlatform.Android => "Android",
+                ClientPlatform.iOS => "iOS",
+                ClientPlatform.MacOS => "macOS",
+                ClientPlatform.Windows => "Windows",
+                ClientPlatform.Linux => "Linux",
+                ClientPlatform.Web => L["settings.sessions.browser"],
+                _ => L["settings.sessions.unknownDevice"],
+            };
+            return string.IsNullOrWhiteSpace(Platform.OsVersion) ? name : $"{name} {Platform.OsVersion}";
+        }
+    }
+
+    protected override void OnInitialized() => RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+
+    private async Task CopyVersionAsync()
+    {
+        var server = Endpoints.Info is { } info ? $", {info.Name} {info.Version}" : "";
+        await Share.CopyAsync($"SkyMessage {Platform.AppVersion} ({PlatformText}{server})", L["common.copied"]);
+    }
+
+    private Task ShowLicenseAsync(LicenseInfo license) =>
+        Dialogs.ShowAsync<LicenseDialog>(license.Name, new Dictionary<string, object?> { [nameof(LicenseDialog.Info)] = license },
+            new DialogOptions { Size = DialogSize.Large, Presentation = OverlayPresentation.Auto });
+}

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SkyMessage app icon foreground: a warm sun rising behind a white cloud, three sparkles (our own artwork), kept
+     inside the adaptive-icon safe zone. -->
+<svg width="456" height="456" viewBox="0 0 456 456" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="sun" cx="0.42" cy="0.38" r="0.62">
+      <stop offset="0" stop-color="#FFF6D2"/>
+      <stop offset="0.45" stop-color="#FFCB6E"/>
+      <stop offset="1" stop-color="#FF8A65"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.45" stop-color="#FFD58A" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#FFD58A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cloud" gradientUnits="userSpaceOnUse" x1="0" y1="150" x2="0" y2="345">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9E1FF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(228 228) scale(0.84) translate(-228 -228)">
+    <circle cx="292" cy="186" r="116" fill="url(#halo)"/>
+    <circle cx="292" cy="186" r="72" fill="url(#sun)"/>
+    <ellipse cx="236" cy="352" rx="128" ry="16" fill="#2A1470" opacity="0.18"/>
+    <g fill="url(#cloud)">
+      <circle cx="168" cy="268" r="62"/>
+      <circle cx="238" cy="230" r="80"/>
+      <circle cx="312" cy="280" r="54"/>
+      <rect x="106" y="262" width="262" height="78" rx="39" ry="39"/>
+    </g>
+    <g fill="#FFFFFF">
+      <path transform="translate(98 104) scale(1.25)" opacity="0.95" d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z"/>
+      <path transform="translate(342 112) scale(0.8)" opacity="0.85" d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z"/>
+      <path transform="translate(186 126) scale(0.6)" opacity="0.8" d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z"/>
+    </g>
+  </g>
+</svg>

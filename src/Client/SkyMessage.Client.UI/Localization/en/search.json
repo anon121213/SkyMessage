@@ -1,0 +1,15 @@
+{
+  "search.title": "Search",
+  "search.placeholder": "People, chats and messages",
+  "search.recent": "Recent",
+  "search.clearRecent": "Clear",
+  "search.hintTitle": "Who are you looking for?",
+  "search.hintText": "Search people by name or @username, as well as chats and messages.",
+  "search.tooShort": "Type at least 2 characters",
+  "search.chats": "Chats",
+  "search.people": "People",
+  "search.messages": "Messages",
+  "search.nothing": "Nothing found",
+  "search.nothingHint": "People outside your contacts can be found by the beginning of their username (3+ letters).",
+  "search.failed": "Search failed"
+}

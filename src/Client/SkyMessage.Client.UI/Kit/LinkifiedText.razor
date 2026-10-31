@@ -1,0 +1,35 @@
+@* Untrusted plain text with safe auto-links (URLs, e-mail, @usernames). Never renders HTML. *@
+@inject LinkService Links
+@inject NavigationService Nav
+
+<span class="sm-pre-wrap @Class" dir="auto">@foreach (var run in _runs)
+{
+    switch (run.Kind)
+    {
+        case TextRunKind.Url:
+        case TextRunKind.Email:
+            <a class="sm-link" href="@run.Target" rel="noopener noreferrer nofollow" target="_blank" @onclick="() => Links.OpenAsync(run.Target!, run.Text)" @onclick:preventDefault="true" @onclick:stopPropagation="true">@run.Text</a>
+            break;
+        case TextRunKind.Mention:
+            <a class="sm-mention" href="@($"/u/{Uri.EscapeDataString(run.Target!)}")" @onclick="() => Nav.OpenUsername(run.Target!)" @onclick:preventDefault="true" @onclick:stopPropagation="true">@run.Text</a>
+            break;
+        default:
+            <text>@run.Text</text>
+            break;
+    }
+}</span>
+
+@code {
+    private IReadOnlyList<TextRun> _runs = [];
+    private string? _parsed;
+
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Text == _parsed) return;
+        _parsed = Text;
+        _runs = TextLinker.Split(Text);
+    }
+}

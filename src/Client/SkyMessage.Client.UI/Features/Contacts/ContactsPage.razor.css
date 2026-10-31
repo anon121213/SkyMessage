@@ -1,0 +1,22 @@
+/* Over the shell's sky (the content area is transparent until a profile opens). */
+.contacts-placeholder {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 24px;
+}
+
+.contacts-placeholder__card {
+    position: relative;
+    max-width: 400px;
+    border-radius: var(--sm-radius-2xl);
+    overflow: hidden;
+    animation: sm-dialog-in var(--sm-dur-xslow) var(--sm-spring-soft) backwards;
+}
+
+.contacts-placeholder__card ::deep .sm-empty {
+    padding: 30px 32px 34px;
+    animation: none;
+}

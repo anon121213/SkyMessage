@@ -1,0 +1,116 @@
+@page "/login"
+@attribute [AnonymousPage]
+@* Sign in with username (or linked phone number) and password, on a frosted card over the sky. Wrong credentials
+   shake the fields and clear the password for another try. *@
+@inject IAuthService Auth
+@inject NavigationService Nav
+@inject DialogService Dialogs
+
+<div class="auth-page sm-stagger">
+    <AuthHeader Title="@L["auth.login.title"]" Subtitle="@L["auth.login.subtitle"]" BackTo="@NavigationService.WelcomePath" Compact="true" Intro="_intro" />
+
+    <form class="auth-form sm-card" @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
+        <div class="auth-form__fields @ShakeClass">
+            <TextField @bind-Value="_login" Label="@L["auth.field.login"]" Placeholder="@L["auth.field.loginPlaceholder"]" Icon="@IconNames.AtSign"
+                       Autocomplete="username" Autocapitalize="off" Autofocus="true" EnterKeyHint="next" MaxLength="64" />
+            <TextField @ref="_passwordField" @bind-Value="_password" Type="password" Label="@L["auth.field.password"]" Icon="@IconNames.KeyRound"
+                       Autocomplete="current-password" EnterKeyHint="go" MaxLength="Limits.PasswordMaxLength" />
+        </div>
+
+        @if (_error is not null)
+        {
+            @* Keyed by attempt: the message slides in again after every failed try. *@
+            <div @key="_attempt" class="auth-form__error" role="alert">
+                <span class="auth-form__error-icon"><Icon Name="@IconNames.CircleAlert" Size="18" /></span>
+                <span>@_error</span>
+            </div>
+            @if (_networkProblem)
+            {
+                <ServerStatus />
+            }
+        }
+
+        <Button Type="submit" Block="true" Size="ButtonSize.Large" Loading="_busy" Disabled="@(!CanSubmit)" Class="auth-form__submit">@L["auth.signIn"]</Button>
+    </form>
+
+    <div class="auth-alt">
+        <span>@L["auth.login.noAccount"]</span>
+        <Button Variant="ButtonVariant.Link" OnClick="@(() => Nav.NavigateTo("/register", replace: true))">@L["auth.createAccount"]</Button>
+    </div>
+    <p class="auth-hint">
+        <Icon Name="@IconNames.LifeBuoy" Size="16" />
+        <span>@L["auth.login.forgot"]</span>
+    </p>
+</div>
+
+@code {
+    private readonly bool _intro = AuthIntro.TakeFirst();
+    private TextField? _passwordField;
+    private string _login = "";
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+    private bool _networkProblem;
+    private int _attempt;
+    private int _shakes;
+    private bool _focusPassword;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    private bool CanSubmit => !string.IsNullOrWhiteSpace(_login) && _password.Length > 0 && !_busy;
+
+    // Two identical keyframes, alternated: changing the animation name restarts the shake on every wrong try.
+    private string? ShakeClass => _shakes == 0 ? null : _shakes % 2 == 1 ? "is-shake-a" : "is-shake-b";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPassword && _passwordField is not null)
+        {
+            _focusPassword = false;
+            await _passwordField.FocusAsync();
+        }
+    }
+
+    private async Task LoginAsync()
+    {
+        if (!CanSubmit) return;
+        _busy = true;
+        _error = null;
+        _networkProblem = false;
+        try
+        {
+            var result = await Auth.LoginAsync(_login.Trim(), _password);
+            if (result.Success)
+            {
+                // Routes leaves the sign-in screens as soon as the session is active.
+                _password = "";
+                return;
+            }
+            _attempt++;
+            _networkProblem = result.ErrorCode is ClientErrorCodes.Network or ClientErrorCodes.Timeout;
+            _error = result.ErrorCode switch
+            {
+                ErrorCodes.InvalidCredentials or ErrorCodes.Unauthorized => L["auth.login.invalid"],
+                ErrorCodes.RateLimited => L["auth.login.tooMany"],
+                ClientErrorCodes.Network or ClientErrorCodes.Timeout => L["auth.login.network"],
+                _ => L.Error(result.ErrorCode),
+            };
+            if (result.ErrorCode is ErrorCodes.InvalidCredentials or ErrorCodes.Unauthorized)
+            {
+                // The password is hidden, so it is typed again anyway: shake, clear it and put the cursor there.
+                _shakes++;
+                _password = "";
+                _focusPassword = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _attempt++;
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

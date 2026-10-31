@@ -1,0 +1,280 @@
+/* ---------- The search capsule: frosted glass over the sky ---------- */
+
+/* A readable column on wide screens. */
+.search__box,
+.search__recent,
+.search__results {
+    width: 100%;
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.search__box ::deep .sm-search {
+    height: 3rem;
+    padding-left: 18px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    color: var(--sm-accent);
+}
+
+.search__box ::deep .sm-search:focus-within {
+    background: var(--sm-glass-strong);
+    box-shadow: inset 0 0 0 1.5px var(--sm-accent), 0 0 0 4px var(--sm-accent-soft), var(--sm-shadow-1);
+}
+
+.search__box ::deep .sm-search input {
+    font-size: 1.0625rem;
+}
+
+html[data-fx="lite"] .search__box ::deep .sm-search {
+    background: var(--sm-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+/* ---------- Headings and cards ---------- */
+
+.search__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 2.25rem;
+    padding: 16px 10px 6px 18px;
+}
+
+/* Overline with a small accent glyph. */
+.search__overline {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--sm-text-3);
+}
+
+.search__overline ::deep .sm-icon {
+    color: var(--sm-accent);
+}
+
+.search__heading ::deep .sm-btn--link {
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--sm-accent);
+}
+
+/* Results and recent rows sit on frosted cards (.sm-section__body) a little in from the edges. */
+.search__card {
+    margin: 0 12px;
+}
+
+.search__recent,
+.search__results {
+    padding-bottom: 20px;
+}
+
+.search__card ::deep .sm-list-item {
+    border-radius: 20px;
+}
+
+.search__card ::deep .search__name {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+}
+
+.search__hit-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.search__hit-top .sm-list-item__title {
+    flex: 1 1 auto;
+}
+
+.search__hit-time {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--sm-text-3);
+}
+
+.search__sender {
+    color: var(--sm-text);
+}
+
+.search__contact {
+    color: var(--sm-text-3);
+}
+
+/* The match: the accent on a soft tint. */
+.search__mark {
+    border-radius: 4px;
+    background: var(--sm-accent-soft);
+    box-shadow: 0 0 0 2px var(--sm-accent-soft);
+    color: var(--sm-accent);
+    font-weight: 700;
+}
+
+/* Hint / too short / failed: a fill-height wrapper keeps EmptyState's own centering. */
+.search__state--fill {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* ---------- Illustrations: flat shapes in the palette ---------- */
+
+.search-art {
+    position: relative;
+    width: 11rem;
+    margin-bottom: 6px;
+}
+
+.search-art svg {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.search-art__shadow {
+    fill: color-mix(in srgb, var(--sm-accent) 14%, transparent);
+}
+
+.search-art__cloud {
+    fill: #FFFFFF;
+}
+
+html[data-theme="dark"] .search-art__cloud {
+    fill: #3A2F78;
+}
+
+.search-art__lens {
+    fill: color-mix(in srgb, var(--sm-accent) 10%, transparent);
+    stroke: var(--sm-accent);
+    stroke-width: 7;
+}
+
+.search-art__handle {
+    stroke: var(--sm-warm);
+    stroke-width: 11;
+    stroke-linecap: round;
+}
+
+/* The magnifier sways a little, as if looking around. */
+.search-art__glass {
+    transform-box: fill-box;
+    transform-origin: 70% 80%;
+    animation: search-art-look 6s ease-in-out infinite;
+}
+
+.search-art__eye {
+    fill: var(--sm-text-2);
+}
+
+.search-art__mouth {
+    stroke: var(--sm-text-2);
+}
+
+.search-art__bubble {
+    fill: var(--sm-card-solid);
+    stroke: var(--sm-border);
+    stroke-width: 1.5;
+}
+
+.search-art__q {
+    fill: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.search-art__question {
+    transform-box: fill-box;
+    transform-origin: 30% 100%;
+    animation: search-art-wonder 5s ease-in-out infinite;
+}
+
+@keyframes search-art-look {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-7deg); }
+}
+
+@keyframes search-art-wonder {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(6deg); }
+}
+
+html[data-fx="lite"] .search-art,
+html[data-fx="lite"] .search-art * {
+    animation: none !important;
+}
+
+/* ---------- Motion ---------- */
+
+/* A new result set (or a state the user just switched to) rises in once. */
+.search__results,
+.search__state.is-entering,
+.search__recent.is-entering {
+    animation: search-in var(--sm-dur) var(--sm-ease-out) backwards;
+}
+
+/* Back to the recent list: the avatars pop in, top rows first (done within 320 ms). */
+.search__recent.is-entering ::deep .sm-list-item .sm-avatar {
+    animation: sm-pop 240ms var(--sm-ease-out) backwards;
+}
+
+.search__recent.is-entering ::deep .sm-list-item:nth-child(2) .sm-avatar {
+    animation-delay: 25ms;
+}
+
+.search__recent.is-entering ::deep .sm-list-item:nth-child(3) .sm-avatar {
+    animation-delay: 50ms;
+}
+
+.search__recent.is-entering ::deep .sm-list-item:nth-child(n + 4) .sm-avatar {
+    animation-delay: 75ms;
+}
+
+/* Rows can be dragged to the left (SearchPage.razor.js); vertical scrolling stays native. */
+.search__recent-list ::deep .sm-list-item {
+    touch-action: pan-y;
+}
+
+/* A removed entry slides away before the list closes the gap. */
+.search__recent-list ::deep .sm-list-item.is-leaving {
+    pointer-events: none;
+    animation: search-row-out 160ms var(--sm-ease-in) forwards;
+}
+
+@keyframes search-in {
+    from { opacity: 0; transform: translateY(8px); }
+}
+
+@keyframes search-row-out {
+    to { opacity: 0; transform: translateX(-32px); }
+}
+
+html[data-reduce-motion="true"] .search__results,
+html[data-reduce-motion="true"] .search__state,
+html[data-reduce-motion="true"] .search__recent,
+html[data-reduce-motion="true"] .search__recent ::deep .sm-avatar {
+    animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .search__results,
+    .search__state,
+    .search__recent,
+    .search__recent ::deep .sm-avatar {
+        animation: none !important;
+    }
+}

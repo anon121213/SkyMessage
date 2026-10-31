@@ -1,0 +1,35 @@
+@* A person's avatar, live: IUserStore.Get(id) ?? embedded copy, URLs via IMediaUrlBuilder (re-rendered on changes). *@
+@inherits UiComponentBase
+@inject IUserStore Users
+@inject IMediaUrlBuilder MediaUrls
+
+<Avatar Url="@Url" Name="@Name" Seed="UserId" Size="Size" Online="@(ShowOnline && User?.IsOnline() == true)" TrackOnline="ShowOnline"
+        Icon="@(User?.IsDeleted == true ? IconNames.Ghost : null)" Class="@Class" OnClick="OnClick" Tooltip="@(ShowTooltip ? Name : null)" />
+
+@code {
+    [Parameter, EditorRequired] public Guid UserId { get; set; }
+    /// <summary>Embedded copy (from a page, member list...) used until the store knows the user.</summary>
+    [Parameter] public UserSummaryDto? Embedded { get; set; }
+    [Parameter] public double Size { get; set; } = 48;
+    [Parameter] public bool ShowOnline { get; set; }
+    [Parameter] public bool ShowTooltip { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    private UserSummaryDto? User => Users.Get(UserId) ?? Embedded;
+
+    private string? Url => User is { IsDeleted: false } user ? MediaUrls.AvatarUrl(user.AvatarMediaId) : null;
+
+    private string Name => User?.NameOf(L) ?? Users.DisplayNameOf(UserId);
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == UserId);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (UserId != Guid.Empty && Users.Get(UserId) is null && Embedded is null) _ = Users.GetOrFetchAsync(UserId);
+    }
+}

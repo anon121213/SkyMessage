@@ -1,0 +1,182 @@
+/* The pinned strip: a slim glass capsule floating under the header capsule. A gradient bar (one segment per pin, the
+   shown one lit) on the left, a squircle thumbnail, "Pinned message" in the display font, one line of the message. */
+
+.pinbar {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 2.875rem;
+    padding: 5px 5px 5px 16px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+html[data-fx="lite"] .pinbar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+.pinbar:active {
+    transform: scale(0.985);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .pinbar:hover {
+        background: var(--sm-glass-strong);
+    }
+}
+
+/* Appears while the chat is open (a new pin): drops in from under the header. */
+.pinbar--enter {
+    animation: pinbar-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+@keyframes pinbar-in {
+    from {
+        opacity: 0;
+        transform: translateY(-40%) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ---------- The bar: gradient segments ---------- */
+
+.pinbar__marks {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-self: stretch;
+    width: 3px;
+    padding: 5px 0;
+}
+
+.pinbar__mark {
+    flex: 1 1 0;
+    min-height: 4px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--sm-accent) 26%, transparent);
+    transition: background-color var(--sm-dur) var(--sm-ease);
+}
+
+.pinbar__mark--on {
+    background: linear-gradient(180deg, var(--sm-accent), var(--sm-accent-2));
+}
+
+/* ---------- Content ---------- */
+
+.pinbar__content {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+/* Another pin: an older one slides down from above (it is higher up in the chat), a newer one up from below. */
+.pinbar__content--older {
+    animation: pinbar-older var(--sm-dur) var(--sm-ease-out);
+}
+
+.pinbar__content--newer {
+    animation: pinbar-newer var(--sm-dur) var(--sm-ease-out);
+}
+
+@keyframes pinbar-older {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes pinbar-newer {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.pinbar__thumb {
+    flex-shrink: 0;
+    width: 2.125rem;
+    height: 2.125rem;
+    object-fit: cover;
+    background: var(--sm-surface-3);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.pinbar__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.28;
+}
+
+.pinbar__title {
+    overflow: hidden;
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pinbar__text {
+    overflow: hidden;
+    color: var(--sm-text);
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- Trailing: unpin, or the pin glyph in a soft disc ---------- */
+
+.pinbar ::deep .sm-icon-btn {
+    --size: 2.25rem;
+    color: var(--sm-text-2);
+}
+
+.pinbar ::deep .sm-icon-btn .sm-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.pinbar__icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    transform: rotate(35deg);
+}

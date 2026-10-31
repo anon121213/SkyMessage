@@ -1,0 +1,297 @@
+.ginfo {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 18px 0 24px;
+}
+
+/* ---------- Hero (same language as ProfileView) ---------- */
+
+.ginfo__head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 0 16px;
+    text-align: center;
+}
+
+.ginfo__avatar {
+    position: relative;
+    display: flex;
+    margin: 18px 0 14px;
+}
+
+/* A thin accent ring: a squircle outline (outer shape minus a slightly smaller one). */
+.ginfo__ring {
+    position: absolute;
+    inset: -8px;
+    background: var(--sm-accent);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+}
+
+.ginfo__avatar ::deep .sm-avatar {
+    position: relative;
+    --sm-dot-ring: var(--sm-bg);
+}
+
+/* Change photo: a small accent circle on the corner. */
+.ginfo__avatar-edit {
+    position: absolute;
+    z-index: 1;
+    right: -12px;
+    bottom: -12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    color: var(--sm-on-accent);
+    box-shadow: 0 0 0 3px var(--sm-bg);
+    transition: transform 260ms var(--sm-spring);
+}
+
+.ginfo__avatar-edit:active {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.ginfo__avatar-edit ::deep .sm-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.ginfo__title {
+    position: relative;
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 1.625rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+}
+
+/* One header height above the bottom of the title: drives the app bar's compact title (see ProfileView). */
+.ginfo__title-mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--sm-header-h);
+    height: 1px;
+    pointer-events: none;
+}
+
+.ginfo__sub {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 420px;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    text-wrap: balance;
+}
+
+.ginfo__sub ::deep .sm-icon {
+    flex-shrink: 0;
+    color: var(--sm-accent);
+}
+
+/* ---------- Actions: glass circles with labels ---------- */
+
+.ginfo__actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 0 12px;
+}
+
+.ginfo__action {
+    flex: 1 1 0;
+    max-width: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 0;
+    color: var(--sm-text-2);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ginfo__action-orb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    color: var(--sm-accent);
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    transition: transform 280ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+html[data-fx="lite"] .ginfo__action-orb {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+html[data-fx="lite"] .ginfo__action:not(.ginfo__action--primary):not(.ginfo__action--live) .ginfo__action-orb {
+    background: var(--sm-glass-solid);
+}
+
+.ginfo__action-orb ::deep .sm-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.ginfo__action--primary .ginfo__action-orb {
+    color: var(--sm-on-accent);
+    background: var(--sm-accent);
+    box-shadow: var(--sm-shadow-1);
+}
+
+/* A call is going on: a mint circle sending out a faint ring. */
+.ginfo__action--live .ginfo__action-orb {
+    position: relative;
+    isolation: isolate;
+    color: #FFFFFF;
+    background: var(--sm-success);
+    box-shadow: var(--sm-shadow-1);
+}
+
+.ginfo__action--live .ginfo__action-orb::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--sm-success);
+    animation: sm-ring 2.4s var(--sm-ease-out) infinite;
+    z-index: -1;
+}
+
+.ginfo__action--leave .ginfo__action-orb {
+    color: var(--sm-danger);
+}
+
+.ginfo__action-label {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ginfo__action:active .ginfo__action-orb {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+@media (hover: hover) {
+    .ginfo__action:hover .ginfo__action-orb {
+        transform: translateY(-2px);
+    }
+
+    .ginfo__action:not(.ginfo__action--primary):not(.ginfo__action--live):hover .ginfo__action-orb {
+        background: var(--sm-glass-strong);
+    }
+}
+
+/* ---------- Sections ---------- */
+
+.ginfo__sections {
+    padding: 0 12px;
+}
+
+/* Roles: flat labels — the owner in a warm tint, admins in the accent tint. */
+.ginfo__sections ::deep .ginfo__role {
+    font-family: var(--sm-font-display);
+}
+
+.ginfo__sections ::deep .ginfo__role--owner {
+    background: var(--sm-warning-soft);
+    color: var(--sm-warning);
+}
+
+/* "Add members" leads the list in the accent. */
+.ginfo__sections ::deep .ginfo__add .sm-list-item__title {
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    font-size: 0.9375rem;
+}
+
+/* Member names in the display font, like the chat list. */
+.ginfo__sections ::deep .ginfo__members .sm-list-item__leading + .sm-list-item__body .sm-list-item__title {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    font-size: 0.9375rem;
+}
+
+[inert] .ginfo__action--live .ginfo__action-orb::after {
+    animation-play-state: paused;
+}
+
+html[data-fx="lite"] .ginfo__action--live .ginfo__action-orb::after {
+    animation: none;
+}
+
+/* Scrolling tucks the header under the app bar (see ProfileView): the avatar shrinks and fades while it slides up a
+   little slower than the page, the title and subtitle fade as they pass under the bar edge. */
+@supports (animation-timeline: view()) {
+    .ginfo__avatar {
+        animation: ginfo-avatar-out linear both;
+        animation-timeline: view(block);
+        animation-range: exit 0% exit 100%;
+    }
+
+    .ginfo__title,
+    .ginfo__sub {
+        animation: ginfo-text-out linear both;
+        animation-timeline: view(block);
+        animation-range: exit 0% exit 100%;
+    }
+}
+
+@keyframes ginfo-avatar-out {
+    to { opacity: 0; transform: translateY(35%) scale(0.6); }
+}
+
+@keyframes ginfo-text-out {
+    to { opacity: 0; }
+}
+
+html[data-reduce-motion="true"] .ginfo__avatar,
+html[data-reduce-motion="true"] .ginfo__title,
+html[data-reduce-motion="true"] .ginfo__sub {
+    animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ginfo__avatar,
+    .ginfo__title,
+    .ginfo__sub {
+        animation: none !important;
+    }
+}

@@ -1,0 +1,49 @@
+@* A squircle color choice (accent palette; Color may be a gradient). Custom = rainbow swatch for a user-picked color. *@
+@inject HapticFeedback Haptics
+
+<button type="button" class="sm-swatch @(Selected ? "sm-swatch--selected" : null) @(Custom ? "sm-swatch--custom" : null) @Class"
+        style="@Style" aria-label="@Label" title="@Label" aria-pressed="@(Selected ? "true" : "false")" @onclick="ClickAsync">
+    @if (Selected)
+    {
+        <Icon Name="@IconNames.Check" />
+    }
+    else if (Custom)
+    {
+        <Icon Name="@IconNames.Plus" />
+    }
+    @ChildContent
+</button>
+
+@code {
+    /// <summary>CSS color or gradient ("#6A4BFF", AccentInfo.Gradient).</summary>
+    [Parameter] public string? Color { get; set; }
+    /// <summary>Solid color of the selection ring and glow; defaults to <see cref="Color"/> unless that is a gradient.</summary>
+    [Parameter] public string? RingColor { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public bool Selected { get; set; }
+    /// <summary>Rainbow "pick your own" swatch.</summary>
+    [Parameter] public bool Custom { get; set; }
+    /// <summary>Diameter in px at 100% font scale.</summary>
+    [Parameter] public double Size { get; set; } = 36;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Style
+    {
+        get
+        {
+            var size = (Size / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+            var color = Custom && !Selected ? null : Color;
+            if (color is null) return $"--size:{size}rem";
+            var ring = RingColor ?? (color.Contains("gradient", StringComparison.Ordinal) ? null : color);
+            return ring is null ? $"--size:{size}rem;background:{color}" : $"--size:{size}rem;background:{color};--sm-swatch-color:{ring}";
+        }
+    }
+
+    private async Task ClickAsync()
+    {
+        Haptics.Selection();
+        await OnClick.InvokeAsync();
+    }
+}

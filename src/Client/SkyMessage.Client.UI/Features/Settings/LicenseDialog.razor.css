@@ -1,0 +1,60 @@
+.license {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.license__meta {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.license__tile {
+    flex-shrink: 0;
+}
+
+.license__who {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.license__name {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+.license ::deep .license__link {
+    align-self: flex-start;
+}
+
+.license__heading {
+    margin: 6px 0 0;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--sm-text-3);
+}
+
+/* The text on an inset paper: monospace, soft lavender, rounded like the cards. */
+.license__text {
+    margin: 0;
+    max-height: 55vh;
+    padding: 14px 16px;
+    overflow: auto;
+    border-radius: 20px;
+    font-family: var(--sm-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--sm-text);
+    background: var(--sm-surface-2);
+    box-shadow: inset 0 0 0 1px var(--sm-border), inset 0 2px 6px rgba(20, 10, 60, 0.05);
+}

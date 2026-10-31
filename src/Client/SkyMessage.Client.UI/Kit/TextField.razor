@@ -1,0 +1,142 @@
+@inject AppJs Js
+
+<div class="sm-field @(Error is not null ? "sm-field--error" : null) @(Disabled ? "sm-field--disabled" : null) @Class">
+    @if (Label is not null)
+    {
+        <label class="sm-field__label" for="@_id">@Label</label>
+    }
+    <div class="sm-field__box">
+        @if (Icon is not null)
+        {
+            <span class="sm-field__prefix"><Icon Name="@Icon" /></span>
+        }
+        @if (Prefix is not null)
+        {
+            <span class="sm-field__prefix">@Prefix</span>
+        }
+        <input @ref="_input" id="@_id" class="sm-field__input" type="@EffectiveType" placeholder="@Placeholder"
+               maxlength="@(MaxLength > 0 ? MaxLength : null)" autocomplete="@Autocomplete" inputmode="@InputMode" enterkeyhint="@EnterKeyHint"
+               autocapitalize="@Autocapitalize" spellcheck="@(Spellcheck ? "true" : "false")" disabled="@Disabled" readonly="@ReadOnly"
+               aria-invalid="@(Error is not null ? "true" : null)" aria-describedby="@(HasMeta ? _id + "-meta" : null)" dir="auto"
+               @bind:get="_text" @bind:set="OnInput" @bind:event="oninput" @onchange="OnChange" @onkeydown="OnKeyDown" @onblur="OnBlur"
+               @attributes="Attributes" />
+        @if (Clearable && !string.IsNullOrEmpty(_text) && !Disabled && !ReadOnly)
+        {
+            <IconButton Icon="@IconNames.X" Label="@L["common.clear"]" OnClick="ClearAsync" />
+        }
+        @if (IsPassword)
+        {
+            <IconButton Icon="@(_reveal ? IconNames.EyeOff : IconNames.Eye)" Label="@(_reveal ? L["kit.password.hide"] : L["kit.password.show"])" OnClick="ToggleReveal" />
+        }
+        @Trailing
+    </div>
+    @if (HasMeta)
+    {
+        <div id="@(_id + "-meta")" class="sm-field__meta @(Error is not null ? "sm-field__meta--error" : Success is not null ? "sm-field__meta--success" : null)" aria-live="polite">
+            <span>@(Error ?? Success ?? Hint)</span>
+            @if (ShowCounter && MaxLength > 0)
+            {
+                <span class="sm-field__counter">@(_text?.Length ?? 0)/@MaxLength</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string _id = "f" + Guid.NewGuid().ToString("N")[..10];
+    private ElementReference _input;
+    private bool _reveal;
+    private bool _focused;
+    // What the field shows. Bound with @bind:get/set (not value= + @oninput) so the renderer reconciles with
+    // the text already in the DOM: in the WebView, events reach .NET with a delay, and a manual value= would
+    // write an older value back over characters typed in the meantime.
+    private string? _text;
+    private string? _lastValue;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+    /// <summary>text, password, email, tel, url, search, number.</summary>
+    [Parameter] public string Type { get; set; } = "text";
+    [Parameter] public string? Hint { get; set; }
+    /// <summary>Error text (red); null = valid.</summary>
+    [Parameter] public string? Error { get; set; }
+    /// <summary>Positive feedback text (green), e.g. "Username is free".</summary>
+    [Parameter] public string? Success { get; set; }
+    [Parameter] public int MaxLength { get; set; }
+    [Parameter] public bool ShowCounter { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Prefix { get; set; }
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    [Parameter] public bool Clearable { get; set; }
+    [Parameter] public bool Autofocus { get; set; }
+    [Parameter] public string? Autocomplete { get; set; }
+    [Parameter] public string? InputMode { get; set; }
+    [Parameter] public string? EnterKeyHint { get; set; }
+    [Parameter] public string? Autocapitalize { get; set; }
+    [Parameter] public bool Spellcheck { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    /// <summary>True: update on every keystroke (live validation); false: on change/blur only.</summary>
+    [Parameter] public bool Immediate { get; set; } = true;
+    [Parameter] public EventCallback OnEnter { get; set; }
+    [Parameter] public EventCallback OnBlurred { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+
+    private bool IsPassword => Type == "password";
+    private string EffectiveType => IsPassword && _reveal ? "text" : Type;
+    private bool HasMeta => Error is not null || Success is not null || Hint is not null || (ShowCounter && MaxLength > 0 && _focused);
+
+    public ValueTask FocusAsync(bool selectText = false) => Js.FocusAsync(_input, selectText);
+
+    protected override void OnParametersSet()
+    {
+        // Follow the parent's value when it changes (initial value, normalized text, cleared after submit).
+        if (!string.Equals(Value, _lastValue, StringComparison.Ordinal)) _text = _lastValue = Value;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Autofocus) await Js.FocusAsync(_input);
+    }
+
+    private Task OnInput(string? value)
+    {
+        _focused = true;
+        _text = value ?? "";
+        if (!Immediate) return Task.CompletedTask;
+        _lastValue = _text;
+        return ValueChanged.InvokeAsync(_text);
+    }
+
+    private Task OnChange(ChangeEventArgs e)
+    {
+        if (Immediate) return Task.CompletedTask;
+        _text = _lastValue = e.Value?.ToString() ?? "";
+        return ValueChanged.InvokeAsync(_text);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.IsComposing && OnEnter.HasDelegate) await OnEnter.InvokeAsync();
+    }
+
+    private async Task OnBlur()
+    {
+        _focused = false;
+        await OnBlurred.InvokeAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        _text = _lastValue = "";
+        await ValueChanged.InvokeAsync("");
+        await Js.FocusAsync(_input);
+    }
+
+    private void ToggleReveal() => _reveal = !_reveal;
+}

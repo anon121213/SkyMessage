@@ -1,0 +1,69 @@
+/* "Forward to…": the kit's search capsule, airy rows with squircle avatars that round to 18px on press, and squircle
+   gradient checks that draw themselves. */
+
+.fwd {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: min(70vh, 34rem);
+}
+
+.fwd__search {
+    flex-shrink: 0;
+    padding: 4px 16px 10px;
+}
+
+.fwd__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 8px 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.fwd__list ::deep .fwd__item {
+    border-radius: 18px;
+}
+
+.fwd__list ::deep .fwd__item.sm-list-item--selected {
+    background: var(--sm-grad-soft);
+}
+
+.fwd__check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 9px;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sm-text-3) 85%, transparent);
+    color: var(--sm-on-accent);
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.fwd__check--on {
+    background: var(--sm-grad);
+    box-shadow: none;
+    animation: fwd-check-pop var(--sm-dur) var(--sm-spring);
+}
+
+@keyframes fwd-check-pop {
+    40% {
+        transform: scale(1.18);
+    }
+}
+
+.fwd__check ::deep .sm-icon * {
+    stroke-dasharray: 26;
+    animation: fwd-check-draw 280ms var(--sm-ease-out) 40ms backwards;
+}
+
+@keyframes fwd-check-draw {
+    from {
+        stroke-dashoffset: 26;
+    }
+
+    to {
+        stroke-dashoffset: 0;
+    }
+}

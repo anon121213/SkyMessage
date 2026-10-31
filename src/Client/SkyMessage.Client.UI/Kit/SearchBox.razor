@@ -1,0 +1,122 @@
+@implements IDisposable
+@inject AppJs Js
+
+<div class="sm-search-row @Class" role="search">
+    <div class="sm-search">
+        <Icon Name="@IconNames.Search" Size="18" />
+        <input @ref="_input" type="search" placeholder="@(Placeholder ?? L["common.search"])" aria-label="@(Placeholder ?? L["common.search"])"
+               enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" dir="auto"
+               @bind:get="_text" @bind:set="OnInput" @bind:event="oninput" @onkeydown="OnKeyDown" @onfocus="OnFocus" />
+        @if (!string.IsNullOrEmpty(_text))
+        {
+            <IconButton Icon="@IconNames.X" Label="@L["common.clear"]" OnClick="ClearAsync" />
+        }
+        else if (Busy)
+        {
+            <Spinner Size="18" Class="sm-mr-s" />
+        }
+    </div>
+    @if (ShowCancel)
+    {
+        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="CancelAsync">@L["common.cancel"]</Button>
+    }
+</div>
+
+@code {
+    private ElementReference _input;
+    private CancellationTokenSource? _debounce;
+    // Bound with @bind:get/set so delayed WebView events never write older text back over newer typing (see TextField).
+    private string? _text;
+    private string? _lastValue;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    /// <summary>Raised after typing pauses for <see cref="DebounceMs"/> (or right away on Enter / clear).</summary>
+    [Parameter] public EventCallback<string> OnSearch { get; set; }
+    [Parameter] public int DebounceMs { get; set; } = 300;
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public bool Autofocus { get; set; }
+    /// <summary>Shows a "Cancel" button next to the field.</summary>
+    [Parameter] public bool ShowCancel { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback OnFocused { get; set; }
+    /// <summary>Small spinner while results load.</summary>
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    public ValueTask FocusAsync() => Js.FocusAsync(_input);
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(Value, _lastValue, StringComparison.Ordinal)) _text = _lastValue = Value;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Autofocus) await Js.FocusAsync(_input);
+    }
+
+    private async Task OnInput(string? value)
+    {
+        var text = _text = _lastValue = value ?? "";
+        await ValueChanged.InvokeAsync(text);
+        Schedule(text);
+    }
+
+    private void Schedule(string text)
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        var cts = _debounce = new CancellationTokenSource();
+        _ = DebounceAsync(text, cts.Token);
+    }
+
+    private async Task DebounceAsync(string text, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(DebounceMs, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        await InvokeAsync(() => OnSearch.InvokeAsync(text));
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.IsComposing)
+        {
+            _debounce?.Cancel();
+            await OnSearch.InvokeAsync(_text ?? "");
+        }
+    }
+
+    private Task OnFocus() => OnFocused.InvokeAsync();
+
+    private async Task ClearAsync()
+    {
+        _debounce?.Cancel();
+        _text = _lastValue = "";
+        await ValueChanged.InvokeAsync("");
+        await OnSearch.InvokeAsync("");
+        await Js.FocusAsync(_input);
+    }
+
+    private async Task CancelAsync()
+    {
+        _debounce?.Cancel();
+        _text = _lastValue = "";
+        await ValueChanged.InvokeAsync("");
+        await OnCancel.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+    }
+}

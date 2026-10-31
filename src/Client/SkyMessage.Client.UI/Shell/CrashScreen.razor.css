@@ -1,0 +1,33 @@
+.crash {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sm-sky) var(--sm-bg);
+    padding: calc(16px + var(--sm-inset-top)) 16px calc(16px + var(--sm-inset-bottom));
+    overflow-y: auto;
+}
+
+.crash--compact {
+    position: relative;
+    z-index: auto;
+    inset: auto;
+    flex: 1 1 auto;
+    height: 100%;
+    background: transparent;
+    padding: 16px;
+}
+
+/* Above the sky. */
+.crash__content {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 440px;
+}
+
+.crash ::deep .crash__art {
+    margin-bottom: 4px;
+}

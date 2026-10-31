@@ -1,0 +1,43 @@
+/* Over the shell's sky (the content area is transparent until a chat opens). */
+.chat-placeholder {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 24px;
+}
+
+.chat-placeholder__card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 380px;
+    padding: 34px 36px 32px;
+    border-radius: var(--sm-radius-2xl);
+    text-align: center;
+    overflow: hidden;
+    animation: sm-dialog-in var(--sm-dur-xslow) var(--sm-spring-soft) backwards;
+}
+
+.chat-placeholder__logo {
+    position: relative;
+    margin-bottom: 8px;
+}
+
+.chat-placeholder__title {
+    position: relative;
+    font-family: var(--sm-font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+}
+
+.chat-placeholder__text {
+    position: relative;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}

@@ -1,0 +1,38 @@
+<div class="sm-empty @(Fill ? "sm-empty--fill" : null) @Class">
+    @if (Art is not null)
+    {
+        @Art
+    }
+    else if (Icon is not null)
+    {
+        <div class="sm-empty__art" aria-hidden="true">
+            <Icon Name="@Icon" />
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div class="sm-empty__title">@Title</div>
+    }
+    @if (!string.IsNullOrEmpty(Text))
+    {
+        <div class="sm-empty__text">@Text</div>
+    }
+    @ChildContent
+    @if (Actions is not null)
+    {
+        <div class="sm-empty__actions">@Actions</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Text { get; set; }
+    /// <summary>Custom illustration instead of the icon circle.</summary>
+    [Parameter] public RenderFragment? Art { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    /// <summary>Grow to fill the parent and center vertically.</summary>
+    [Parameter] public bool Fill { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

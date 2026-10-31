@@ -1,0 +1,46 @@
+@page "/welcome"
+@attribute [AnonymousPage]
+@* First screen for signed-out users: the brand (logo, wordmark, a warm tagline), what SkyMessage is, sign in / create
+   account and which server. Everything rises in one after another. *@
+@inject NavigationService Nav
+
+<div class="auth-page welcome sm-stagger @(_intro ? "welcome--intro" : null)">
+    <AuthHeader Title="SkyMessage" Subtitle="@L["auth.welcome.tagline"]" Intro="_intro" />
+
+    @if (Nav.PendingDeepLink is not null)
+    {
+        <div class="welcome__notice">
+            <span class="welcome__notice-icon"><Icon Name="@IconNames.Link" Size="18" /></span>
+            <span>@L["auth.welcome.pendingLink"]</span>
+        </div>
+    }
+
+    <ul class="welcome__features sm-card">
+        <li class="welcome__feature">
+            <span class="sm-list-item__icon welcome__tile" style="--icon-bg:@SettingsTones.Violet"><Icon Name="@IconNames.MessageCircle" /></span>
+            <span>@L["auth.welcome.feature.chats"]</span>
+        </li>
+        <li class="welcome__feature">
+            <span class="sm-list-item__icon welcome__tile" style="--icon-bg:@SettingsTones.Mint"><Icon Name="@IconNames.Video" /></span>
+            <span>@L["auth.welcome.feature.calls"]</span>
+        </li>
+        <li class="welcome__feature">
+            <span class="sm-list-item__icon welcome__tile" style="--icon-bg:@SettingsTones.Peach"><Icon Name="@IconNames.ShieldCheck" /></span>
+            <span>@L["auth.welcome.feature.private"]</span>
+        </li>
+    </ul>
+
+    <div class="welcome__buttons">
+        <Button Block="true" Size="ButtonSize.Large" Icon="@IconNames.LogIn" OnClick="@(() => Nav.NavigateTo("/login"))">@L["auth.signIn"]</Button>
+        <Button Block="true" Size="ButtonSize.Large" Variant="ButtonVariant.Secondary" Icon="@IconNames.UserRoundPlus" OnClick="@(() => Nav.NavigateTo("/register"))">@L["auth.createAccount"]</Button>
+    </div>
+
+    <ServerStatus />
+</div>
+
+@code {
+    // The first signed-out screen of the app run plays the intro; later visits only rise in.
+    private readonly bool _intro = AuthIntro.TakeFirst();
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+}

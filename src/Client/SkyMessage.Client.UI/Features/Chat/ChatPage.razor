@@ -1,0 +1,886 @@
+@page "/chat/{ChatId:guid}"
+@* The chat screen. Owns IChatListStore.ActiveChatId while it is on screen (cleared while another page covers it, see
+   ShellContext.IsCovered), opens the message window (or jumps to ?seq= from search, then catches up), and wires the
+   header, the group call banner, pinned messages, in-chat search, the message list, selection mode, the message menu,
+   the media viewer and the composer. On wide screens MainLayout renders it itself and keeps it mounted under
+   info/media/profile pages. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Media
+@inject IChatListStore ChatList
+@inject IMessageStore Messages
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject IRealtimeService Realtime
+@inject ICallService Calls
+@inject IMediaDownloadService Downloads
+@inject ISettingsService Settings
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ShareHelper Share
+@inject HapticFeedback Haptics
+@inject LayoutService Layout
+@inject EmojiCatalog Emoji
+@inject FormatService Format
+@inject AppJs AppJs
+@inject IJSRuntime JS
+@inject ILogger<ChatPage> Logger
+
+<CascadingValue Value="_controller" IsFixed="true">
+    @* Layers: the chat sky, the message list (full height), and the floating chrome over it: the top stack (header —
+       or the selection / search capsule in its place —, the group call banner, the pinned strip) and the composer.
+       chat.js attachChrome publishes the chrome's sizes (--chat-stack-h / --chat-bottom-h; ChatPage.razor.css derives
+       --chat-top-h from them), which the list pads itself by. *@
+    <div class="chat @(_selecting ? "chat--selecting" : null)" @ref="_root" data-chat-root>
+        @* A calm sky to read over: the drifting light and (at night) the stars (the kit's defaults: no comet). *@
+        <SkyBackdrop Variant="SkyVariant.Chat" Class="chat__sky" />
+        <div class="chat__top" data-chat-top>
+            @if (_selecting)
+            {
+                <div class="chat-select" role="toolbar" aria-label="@L.Plural("chat.select.count", _selected.Count)">
+                    <IconButton Icon="@IconNames.X" Label="@L["chat.select.cancel"]" Size="40" OnClick="ExitSelectionAsync" Class="chat-select__close" />
+                    <span class="chat-select__count" aria-live="polite">
+                        @* Keyed by the count: a changed number pops in again. *@
+                        <span @key="_selected.Count" class="chat-select__num sm-nums">@_selected.Count</span>
+                        <span class="chat-select__label">@L["chat.select.title"]</span>
+                    </span>
+                    <span class="chat-select__spacer"></span>
+                    <IconButton Icon="@IconNames.Copy" Label="@L["common.copy"]" Size="40" Disabled="@(!SelectedItems.Any(MessageRules.CanCopy))" OnClick="CopySelectedAsync" />
+                    <IconButton Icon="@IconNames.Forward" Label="@L["chat.menu.forward"]" Size="40" Disabled="@(SelectedItems.Count == 0 || !SelectedItems.All(MessageRules.CanForward))" OnClick="ForwardSelectedAsync" />
+                    <IconButton Icon="@IconNames.Trash2" Label="@L["common.delete"]" Size="40" Variant="IconButtonVariant.Danger" Disabled="@(SelectedItems.Count == 0)" OnClick="DeleteSelectedAsync" />
+                </div>
+            }
+            else if (_searchOpen)
+            {
+                <ChatSearchBar ChatId="ChatId" OnClose="CloseSearchAsync" OnJump="JumpToSeqAsync" />
+            }
+            else
+            {
+                <ChatHeader Chat="_chat" ChatId="ChatId" Back="@(Shell?.IsPhone ?? true)" OnSearch="OpenSearchAsync" OnSelect="() => EnterSelectionAsync(null)"
+                            Class="@(_headerReturns ? "chead--return" : null)" />
+            }
+            <GroupCallBanner ChatId="ChatId" />
+            @if (!_selecting)
+            {
+                <PinnedBar ChatId="ChatId" CanUnpin="@(_chat?.CanPinMessages() == true)" OnOpen="OpenPinnedAsync" />
+            }
+        </div>
+        @if (_unavailable is { } reason)
+        {
+            <div class="chat__body chat__body--empty">
+                <EmptyState Icon="@IconNames.MessageCircleOff" Title="@reason" Fill="true">
+                    <Actions><Button OnClick="@(() => Nav.NavigateTo("/", replace: true))">@L["chat.unavailable.toList"]</Button></Actions>
+                </EmptyState>
+            </div>
+        }
+        else
+        {
+            <div class="chat__body">
+                <ErrorBoundary @ref="_listBoundary">
+                    <ChildContent>
+                        <MessageList @ref="_list" ChatId="ChatId" Chat="_chat" SelectionMode="_selecting" Selected="_selected" Active="IsActive"
+                                     LiftedKey="_menuItem?.Key" OnGreet="GreetAsync" OnSwipeReplyRequested="SwipeReplyAsync" />
+                    </ChildContent>
+                    <ErrorContent Context="error">
+                        <CrashScreen Exception="error" Compact="true" OnRetry="RecoverList" />
+                    </ErrorContent>
+                </ErrorBoundary>
+                <div class="chat__drop" aria-hidden="true">
+                    <span class="chat__drop-art"><Icon Name="@IconNames.ImagePlus" Size="34" /></span>
+                    <span>@L["chat.drop"]</span>
+                </div>
+            </div>
+        }
+        @* Always in the DOM (attachChrome measures it); the composer itself is kept mounted (only hidden) in selection
+           mode so text, reply, tray and recorder survive. *@
+        <div class="chat__composer" data-chat-bottom hidden="@(_selecting || _unavailable is not null)">
+            @if (_unavailable is null)
+            {
+                <Composer @ref="_composer" ChatId="ChatId" Chat="_chat" OnSent="OnSentAsync" OnEditLast="EditLastAsync" OnJumpTo="JumpToSeqAsync" />
+            }
+        </div>
+    </div>
+</CascadingValue>
+
+<ContextMenu @ref="_menu" Class="msg-menu" OnClosed="() => _menuItem = null">
+    <Header>
+        @if (_menuItem is { } item && MessageRules.CanReact(item) && (_chat?.CanSendMessages() ?? true))
+        {
+            @* Scrolls sideways on narrow screens: not a swipe back. *@
+            <div class="msg-menu__reactions" data-no-swipe-back>
+                @foreach (var emoji in QuickReactions)
+                {
+                    var value = emoji;
+                    <button type="button" class="msg-menu__emoji sm-emoji @(MyReaction(item) == value ? "msg-menu__emoji--mine" : null)" title="@value" aria-label="@value"
+                            @onclick="() => ReactFromMenuAsync(item, value)">@value</button>
+                }
+                <button type="button" class="msg-menu__more" title="@L["chat.react.more"]" aria-label="@L["chat.react.more"]" @onclick="() => MoreReactionsAsync(item)">
+                    <Icon Name="@IconNames.SmilePlus" Size="20" />
+                </button>
+            </div>
+        }
+    </Header>
+    <ChildContent>
+        @if (_menuItem is { } item)
+        {
+            var message = item.Message;
+            var me = Auth.UserId ?? Guid.Empty;
+            if (item.IsPending)
+            {
+                if (item.SendState is MessageSendState.Failed or MessageSendState.Queued)
+                {
+                    <MenuItem Icon="@IconNames.RotateCw" Label="@L["chat.pending.retry"]" OnClick="() => RetryAsync(item)" />
+                }
+                if (MessageRules.CanEdit(item, me, DateTimeOffset.UtcNow) && !string.IsNullOrEmpty(message.Text))
+                {
+                    <MenuItem Icon="@IconNames.Pencil" Label="@L["common.edit"]" OnClick="() => BeginEditAsync(item)" />
+                }
+                if (MessageRules.CanCopy(item))
+                {
+                    <MenuItem Icon="@IconNames.Copy" Label="@L["common.copy"]" OnClick="() => CopyAsync([item])" />
+                }
+                <MenuDivider />
+                <MenuItem Icon="@IconNames.Trash2" Label="@L["chat.pending.delete"]" Danger="true" OnClick="() => Messages.CancelAsync(ChatId, item.Key)" />
+            }
+            else
+            {
+                if (MessageRules.CanReply(item) && (_chat?.CanSendMessages() ?? true))
+                {
+                    <MenuItem Icon="@IconNames.Reply" Label="@L["chat.menu.reply"]" OnClick="() => ReplyToAsync(item)" />
+                }
+                if (MessageRules.CanCopy(item))
+                {
+                    <MenuItem Icon="@IconNames.Copy" Label="@L["common.copy"]" OnClick="() => CopyAsync([item])" />
+                }
+                if (MessageRules.CanEdit(item, me, DateTimeOffset.UtcNow))
+                {
+                    <MenuItem Icon="@IconNames.Pencil" Label="@L["common.edit"]" OnClick="() => BeginEditAsync(item)" />
+                }
+                if (_chat is { } chat && MessageRules.CanPin(item, chat))
+                {
+                    <MenuItem Icon="@(message.IsPinned ? IconNames.PinOff : IconNames.Pin)" Label="@(message.IsPinned ? L["chat.menu.unpin"] : L["chat.menu.pin"])"
+                              OnClick="() => TogglePinAsync(item)" />
+                }
+                if (MessageRules.CanForward(item))
+                {
+                    <MenuItem Icon="@IconNames.Forward" Label="@L["chat.menu.forward"]" OnClick="() => ForwardAsync([item.Message])" />
+                }
+                if (MessageRules.HasSavableMedia(message))
+                {
+                    <MenuItem Icon="@IconNames.Download" Label="@L["chat.menu.save"]" OnClick="() => SaveMediaAsync(message)" />
+                }
+                <MenuItem Icon="@IconNames.ListChecks" Label="@L["chat.menu.select"]" OnClick="() => EnterSelectionAsync(item)" />
+                <MenuDivider />
+                <MenuItem Icon="@IconNames.Trash2" Label="@L["common.delete"]" Danger="true" OnClick="() => DeleteAsync([item])" />
+            }
+        }
+    </ChildContent>
+</ContextMenu>
+
+<MediaViewer @ref="_viewer" OnForward="ForwardFromViewerAsync" OnOpenChanged="open => _viewerOpen = open" />
+
+@code {
+    private readonly ChatController _controller = new();
+    private readonly HashSet<Guid> _selected = [];
+    private ElementReference _root;
+    private MessageList? _list;
+    private Composer? _composer;
+    private ContextMenu? _menu;
+    private MediaViewer? _viewer;
+    private ErrorBoundary? _listBoundary;
+    private JsModule? _module;
+    private JsObject? _shortcuts;
+    private JsObject? _dropZone;
+    private JsObject? _chrome;
+    /// <summary>The header made way for selection or search once: when it comes back it eases in.</summary>
+    private bool _headerReturns;
+    private DotNetObjectReference<ChatPage>? _self;
+    private ChatSummaryDto? _chat;
+    private MessageItem? _menuItem;
+    private Guid _openedFor;
+    private long? _handledSeq;
+    /// <summary>The ?seq= seen last (null included): a change is a new jump request unless it came from Back.</summary>
+    private long? _seenSeq;
+    private bool _visible = true;
+    private bool _viewerOpen;
+    private bool _openedPending;
+    private bool _selecting;
+    private OverlayHandle? _selectOverlay;
+    private bool _searchOpen;
+    private OverlayHandle? _searchOverlay;
+    private string? _unavailable;
+
+    [Parameter] public Guid ChatId { get; set; }
+    /// <summary>Jump target from search ("/chat/{id}?seq=123").</summary>
+    [SupplyParameterFromQuery(Name = "seq")] public long? Seq { get; set; }
+    [CascadingParameter] public ShellContext? Shell { get; set; }
+
+    /// <summary>The list is really seen: not under another page, nor under the full-screen media viewer (read marks, autoplay).</summary>
+    // Not while the media viewer or the full-size call screen covers the chat (nothing is marked read underneath).
+    private bool IsActive => _visible && !_viewerOpen && !CallUi.IsCovering;
+
+    private IReadOnlyList<MessageItem> SelectedItems =>
+        Messages.GetState(ChatId).Items.Where(i => _selected.Contains(i.Key)).ToList();
+
+    private IEnumerable<string> QuickReactions
+    {
+        get
+        {
+            var quick = Settings.Current.Chats.QuickReaction;
+            var list = new List<string>(8);
+            if (!string.IsNullOrWhiteSpace(quick)) list.Add(quick);
+            foreach (var emoji in Emoji.QuickReactions)
+            {
+                if (list.Count >= (Layout.IsPhone ? 6 : 7)) break;
+                if (!list.Contains(emoji)) list.Add(emoji);
+            }
+            return list;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _controller.ShowMenuAsync = ShowMenuAsync;
+        _controller.JumpToSeqAsync = JumpToSeqAsync;
+        _controller.JumpToMessageAsync = JumpToMessageAsync;
+        _controller.OpenMediaAsync = OpenMediaAsync;
+        _controller.ToggleSelectAsync = ToggleSelectAsync;
+        _controller.PendingActionsAsync = PendingActionsAsync;
+        _controller.CancelSendAsync = item => Messages.CancelAsync(ChatId, item.Key);
+        _controller.OpenUserAsync = id =>
+        {
+            Nav.OpenUser(id);
+            return Task.CompletedTask;
+        };
+        _controller.CallAsync = CallAsync;
+        _controller.JoinCallAsync = JoinCallAsync;
+        _controller.ToggleReactionAsync = ToggleReactionAsync;
+
+        Action chats = () =>
+        {
+            var current = ChatList.Get(ChatId);
+            if (current is null || ReferenceEquals(current, _chat)) return;
+            _chat = current;
+            RequestRender();
+        };
+        ChatList.Changed += chats;
+        OnDispose(() => ChatList.Changed -= chats);
+
+        Action<ChatRefEvent> removed = e =>
+        {
+            if (e.ChatId != ChatId) return;
+            _ = InvokeAsync(() =>
+            {
+                _unavailable = L["chat.unavailable.removed"];
+                StateHasChanged();
+            });
+        };
+        Realtime.ChatRemoved += removed;
+        OnDispose(() => Realtime.ChatRemoved -= removed);
+        RenderOn(h => CallUi.CoveringChanged += h, h => CallUi.CoveringChanged -= h);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _controller.ChatId = ChatId;
+        ApplyCovered();
+        if (ChatId != _openedFor)
+        {
+            _openedFor = ChatId;
+            // Opening handles a ?seq= target itself (OpenAtSeqAsync).
+            _handledSeq = _seenSeq = Seq;
+            await OpenChatAsync();
+        }
+        else if (Seq != _seenSeq)
+        {
+            _seenSeq = Seq;
+            // Every new ?seq= jumps ("Show in chat" for the same message again too: the URL lost ?seq= on the media
+            // page in between). Back to an entry with ?seq= (from info, media or a profile over this chat) keeps the
+            // position the user left. NavigationService sees the location change before this page does.
+            if (Seq is { } seq && Nav.LastDirection != NavDirection.Back)
+            {
+                _handledSeq = seq;
+                _ = JumpToSeqAsync(seq);
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            _module = new JsModule(JS, JsModule.Chat);
+            _chrome = await _module.AttachAsync("attachChrome", _root);
+            _shortcuts = await _module.AttachAsync("attachShortcuts", _root, _self);
+            _dropZone = await _module.AttachAsync("attachDropZone", _root, _self);
+            if (!_visible) await _shortcuts.InvokeVoidAsync("setActive", false);
+        }
+        if (_openedPending && _list is not null)
+        {
+            _openedPending = false;
+            _list.Opened();
+        }
+    }
+
+    // ---- Opening, covering ----
+
+    private async Task OpenChatAsync()
+    {
+        _unavailable = null;
+        _chat = ChatList.Get(ChatId);
+        if (_chat is null)
+        {
+            try
+            {
+                _chat = await ChatList.GetOrFetchAsync(ChatId);
+                if (_chat is null) _unavailable = L["chat.unavailable.notFound"];
+            }
+            catch (Exception ex)
+            {
+                // Offline with nothing cached: the window may still come from the local cache.
+                Logger.LogDebug(ex, "Chat summary not loaded");
+            }
+        }
+        if (_unavailable is not null) return;
+        _ = LoadPinnedAsync();
+        _ = Seq is { } seq ? OpenAtSeqAsync(seq) : OpenMessagesAsync();
+    }
+
+    private async Task OpenMessagesAsync()
+    {
+        try
+        {
+            await Messages.OpenAsync(ChatId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Opening the chat window failed");
+        }
+        await InvokeAsync(async () =>
+        {
+            if (_list is not null) _list.Opened();
+            else _openedPending = true;
+            if (_composer is not null) await _composer.ResolveDraftReplyAsync();
+        });
+    }
+
+    /// <summary>
+    /// Opening at a search hit (?seq=): jump first (into the cached window, or a page around the message), then open the
+    /// window like a normal open when it sits at the newest message, so a stale cached window catches up (new messages,
+    /// edits, deletions) instead of staying stale. Should that open start the window over, the jump is repeated.
+    /// </summary>
+    private async Task OpenAtSeqAsync(long seq)
+    {
+        await JumpToSeqAsync(seq);
+        try
+        {
+            if (!Messages.GetState(ChatId).HasMoreAfter)
+            {
+                await Messages.OpenAsync(ChatId);
+                var state = Messages.GetState(ChatId);
+                // Not when a newer ?seq= target came meanwhile (it jumps on its own).
+                if (_handledSeq == seq && state.IsInitialized && !Covers(state.Items, seq)) await Messages.JumpToAsync(ChatId, seq);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Opening the chat window failed");
+        }
+        await InvokeAsync(async () =>
+        {
+            if (_composer is not null) await _composer.ResolveDraftReplyAsync();
+        });
+    }
+
+    /// <summary>Is <paramref name="seq"/> inside the range of confirmed messages held (ascending, pending ones last)?</summary>
+    private static bool Covers(IReadOnlyList<MessageItem> items, long seq)
+    {
+        long min = 0, max = 0;
+        foreach (var item in items)
+        {
+            if (item.Message.Seq <= 0) continue;
+            if (min == 0) min = item.Message.Seq;
+            max = item.Message.Seq;
+        }
+        return min > 0 && seq >= min && seq <= max;
+    }
+
+    private async Task LoadPinnedAsync()
+    {
+        try
+        {
+            await Messages.LoadPinnedAsync(ChatId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Pinned messages not loaded");
+        }
+    }
+
+    /// <summary>ShellContext rule: a chat hidden under another page is not "active" (notifications, reads, autoplay).</summary>
+    private void ApplyCovered()
+    {
+        var visible = Shell?.IsCovered != true;
+        if (visible) ChatList.ActiveChatId = ChatId;
+        else if (ChatList.ActiveChatId == ChatId) ChatList.ActiveChatId = null;
+        if (visible == _visible) return;
+        _visible = visible;
+        if (_shortcuts is not null) _ = _shortcuts.InvokeVoidAsync("setActive", visible);
+        if (_dropZone is not null) _ = _dropZone.InvokeVoidAsync("setEnabled", visible);
+    }
+
+    private void RecoverList() => _listBoundary?.Recover();
+
+    // ---- JS callbacks ----
+
+    [JSInvokable]
+    public Task OnFindKey() => InvokeAsync(OpenSearchAsync);
+
+    [JSInvokable]
+    public Task OnFiles(JsBlobInfo[] files) => InvokeAsync(() =>
+    {
+        if (_composer is null || files.Length == 0) return Task.CompletedTask;
+        return _composer.AddFilesAsync(files.Select(f => JsBlobFile.Create(JS, f)).ToList());
+    });
+
+    // ---- Navigation inside the chat ----
+
+    private async Task JumpToSeqAsync(long seq)
+    {
+        try
+        {
+            await Messages.JumpToAsync(ChatId, seq);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task JumpToMessageAsync(Guid messageId)
+    {
+        var item = Messages.Find(ChatId, messageId);
+        if (item is { IsPending: false, Message.Seq: > 0 }) await JumpToSeqAsync(item.Message.Seq);
+        else Toasts.Info(L["chat.jump.notFound"]);
+    }
+
+    private Task OpenPinnedAsync(MessageDto message) => JumpToSeqAsync(message.Seq);
+
+    private async Task OnSentAsync()
+    {
+        if (_list is null) return;
+        _list.HideUnreadDivider();
+        await _list.ScrollToLatestAsync(false);
+    }
+
+    private async Task GreetAsync()
+    {
+        await Messages.SendTextAsync(ChatId, "👋");
+        await OnSentAsync();
+    }
+
+    // ---- Search (an overlay: Back closes it) ----
+
+    private async Task OpenSearchAsync()
+    {
+        if (_selecting) return;
+        if (_searchOpen)
+        {
+            StateHasChanged();
+            return;
+        }
+        _searchOpen = true;
+        _headerReturns = true;
+        StateHasChanged();
+        _searchOverlay = await Nav.OpenOverlayAsync(() => InvokeAsync(() =>
+        {
+            _searchOverlay = null;
+            _searchOpen = false;
+            StateHasChanged();
+        }));
+        if (!_searchOpen) await CloseSearchOverlayAsync();
+    }
+
+    private async Task CloseSearchAsync()
+    {
+        _searchOpen = false;
+        StateHasChanged();
+        await CloseSearchOverlayAsync();
+        if (_composer is not null && !Layout.IsTouch) await _composer.FocusAsync();
+    }
+
+    // ---- Selection mode (an overlay: Back leaves it) ----
+
+    private async Task EnterSelectionAsync(MessageItem? first)
+    {
+        if (_searchOpen) await CloseSearchAsync();
+        _selected.Clear();
+        if (first is not null) _selected.Add(first.Key);
+        if (_selecting)
+        {
+            StateHasChanged();
+            return;
+        }
+        _selecting = true;
+        _headerReturns = true;
+        Haptics.Selection();
+        await AppJs.BlurActiveAsync();
+        StateHasChanged();
+        _selectOverlay = await Nav.OpenOverlayAsync(() => InvokeAsync(() =>
+        {
+            _selectOverlay = null;
+            _selecting = false;
+            _selected.Clear();
+            StateHasChanged();
+        }));
+        if (!_selecting) await CloseSelectOverlayAsync();
+    }
+
+    private async Task ExitSelectionAsync()
+    {
+        _selecting = false;
+        _selected.Clear();
+        StateHasChanged();
+        await CloseSelectOverlayAsync();
+    }
+
+    private Task ToggleSelectAsync(MessageItem item)
+    {
+        if (!_selecting || item.Message.Type == MessageType.System) return Task.CompletedTask;
+        if (!_selected.Remove(item.Key)) _selected.Add(item.Key);
+        Haptics.Selection();
+        StateHasChanged();
+        return _selected.Count == 0 ? ExitSelectionAsync() : Task.CompletedTask;
+    }
+
+    private async Task CopySelectedAsync()
+    {
+        var items = SelectedItems.OrderBy(i => i.Message.Seq == 0 ? long.MaxValue : i.Message.Seq).ToList();
+        await CopyAsync(items);
+        await ExitSelectionAsync();
+    }
+
+    private async Task ForwardSelectedAsync()
+    {
+        var messages = SelectedItems.Where(MessageRules.CanForward).Select(i => i.Message).ToList();
+        if (messages.Count == 0) return;
+        if (await ForwardAsync(messages)) await ExitSelectionAsync();
+    }
+
+    private async Task DeleteSelectedAsync()
+    {
+        var items = SelectedItems;
+        if (items.Count == 0) return;
+        if (await DeleteAsync(items)) await ExitSelectionAsync();
+    }
+
+    private static Task CloseHandleAsync(OverlayHandle? handle) =>
+        handle is { IsOpen: true } ? handle.CloseAsync() : Task.CompletedTask;
+
+    private Task CloseSearchOverlayAsync()
+    {
+        var handle = _searchOverlay;
+        _searchOverlay = null;
+        return CloseHandleAsync(handle);
+    }
+
+    private Task CloseSelectOverlayAsync()
+    {
+        var handle = _selectOverlay;
+        _selectOverlay = null;
+        return CloseHandleAsync(handle);
+    }
+
+    // ---- Message menu and actions ----
+
+    private async Task ShowMenuAsync(MessageItem item, MenuPosition position)
+    {
+        if (_menu is null || item.Message.Type == MessageType.System || _selecting) return;
+        _menuItem = item;
+        StateHasChanged();
+        await _menu.OpenAsync(position);
+    }
+
+    private string? MyReaction(MessageItem item) =>
+        Messages.GetState(ChatId).MyReactions.TryGetValue(item.Message.Id, out var emoji) ? emoji : null;
+
+    private async Task ToggleReactionAsync(MessageItem item, string emoji)
+    {
+        if (item.IsPending || item.Message.Seq <= 0) return;
+        var next = MyReaction(item) == emoji ? null : emoji;
+        Haptics.Selection();
+        try
+        {
+            await Messages.SetReactionAsync(ChatId, item.Message.Id, next);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task ReactFromMenuAsync(MessageItem item, string emoji)
+    {
+        if (_menu is not null) await _menu.CloseAsync();
+        await ToggleReactionAsync(item, emoji);
+    }
+
+    private async Task MoreReactionsAsync(MessageItem item)
+    {
+        if (_menu is not null) await _menu.CloseAsync();
+        var result = await Dialogs.ShowAsync<ReactionPickerDialog>(L["chat.react.title"], null,
+            new DialogOptions { Size = DialogSize.Medium, Flush = true, Presentation = OverlayPresentation.Auto });
+        if (result is string emoji && !string.IsNullOrWhiteSpace(emoji))
+        {
+            if (MyReaction(item) == emoji) return;
+            await ToggleReactionAsync(item, emoji);
+        }
+    }
+
+    private async Task ReplyToAsync(MessageItem item)
+    {
+        if (_composer is null || !MessageRules.CanReply(item)) return;
+        Haptics.Selection();
+        await _composer.ReplyToAsync(item.Message);
+    }
+
+    /// <summary>Swipe to reply: the swipe already ticked when it crossed its trigger.</summary>
+    private async Task SwipeReplyAsync(MessageItem item)
+    {
+        if (_composer is null || !MessageRules.CanReply(item)) return;
+        await _composer.ReplyToAsync(item.Message);
+    }
+
+    private async Task BeginEditAsync(MessageItem item)
+    {
+        if (_composer is not null) await _composer.BeginEditAsync(item);
+    }
+
+    private async Task EditLastAsync()
+    {
+        var me = Auth.UserId ?? Guid.Empty;
+        var now = DateTimeOffset.UtcNow;
+        var item = Messages.GetState(ChatId).Items.LastOrDefault(i => !string.IsNullOrEmpty(i.Message.Text) && MessageRules.CanEdit(i, me, now));
+        if (item is not null) await BeginEditAsync(item);
+    }
+
+    private async Task CopyAsync(IReadOnlyList<MessageItem> items)
+    {
+        var texts = items.Where(MessageRules.CanCopy).ToList();
+        if (texts.Count == 0) return;
+        string text;
+        if (texts.Count == 1)
+        {
+            text = texts[0].Message.Text ?? "";
+        }
+        else
+        {
+            var lines = texts.Select(i =>
+            {
+                var name = i.Message.SenderId is { } sender ? Users.NameOf(sender, L) : "";
+                return $"{name} [{Format.DateTime(i.Message.CreatedAt)}]:\n{i.Message.Text}";
+            });
+            text = string.Join("\n\n", lines);
+        }
+        await Share.CopyAsync(text, L["chat.copied"]);
+    }
+
+    private async Task TogglePinAsync(MessageItem item)
+    {
+        var pin = !item.Message.IsPinned;
+        try
+        {
+            await Messages.SetPinnedAsync(ChatId, item.Message.Id, pin);
+            Toasts.Success(pin ? L["chat.toast.pinned"] : L["chat.toast.unpinned"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    /// <summary>Forward dialog → store. True when something was forwarded.</summary>
+    private async Task<bool> ForwardAsync(IReadOnlyList<MessageDto> messages)
+    {
+        var result = await Dialogs.ShowAsync<ForwardDialog>(L["chat.forward.title"], null,
+            new DialogOptions { Size = DialogSize.Medium, Flush = true, Presentation = OverlayPresentation.Auto });
+        if (result is not IReadOnlyList<Guid> { Count: > 0 } targets) return false;
+        var ids = messages.OrderBy(m => m.Seq).Select(m => m.Id).ToList();
+        foreach (var target in targets)
+        {
+            try
+            {
+                await Messages.ForwardAsync(ChatId, ids, target);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+                return false;
+            }
+        }
+        Haptics.Success();
+        if (targets.Count == 1 && targets[0] != ChatId) Nav.OpenChat(targets[0]);
+        else Toasts.Success(L["chat.forward.done"]);
+        return true;
+    }
+
+    private async Task ForwardFromViewerAsync(MediaViewerItem item) => await ForwardAsync([item.Message]);
+
+    private async Task SaveMediaAsync(MessageDto message)
+    {
+        var media = message.Attachments.Where(a => a.Status == MediaStatus.Ready).ToList();
+        if (media.Count == 0) return;
+        var saved = 0;
+        foreach (var attachment in media)
+        {
+            try
+            {
+                if (await Downloads.SaveToDeviceAsync(attachment)) saved++;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+                return;
+            }
+        }
+        if (saved > 0) Toasts.Success(saved > 1 ? L.Format("chat.toast.savedMany", saved) : L["chat.toast.saved"]);
+    }
+
+    /// <summary>Delete dialog (with "for everyone" when allowed) → store. True when deleted.</summary>
+    private async Task<bool> DeleteAsync(IReadOnlyList<MessageItem> items)
+    {
+        if (items.Count == 0) return false;
+        var me = Auth.UserId ?? Guid.Empty;
+        var chat = _chat;
+        var confirmed = items.Where(i => !i.IsPending).ToList();
+        var canEveryone = chat is not null && chat.Type != ChatType.Saved && confirmed.Count > 0
+                          && confirmed.All(i => chat.CanDeleteForEveryone(me, i.Message.SenderId));
+        string? checkbox = null;
+        if (canEveryone)
+        {
+            checkbox = chat!.Type == ChatType.Private && chat.Peer is { } peer && !(Users.Get(peer.Id) ?? peer).IsDeleted
+                ? L.Format("chat.delete.alsoFor", FormatService.FirstName(ChatList.TitleOf(chat)))
+                : L["chat.delete.forEveryone"];
+        }
+        var result = await Dialogs.ConfirmAsync(new ConfirmOptions
+        {
+            Title = L.Plural("chat.delete.title", items.Count),
+            Message = chat?.Type == ChatType.Saved ? L["chat.delete.savedText"] : L["chat.delete.text"],
+            ConfirmText = L["common.delete"],
+            Danger = true,
+            CheckboxLabel = checkbox,
+        });
+        if (!result.Confirmed) return false;
+        var forEveryone = chat?.Type == ChatType.Saved || (canEveryone && result.Checked);
+        try
+        {
+            await Messages.DeleteAsync(ChatId, items.Select(i => i.IsPending ? i.Key : i.Message.Id).ToList(), forEveryone);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return false;
+        }
+    }
+
+    private async Task PendingActionsAsync(MessageItem item)
+    {
+        var options = new List<ChoiceOption<int>>
+        {
+            new(1, L["chat.pending.retry"]) { Icon = IconNames.RotateCw },
+            new(2, L["chat.pending.delete"]) { Icon = IconNames.Trash2, Danger = true },
+        };
+        var reason = item.SendState == MessageSendState.Queued ? L["chat.pending.queuedText"] : PendingError(item.Error);
+        var choice = await Dialogs.ChooseAsync(L["chat.pending.title"], options, reason);
+        if (choice is null) return;
+        if (choice.Value == 1) await RetryAsync(item);
+        else await Messages.CancelAsync(ChatId, item.Key);
+    }
+
+    private string PendingError(string? code) => code switch
+    {
+        "attachment_unavailable" => L["chat.pending.attachmentUnavailable"],
+        "transfer_stalled" => L["chat.pending.stalled"],
+        null or "" => L["chat.pending.failedText"],
+        _ => L.Error(code),
+    };
+
+    private async Task RetryAsync(MessageItem item)
+    {
+        try
+        {
+            await Messages.RetryAsync(ChatId, item.Key);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    // ---- Media viewer ----
+
+    private async Task OpenMediaAsync(MessageItem item, int index)
+    {
+        if (_viewer is null || item.IsPending || item.Message.Seq <= 0) return;
+        var items = new List<MediaViewerItem>();
+        var start = 0;
+        foreach (var held in Messages.GetState(ChatId).Items)
+        {
+            if (held.IsPending || held.Message.Seq <= 0 || held.Message.Type is not (MessageType.Photo or MessageType.Video or MessageType.Album)) continue;
+            for (var i = 0; i < held.Message.Attachments.Count; i++)
+            {
+                var media = held.Message.Attachments[i];
+                if (!MediaFacts.IsVisual(media) || media.Status != MediaStatus.Ready) continue;
+                if (held.Key == item.Key && i == index) start = items.Count;
+                items.Add(new MediaViewerItem(media, held.Message));
+            }
+        }
+        if (items.Count > 0) await _viewer.OpenAsync(items, start);
+    }
+
+    // ---- Calls ----
+
+    private async Task CallAsync(bool video)
+    {
+        if (_chat is null || _chat.Type == ChatType.Saved) return;
+        try
+        {
+            await Calls.StartAsync(ChatId, video);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task JoinCallAsync(Guid callId)
+    {
+        try
+        {
+            await Calls.JoinAsync(callId, false);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (ChatList.ActiveChatId == ChatId) ChatList.ActiveChatId = null;
+        await CloseSearchOverlayAsync();
+        await CloseSelectOverlayAsync();
+        if (_shortcuts is not null) await _shortcuts.DisposeAsync();
+        if (_dropZone is not null) await _dropZone.DisposeAsync();
+        if (_chrome is not null) await _chrome.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

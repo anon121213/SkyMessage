@@ -1,0 +1,24 @@
+/* The photo large on deep indigo; vertical drags belong to the drag-to-close gesture. */
+.avatar-viewer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 240px;
+    background: #0D0A22;
+    touch-action: none;
+    cursor: grab;
+}
+
+.avatar-viewer img {
+    width: 100%;
+    max-height: 72vh;
+    object-fit: contain;
+    -webkit-user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
+    animation: avatar-viewer-in var(--sm-dur-slow) var(--sm-ease-out);
+}
+
+@keyframes avatar-viewer-in {
+    from { opacity: 0; transform: scale(0.94); }
+}

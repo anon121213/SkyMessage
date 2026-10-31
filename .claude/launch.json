@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "skymessage-api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/artur/Projects/SkyMessage/artifacts/lead-api/bin/SkyMessage.Api/debug && export DOTNET_ROOT=$HOME/.dotnet ASPNETCORE_ENVIRONMENT=Development && exec $HOME/.dotnet/dotnet SkyMessage.Api.dll --urls http://0.0.0.0:8080"
+      ],
+      "port": 8080
+    }
+  ]
+}

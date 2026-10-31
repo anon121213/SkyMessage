@@ -1,0 +1,74 @@
+@* Renders dialogs opened through DialogService. Placed once in the shell. A dialog that completed stays rendered
+   (closed) for its exit animation before it is removed. *@
+@implements IDisposable
+@inject DialogService Dialogs
+
+@foreach (var entry in _entries)
+{
+    var dialog = entry.Dialog;
+    <Dialog @key="dialog.Id" Open="!entry.Closing" ManageHistory="false" Title="@dialog.Title" Size="dialog.Options.Size" Presentation="dialog.Options.Presentation"
+            Dismissible="dialog.Options.Dismissible" ShowClose="dialog.Options.ShowClose" Flush="dialog.Options.Flush" Class="@dialog.Options.Class"
+            OnCloseRequested="dialog.Cancel">
+        <CascadingValue Value="dialog" IsFixed="true">
+            <DynamicComponent Type="dialog.ComponentType" Parameters="dialog.Parameters" />
+        </CascadingValue>
+    </Dialog>
+}
+
+@code {
+    private sealed class Entry(DialogReference dialog)
+    {
+        public DialogReference Dialog { get; } = dialog;
+        public bool Closing { get; set; }
+    }
+
+    private readonly List<Entry> _entries = [];
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        Dialogs.Changed += OnChanged;
+        Sync();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed) return;
+        Sync();
+        StateHasChanged();
+    });
+
+    // Opened dialogs are added in order; completed ones are marked closing and dropped after their exit.
+    private void Sync()
+    {
+        var open = Dialogs.Open;
+        foreach (var entry in _entries)
+        {
+            if (!entry.Closing && !open.Contains(entry.Dialog))
+            {
+                entry.Closing = true;
+                _ = RemoveLaterAsync(entry);
+            }
+        }
+        foreach (var dialog in open)
+        {
+            if (!_entries.Exists(e => e.Dialog == dialog)) _entries.Add(new Entry(dialog));
+        }
+    }
+
+    private async Task RemoveLaterAsync(Entry entry)
+    {
+        await Task.Delay(Dialog.LeaveMs + 20);
+        await InvokeAsync(() =>
+        {
+            if (_disposed || !_entries.Remove(entry)) return;
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Dialogs.Changed -= OnChanged;
+    }
+}

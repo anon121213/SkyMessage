@@ -1,0 +1,224 @@
+@* Modal dialog / bottom sheet. Owns a history entry while open (Back closes it). Closing plays a short exit
+   (fade/scale, or the sheet sliding down from wherever a swipe left it) before the markup goes away. *@
+@implements IAsyncDisposable
+@inject NavigationService Nav
+@inject LayoutService Layout
+@inject AppJs Js
+
+@if (_visible || _leaving)
+{
+    <div class="sm-overlay @(IsSheet ? "sm-overlay--sheet" : null) @(_leaving ? "sm-overlay--leaving" : null)" style="@(ZIndex is { } z ? $"z-index:{z}" : null)">
+        <div class="sm-overlay__scrim" @onclick="BackdropClickAsync"></div>
+        <div @ref="_panel" class="sm-dialog @SizeClass @Class" role="dialog" aria-modal="true" aria-labelledby="@(Title is null ? null : _titleId)">
+            @if (IsSheet)
+            {
+                <div class="sm-sheet__handle" aria-hidden="true"></div>
+            }
+            @if (Title is not null || HeaderActions is not null || (ShowClose && Dismissible && !IsSheet))
+            {
+                <div class="sm-dialog__header">
+                    <h2 id="@_titleId" class="sm-dialog__title">@Title</h2>
+                    @HeaderActions
+                    @if (ShowClose && Dismissible && !IsSheet)
+                    {
+                        <IconButton Icon="@IconNames.X" Label="@L["common.close"]" OnClick="RequestCloseAsync" />
+                    }
+                </div>
+            }
+            <div class="sm-dialog__body @(Flush ? "sm-dialog__body--flush" : null) @BodyClass">
+                @ChildContent
+            </div>
+            @if (Footer is not null)
+            {
+                <div class="sm-dialog__footer">@Footer</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>How long a closing dialog stays for its exit animation (the sheet's is the longest, 200 ms).</summary>
+    internal const int LeaveMs = 230;
+
+    private readonly string _titleId = "d" + Guid.NewGuid().ToString("N")[..10];
+    private ElementReference _panel;
+    private OverlayHandle? _overlay;
+    private JsHandle? _trap;
+    private JsHandle? _swipe;
+    private DotNetObjectReference<Dialog>? _self;
+    private bool _visible;
+    private bool _leaving;
+    private bool _focusPending;
+    private bool _layoutHooked;
+    private int _version;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public DialogSize Size { get; set; } = DialogSize.Small;
+    [Parameter] public OverlayPresentation Presentation { get; set; } = OverlayPresentation.Dialog;
+    /// <summary>Backdrop tap and the close button close it (Back always does).</summary>
+    [Parameter] public bool Dismissible { get; set; } = true;
+    [Parameter] public bool ShowClose { get; set; } = true;
+    /// <summary>Body without padding (lists, pickers).</summary>
+    [Parameter] public bool Flush { get; set; }
+    /// <summary>False when the caller manages the history entry (DialogService).</summary>
+    [Parameter] public bool ManageHistory { get; set; } = true;
+    /// <summary>When set, close requests are delegated here instead of closing directly.</summary>
+    [Parameter] public EventCallback OnCloseRequested { get; set; }
+    /// <summary>Raised after the dialog closed (any reason).</summary>
+    [Parameter] public EventCallback OnClosed { get; set; }
+    [Parameter] public int? ZIndex { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? BodyClass { get; set; }
+
+    private bool IsSheet => Presentation switch
+    {
+        OverlayPresentation.Sheet => !Layout.IsWide || (Layout.IsTouch && Layout.Mode == LayoutMode.Tablet),
+        OverlayPresentation.Auto => Layout.IsPhone,
+        _ => false,
+    };
+
+    private string? SizeClass => Size switch
+    {
+        DialogSize.Medium => "sm-dialog--m",
+        DialogSize.Large => "sm-dialog--l",
+        _ => null,
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_visible)
+        {
+            _visible = true;
+            _leaving = false;
+            _focusPending = true;
+            var version = ++_version;
+            HookLayout();
+            if (ManageHistory)
+            {
+                var overlay = await Nav.OpenOverlayAsync(DismissedByBackAsync);
+                if (version != _version || !_visible) await overlay.CloseAsync();
+                else _overlay = overlay;
+            }
+        }
+        else if (!Open && _visible)
+        {
+            await HideAsync(removeHistory: true);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_visible && _focusPending)
+        {
+            _focusPending = false;
+            _trap = await Js.TrapFocusAsync(_panel);
+            await Js.FocusFirstAsync(_panel);
+            if (IsSheet)
+            {
+                _self ??= DotNetObjectReference.Create(this);
+                _swipe = await Js.AttachSwipeAsync(_panel, _self, nameof(OnSwipedDown), "down", 90);
+            }
+        }
+    }
+
+    /// <summary>Closes the dialog as if the user dismissed it.</summary>
+    public async Task RequestCloseAsync()
+    {
+        if (!_visible) return;
+        if (OnCloseRequested.HasDelegate)
+        {
+            await OnCloseRequested.InvokeAsync();
+            return;
+        }
+        await HideAsync(removeHistory: true);
+        await OpenChanged.InvokeAsync(false);
+        await OnClosed.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public Task OnSwipedDown() => InvokeAsync(RequestCloseAsync);
+
+    private Task BackdropClickAsync() => Dismissible ? RequestCloseAsync() : Task.CompletedTask;
+
+    private Task DismissedByBackAsync() => InvokeAsync(async () =>
+    {
+        _overlay = null;
+        if (!_visible) return;
+        if (OnCloseRequested.HasDelegate)
+        {
+            await OnCloseRequested.InvokeAsync();
+            return;
+        }
+        await HideAsync(removeHistory: false);
+        StateHasChanged();
+        await OpenChanged.InvokeAsync(false);
+        await OnClosed.InvokeAsync();
+    });
+
+    private async Task HideAsync(bool removeHistory)
+    {
+        _visible = false;
+        var version = ++_version;
+        StartLeaving(version);
+        UnhookLayout();
+        if (_trap is not null)
+        {
+            await _trap.DisposeAsync();
+            _trap = null;
+        }
+        if (_swipe is not null)
+        {
+            await _swipe.DisposeAsync();
+            _swipe = null;
+        }
+        var overlay = _overlay;
+        _overlay = null;
+        if (removeHistory && overlay is { IsOpen: true }) await overlay.CloseAsync();
+    }
+
+    // Keeps the markup for the exit animation (app.css .sm-overlay--leaving); reopening cancels it.
+    private void StartLeaving(int version)
+    {
+        _leaving = true;
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(LeaveMs);
+            if (version != _version || !_leaving) return;
+            _leaving = false;
+            StateHasChanged();
+        });
+    }
+
+    private void HookLayout()
+    {
+        if (_layoutHooked) return;
+        _layoutHooked = true;
+        Layout.Changed += OnLayoutChanged;
+    }
+
+    private void UnhookLayout()
+    {
+        if (!_layoutHooked) return;
+        _layoutHooked = false;
+        Layout.Changed -= OnLayoutChanged;
+    }
+
+    private void OnLayoutChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        _version++;
+        UnhookLayout();
+        if (_trap is not null) await _trap.DisposeAsync();
+        if (_swipe is not null) await _swipe.DisposeAsync();
+        if (ManageHistory && _overlay is { IsOpen: true } overlay) await overlay.CloseAsync();
+        _self?.Dispose();
+    }
+}

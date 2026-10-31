@@ -1,0 +1,471 @@
+@* The signed-in shell over the living sky (docs/DESIGN.md §5, §7). Phones: the root screen (chat list, contacts, calls or
+   settings) on the animated sky with the floating dock, under a stack of full-screen layers: the chat, kept mounted
+   under its info/profile pages so going back keeps its position, and the routed page (AppPage paints its still sky).
+   Every phone layer reaches up under the status bar. A rightward drag takes the top layer away (swipe back,
+   js/app.js attachSwipeBack). Wide screens: the sky behind a glass icon rail, a glass list panel (resizable), the
+   routed content (a chat floats as a rounded card) and (≥ 1280 px) a glass info panel. Notices and the connection
+   pill float over everything. Motion: docs/MOTION.md. *@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@inject LayoutService Layout
+@inject NavigationService Nav
+@inject IChatListStore ChatList
+@inject HapticFeedback Haptics
+@inject AppJs Js
+
+<div class="shell shell--@Layout.Mode.ToString().ToLowerInvariant()">
+    @if (Layout.IsPhone)
+    {
+        <div @ref="_phone" class="shell__phone">
+            <div class="shell__root @(TabBarShown ? "shell__root--tabbar" : null) @(BaseCovered ? "is-covered" : null) @_rootAnim" inert="@BaseCovered"
+                 data-swipe-under="@(UnderIsRoot ? "" : null)">
+                <SkyBackdrop Sparkles="false" Comet="false" Class="shell__sky" />
+                <div class="shell__base">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Base, BaseCovered))">
+                        <ErrorBoundary @ref="_baseBoundary">
+                            <ChildContent>@BaseScreen</ChildContent>
+                            <ErrorContent Context="error">
+                                <CrashScreen Exception="error" Compact="true" OnRetry="Recover" />
+                            </ErrorContent>
+                        </ErrorBoundary>
+                    </CascadingValue>
+                </div>
+                @if (TabBarShown)
+                {
+                    <TabBar Active="BaseSection" />
+                }
+            </div>
+            <div class="shell__scrim" aria-hidden="true"></div>
+            @foreach (var layer in ChatLayers)
+            {
+                <div @key="layer.ChatId" class="shell__layer shell__layer--chat @layer.Class" inert="@layer.Covered"
+                     data-swipe-back="@(layer.Top ? "" : null)" data-swipe-under="@(layer.Under ? "" : null)">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Chat, layer.Covered))">
+                        <SkyMessage.Client.UI.Features.Chat.ChatPage ChatId="layer.ChatId" />
+                    </CascadingValue>
+                </div>
+            }
+            @if (ShowPageLayer)
+            {
+                <div @key="Nav.CurrentPath" class="shell__layer @_pageAnim" data-swipe-back="">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Page, false))">
+                        @Guarded
+                    </CascadingValue>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="shell__wide @(ShowSidebar ? "shell__wide--sidebar" : null)">
+            <SkyBackdrop Sparkles="false" Comet="false" Class="shell__sky" />
+            <IconRail />
+            @if (ShowSidebar)
+            {
+                <aside class="shell__sidebar sm-glass">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Sidebar, false))">
+                        @if (Nav.Section == ShellSection.Contacts)
+                        {
+                            <SkyMessage.Client.UI.Features.Contacts.ContactsPanel />
+                        }
+                        else
+                        {
+                            <SkyMessage.Client.UI.Features.ChatList.ChatListPanel />
+                        }
+                    </CascadingValue>
+                </aside>
+                <div @ref="_resizer" class="shell__resizer" role="separator" aria-orientation="vertical" title="@L["nav.resize"]"></div>
+            }
+            <main class="shell__main @(ChatShown ? "shell__main--chat" : null)">
+                @if (RetainedChatId is { } chatId)
+                {
+                    <div @key="chatId" class="shell__chat @(ChatCovered ? "is-hidden" : null)" inert="@ChatCovered">
+                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Chat, ChatCovered))">
+                            <SkyMessage.Client.UI.Features.Chat.ChatPage ChatId="chatId" />
+                        </CascadingValue>
+                    </div>
+                }
+                @if (ChatRouteId is null)
+                {
+                    <div class="shell__content">
+                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Main, false))">
+                            @Guarded
+                        </CascadingValue>
+                    </div>
+                }
+            </main>
+            @if (IsInfoRoute)
+            {
+                @if (Layout.HasInfoColumn)
+                {
+                    <aside class="shell__info sm-glass">
+                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Info, false))">
+                            @Guarded
+                        </CascadingValue>
+                    </aside>
+                }
+                else
+                {
+                    <div class="shell__info-overlay">
+                        <div class="shell__info-scrim" @onclick="CloseInfoAsync"></div>
+                        <aside class="shell__info shell__info--floating sm-glass sm-glass--strong">
+                            <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.InfoOverlay, false))">
+                                @Guarded
+                            </CascadingValue>
+                        </aside>
+                    </div>
+                }
+            }
+        </div>
+    }
+    @* Floating over every screen: the connection pill under the headers, message banners. (The update and
+       notification-permission notices live at the top of the chat list, so they never cover a header.) *@
+    <ConnectionStatusBar />
+    <NotificationBanner />
+    <DialogHost />
+    <ToastHost AboveTabBar="TabBarVisible" />
+    <SkyMessage.Client.UI.Features.Calls.CallOverlay />
+</div>
+
+@code {
+    // Animation classes (MainLayout.razor.css). Exits are shorter than enters; LeaveMs/PushMs keep a leaving chat
+    // mounted for its animation (--sm-dur / --sm-dur-slow plus a margin).
+    private const string EnterClass = "shell__layer--enter";
+    private const string ReturnClass = "shell__layer--return";
+    private const string FadeClass = "shell__layer--fade";
+    private const string PushClass = "shell__under--push";
+    private const string UnderReturnClass = "shell__under--return";
+    private const int LeaveMs = 260;
+    private const int PushMs = 360;
+
+    private ElementReference _resizer;
+    private ElementReference _phone;
+    private JsHandle? _resizerHandle;
+    private JsHandle? _swipeBack;
+    private bool _swipeBackAttaching;
+    private DotNetObjectReference<MainLayout>? _self;
+    private ErrorBoundary? _boundary;
+    private ErrorBoundary? _baseBoundary;
+    private bool _phoneState;
+    private bool _rootCovered;
+    private string? _rootAnim;
+    private Guid? _chatLayerFor;
+    private bool _chatLayerCovered;
+    private string? _chatAnim;
+    private string? _pageLayerFor;
+    private string? _pageAnim;
+    private LeavingChat? _leaving;
+    private int _leavingVersion;
+    private Arrival _arrival;
+    private DateTimeOffset _arrivalAt;
+    private int _lastUnread = -1;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    /// <summary>How the screen Back lands on was brought in by a swipe back (it needs no return animation).</summary>
+    private enum Arrival
+    {
+        None,
+        /// <summary>The screen was mounted under the page and is already in place.</summary>
+        Revealed,
+        /// <summary>The page was swiped off a bare background: the screen Back mounts fades in.</summary>
+        Fade,
+    }
+
+    /// <summary>A chat layer that just stopped being the retained chat, kept for its exit animation.</summary>
+    private sealed record LeavingChat(Guid ChatId, bool Over);
+
+    private sealed record ChatLayer(Guid ChatId, string? Class, bool Covered, bool Top, bool Under);
+
+    private string Path => Nav.CurrentPath;
+    private bool IsTopLevel => NavigationService.IsTopLevel(Path);
+    private Guid? ChatRouteId => NavigationService.ChatIdOf(Path);
+    private string? ChatSubPage => NavigationService.ChatSubPageOf(Path);
+    private bool IsInfoRoute => ChatRouteId is not null && ChatSubPage is not null;
+
+    /// <summary>The chat kept mounted: the current chat route, or the chat a deeper page was opened from.</summary>
+    private Guid? RetainedChatId => ChatRouteId ?? (IsTopLevel ? null : Nav.ChatBelowCurrent());
+
+    private bool ChatCovered => ChatRouteId is null || (Layout.IsPhone && ChatSubPage is not null);
+    private bool ShowPageLayer => !IsTopLevel && (ChatRouteId is null || ChatSubPage is not null);
+    private bool BaseCovered => RetainedChatId is not null || ShowPageLayer;
+    private bool ShowSidebar => Nav.Section is ShellSection.Chats or ShellSection.Contacts;
+
+    /// <summary>Wide: a chat is on screen (the main area floats as a rounded card around its sky).</summary>
+    private bool ChatShown => RetainedChatId is not null && !ChatCovered;
+
+    /// <summary>Phones keep the tab bar under the page layers too, so a swipe back reveals the root screen as it will be.</summary>
+    private bool TabBarShown => Layout.IsPhone && !Layout.IsKeyboardOpen;
+    private bool TabBarVisible => TabBarShown && IsTopLevel;
+
+    /// <summary>
+    /// Area of the phone root screen: the top-level screen the stack sits on (the nearest top-level entry of the
+    /// in-app history), so it stays mounted (scroll kept) while pages are open above it and Back reveals it.
+    /// </summary>
+    private ShellSection BaseSection
+    {
+        get
+        {
+            var stack = Nav.BackStack;
+            for (var i = stack.Count - 1; i >= 0; i--)
+            {
+                var path = NavigationService.PathOf(stack[i]);
+                if (NavigationService.IsTopLevel(path)) return NavigationService.SectionOf(path) ?? Nav.Section;
+            }
+            return Nav.Section;
+        }
+    }
+
+    /// <summary>The in-app page Back leads to; null when there is no in-app history (Back then uses the page's fallback).</summary>
+    private string? BackTarget => Nav.BackStack.Count >= 2 ? NavigationService.PathOf(Nav.BackStack[^2]) : null;
+
+    private bool TopIsChat => RetainedChatId is not null && !ShowPageLayer;
+
+    /// <summary>The retained chat is the page under the open info/profile page that Back returns to.</summary>
+    private bool UnderIsChat => ShowPageLayer && RetainedChatId is { } id
+        && (BackTarget is { } target
+            ? NavigationService.ChatIdOf(target) == id && NavigationService.ChatSubPageOf(target) is null
+            : ChatRouteId == id);
+
+    /// <summary>The root screen is what Back returns to (a top-level screen; the chat list for a chat opened directly).</summary>
+    private bool UnderIsRoot => (TopIsChat || ShowPageLayer) && !UnderIsChat
+        && (BackTarget is { } target ? NavigationService.IsTopLevel(target) : TopIsChat && BaseSection == ShellSection.Chats);
+
+    private IEnumerable<ChatLayer> ChatLayers
+    {
+        get
+        {
+            var retained = RetainedChatId;
+            if (_leaving is { Over: false } under && under.ChatId != retained)
+                yield return new ChatLayer(under.ChatId, $"is-covered {PushClass}", true, false, false);
+            if (retained is { } id)
+                yield return new ChatLayer(id, ChatCovered ? $"is-covered {_chatAnim}" : _chatAnim, ChatCovered, TopIsChat, UnderIsChat);
+            if (_leaving is { Over: true } over && over.ChatId != retained)
+                yield return new ChatLayer(over.ChatId, "shell__layer--leave", true, false, false);
+        }
+    }
+
+    private RenderFragment BaseScreen => __builder =>
+    {
+        switch (BaseSection)
+        {
+            case ShellSection.Contacts:
+                <SkyMessage.Client.UI.Features.Contacts.ContactsPanel />
+                break;
+            case ShellSection.Calls:
+                <SkyMessage.Client.UI.Features.Calls.CallsPage />
+                break;
+            case ShellSection.Settings:
+                <SkyMessage.Client.UI.Features.Settings.SettingsPage />
+                break;
+            default:
+                <SkyMessage.Client.UI.Features.ChatList.ChatListPanel />
+                break;
+        }
+    };
+
+    private RenderFragment Guarded => __builder =>
+    {
+        <ErrorBoundary @ref="_boundary">
+            <ChildContent>@Body</ChildContent>
+            <ErrorContent Context="error">
+                <CrashScreen Exception="error" Compact="true" OnRetry="Recover" />
+            </ErrorContent>
+        </ErrorBoundary>
+    };
+
+    protected override void OnInitialized()
+    {
+        Layout.Changed += OnChanged;
+        Nav.Changed += OnNavigated;
+        ChatList.Changed += OnChatsChanged;
+    }
+
+    protected override void OnParametersSet() => UpdateLayerAnimations();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var wantResizer = Layout.IsWide && ShowSidebar;
+        if (wantResizer && _resizerHandle is null)
+        {
+            _resizerHandle = await Js.InitResizerAsync(_resizer, "--sm-sidebar-w", 300, 480, "sm.sidebar.w");
+        }
+        else if (!wantResizer && _resizerHandle is not null)
+        {
+            await _resizerHandle.DisposeAsync();
+            _resizerHandle = null;
+        }
+        await UpdateSwipeBackAsync();
+        if (firstRender) await UpdateTitleAsync();
+    }
+
+    private async Task UpdateSwipeBackAsync()
+    {
+        if (_swipeBackAttaching) return;
+        _swipeBackAttaching = true;
+        try
+        {
+            if (Layout.IsPhone && _swipeBack is null)
+            {
+                _self ??= DotNetObjectReference.Create(this);
+                _swipeBack = await Js.AttachSwipeBackAsync(_phone, _self);
+            }
+            else if (!Layout.IsPhone && _swipeBack is not null)
+            {
+                await _swipeBack.DisposeAsync();
+                _swipeBack = null;
+            }
+        }
+        finally
+        {
+            _swipeBackAttaching = false;
+        }
+    }
+
+    /// <summary>Swipe back crossed its commit point (app.js).</summary>
+    [JSInvokable]
+    public Task OnSwipeBackThreshold() => InvokeAsync(Haptics.Tap);
+
+    /// <summary>
+    /// A swipe back (or an animated back tap) committed and the page is off screen; app.js clicks the page's back
+    /// button right after this returns. <paramref name="revealed"/>: the screen Back lands on was shown underneath.
+    /// </summary>
+    [JSInvokable]
+    public Task OnSwipeBackCommit(bool revealed) => InvokeAsync(() =>
+    {
+        _arrival = revealed ? Arrival.Revealed : Arrival.Fade;
+        _arrivalAt = DateTimeOffset.UtcNow;
+    });
+
+    /// <summary>
+    /// Picks the enter/exit animations of the phone layers for the navigation that just happened: forward pushes a
+    /// page over the previous screen (which drifts away under it), Back slides the chat out and brings the screen
+    /// underneath back. A swipe back already moved everything into place, so nothing replays then.
+    /// </summary>
+    private void UpdateLayerAnimations()
+    {
+        var phone = Layout.IsPhone;
+        var chat = RetainedChatId;
+        var chatCovered = ChatCovered;
+        var page = ShowPageLayer ? Path : null;
+        if (!phone || !_phoneState)
+        {
+            // Layout switch (or first render): take the current state as it is, without animations.
+            _phoneState = phone;
+            _rootCovered = BaseCovered;
+            _chatLayerFor = chat;
+            _chatLayerCovered = chatCovered;
+            _pageLayerFor = page;
+            _rootAnim = _chatAnim = _pageAnim = null;
+            _leaving = null;
+            return;
+        }
+
+        var direction = Nav.LastDirection;
+        var forward = direction == NavDirection.Forward;
+        var back = direction == NavDirection.Back;
+        var arrival = back && DateTimeOffset.UtcNow - _arrivalAt < TimeSpan.FromSeconds(3) ? _arrival : Arrival.None;
+        var changed = false;
+
+        if (BaseCovered != _rootCovered)
+        {
+            _rootCovered = BaseCovered;
+            _rootAnim = _rootCovered ? (forward ? PushClass : null) : back && arrival == Arrival.None ? UnderReturnClass : null;
+            changed = true;
+        }
+
+        if (chat != _chatLayerFor)
+        {
+            var gone = _chatLayerFor;
+            var goneVisible = gone is not null && !_chatLayerCovered;
+            _chatLayerFor = chat;
+            _chatLayerCovered = chatCovered;
+            _chatAnim = NewLayerClass(forward, back, arrival);
+            // The chat that was on screen leaves visibly: it slides away on Back, it stays under the new chat on forward.
+            if (gone is { } goneId && goneVisible && arrival == Arrival.None && (forward || back)) StartLeaving(goneId, over: back);
+            changed = true;
+        }
+        else if (chat is not null && chatCovered != _chatLayerCovered)
+        {
+            _chatLayerCovered = chatCovered;
+            _chatAnim = chatCovered ? (forward ? PushClass : null) : back && arrival == Arrival.None ? ReturnClass : null;
+            changed = true;
+        }
+
+        if (page != _pageLayerFor)
+        {
+            _pageLayerFor = page;
+            _pageAnim = NewLayerClass(forward, back, arrival);
+            changed = true;
+        }
+
+        // The navigation a swipe started has arrived (or another one did): the flag is used up either way.
+        if (changed) _arrival = Arrival.None;
+    }
+
+    private static string? NewLayerClass(bool forward, bool back, Arrival arrival) =>
+        forward ? EnterClass
+        : !back ? null
+        : arrival switch
+        {
+            Arrival.Fade => FadeClass,
+            Arrival.Revealed => null,
+            _ => ReturnClass,
+        };
+
+    private void StartLeaving(Guid chatId, bool over)
+    {
+        _leaving = new LeavingChat(chatId, over);
+        var version = ++_leavingVersion;
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(over ? LeaveMs : PushMs);
+            if (version != _leavingVersion || _leaving is null) return;
+            _leaving = null;
+            StateHasChanged();
+        });
+    }
+
+    private void Recover()
+    {
+        _boundary?.Recover();
+        _baseBoundary?.Recover();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        UpdateLayerAnimations();
+        StateHasChanged();
+    });
+
+    private void OnNavigated() => _ = InvokeAsync(() =>
+    {
+        Recover();
+        UpdateLayerAnimations();
+        StateHasChanged();
+    });
+
+    private void OnChatsChanged()
+    {
+        if (ChatList.TotalUnread != _lastUnread) _ = InvokeAsync(UpdateTitleAsync);
+    }
+
+    private async Task UpdateTitleAsync()
+    {
+        _lastUnread = ChatList.TotalUnread;
+        await Js.SetDocumentTitleAsync(_lastUnread > 0 ? $"({FormatService.BadgeCount(_lastUnread)}) SkyMessage" : "SkyMessage");
+    }
+
+    private Task CloseInfoAsync() => ChatRouteId is { } id ? Nav.GoBackAsync(DeepLinks.ChatPath(id)) : Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        Layout.Changed -= OnChanged;
+        Nav.Changed -= OnNavigated;
+        ChatList.Changed -= OnChatsChanged;
+        _leavingVersion++;
+        if (_resizerHandle is not null) await _resizerHandle.DisposeAsync();
+        if (_swipeBack is not null) await _swipeBack.DisposeAsync();
+        _self?.Dispose();
+    }
+}

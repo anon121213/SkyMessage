@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SkyMessage.Domain</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Contracts acts as the shared kernel for enums and limits used by both server and clients. -->
+    <ProjectReference Include="..\..\Shared\SkyMessage.Contracts\SkyMessage.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

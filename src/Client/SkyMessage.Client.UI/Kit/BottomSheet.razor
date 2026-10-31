@@ -1,0 +1,21 @@
+@* Bottom sheet on phones (handle + swipe down to close), centered card on wide screens. Same behavior as Dialog. *@
+<Dialog Open="Open" OpenChanged="OpenChanged" Title="@Title" Presentation="OverlayPresentation.Sheet" Size="Size" Dismissible="Dismissible"
+        ShowClose="ShowClose" Flush="Flush" OnClosed="OnClosed" HeaderActions="HeaderActions" Footer="Footer" Class="@Class" BodyClass="@BodyClass">
+    @ChildContent
+</Dialog>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public DialogSize Size { get; set; } = DialogSize.Small;
+    [Parameter] public bool Dismissible { get; set; } = true;
+    [Parameter] public bool ShowClose { get; set; } = true;
+    [Parameter] public bool Flush { get; set; } = true;
+    [Parameter] public EventCallback OnClosed { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? BodyClass { get; set; }
+}

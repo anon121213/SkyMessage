@@ -1,0 +1,576 @@
+@page "/chat/{ChatId:guid}/media"
+@* Shared media of a chat: photos & videos (grid by month), files, voice messages, links and round video messages, each
+   paged newest first (GET api/chats/{id}/media). Items open in the viewer / play in place; the item menu offers
+   "Show in chat", forward and save. Wide screens show it in the info column. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Chat
+@inject ISkyApi Api
+@inject IChatListStore ChatList
+@inject IMessageStore Messages
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject IRealtimeService Realtime
+@inject ICallService Calls
+@inject IMediaUrlBuilder MediaUrls
+@inject IMediaDownloadService Downloads
+@inject IAccountLocalStore LocalStore
+@inject ISettingsService Settings
+@inject NavigationService Nav
+@inject FormatService Format
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject LinkService Links
+@inject AppJs AppJs
+@inject IJSRuntime JS
+@inject ILogger<SharedMediaPage> Logger
+
+<AppPage Title="@L["media.title"]" Subtitle="@ChatTitle" BackFallback="@DeepLinks.ChatPath(ChatId)" Background="PageBackground.Surface">
+    <Toolbar>
+        @* Pill tabs on a lavender track; one gradient pill slides between them (viewer.js sharedMedia). *@
+        <div class="smedia-tabs" @ref="_tabsBox">
+            <span class="smedia-tabs__ink" aria-hidden="true"></span>
+            <Tabs TValue="SharedMediaFilter" Items="Tabs" Active="_filter" ActiveChanged="SwitchAsync" Variant="TabsVariant.Pill" />
+        </div>
+    </Toolbar>
+    <ChildContent>
+        <div class="smedia" @ref="_root" data-voice-scope>
+            @switch (_filter)
+            {
+                case SharedMediaFilter.Media:
+                    @MediaGrid
+                    break;
+                case SharedMediaFilter.Files:
+                    @FileList
+                    break;
+                case SharedMediaFilter.Voice:
+                    @VoiceList
+                    break;
+                case SharedMediaFilter.Links:
+                    @LinkList
+                    break;
+                case SharedMediaFilter.VideoNotes:
+                    @NoteGrid
+                    break;
+            }
+            @if (Current.Loaded && Current.Items.Count == 0 && !Current.Loading)
+            {
+                @if (Current.Error is { } error)
+                {
+                    <EmptyState Icon="@IconNames.CloudOff" Title="@L["media.loadFailed"]" Text="@error" Fill="true">
+                        <Actions><Button Variant="ButtonVariant.Tonal" OnClick="ReloadAsync">@L["common.retry"]</Button></Actions>
+                    </EmptyState>
+                }
+                else
+                {
+                    <EmptyState Icon="@EmptyIcon" Title="@EmptyTitle" Text="@L["media.empty.text"]" Fill="true" />
+                }
+            }
+            <div class="smedia__sentinel" @ref="_sentinel">
+                @if (Current.Loading)
+                {
+                    <Spinner Size="24" />
+                }
+            </div>
+        </div>
+    </ChildContent>
+</AppPage>
+
+<ContextMenu @ref="_menu" Title="@L["media.menu.title"]" OnClosed="() => _menuMessage = null">
+    @if (_menuMessage is { } message)
+    {
+        <MenuItem Icon="@IconNames.MessageCircle" Label="@L["media.showInChat"]" OnClick="() => ShowInChat(message)" />
+        @if (message.Type is not (MessageType.System or MessageType.Call))
+        {
+            <MenuItem Icon="@IconNames.Forward" Label="@L["chat.menu.forward"]" OnClick="() => ForwardAsync(message)" />
+        }
+        @if (message.Attachments.Count > 0)
+        {
+            <MenuItem Icon="@IconNames.Download" Label="@L["media.save"]" OnClick="() => SaveAsync(message)" />
+        }
+    }
+</ContextMenu>
+
+<MediaViewer @ref="_viewer" OnForward="item => ForwardAsync(item.Message)" OnShowInChat="item => ShowInChat(item.Message)" />
+
+@code {
+    private sealed class TabState
+    {
+        public List<MessageDto> Items { get; } = [];
+        public bool HasMore { get; set; } = true;
+        public bool Loading { get; set; }
+        public bool Loaded { get; set; }
+        public string? Error { get; set; }
+        public int Version { get; set; }
+    }
+
+    private readonly Dictionary<SharedMediaFilter, TabState> _tabs = [];
+    private SharedMediaFilter _filter = SharedMediaFilter.Media;
+    private ElementReference _root;
+    private ElementReference _sentinel;
+    private ElementReference _tabsBox;
+    private JsHandle? _sentinelWatch;
+    private JsObject? _autoplay;
+    private JsModule? _viewerJs;
+    private JsObject? _pageMotion;
+    private PlayerBridge? _player;
+    private DotNetObjectReference<SharedMediaPage>? _self;
+    private ContextMenu? _menu;
+    private MediaViewer? _viewer;
+    private MessageDto? _menuMessage;
+    private bool _sentinelVisible;
+    private Guid _loadedFor;
+    private double _rate = 1;
+    private bool _inCall;
+
+    [Parameter] public Guid ChatId { get; set; }
+
+    private TabState Current => StateOf(_filter);
+
+    private ChatSummaryDto? Chat => ChatList.Get(ChatId);
+
+    private string? ChatTitle => Chat is { } chat ? (chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat)) : null;
+
+    private IReadOnlyList<ChoiceOption<SharedMediaFilter>> Tabs =>
+    [
+        new(SharedMediaFilter.Media, L["media.tab.media"]) { Icon = IconNames.Image },
+        new(SharedMediaFilter.Files, L["media.tab.files"]) { Icon = IconNames.File },
+        new(SharedMediaFilter.Voice, L["media.tab.voice"]) { Icon = IconNames.Mic },
+        new(SharedMediaFilter.Links, L["media.tab.links"]) { Icon = IconNames.Link },
+        new(SharedMediaFilter.VideoNotes, L["media.tab.videoNotes"]) { Icon = IconNames.CircleDot },
+    ];
+
+    private string EmptyIcon => _filter switch
+    {
+        SharedMediaFilter.Files => IconNames.File,
+        SharedMediaFilter.Voice => IconNames.Mic,
+        SharedMediaFilter.Links => IconNames.Link,
+        SharedMediaFilter.VideoNotes => IconNames.CircleDot,
+        _ => IconNames.Images,
+    };
+
+    private string EmptyTitle => _filter switch
+    {
+        SharedMediaFilter.Files => L["media.empty.files"],
+        SharedMediaFilter.Voice => L["media.empty.voice"],
+        SharedMediaFilter.Links => L["media.empty.links"],
+        SharedMediaFilter.VideoNotes => L["media.empty.videoNotes"],
+        _ => L["media.empty.media"],
+    };
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        Action<MessagesDeletedEvent> deleted = e =>
+        {
+            if (e.ChatId != ChatId) return;
+            _ = InvokeAsync(() =>
+            {
+                foreach (var tab in _tabs.Values) tab.Items.RemoveAll(m => e.MessageIds.Contains(m.Id));
+                StateHasChanged();
+            });
+        };
+        Realtime.MessagesDeleted += deleted;
+        OnDispose(() => Realtime.MessagesDeleted -= deleted);
+        Action<MessageDto> created = message =>
+        {
+            if (message.ChatId != ChatId) return;
+            _ = InvokeAsync(() => AddLive(message));
+        };
+        Realtime.MessageCreated += created;
+        OnDispose(() => Realtime.MessageCreated -= created);
+        Action<HistoryClearedEvent> cleared = e =>
+        {
+            if (e.ChatId == ChatId) _ = InvokeAsync(ReloadAsync);
+        };
+        Realtime.HistoryCleared += cleared;
+        OnDispose(() => Realtime.HistoryCleared -= cleared);
+        Action resynced = () => _ = InvokeAsync(ReloadAsync);
+        Realtime.Resynced += resynced;
+        OnDispose(() => Realtime.Resynced -= resynced);
+        Action settings = () => _ = InvokeAsync(ApplyRateAsync);
+        Settings.Changed += settings;
+        OnDispose(() => Settings.Changed -= settings);
+        _inCall = InCall;
+        Action calls = () => _ = InvokeAsync(PauseForCallAsync);
+        Calls.Changed += calls;
+        OnDispose(() => Calls.Changed -= calls);
+        _rate = Settings.Current.Chats.VoicePlaybackRate;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ChatId == _loadedFor) return;
+        _loadedFor = ChatId;
+        _tabs.Clear();
+        if (Chat is null)
+        {
+            try
+            {
+                await ChatList.GetOrFetchAsync(ChatId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Chat summary for shared media not loaded");
+            }
+        }
+        await LoadMoreAsync(_filter);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        // Before the first page arrives: every thumbnail's load is seen, so each one fades in once.
+        _viewerJs = new JsModule(JS, JsModule.Viewer);
+        _pageMotion = await _viewerJs.AttachAsync("sharedMedia", _root, _tabsBox);
+        _sentinelWatch = await AppJs.ObserveVisibilityAsync(_sentinel, _self, nameof(OnSentinel), "600px", 0);
+        _player = new PlayerBridge(JS, PlayedMediaStore.For(LocalStore, Auth), _ =>
+        {
+            Toasts.Show(L["media.playbackFailed"], ToastKind.Error);
+            return Task.CompletedTask;
+        });
+        await _player.InitAsync(_rate);
+        _autoplay = await _player.ObserveAsync(_root, false);
+    }
+
+    private TabState StateOf(SharedMediaFilter filter)
+    {
+        if (!_tabs.TryGetValue(filter, out var state)) _tabs[filter] = state = new TabState();
+        return state;
+    }
+
+    private async Task SwitchAsync(SharedMediaFilter filter)
+    {
+        if (filter == _filter) return;
+        _filter = filter;
+        StateHasChanged();
+        if (!Current.Loaded || (_sentinelVisible && Current.HasMore)) await LoadMoreAsync(filter);
+    }
+
+    [JSInvokable]
+    public async Task OnSentinel(bool visible, double ratio)
+    {
+        _sentinelVisible = visible;
+        if (visible && Current.HasMore && !Current.Loading) await InvokeAsync(() => LoadMoreAsync(_filter));
+    }
+
+    private async Task LoadMoreAsync(SharedMediaFilter filter)
+    {
+        var state = StateOf(filter);
+        if (state.Loading || (state.Loaded && !state.HasMore)) return;
+        state.Loading = true;
+        state.Error = null;
+        var version = state.Version;
+        StateHasChanged();
+        try
+        {
+            long? before = state.Items.Count > 0 ? state.Items.Min(m => m.Seq) : null;
+            var page = await Api.GetSharedMediaAsync(ChatId, filter, before);
+            if (version != state.Version) return;
+            Users.Upsert(page.Users);
+            var known = state.Items.Select(m => m.Id).ToHashSet();
+            state.Items.AddRange(page.Messages.Where(m => !m.IsDeleted && known.Add(m.Id)));
+            state.Items.Sort((a, b) => b.Seq.CompareTo(a.Seq));
+            state.HasMore = page.HasMoreBefore && page.Messages.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            if (version != state.Version) return;
+            Logger.LogDebug(ex, "Shared media page not loaded");
+            state.Error = L.Error(ex);
+            state.HasMore = false;
+        }
+        finally
+        {
+            if (version == state.Version)
+            {
+                state.Loading = false;
+                state.Loaded = true;
+            }
+        }
+        StateHasChanged();
+        // Keep filling while the end of the list is still on screen.
+        if (filter == _filter && _sentinelVisible && state.HasMore && state.Error is null)
+        {
+            await Task.Yield();
+            await LoadMoreAsync(filter);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        foreach (var tab in _tabs.Values)
+        {
+            tab.Version++;
+            tab.Items.Clear();
+            tab.HasMore = true;
+            tab.Loaded = false;
+            tab.Loading = false;
+            tab.Error = null;
+        }
+        StateHasChanged();
+        await LoadMoreAsync(_filter);
+    }
+
+    private void AddLive(MessageDto message)
+    {
+        var filter = message.Type switch
+        {
+            MessageType.Photo or MessageType.Video or MessageType.Album => SharedMediaFilter.Media,
+            MessageType.File or MessageType.Audio => SharedMediaFilter.Files,
+            MessageType.Voice => SharedMediaFilter.Voice,
+            MessageType.VideoNote => SharedMediaFilter.VideoNotes,
+            _ when message.Entities?.Any(e => e.Type is MessageEntityType.Url or MessageEntityType.TextLink) == true => SharedMediaFilter.Links,
+            _ => (SharedMediaFilter?)null,
+        };
+        if (filter is not { } f || !_tabs.TryGetValue(f, out var state) || !state.Loaded) return;
+        if (state.Items.Any(m => m.Id == message.Id)) return;
+        state.Items.Insert(0, message);
+        StateHasChanged();
+    }
+
+    private async Task ApplyRateAsync()
+    {
+        var rate = Settings.Current.Chats.VoicePlaybackRate;
+        if (Math.Abs(rate - _rate) < 0.001 || _player is null) return;
+        _rate = rate;
+        await _player.SetRateAsync(rate);
+    }
+
+    private bool InCall => Calls.Current is { Phase: not CallPhase.Ended };
+
+    /// <summary>A call starts (dialing or accepted): a voice message or round note must not play over it.</summary>
+    private async Task PauseForCallAsync()
+    {
+        var inCall = InCall;
+        if (inCall == _inCall) return;
+        _inCall = inCall;
+        if (inCall && _player is not null) await _player.PauseAsync();
+    }
+
+    // ---- Tabs ----
+
+    private RenderFragment MediaGrid => __builder =>
+    {
+        var visuals = Current.Items
+            .SelectMany(m => m.Attachments.Where(a => MediaFacts.IsVisual(a) && a.Status == MediaStatus.Ready).Select(a => (Message: m, Media: a)))
+            .ToList();
+        string? month = null;
+        var index = 0;
+        <div class="smedia__grid">
+            @foreach (var (message, media) in visuals)
+            {
+                var label = Format.MonthYear(message.CreatedAt);
+                var position = index++;
+                if (label != month)
+                {
+                    month = label;
+                    <div class="smedia__month">@label</div>
+                }
+                @* Forwarded copies share the media id: keyed by message too, or sibling keys repeat (the render throws). *@
+                <ContextMenuArea @key="(message.Id, media.Id)" Class="smedia__cell" OnContextMenu="pos => OpenMenuAsync(message, pos)">
+                    @* data-viewer-thumb: the viewer opens out of this tile and closes back into it. *@
+                    <button type="button" class="smedia__tile" data-viewer-thumb="@media.Id" aria-label="@(media.Kind == MediaKind.Video ? L["message.preview.video"] : L["message.preview.photo"])"
+                            @onclick="() => OpenViewerAsync(visuals, position)">
+                        @if (MediaUrls.MiniThumbnailDataUrl(media) is { } mini)
+                        {
+                            <img class="smedia__mini" src="@mini" alt="" draggable="false" />
+                        }
+                        @if (media.HasThumbnail)
+                        {
+                            <img class="smedia__img" data-fade src="@MediaUrls.ThumbnailUrl(media.Id)" alt="" loading="lazy" decoding="async" draggable="false" />
+                        }
+                        @if (media.Kind == MediaKind.Video)
+                        {
+                            <span class="smedia__badge sm-nums"><Icon Name="@IconNames.Play" Size="10" StrokeWidth="2.6" /> @Format.DurationMs(media.DurationMs)</span>
+                        }
+                    </button>
+                </ContextMenuArea>
+            }
+        </div>
+    };
+
+    private RenderFragment FileList => __builder =>
+    {
+        <div class="smedia__list">
+            @foreach (var message in Current.Items)
+            {
+                foreach (var media in message.Attachments)
+                {
+                    var owner = message;
+                    <ContextMenuArea @key="(owner.Id, media.Id)" Class="smedia__row" OnContextMenu="pos => OpenMenuAsync(owner, pos)">
+                        <FileCard Media="media" Trailing="@DateLine(owner)" />
+                    </ContextMenuArea>
+                }
+            }
+        </div>
+    };
+
+    private RenderFragment VoiceList => __builder =>
+    {
+        <div class="smedia__list">
+            @foreach (var message in Current.Items)
+            {
+                var owner = message;
+                var media = owner.Attachments.FirstOrDefault();
+                if (media is null) continue;
+                <ContextMenuArea @key="owner.Id" Class="smedia__row smedia__row--voice" OnContextMenu="pos => OpenMenuAsync(owner, pos)">
+                    <div class="smedia__who">
+                        @if (owner.SenderId is { } sender)
+                        {
+                            <UserName UserId="sender" />
+                        }
+                    </div>
+                    <VoicePlayer Media="media" TrackPlayed="@(owner.SenderId != Auth.UserId)" AutoNext="false" Trailing="@DateLine(owner)" />
+                </ContextMenuArea>
+            }
+        </div>
+    };
+
+    private RenderFragment LinkList => __builder =>
+    {
+        <div class="smedia__list">
+            @foreach (var message in Current.Items)
+            {
+                var owner = message;
+                foreach (var url in LinksOf(owner))
+                {
+                    var target = url;
+                    <ContextMenuArea @key="(owner.Id, target)" Class="smedia__row" OnContextMenu="pos => OpenMenuAsync(owner, pos)">
+                        <ListItem OnClick="() => Links.OpenAsync(target, target)" Multiline="true">
+                            <Leading><span class="smedia__link-icon"><Icon Name="@IconNames.Link" Size="20" /></span></Leading>
+                            <ChildContent>
+                                <div class="sm-list-item__title">@HostOf(target)</div>
+                                <div class="sm-list-item__subtitle smedia__url">@target</div>
+                                @if (!string.IsNullOrWhiteSpace(owner.Text) && owner.Text.Trim() != target)
+                                {
+                                    <div class="smedia__snippet">@MessagePreviewFormatter.OneLine(owner.Text, 140)</div>
+                                }
+                            </ChildContent>
+                            <Trailing><span class="smedia__date">@Format.ChatListTime(owner.CreatedAt)</span></Trailing>
+                        </ListItem>
+                    </ContextMenuArea>
+                }
+            }
+        </div>
+    };
+
+    private RenderFragment NoteGrid => __builder =>
+    {
+        <div class="smedia__notes">
+            @foreach (var message in Current.Items)
+            {
+                var owner = message;
+                var media = owner.Attachments.FirstOrDefault();
+                if (media is null) continue;
+                <ContextMenuArea @key="owner.Id" Class="smedia__note" OnContextMenu="pos => OpenMenuAsync(owner, pos)">
+                    <VideoNoteView Media="media" TrackPlayed="@(owner.SenderId != Auth.UserId)" Size="104" />
+                    <span class="smedia__date">@Format.ChatListTime(owner.CreatedAt)</span>
+                </ContextMenuArea>
+            }
+        </div>
+    };
+
+    private RenderFragment DateLine(MessageDto message) => __builder =>
+    {
+        <span class="smedia__date">@Format.ChatListTime(message.CreatedAt)</span>
+    };
+
+    /// <summary>Links of a message: Url / TextLink entities (re-validated), else links found in the text.</summary>
+    private static IReadOnlyList<string> LinksOf(MessageDto message)
+    {
+        var result = new List<string>();
+        var text = message.Text ?? "";
+        foreach (var entity in message.Entities ?? [])
+        {
+            string? candidate = entity.Type switch
+            {
+                MessageEntityType.TextLink => entity.Url,
+                MessageEntityType.Url when entity.Offset >= 0 && entity.Offset + entity.Length <= text.Length => entity.Url ?? text.Substring(entity.Offset, entity.Length),
+                _ => null,
+            };
+            if (candidate is not null && LinkService.TryParse(candidate, out var uri) && uri.Scheme is "http" or "https" && !result.Contains(uri.AbsoluteUri))
+                result.Add(uri.AbsoluteUri);
+        }
+        if (result.Count == 0)
+        {
+            foreach (var run in TextLinker.Split(text))
+                if (run is { Kind: TextRunKind.Url, Target: { } target } && !result.Contains(target)) result.Add(target);
+        }
+        return result;
+    }
+
+    private static string HostOf(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? (uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? uri.Host[4..] : uri.Host) : url;
+
+    // ---- Actions ----
+
+    private async Task OpenViewerAsync(IReadOnlyList<(MessageDto Message, MediaDto Media)> visuals, int index)
+    {
+        if (_viewer is null) return;
+        await _viewer.OpenAsync(visuals.Select(v => new MediaViewerItem(v.Media, v.Message)).ToList(), index);
+    }
+
+    private async Task OpenMenuAsync(MessageDto message, MenuPosition position)
+    {
+        if (_menu is null) return;
+        _menuMessage = message;
+        StateHasChanged();
+        await _menu.OpenAsync(position);
+    }
+
+    private void ShowInChat(MessageDto message) => Nav.OpenChat(ChatId, message.Seq);
+
+    private async Task ForwardAsync(MessageDto message)
+    {
+        var result = await Dialogs.ShowAsync<ForwardDialog>(L["chat.forward.title"], null,
+            new DialogOptions { Size = DialogSize.Medium, Flush = true, Presentation = OverlayPresentation.Auto });
+        if (result is not IReadOnlyList<Guid> { Count: > 0 } targets) return;
+        foreach (var target in targets)
+        {
+            try
+            {
+                await Messages.ForwardAsync(ChatId, [message.Id], target);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+                return;
+            }
+        }
+        Toasts.Success(L["chat.forward.done"]);
+    }
+
+    private async Task SaveAsync(MessageDto message)
+    {
+        var saved = 0;
+        foreach (var media in message.Attachments.Where(a => a.Status == MediaStatus.Ready))
+        {
+            try
+            {
+                if (await Downloads.SaveToDeviceAsync(media)) saved++;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+                return;
+            }
+        }
+        if (saved > 0) Toasts.Success(saved > 1 ? L.Format("chat.toast.savedMany", saved) : L["chat.toast.saved"]);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_pageMotion is not null) await _pageMotion.DisposeAsync();
+        if (_viewerJs is not null) await _viewerJs.DisposeAsync();
+        if (_sentinelWatch is not null) await _sentinelWatch.DisposeAsync();
+        if (_autoplay is not null) await _autoplay.DisposeAsync();
+        if (_player is not null) await _player.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

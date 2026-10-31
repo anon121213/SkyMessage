@@ -1,0 +1,125 @@
+@* "Waiting for network / Connecting / Updating" from INetworkStatusService + IRealtimeService (shown after a short
+   delay): a glass pill floating under the headers, with an orb (spinner, or the network icon when offline) and dots
+   that keep walking. It drops in with a spring and floats away when everything is fine again. *@
+@inherits UiComponentBase
+@inject INetworkStatusService Network
+@inject IRealtimeService Realtime
+@inject IAuthService Auth
+
+@if (_shown is { } status)
+{
+    <div class="conn-wrap">
+        <div @key="_enterKey" class="conn-pill conn-pill--@status.ToString().ToLowerInvariant() @(_leaving ? "conn-pill--leaving" : null)" role="status" aria-live="polite">
+            <span class="conn-pill__orb" aria-hidden="true">
+                @if (status == Status.Offline)
+                {
+                    <Icon Name="@IconNames.WifiOff" Size="14" StrokeWidth="2.4" />
+                }
+                else
+                {
+                    <span class="conn-pill__spin"></span>
+                }
+            </span>
+            <span class="conn-pill__text">@(L[TextKey(status)].TrimEnd('…', '.', ' '))</span>
+            <span class="conn-pill__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+    </div>
+}
+
+@code {
+    private const int ShowDelayMs = 900;
+    private const int LeaveMs = 240;
+    private Status? _shown;
+    private Status? _pending;
+    private bool _leaving;
+    // A new key re-creates the pill, which replays its entrance (it came back while floating away).
+    private int _enterKey;
+    private int _version;
+    private CancellationTokenSource? _delay;
+
+    public enum Status
+    {
+        Offline,
+        Connecting,
+        Updating,
+    }
+
+    /// <summary>Current status, or null when everything is fine (for headers that show it inline).</summary>
+    public static Status? Compute(INetworkStatusService network, IRealtimeService realtime, IAuthService auth)
+    {
+        if (auth.State != AuthState.SignedIn) return null;
+        if (!network.IsConnected) return Status.Offline;
+        if (realtime.State != ConnectionState.Connected) return Status.Connecting;
+        return realtime.IsSyncing ? Status.Updating : null;
+    }
+
+    public static string TextKey(Status status) => status switch
+    {
+        Status.Offline => "conn.waitingForNetwork",
+        Status.Connecting => "conn.connecting",
+        _ => "conn.updating",
+    };
+
+    protected override void OnInitialized()
+    {
+        Network.Changed += Evaluate;
+        Realtime.StateChanged += Evaluate;
+        Realtime.SyncStateChanged += Evaluate;
+        Auth.Changed += Evaluate;
+        OnDispose(() =>
+        {
+            Network.Changed -= Evaluate;
+            Realtime.StateChanged -= Evaluate;
+            Realtime.SyncStateChanged -= Evaluate;
+            Auth.Changed -= Evaluate;
+            _delay?.Cancel();
+        });
+        Evaluate();
+    }
+
+    private void Evaluate() => _ = InvokeAsync(async () =>
+    {
+        if (IsDisposed) return;
+        var next = Compute(Network, Realtime, Auth);
+        if (next == _pending) return;
+        _pending = next;
+        _delay?.Cancel();
+        var version = ++_version;
+        if (next is null)
+        {
+            if (_shown is null || _leaving) return;
+            // Floating away; removed once the animation is done.
+            _leaving = true;
+            StateHasChanged();
+            await Task.Delay(LeaveMs);
+            if (IsDisposed || version != _version) return;
+            _shown = null;
+            _leaving = false;
+            StateHasChanged();
+            return;
+        }
+        if (_shown is not null)
+        {
+            _shown = next;
+            if (_leaving)
+            {
+                _leaving = false;
+                _enterKey++;
+            }
+            StateHasChanged();
+            return;
+        }
+        var cts = _delay = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(ShowDelayMs, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (IsDisposed || _pending != next) return;
+        _shown = next;
+        StateHasChanged();
+    });
+}

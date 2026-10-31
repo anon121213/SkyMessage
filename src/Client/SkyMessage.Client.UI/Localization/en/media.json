@@ -1,0 +1,40 @@
+{
+  "media.title": "Media and files",
+  "media.tab.media": "Media",
+  "media.tab.files": "Files",
+  "media.tab.voice": "Voice",
+  "media.tab.links": "Links",
+  "media.tab.videoNotes": "Video messages",
+
+  "media.empty.media": "No photos or videos yet",
+  "media.empty.files": "No files yet",
+  "media.empty.voice": "No voice messages yet",
+  "media.empty.links": "No links yet",
+  "media.empty.videoNotes": "No video messages yet",
+  "media.empty.text": "Everything you share in this chat will be collected here.",
+  "media.loadFailed": "Couldn't load",
+
+  "media.menu.title": "Message",
+  "media.showInChat": "Show in chat",
+  "media.save": "Save",
+  "media.saved": "Saved",
+  "media.playbackFailed": "Couldn't play it",
+
+  "media.viewer.title": "Media viewer",
+  "media.viewer.position": "{0} of {1}",
+  "media.viewer.previous": "Previous",
+  "media.viewer.next": "Next",
+  "media.viewer.play": "Play",
+  "media.viewer.playPause": "Play or pause",
+  "media.viewer.seek": "Playback position",
+
+  "media.voice.play": "Play or pause",
+  "media.voice.new": "Not listened to yet",
+  "media.voice.speed": "Playback speed",
+  "media.videoNote.play": "Video message: tap to watch with sound",
+
+  "media.file.download": "Download",
+  "media.file.open": "Open",
+  "media.file.cancelDownload": "Stop the download",
+  "media.file.failed": "download failed"
+}

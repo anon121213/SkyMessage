@@ -1,0 +1,61 @@
+@* Round avatar: image, else an icon or initials on a color derived from Seed. Optional online dot. *@
+<div class="sm-avatar @(Square ? "sm-avatar--square" : null) @(OnClick.HasDelegate ? "sm-avatar--clickable" : null) @Class"
+     style="--size:@Rem" title="@Tooltip" @onclick="Click" role="@(OnClick.HasDelegate ? "button" : "img")" aria-label="@Name">
+    <div class="sm-avatar__face" style="@FaceStyle">
+        @if (ShowImage)
+        {
+            <img src="@Url" alt="" loading="lazy" decoding="async" draggable="false" @onerror="OnImageError" />
+        }
+        else if (Icon is not null)
+        {
+            <Icon Name="@Icon" />
+        }
+        else
+        {
+            @AvatarPalette.Initials(Name)
+        }
+    </div>
+    @if (Online || TrackOnline)
+    {
+        <span class="sm-avatar__dot @(Online ? null : "sm-avatar__dot--off")"></span>
+    }
+</div>
+
+@code {
+    private string? _failedUrl;
+
+    /// <summary>Image URL (from IMediaUrlBuilder.AvatarUrl); null shows the placeholder.</summary>
+    [Parameter] public string? Url { get; set; }
+    /// <summary>Name used for initials and the accessible label.</summary>
+    [Parameter] public string? Name { get; set; }
+    /// <summary>Stable id picking the placeholder color (user or chat id).</summary>
+    [Parameter] public Guid Seed { get; set; }
+    /// <summary>Diameter in px at 100% font scale.</summary>
+    [Parameter] public double Size { get; set; } = 48;
+    [Parameter] public bool Online { get; set; }
+    /// <summary>
+    /// Keeps the online dot in the markup while offline (hidden), so it pops in when the person comes online instead of
+    /// appearing with the page (UserAvatar sets it with ShowOnline).
+    /// </summary>
+    [Parameter] public bool TrackOnline { get; set; }
+    /// <summary>Placeholder icon instead of initials (Saved Messages, deleted account).</summary>
+    [Parameter] public string? Icon { get; set; }
+    /// <summary>CSS background of the placeholder (default: gradient from <see cref="Seed"/>).</summary>
+    [Parameter] public string? Background { get; set; }
+    [Parameter] public bool Square { get; set; }
+    [Parameter] public string? Tooltip { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    private bool ShowImage => !string.IsNullOrEmpty(Url) && Url != _failedUrl;
+
+    private string Rem => (Size / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "rem";
+
+    private string FaceStyle => ShowImage
+        ? "background:var(--sm-surface-3)"
+        : $"background:{Background ?? AvatarPalette.Background(Seed)}";
+
+    private void OnImageError() => _failedUrl = Url;
+
+    private Task Click(MouseEventArgs e) => OnClick.HasDelegate ? OnClick.InvokeAsync(e) : Task.CompletedTask;
+}

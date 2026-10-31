@@ -1,0 +1,80 @@
+@* After creating a group / adding members: who could not be added, and an invite link to send them instead. *@
+@inject IUserStore Users
+@inject ISkyApi Api
+@inject ILinkBuilder Links
+@inject ShareHelper Share
+@inject ToastService Toasts
+
+<div class="failed__intro">
+    <span class="sm-list-item__icon failed__art" style="--icon-bg:@SettingsTones.Sky" aria-hidden="true">
+        <Icon Name="@IconNames.Link" />
+    </span>
+    <p class="sm-dialog__message">@L["groups.failed.text"]</p>
+</div>
+<div class="failed__people">
+    @foreach (var failure in Failed)
+    {
+        <div class="failed__person">
+            <UserAvatar UserId="failure.UserId" Size="40" />
+            <div class="sm-grow">
+                <div class="failed__name sm-truncate">@Users.NameOf(failure.UserId, L)</div>
+                <div class="failed__reason">@Reason(failure.Code)</div>
+            </div>
+        </div>
+    }
+</div>
+<DialogActions Stack="true">
+    <Button Variant="ButtonVariant.Ghost" OnClick="() => Dialog.Close()">@L["common.done"]</Button>
+    <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.Copy" Loading="_busy" OnClick="CopyAsync">@L["groups.invite.copy"]</Button>
+    <Button Icon="@IconNames.Share2" Loading="_busy" OnClick="ShareAsync">@L["groups.invite.share"]</Button>
+</DialogActions>
+
+@code {
+    private bool _busy;
+    private string? _link;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public Guid ChatId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<AddMemberFailureDto> Failed { get; set; } = [];
+    [Parameter] public string? GroupTitle { get; set; }
+
+    private string Reason(string code) => code switch
+    {
+        ErrorCodes.PrivacyRestricted => L["groups.failed.privacy"],
+        ErrorCodes.UserBlocked => L["groups.failed.blocked"],
+        _ => L.Error(code),
+    };
+
+    private async Task<string?> LinkAsync()
+    {
+        if (_link is not null) return _link;
+        _busy = true;
+        try
+        {
+            var invite = await Api.CreateInviteLinkAsync(ChatId);
+            return _link = Links.InviteLink(invite.Token);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopyAsync()
+    {
+        if (await LinkAsync() is { } link) await Share.CopyAsync(link, L["common.linkCopied"]);
+    }
+
+    private async Task ShareAsync()
+    {
+        if (await LinkAsync() is { } link)
+            await Share.ShareAsync(L.Format("groups.invite.shareText", GroupTitle ?? "", link), GroupTitle);
+    }
+}

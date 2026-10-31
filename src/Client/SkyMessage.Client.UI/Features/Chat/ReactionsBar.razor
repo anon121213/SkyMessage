@@ -1,0 +1,105 @@
+@* Reaction chips under a message: emoji + count (or the reactors' avatars when there are few). Tap adds mine / takes
+   it back; the tooltip names who reacted. With Animate on (the message is already on screen), a new chip pops in and a
+   chip whose count changes bumps; chips already there when the message appears stay still. *@
+@inherits UiComponentBase
+@inject IUserStore Users
+
+<div class="reactions @Class">
+    @foreach (var reaction in _visible)
+    {
+        var mine = reaction.Emoji == Mine;
+        <button @key="reaction.Emoji" type="button" class="reaction @(mine ? "reaction--mine" : null) @MotionClass(reaction.Emoji)" title="@TitleOf(reaction)"
+                disabled="@(!Interactive)" aria-pressed="@(mine ? "true" : "false")" @onclick="() => OnToggle.InvokeAsync(reaction.Emoji)" @onclick:stopPropagation="true">
+            <span class="reaction__emoji sm-emoji">@reaction.Emoji</span>
+            @if (ShowAvatars(reaction))
+            {
+                <span class="reaction__people">
+                    @foreach (var userId in reaction.UserIds.Distinct().Take(3))
+                    {
+                        <UserAvatar @key="userId" UserId="userId" Size="18" Class="reaction__avatar" />
+                    }
+                </span>
+            }
+            else
+            {
+                <span class="reaction__count sm-nums">@FormatService.BadgeCount(reaction.Count, 999)</span>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    private enum Motion
+    {
+        None,
+        Pop,
+        // Two names for the same bump: switching between them restarts the animation on the same element.
+        BumpA,
+        BumpB,
+    }
+
+    private sealed record Chip(int Count, Motion Motion);
+
+    private Dictionary<string, Chip> _chips = [];
+    // Chips are keyed by emoji, so each emoji is shown once.
+    private List<ReactionDto> _visible = [];
+
+    [Parameter, EditorRequired] public IReadOnlyList<ReactionDto> Reactions { get; set; } = [];
+    /// <summary>My reaction on this message, if any.</summary>
+    [Parameter] public string? Mine { get; set; }
+    [Parameter] public bool Interactive { get; set; } = true;
+    /// <summary>Show who reacted instead of counts when there are at most 3.</summary>
+    [Parameter] public bool PreferAvatars { get; set; } = true;
+    /// <summary>The message is already on screen: changes animate (new chips pop, counts bump).</summary>
+    [Parameter] public bool Animate { get; set; }
+    [Parameter] public EventCallback<string> OnToggle { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private bool ShowAvatars(ReactionDto reaction) =>
+        PreferAvatars && reaction.Count is > 0 and <= 3 && reaction.UserIds.Count >= reaction.Count;
+
+    private string TitleOf(ReactionDto reaction)
+    {
+        var names = reaction.UserIds.Take(12).Select(id => Users.NameOf(id, L)).ToList();
+        var more = reaction.Count - names.Count;
+        var text = string.Join(", ", names);
+        return more > 0 ? $"{text} +{more}" : text;
+    }
+
+    protected override void OnInitialized() =>
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => Reactions.Any(r => r.UserIds.Contains(id)));
+
+    protected override void OnParametersSet()
+    {
+        // The motion class stays on a chip until its count changes again, so re-renders never replay it. A bar that
+        // appears on a message already on screen holds its first reaction: that chip pops too.
+        var next = new Dictionary<string, Chip>(Reactions.Count);
+        var visible = new List<ReactionDto>(Reactions.Count);
+        foreach (var reaction in Reactions)
+        {
+            if (next.ContainsKey(reaction.Emoji)) continue;
+            visible.Add(reaction);
+            if (_chips.TryGetValue(reaction.Emoji, out var chip))
+            {
+                var bump = Animate && chip.Count != reaction.Count;
+                next[reaction.Emoji] = new Chip(reaction.Count, bump ? (chip.Motion == Motion.BumpA ? Motion.BumpB : Motion.BumpA) : chip.Motion);
+            }
+            else
+            {
+                next[reaction.Emoji] = new Chip(reaction.Count, Animate ? Motion.Pop : Motion.None);
+            }
+        }
+        _chips = next;
+        _visible = visible;
+    }
+
+    private string? MotionClass(string emoji) => _chips.TryGetValue(emoji, out var chip)
+        ? chip.Motion switch
+        {
+            Motion.Pop => "reaction--pop",
+            Motion.BumpA => "reaction--bump-a",
+            Motion.BumpB => "reaction--bump-b",
+            _ => null,
+        }
+        : null;
+}

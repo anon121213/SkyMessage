@@ -1,0 +1,143 @@
+@* In-chat search: a glass capsule in the header's place. Finds messages by text (newest first), shows "3 of 17" and steps
+   through the hits; every step jumps the list to the hit and highlights it. Older pages load as you step past the end.
+   The ✕ on the left closes it (like the selection capsule). *@
+@inherits UiComponentBase
+@inject IMessageStore Messages
+@inject ISkyApi Api
+@inject IUserStore Users
+@inject ToastService Toasts
+@inject ILogger<ChatSearchBar> Logger
+
+<div class="csearch">
+    <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="40" OnClick="() => OnClose.InvokeAsync()" Class="csearch__close" />
+    <SearchBox Value="@_query" ValueChanged="OnQueryChanged" OnSearch="SearchAsync" DebounceMs="350" Autofocus="true"
+               Busy="_busy" Placeholder="@L["chat.search.placeholder"]" Class="csearch__box" />
+    <div class="csearch__nav">
+        <span class="csearch__live" aria-live="polite">
+            @* Keyed by its text: a new position pops in. *@
+            @if (CountText is { } count)
+            {
+                <span @key="count" class="csearch__count sm-nums @(_hits.Count == 0 ? "csearch__count--none" : null)">@count</span>
+            }
+        </span>
+        <IconButton Icon="@IconNames.ChevronUp" Label="@L["chat.search.older"]" Size="36" Disabled="@(!CanOlder)" OnClick="OlderAsync" />
+        <IconButton Icon="@IconNames.ChevronDown" Label="@L["chat.search.newer"]" Size="36" Disabled="@(!CanNewer)" OnClick="NewerAsync" />
+    </div>
+</div>
+
+@code {
+    private string _query = "";
+    private string _searched = "";
+    private List<MessageDto> _hits = [];
+    private bool _hasMore;
+    private bool _busy;
+    private int _index = -1;
+    private int _version;
+
+    [Parameter, EditorRequired] public Guid ChatId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Jump to a hit (seq).</summary>
+    [Parameter] public EventCallback<long> OnJump { get; set; }
+
+    private bool CanOlder => _index + 1 < _hits.Count || (_hasMore && !_busy);
+    private bool CanNewer => _index > 0;
+
+    private string? CountText
+    {
+        get
+        {
+            if (_searched.Length < Limits.SearchQueryMinLength) return null;
+            if (_busy && _hits.Count == 0) return null;
+            if (_hits.Count == 0) return L["chat.search.none"];
+            var total = _hasMore ? $"{_hits.Count}+" : _hits.Count.ToString(L.Culture);
+            return L.Format("chat.search.position", _index + 1, total);
+        }
+    }
+
+    private void OnQueryChanged(string value) => _query = value ?? "";
+
+    private async Task SearchAsync(string value)
+    {
+        var query = (value ?? "").Trim();
+        _query = value ?? "";
+        // Enter on the same query steps to the next (older) hit.
+        if (query == _searched && _hits.Count > 0 && !_busy)
+        {
+            await OlderAsync();
+            return;
+        }
+        var version = ++_version;
+        _searched = query;
+        _hits = [];
+        _index = -1;
+        _hasMore = false;
+        if (query.Length < Limits.SearchQueryMinLength)
+        {
+            StateHasChanged();
+            return;
+        }
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var page = await Messages.SearchAsync(ChatId, query);
+            if (version != _version) return;
+            _hits = page.Messages.OrderByDescending(m => m.Seq).ToList();
+            _hasMore = page.HasMoreBefore;
+            _index = _hits.Count > 0 ? 0 : -1;
+        }
+        catch (Exception ex)
+        {
+            if (version == _version) Toasts.Error(ex);
+        }
+        finally
+        {
+            if (version == _version) _busy = false;
+        }
+        StateHasChanged();
+        if (_index >= 0) await OnJump.InvokeAsync(_hits[_index].Seq);
+    }
+
+    private async Task OlderAsync()
+    {
+        if (_index + 1 >= _hits.Count && _hasMore) await LoadMoreAsync();
+        if (_index + 1 >= _hits.Count) return;
+        _index++;
+        StateHasChanged();
+        await OnJump.InvokeAsync(_hits[_index].Seq);
+    }
+
+    private async Task NewerAsync()
+    {
+        if (_index <= 0) return;
+        _index--;
+        StateHasChanged();
+        await OnJump.InvokeAsync(_hits[_index].Seq);
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_busy || _hits.Count == 0) return;
+        var version = _version;
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var page = await Api.SearchInChatAsync(ChatId, _searched, beforeSeq: _hits[^1].Seq);
+            if (version != _version) return;
+            Users.Upsert(page.Users);
+            var known = _hits.Select(h => h.Id).ToHashSet();
+            _hits.AddRange(page.Messages.Where(m => known.Add(m.Id)).OrderByDescending(m => m.Seq));
+            _hasMore = page.HasMoreBefore && page.Messages.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "More search results not loaded");
+            if (version == _version) Toasts.Error(ex);
+        }
+        finally
+        {
+            if (version == _version) _busy = false;
+        }
+    }
+}

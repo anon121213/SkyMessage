@@ -1,0 +1,61 @@
+@* DialogService content: delete my account for good, confirmed with the password. *@
+@inject ISkyApi Api
+@inject IAuthService Auth
+@inject ToastService Toasts
+
+<form class="sm-col sm-gap-m" @onsubmit="DeleteAsync" @onsubmit:preventDefault="true">
+    <div class="delete-warning">
+        <Icon Name="@IconNames.TriangleAlert" Size="22" />
+        <p class="sm-dialog__message">@L["settings.deleteAccount.text"]</p>
+    </div>
+    <ul class="delete-list">
+        <li>@L["settings.deleteAccount.point.profile"]</li>
+        <li>@L["settings.deleteAccount.point.messages"]</li>
+        <li>@L["settings.deleteAccount.point.groups"]</li>
+        <li>@L["settings.deleteAccount.point.devices"]</li>
+    </ul>
+    <TextField @bind-Value="_password" Label="@L["settings.deleteAccount.password"]" Type="password" Autocomplete="current-password" Error="@_error" />
+    <Checkbox @bind-Checked="_understood" Label="@L["settings.deleteAccount.understand"]" />
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Type="submit" Variant="ButtonVariant.Danger" Loading="_deleting" Disabled="@(!_understood || string.IsNullOrEmpty(_password))">
+            @L["settings.deleteAccount.confirm"]
+        </Button>
+    </DialogActions>
+</form>
+
+@code {
+    private string _password = "";
+    private bool _understood;
+    private bool _deleting;
+    private string? _error;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    private async Task DeleteAsync()
+    {
+        if (!_understood || string.IsNullOrEmpty(_password)) return;
+        _deleting = true;
+        _error = null;
+        try
+        {
+            await Api.DeleteAccountAsync(_password);
+            Dialog.Close(true);
+            // The server already revoked every session of the account.
+            await Auth.LogoutAsync(revokeOnServer: false);
+        }
+        catch (ApiException ex) when (ex.Code is ErrorCodes.WrongPassword or ErrorCodes.InvalidCredentials)
+        {
+            _error = L.Error(ErrorCodes.WrongPassword);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+}

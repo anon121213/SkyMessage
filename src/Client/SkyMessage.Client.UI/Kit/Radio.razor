@@ -1,0 +1,45 @@
+@typeparam TValue
+@inject HapticFeedback Haptics
+
+<label class="sm-check sm-radio @(Disabled ? "sm-check--disabled" : null) @Class" @onclick:stopPropagation="true">
+    @* "checked" is bound (see Switch) so a choice the parent refuses is taken back off this radio. A radio's change
+       event carries its value attribute, a string, hence the string-typed binding. *@
+    <input type="radio" name="@Name" disabled="@Disabled" aria-label="@(Label ?? AriaLabel)"
+           @bind-checked:get="CheckedValue" @bind-checked:set="OnChangeAsync" @bind-checked:event="onchange" />
+    <span class="sm-check__box"><span class="sm-check__dot"></span></span>
+    @if (Label is not null)
+    {
+        <span class="sm-grow">@Label</span>
+    }
+</label>
+
+@code {
+    /// <summary>The value this radio represents.</summary>
+    [Parameter, EditorRequired] public TValue Value { get; set; } = default!;
+    /// <summary>The group's current value.</summary>
+    [Parameter] public TValue? Selected { get; set; }
+    [Parameter] public EventCallback<TValue> SelectedChanged { get; set; }
+    /// <summary>HTML radio group name.</summary>
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    // Bumped whenever the parent renders the group: picking another radio unchecks this one in the DOM without any
+    // event, so a checked radio re-applies "checked" on every parent render (the parent may have refused the pick).
+    private int _version;
+
+    private bool IsChecked => EqualityComparer<TValue>.Default.Equals(Value, Selected!);
+
+    // Any non-null attribute value checks the input; null removes the attribute.
+    private string? CheckedValue => IsChecked ? "checked " + _version : null;
+
+    protected override void OnParametersSet() => _version++;
+
+    private Task OnChangeAsync(string? _)
+    {
+        Haptics.Selection();
+        return SelectedChanged.InvokeAsync(Value);
+    }
+}

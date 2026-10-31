@@ -1,0 +1,49 @@
+@* App bar title of a profile / chat info page: the page title, swapped for a compact avatar + name (a person, or a
+   chat) once the large header has scrolled away (Collapsed, from HeaderTitleWatcher). Tapping the compact title
+   scrolls back up. *@
+@inherits UiComponentBase
+@inject IAuthService Auth
+@inject IChatListStore ChatList
+@inject FormatService Format
+
+<div class="info-title @(Collapsed ? "is-collapsed" : null)">
+    <h1 class="info-title__page">@Title</h1>
+    @if (User is { } user)
+    {
+        <div class="info-title__peer" aria-hidden="true" @onclick="OnClick">
+            <UserAvatar UserId="user.Id" Embedded="user" Size="36" />
+            <div class="info-title__text">
+                <UserName UserId="user.Id" Embedded="user" Class="info-title__name" />
+                @if (!user.IsDeleted && user.Id != Auth.UserId)
+                {
+                    <PresenceText UserId="user.Id" Embedded="user" Class="info-title__sub" />
+                }
+            </div>
+        </div>
+    }
+    else if (Chat is { } chat)
+    {
+        <div class="info-title__peer" aria-hidden="true" @onclick="OnClick">
+            <ChatAvatar Chat="chat" Size="36" />
+            <div class="info-title__text">
+                <span class="info-title__name" dir="auto">@ChatList.TitleOf(chat)</span>
+                @if (chat.Type == ChatType.Group)
+                {
+                    <span class="info-title__sub">@Format.Members(chat.MemberCount)</span>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    /// <summary>True while the large header is off screen: the compact avatar and name replace the title.</summary>
+    [Parameter] public bool Collapsed { get; set; }
+    /// <summary>The person of a profile (or of a private chat's info).</summary>
+    [Parameter] public UserSummaryDto? User { get; set; }
+    /// <summary>A group or Saved Messages (when <see cref="User"/> is null).</summary>
+    [Parameter] public ChatSummaryDto? Chat { get; set; }
+    /// <summary>Tap on the compact title (pages scroll back to the top).</summary>
+    [Parameter] public EventCallback OnClick { get; set; }
+}

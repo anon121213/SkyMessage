@@ -1,0 +1,73 @@
+@* "Someone is typing" at the end of the message list (MessageList renders it while the newest messages are shown): an
+   incoming-style bubble whose three gradient dots ride a wave, with a glyph for recording / uploading and the typer's
+   avatar in groups. Nothing while nobody types. It pops in when typing starts while the chat is open; when the chat
+   opens with someone already typing it is simply there (docs/MOTION.md: animate changes, not loading). Only this
+   component re-renders on typing events, not the list. *@
+@inherits UiComponentBase
+@inject ITypingStore Typing
+@inject FormatService Format
+
+@if (_first is { } first)
+{
+    <div class="mtyping @(Group ? "mtyping--group" : null) @(_enter ? "mtyping--enter" : null)" role="status">
+        @if (Group)
+        {
+            <div class="mtyping__avatar"><UserAvatar UserId="first.UserId" Size="34" /></div>
+        }
+        <div class="mtyping__bubble">
+            @if (IconOf(first.Action) is { } icon)
+            {
+                <Icon Name="@icon" Size="15" Class="mtyping__icon" />
+            }
+            <span class="mtyping__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="sm-sr-only">@Format.Typing(_active, Group)</span>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<TypingEvent> _active = [];
+    private TypingEvent? _first;
+    private bool _rendered;
+    private bool _enter;
+
+    [Parameter, EditorRequired] public Guid ChatId { get; set; }
+    /// <summary>Group chat: the typer's avatar sits in the avatar column, like their messages.</summary>
+    [Parameter] public bool Group { get; set; }
+
+    protected override void OnInitialized() =>
+        RenderOn<Guid>(h => Typing.Changed += h, h => Typing.Changed -= h, id => id == ChatId);
+
+    protected override void OnParametersSet() => Refresh();
+
+    protected override bool ShouldRender()
+    {
+        Refresh();
+        return true;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _rendered = true;
+    }
+
+    /// <summary>Who types now; a bubble that appears after the first render pops in (the class stays while it shows).</summary>
+    private void Refresh()
+    {
+        _active = Typing.Get(ChatId).Where(t => t.Action != TypingAction.Cancel).ToList();
+        var first = _active.Count > 0 ? _active[0] : null;
+        if (first is null) _enter = false;
+        else if (_first is null) _enter = _rendered;
+        _first = first;
+    }
+
+    private static string? IconOf(TypingAction action) => action switch
+    {
+        TypingAction.RecordingVoice => IconNames.Mic,
+        TypingAction.RecordingVideoNote => IconNames.Video,
+        TypingAction.UploadingPhoto => IconNames.Image,
+        TypingAction.UploadingVideo => IconNames.Film,
+        TypingAction.UploadingFile => IconNames.Paperclip,
+        _ => null,
+    };
+}

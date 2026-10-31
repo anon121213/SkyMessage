@@ -1,0 +1,170 @@
+@* Privacy & security: every privacy level, blocked people, active sessions, password, account deletion, sign out. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IAuthService Auth
+@inject ISkyApi Api
+@inject IContactStore Contacts
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject NavigationService Nav
+@inject ILogger<PrivacySection> Logger
+
+<SettingsScaffold Title="@L["settings.privacy.title"]">
+    @if (Auth.Me is { } me)
+    {
+        var privacy = me.Privacy;
+        <Section Title="@L["settings.privacy.group.who"]" Footer="@L["settings.privacy.whoHint"]" DividerInset="64px">
+            @foreach (var field in Fields)
+            {
+                <ListItem @key="field.Key" Icon="@field.Icon" IconColor="@field.Color" Title="@L[field.TitleKey]" Meta="@LevelName(field.Get(privacy))"
+                          Chevron="true" Multiline="true" Disabled="_saving" OnClick="() => EditAsync(field)" />
+            }
+        </Section>
+
+        <Section Title="@L["settings.privacy.group.people"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.Ban" IconColor="@SettingsTones.Rose" Title="@L["settings.blocked.title"]"
+                      Meta="@(Contacts.IsLoaded ? (Contacts.Blocked.Count == 0 ? L["settings.blocked.none.short"] : Contacts.Blocked.Count.ToString(L.Culture)) : null)"
+                      Chevron="true" OnClick="@(() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Blocked)))" />
+            <ListItem Icon="@IconNames.MonitorSmartphone" IconColor="@SettingsTones.Lagoon" Title="@L["settings.sessions.title"]" Chevron="true"
+                      OnClick="@(() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Sessions)))" />
+        </Section>
+
+        <Section Title="@L["settings.privacy.group.security"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.KeyRound" IconColor="@SettingsTones.Sky" Title="@L["settings.password.title"]" Subtitle="@L["settings.password.subtitle"]"
+                      Chevron="true" OnClick="ChangePasswordAsync" />
+            <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["settings.deleteAccount.title"]" Danger="true" OnClick="DeleteAccountAsync" />
+        </Section>
+
+        <Section>
+            <ListItem Icon="@IconNames.LogOut" IconColor="@SettingsTones.Rose" Title="@L["auth.signOut"]" Danger="true" OnClick="SignOutAsync" />
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private sealed record PrivacyField(string Key, string TitleKey, string HintKey, string Icon, string Color, bool AllowNobody,
+        Func<PrivacySettingsDto, PrivacyLevel> Get, Func<PrivacySettingsDto, PrivacyLevel, PrivacySettingsDto> Set);
+
+    private static readonly IReadOnlyList<PrivacyField> Fields =
+    [
+        new("lastSeen", "settings.privacy.lastSeen", "settings.privacy.lastSeen.hint", IconNames.Clock, SettingsTones.Violet, true,
+            p => p.LastSeen, (p, v) => p with { LastSeen = v }),
+        new("photo", "settings.privacy.photo", "settings.privacy.photo.hint", IconNames.CircleUserRound, SettingsTones.Orchid, true,
+            p => p.ProfilePhoto, (p, v) => p with { ProfilePhoto = v }),
+        new("phone", "settings.privacy.phone", "settings.privacy.phone.hint", IconNames.Smartphone, SettingsTones.Mint, true,
+            p => p.PhoneNumber, (p, v) => p with { PhoneNumber = v }),
+        new("findByPhone", "settings.privacy.findByPhone", "settings.privacy.findByPhone.hint", IconNames.UserSearch, SettingsTones.Lagoon, true,
+            p => p.FindByPhone, (p, v) => p with { FindByPhone = v }),
+        new("messages", "settings.privacy.messages", "settings.privacy.messages.hint", IconNames.MessageCircle, SettingsTones.Sky, false,
+            p => p.Messages, (p, v) => p with { Messages = v }),
+        new("calls", "settings.privacy.calls", "settings.privacy.calls.hint", IconNames.Phone, SettingsTones.Mint, true,
+            p => p.Calls, (p, v) => p with { Calls = v }),
+        new("groups", "settings.privacy.groups", "settings.privacy.groups.hint", IconNames.Users, SettingsTones.Peach, false,
+            p => p.GroupInvites, (p, v) => p with { GroupInvites = v }),
+    ];
+
+    private readonly CancellationTokenSource _lifetime = new();
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Auth.Changed += h, h => Auth.Changed -= h);
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        _ = LoadBlockedAsync();
+        try
+        {
+            // Another device may have changed something since the profile was loaded.
+            var privacy = await Api.GetPrivacyAsync(_lifetime.Token);
+            if (Auth.Me is { } me && me.Privacy != privacy) Auth.UpdateMe(me with { Privacy = privacy });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogDebug(ex, "Privacy settings not refreshed");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task LoadBlockedAsync()
+    {
+        try
+        {
+            await Contacts.LoadAsync(cancellationToken: _lifetime.Token);
+        }
+        catch (Exception ex)
+        {
+            // Only the count next to "Blocked people" depends on it.
+            Logger.LogDebug(ex, "Contacts not loaded");
+        }
+    }
+
+    private string LevelName(PrivacyLevel level) => level switch
+    {
+        PrivacyLevel.Everybody => L["settings.privacy.level.everybody"],
+        PrivacyLevel.Contacts => L["settings.privacy.level.contacts"],
+        _ => L["settings.privacy.level.nobody"],
+    };
+
+    private async Task EditAsync(PrivacyField field)
+    {
+        if (Auth.Me is not { } me) return;
+        var current = field.Get(me.Privacy);
+        var levels = field.AllowNobody
+            ? new[] { PrivacyLevel.Everybody, PrivacyLevel.Contacts, PrivacyLevel.Nobody }
+            : new[] { PrivacyLevel.Everybody, PrivacyLevel.Contacts };
+        // Messages / group invites treat "Nobody" as "My contacts" on the server: show it as such.
+        if (!field.AllowNobody && current == PrivacyLevel.Nobody) current = PrivacyLevel.Contacts;
+        var options = levels.Select(level => new ChoiceOption<PrivacyLevel>(level, LevelName(level))
+        {
+            Icon = level switch
+            {
+                PrivacyLevel.Everybody => IconNames.Earth,
+                PrivacyLevel.Contacts => IconNames.BookUser,
+                _ => IconNames.Lock,
+            },
+            Selected = level == current,
+        }).ToList();
+        var choice = await Dialogs.ChooseAsync(L[field.TitleKey], options, L[field.HintKey]);
+        if (choice is null || choice.Value == current || Auth.Me is not { } latest) return;
+        _saving = true;
+        try
+        {
+            var saved = await Api.SetPrivacyAsync(field.Set(latest.Privacy, choice.Value), _lifetime.Token);
+            if (Auth.Me is { } fresh) Auth.UpdateMe(fresh with { Privacy = saved });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private Task ChangePasswordAsync() =>
+        Dialogs.ShowAsync<ChangePasswordDialog>(L["settings.password.title"], options: new DialogOptions { Presentation = OverlayPresentation.Auto });
+
+    private async Task DeleteAccountAsync()
+    {
+        await Dialogs.ShowAsync<DeleteAccountDialog>(L["settings.deleteAccount.title"], options: new DialogOptions { Presentation = OverlayPresentation.Auto });
+    }
+
+    private async Task SignOutAsync()
+    {
+        if (await Dialogs.ConfirmAsync(L["auth.signOut.confirm"], L["auth.signOut.text"], L["auth.signOut"], danger: true))
+            await Auth.LogoutAsync();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

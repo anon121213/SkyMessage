@@ -1,0 +1,146 @@
+@* Voice message player: waveform with progress, play/pause, scrub, speed, "new" mark for unheard incoming messages.
+   Playback is player.js (one sound at a time; it writes progress straight into this markup through --p, data-state
+   and [data-voice-pos]), so this component only renders the static parts. The played part of the waveform is a
+   coloured copy revealed up to --p with a soft edge; play/pause cross-turn into each other; player.js bumps the speed
+   chip when it is tapped. Also renders pending (uploading) voice messages from their local preview. Look: a round
+   gradient play orb (white on my own bubbles) and a gradient-lit waveform. *@
+@inherits UiComponentBase
+@inject IMediaUrlBuilder MediaUrls
+@inject ISettingsService Settings
+@inject FormatService Format
+@inject IAccountLocalStore LocalStore
+@inject IAuthService Auth
+
+<div class="voice @(Outgoing ? "voice--out" : null) @(Unplayed ? "voice--new" : null) @Class"
+     data-voice="@(Playable ? Media!.Id.ToString() : null)" data-src="@(Playable ? Url : null)" data-duration="@DurationMs" data-voice-speed
+     data-unplayed="@(Unplayed ? "" : null)" data-auto-next="@(AutoNext ? "" : null)">
+    @if (Pending)
+    {
+        <div class="voice__btn voice__btn--pending">
+            <ProgressRing Value="Progress" Size="44" Indeterminate="@(Progress <= 0.01)" OnCancel="OnCancel" CancelLabel="@L["chat.pending.cancel"]" Class="voice__ring" />
+        </div>
+    }
+    else
+    {
+        <button type="button" class="voice__btn" data-voice-play aria-label="@L["media.voice.play"]" title="@L["media.voice.play"]" disabled="@(!Playable)">
+            <Icon Name="@IconNames.Play" Size="22" Class="voice__icon-play" />
+            <Icon Name="@IconNames.Pause" Size="22" Class="voice__icon-pause" />
+        </button>
+    }
+    <div class="voice__main">
+        @* Dragging along it seeks (player.js), so a page swipe-back never starts here. *@
+        <div class="voice__wave" data-voice-scrub data-no-swipe-back aria-hidden="true">
+            <svg class="voice__bars" viewBox="0 0 @ViewWidth 24" preserveAspectRatio="none" focusable="false">@BarsFragment</svg>
+            @* The played copy is painted with a horizontal gradient (--wave-a → --wave-b) across the whole waveform. *@
+            <svg class="voice__bars voice__bars--fill" viewBox="0 0 @ViewWidth 24" preserveAspectRatio="none" focusable="false">
+                <defs>
+                    <linearGradient id="@_gradId" x1="0" y1="0" x2="@ViewWidth" y2="0" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" style="stop-color:var(--wave-a)" />
+                        <stop offset="1" style="stop-color:var(--wave-b)" />
+                    </linearGradient>
+                </defs>
+                <g fill="url(#@(_gradId))">@BarsFragment</g>
+            </svg>
+        </div>
+        <div class="voice__info">
+            <span class="voice__time sm-nums"><span class="voice__dur">@Format.DurationMs(DurationMs)</span><span class="voice__pos" data-voice-pos></span></span>
+            @if (Unplayed)
+            {
+                <span class="voice__dot" title="@L["media.voice.new"]"></span>
+            }
+            @if (Playable && ShowSpeed)
+            {
+                <button type="button" class="voice__speed" data-voice-speed-chip title="@L["media.voice.speed"]" aria-label="@L["media.voice.speed"]"
+                        @onclick="CycleSpeedAsync" @onclick:stopPropagation="true">@SpeedText</button>
+            }
+            <span class="voice__spacer"></span>
+            @Trailing
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int BarCount = 40;
+    /// <summary>Document-unique id of this player's waveform gradient.</summary>
+    private readonly string _gradId = "vw" + Guid.NewGuid().ToString("N")[..12];
+    private const double BarStep = 4;
+    private double[] _bars = [];
+    private byte[]? _barsFor;
+    private bool _barsBuilt;
+    private PlayedMediaStore? _played;
+
+    /// <summary>The uploaded voice message (null while pending).</summary>
+    [Parameter] public MediaDto? Media { get; set; }
+    /// <summary>Local preview of a voice message still being sent.</summary>
+    [Parameter] public LocalAttachmentPreview? Local { get; set; }
+    /// <summary>Incoming message: show the "new" mark until played.</summary>
+    [Parameter] public bool TrackPlayed { get; set; }
+    [Parameter] public bool Outgoing { get; set; }
+    /// <summary>Continue with the next unheard voice message after this one ends.</summary>
+    [Parameter] public bool AutoNext { get; set; } = true;
+    [Parameter] public bool ShowSpeed { get; set; } = true;
+    [Parameter] public bool Pending { get; set; }
+    [Parameter] public double Progress { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    /// <summary>Right side of the info line (the bubble's time and status).</summary>
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private bool Playable => !Pending && Media is { Status: MediaStatus.Ready };
+
+    private string? Url => Media is null ? null : MediaUrls.ContentUrl(Media);
+
+    private int DurationMs => Media?.DurationMs ?? Local?.DurationMs ?? 0;
+
+    private bool Unplayed => TrackPlayed && Playable && _played is not null && _played.IsUnplayed(Media!.Id);
+
+    private string ViewWidth => (BarCount * BarStep).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private double Rate => Settings.Current.Chats.VoicePlaybackRate is var r && r > 0 ? r : 1;
+
+    private string SpeedText => Rate.ToString("0.#", L.Culture) + "×";
+
+    protected override void OnInitialized()
+    {
+        _played = PlayedMediaStore.For(LocalStore, Auth);
+        RenderOn<Guid>(h => _played.Changed += h, h => _played.Changed -= h, id => id == Guid.Empty || id == Media?.Id);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    protected override void OnParametersSet()
+    {
+        var waveform = Media?.Waveform ?? Local?.Waveform;
+        if (_barsBuilt && ReferenceEquals(waveform, _barsFor)) return;
+        _barsFor = waveform;
+        _barsBuilt = true;
+        _bars = MediaFacts.Bars(waveform, BarCount);
+    }
+
+    private RenderFragment BarsFragment => builder =>
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        for (var i = 0; i < _bars.Length; i++)
+        {
+            var height = Math.Max(2.5, _bars[i] * 22);
+            builder.OpenElement(0, "rect");
+            builder.AddAttribute(1, "x", (i * BarStep + 0.7).ToString("0.##", culture));
+            builder.AddAttribute(2, "y", ((24 - height) / 2).ToString("0.##", culture));
+            builder.AddAttribute(3, "width", "2.6");
+            builder.AddAttribute(4, "height", height.ToString("0.##", culture));
+            builder.AddAttribute(5, "rx", "1.3");
+            builder.CloseElement();
+        }
+    };
+
+    private async Task CycleSpeedAsync()
+    {
+        var next = Rate switch
+        {
+            < 1.25 => 1.5,
+            < 1.75 => 2.0,
+            _ => 1.0,
+        };
+        await Settings.UpdateAsync(s => s.Chats.VoicePlaybackRate = next);
+    }
+}

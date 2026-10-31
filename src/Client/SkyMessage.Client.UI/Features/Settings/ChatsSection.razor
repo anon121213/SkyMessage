@@ -1,0 +1,52 @@
+@* Chat behavior: Enter to send, quick reaction (EmojiPicker), autoplay of videos and round videos, voice speed. *@
+@inherits UiComponentBase
+@inject ISettingsService Settings
+@inject IPlatformInfo Platform
+@inject DialogService Dialogs
+
+<SettingsScaffold Title="@L["settings.chats.title"]">
+    @{
+        var c = Settings.Current.Chats;
+    }
+    <Section Title="@L["settings.chats.input"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.CornerDownLeft" IconColor="@SettingsTones.Sky" Title="@L["settings.chats.sendByEnter"]"
+                    Subtitle="@(c.SendByEnter ? L["settings.chats.sendByEnterOn"] : L["settings.chats.sendByEnterOff"])"
+                    Checked="c.SendByEnter" CheckedChanged="v => Settings.UpdateAsync(s => s.Chats.SendByEnter = v)" />
+        <ListItem Icon="@IconNames.SmilePlus" IconColor="@SettingsTones.Peach" Title="@L["settings.chats.quickReaction"]" Subtitle="@L["settings.chats.quickReactionHint"]"
+                  Multiline="true" OnClick="PickReactionAsync">
+            <Trailing><span class="quick-reaction sm-emoji">@c.QuickReaction</span></Trailing>
+        </ListItem>
+    </Section>
+
+    <Section Title="@L["settings.chats.media"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.Film" IconColor="@SettingsTones.Violet" Title="@L["settings.chats.autoplayVideos"]" Subtitle="@L["settings.chats.autoplayVideosHint"]"
+                    Checked="c.AutoplayVideos" CheckedChanged="v => Settings.UpdateAsync(s => s.Chats.AutoplayVideos = v)" />
+        <SwitchItem Icon="@IconNames.CirclePlay" IconColor="@SettingsTones.Orchid" Title="@L["settings.chats.autoplayNotes"]" Subtitle="@L["settings.chats.autoplayNotesHint"]"
+                    Checked="c.AutoplayVideoNotes" CheckedChanged="v => Settings.UpdateAsync(s => s.Chats.AutoplayVideoNotes = v)" />
+    </Section>
+
+    <Section Title="@L["settings.chats.voiceSpeed"]" Footer="@L["settings.chats.voiceSpeedHint"]">
+        <div class="sm-p-m">
+            <SlidingSegmentedControl TValue="double" Options="Speeds" Value="Speed(c.VoicePlaybackRate)" ValueChanged="v => Settings.UpdateAsync(s => s.Chats.VoicePlaybackRate = v)"
+                                     Label="@L["settings.chats.voiceSpeed"]" />
+        </div>
+    </Section>
+</SettingsScaffold>
+
+@code {
+    private static readonly double[] Rates = [1.0, 1.5, 2.0];
+
+    private IReadOnlyList<ChoiceOption<double>> Speeds => Rates.Select(r => new ChoiceOption<double>(r, $"{r.ToString("0.#", L.Culture)}×")).ToList();
+
+    protected override void OnInitialized() => RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+
+    private static double Speed(double value) => Rates.OrderBy(r => Math.Abs(r - value)).First();
+
+    private async Task PickReactionAsync()
+    {
+        var picked = await Dialogs.ShowAsync<QuickReactionDialog>(L["settings.chats.quickReaction"],
+            options: new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Flush = true });
+        if (picked is string emoji && !string.IsNullOrWhiteSpace(emoji) && emoji.Length <= Limits.ReactionMaxLength)
+            await Settings.UpdateAsync(s => s.Chats.QuickReaction = emoji);
+    }
+}

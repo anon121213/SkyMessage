@@ -1,0 +1,477 @@
+@* The call screen (logic in CallOverlay.razor.cs). No parameters: MainLayout renders it once, above everything.
+   Expanded: a full-screen calm night sky (both themes) with its own history entry (Back, the chevron or a drag down
+   minimize it). Minimized: a night capsule at the top of the shell (order: -1 in the shell's flex column) that stays
+   while the user navigates. Design: docs/DESIGN.md (Calls), motion: docs/MOTION.md. *@
+@inherits UiComponentBase
+
+@{
+    var view = Display;
+    var expanded = _expanded;
+    // A call that just went away stays a moment longer, fading out (screen) or sliding up (bar).
+    var leaving = false;
+    if (view is null && _leaving is { } gone)
+    {
+        view = gone.View;
+        expanded = gone.Expanded;
+        leaving = true;
+    }
+}
+@if (view is not null)
+{
+    var session = view.Session;
+    var live = view.Mode is ViewMode.Outgoing or ViewMode.Connecting or ViewMode.Active or ViewMode.Reconnecting;
+    if (expanded)
+    {
+        var peer = view.IsGroup ? null : Peer(session);
+        var sharer = ScreenSharer;
+        string? remoteKey = null;
+        if (live && !view.IsGroup && peer is not null)
+            remoteKey = peer.HasScreen ? $"screen:{peer.UserId}" : peer.HasVideo ? $"cam:{peer.UserId}" : null;
+        var localKey = live && CameraOn ? "local-camera" : null;
+        var mainIsLocal = remoteKey is null || (_swapped && localKey is not null);
+        var mainKey = mainIsLocal ? localKey : remoteKey;
+        var pipKey = remoteKey is null ? null : mainIsLocal ? remoteKey : localKey;
+        var groupStage = live && view.IsGroup && _remote.Count > 0;
+        var heroShown = !live || (!view.IsGroup && remoteKey is null) || (view.IsGroup && _remote.Count == 0);
+        var fullBleed = live && !view.IsGroup && mainKey is not null;
+        var incoming = view.Mode == ViewMode.Incoming;
+
+        @* Shows through while the screen is dragged down to minimize (calls.js attachMinimize). *@
+        <div @ref="_backdrop" class="call-backdrop" aria-hidden="true"></div>
+        <div @ref="_screen" class="call-screen @(fullBleed ? "call-screen--video" : null) @(groupStage ? "call-screen--group" : null) @(incoming ? "call-screen--incoming" : null) @(view.Mode == ViewMode.Ended ? "call-screen--ended" : null) @(leaving ? "call-screen--leaving" : null)"
+             role="dialog" aria-modal="true" aria-label="@view.Title" data-no-swipe-back>
+            @* The call's own sky: a calm, deep night — darker overhead, a faint haze low down, one soft light drifting
+               very slowly and small round stars. Hidden behind a full-screen video, still in lite mode. *@
+            <div class="call-sky" aria-hidden="true">
+                <span class="call-sky__light"></span>
+                <span class="call-sky__stars"></span>
+            </div>
+
+            <div @ref="_stage" class="call-stage">
+                @if (!live)
+                {
+                    @Hero(view, peer)
+                }
+                else if (view.IsGroup)
+                {
+                    @if (_remote.Count == 0)
+                    {
+                        @Hero(view, null)
+                        @if (localKey is not null)
+                        {
+                            <div @key="@("pip")" class="call-pip" data-pip data-no-swipe-back>
+                                <div class="call-slot @(MirrorLocal ? "is-mirrored" : null)" data-slot="local-camera"></div>
+                            </div>
+                        }
+                    }
+                    else if (sharer is not null)
+                    {
+                        <div class="call-share">
+                            <div class="call-share__main">
+                                <div @key="@("share")" class="call-slot" data-slot="@($"screen:{sharer.UserId}")" data-fit="contain"></div>
+                                <div class="call-share__who"><Icon Name="@IconNames.ScreenShare" Size="14" /> <span class="sm-truncate">@L.Format("calls.sharingBy", Users.NameOf(ParseId(sharer.UserId), L))</span></div>
+                            </div>
+                            <div class="call-share__strip" data-no-minimize>
+                                @MyTile()
+                                @foreach (var p in _remote)
+                                {
+                                    @RemoteTile(p)
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        var count = _remote.Count + 1;
+                        var columns = count <= 1 ? 1 : count == 2 ? (Layout.IsPhone && !Layout.IsLandscape ? 1 : 2) : count <= 4 ? 2 : count <= 9 ? 3 : 4;
+                        @* A grid that scrolls keeps its vertical drags. *@
+                        <div class="call-grid @(count > 12 ? "call-grid--scroll" : null)" style="--cols:@columns" data-no-minimize="@(count > 12 ? "" : null)">
+                            @MyTile()
+                            @foreach (var p in _remote)
+                            {
+                                @RemoteTile(p)
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    @if (mainKey is not null)
+                    {
+                        <div @key="@("main")" class="call-main @(remoteKey is null ? "call-main--backdrop" : null)">
+                            <div class="call-slot @(mainIsLocal && MirrorLocal ? "is-mirrored" : null)" data-slot="@mainKey"
+                                 data-fit="@(mainKey.StartsWith("screen:", StringComparison.Ordinal) ? "contain" : "cover")"></div>
+                        </div>
+                    }
+                    @if (remoteKey is null)
+                    {
+                        @Hero(view, peer)
+                    }
+                    @if (pipKey is not null)
+                    {
+                        <div @key="@("pip")" class="call-pip" data-pip data-no-swipe-back role="button" tabindex="0" aria-label="@L["calls.swap"]" @onclick="Swap">
+                            <div class="call-slot @(!mainIsLocal && MirrorLocal ? "is-mirrored" : null)" data-slot="@pipKey"></div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <header class="call-top">
+                @* Hint that the screen can be pulled down (touch screens). *@
+                <span class="call-top__grabber" aria-hidden="true"></span>
+                <IconButton Icon="@IconNames.ChevronDown" Label="@L["calls.minimize"]" Variant="IconButtonVariant.OnMedia" Class="call-top__btn" OnClick="MinimizeAsync" />
+                <div class="call-top__text">
+                    @if (!heroShown)
+                    {
+                        <div class="call-top__pill">
+                            <span class="call-top__title">@view.Title</span>
+                            <span @key="StatusKey(view)" class="call-top__status sm-nums">
+                                @if (view.Mode == ViewMode.Active)
+                                {
+                                    <span class="call-live-dot" aria-hidden="true"></span>
+                                }
+                                @StatusText(view, view.Status)
+                            </span>
+                        </div>
+                    }
+                </div>
+                @if (live && !heroShown && CallUi.QualityIcon(LocalQuality) is { } qualityIcon)
+                {
+                    <span class="call-top__quality @(LocalQuality <= 1 ? "is-weak" : null)" title="@(LocalQuality <= 1 ? L["calls.quality.weak"] : L["calls.quality.good"])">
+                        <Icon Name="@qualityIcon" Size="18" />
+                    </span>
+                }
+                else
+                {
+                    <span class="call-top__spacer" aria-hidden="true"></span>
+                }
+            </header>
+
+            <div class="call-banners" aria-live="polite">
+                @if (view.Mode == ViewMode.Reconnecting)
+                {
+                    <div class="call-banner call-banner--warning">
+                        <span class="call-banner__icon"><Spinner Size="16" Inherit="true" /></span>
+                        <span class="call-banner__text">@L["calls.banner.reconnecting"]</span>
+                    </div>
+                }
+                @if (_replaced && live)
+                {
+                    <div class="call-banner">
+                        <span class="call-banner__icon"><Icon Name="@IconNames.MonitorSmartphone" Size="17" /></span>
+                        <span class="call-banner__text">@L["calls.banner.replaced"]</span>
+                        <button type="button" class="call-banner__action" @onclick="MoveCallHereAsync">@L["calls.banner.moveHere"]</button>
+                    </div>
+                }
+                @if (_audioBlocked && live)
+                {
+                    <div class="call-banner">
+                        <span class="call-banner__icon"><Icon Name="@IconNames.VolumeX" Size="17" /></span>
+                        <span class="call-banner__text">@L["calls.banner.audioBlocked"]</span>
+                        <button type="button" class="call-banner__action" @onclick="EnableAudioAsync">@L["calls.banner.enableAudio"]</button>
+                    </div>
+                }
+                @if (_cameraInterrupted && live)
+                {
+                    <div class="call-banner">
+                        <span class="call-banner__icon"><Icon Name="@IconNames.CameraOff" Size="17" /></span>
+                        <span class="call-banner__text">@L["calls.banner.cameraStopped"]</span>
+                        <button type="button" class="call-banner__action" @onclick="RestartCameraAsync">@L["calls.banner.cameraOn"]</button>
+                    </div>
+                }
+                @if (_micProblem is not null && live)
+                {
+                    <div class="call-banner call-banner--warning">
+                        <span class="call-banner__icon"><Icon Name="@IconNames.MicOff" Size="17" /></span>
+                        <span class="call-banner__text">@L["calls.banner.noMicrophone"]</span>
+                    </div>
+                }
+                @if (ScreenOn && live)
+                {
+                    <div class="call-banner">
+                        <span class="call-banner__icon"><Icon Name="@IconNames.ScreenShare" Size="17" /></span>
+                        <span class="call-banner__text">@L["calls.banner.sharing"]</span>
+                        <button type="button" class="call-banner__action" @onclick="ToggleScreenAsync">@L["calls.banner.stopSharing"]</button>
+                    </div>
+                }
+                @if (live && !view.IsGroup && view.Mode == ViewMode.Active && peer is { IsMuted: true } && remoteKey is not null)
+                {
+                    <div class="call-banner call-banner--quiet">
+                        <span class="call-banner__icon"><Icon Name="@IconNames.MicOff" Size="15" /></span>
+                        <span class="call-banner__text">@L["calls.peerMuted"]</span>
+                    </div>
+                }
+            </div>
+
+            @* Once the call ended the deck stays where it was and fades (the face above does not jump). *@
+            <div class="call-controls @(incoming ? "call-controls--incoming" : null) @(view.Mode == ViewMode.Ended ? "call-controls--ended" : null)" inert="@(view.Mode == ViewMode.Ended)">
+                @if (incoming)
+                {
+                    <CallButton Icon="@IconNames.PhoneOff" Label="@L["calls.decline"]" Kind="CallButtonKind.Danger" Glow="true" OnClick="DeclineAsync" />
+                    @if (session.Call.IsVideo)
+                    {
+                        <CallButton Icon="@IconNames.Phone" Label="@L["calls.acceptAudio"]" Kind="CallButtonKind.Normal" Class="call-btn--audio-only" OnClick="() => AcceptAsync(false)" />
+                        <CallButton Icon="@IconNames.Video" Label="@L["calls.acceptVideo"]" Kind="CallButtonKind.Accept" Glow="true" OnClick="() => AcceptAsync(true)" />
+                    }
+                    else
+                    {
+                        <CallButton Icon="@IconNames.Phone" Label="@L["calls.accept"]" Kind="CallButtonKind.Accept" Glow="true" OnClick="() => AcceptAsync(false)" />
+                    }
+                }
+                else if (live || view.Mode == ViewMode.Ended)
+                {
+                    <div class="call-deck">
+                        <CallButton Icon="@(MicOn ? IconNames.Mic : IconNames.MicOff)" Label="@(MicOn ? L["calls.mute"] : L["calls.unmute"])" Active="!MicOn" Toggle="true"
+                                    OnClick="ToggleMicAsync" />
+                        <CallButton Icon="@(CameraOn ? IconNames.Video : IconNames.VideoOff)" Label="@(CameraOn ? L["calls.cameraOff"] : L["calls.cameraOn"])" Active="CameraOn"
+                                    Toggle="true" OnClick="ToggleCameraAsync" />
+                        @if (CanFlip)
+                        {
+                            <CallButton Icon="@IconNames.SwitchCamera" Label="@L["calls.flip"]" OnClick="SwitchCameraAsync" />
+                        }
+                        @if (HasAudioMenu)
+                        {
+                            var routeKind = ActiveRouteKind;
+                            <CallButton Icon="@CallUi.RouteIcon(routeKind)" Label="@AudioButtonLabel(routeKind)"
+                                        Active="@(routeKind is not null and not AudioRouteKind.Earpiece)" OnClick="OpenAudioMenuAsync" />
+                        }
+                        @if (CanScreenShare)
+                        {
+                            <CallButton Icon="@(ScreenOn ? IconNames.ScreenShareOff : IconNames.ScreenShare)" Label="@(ScreenOn ? L["calls.screenStop"] : L["calls.screen"])"
+                                        Active="ScreenOn" Toggle="true" OnClick="ToggleScreenAsync" />
+                        }
+                        <CallButton Icon="@IconNames.PhoneOff" Label="@L["calls.hangup"]" Kind="CallButtonKind.Danger" Class="call-btn--hangup" OnClick="HangupAsync" />
+                    </div>
+                }
+            </div>
+
+            <ContextMenu @ref="_audioMenu" Title="@L["calls.audio.title"]">
+                @if (AudioRoutes.IsSupported)
+                {
+                    @foreach (var route in _routes)
+                    {
+                        <MenuItem Icon="@CallUi.RouteIcon(route.Kind)" Label="@CallUi.RouteName(L, route)" Hint="@(route.IsActive ? "✓" : null)"
+                                  OnClick="() => SelectRouteAsync(route)" />
+                    }
+                    @if (_routes.Count == 0)
+                    {
+                        <div class="call-menu__empty">@L["calls.audio.none"]</div>
+                    }
+                }
+                else
+                {
+                    var devices = Settings.Current.Devices;
+                    @if (_speakers.Count > 0)
+                    {
+                        <div class="call-menu__heading">@L["calls.audio.output"]</div>
+                        <MenuItem Icon="@IconNames.Volume2" Label="@L["calls.audio.systemDefault"]" Hint="@(devices.SpeakerId is null ? "✓" : null)"
+                                  OnClick="() => SelectSpeakerAsync(null)" />
+                        @for (var i = 0; i < _speakers.Count; i++)
+                        {
+                            var device = _speakers[i];
+                            <MenuItem Icon="@IconNames.Speaker" Label="@DeviceLabel(device, L["calls.audio.speakerN"], i)" Hint="@(devices.SpeakerId == device.Id ? "✓" : null)"
+                                      OnClick="() => SelectSpeakerAsync(device.Id)" />
+                        }
+                        <MenuDivider />
+                    }
+                    <div class="call-menu__heading">@L["calls.audio.input"]</div>
+                    <MenuItem Icon="@IconNames.Mic" Label="@L["calls.audio.systemDefault"]" Hint="@(devices.MicrophoneId is null ? "✓" : null)"
+                              OnClick="() => SelectMicrophoneAsync(null)" />
+                    @for (var i = 0; i < _microphones.Count; i++)
+                    {
+                        var device = _microphones[i];
+                        <MenuItem Icon="@IconNames.Mic" Label="@DeviceLabel(device, L["calls.audio.microphoneN"], i)" Hint="@(devices.MicrophoneId == device.Id ? "✓" : null)"
+                                  OnClick="() => SelectMicrophoneAsync(device.Id)" />
+                    }
+                }
+            </ContextMenu>
+        </div>
+    }
+    else
+    {
+        var speakingNow = view.Mode == ViewMode.Active && (LocalSpeaking || _remote.Any(r => r.IsSpeaking));
+        @* The minimized call: a capsule of the call's night floating at the top of the app. Tap to open the call. *@
+        <div class="call-bar call-bar--@BarTone(view.Mode) @(leaving ? "call-bar--leaving" : null)">
+            <div class="call-bar__pill" role="button" tabindex="0" aria-label="@L["calls.bar.open"]" @onclick="ExpandAsync" @onkeydown="OnBarKeyDown">
+                <span class="call-bar__avatar" aria-hidden="true">@AvatarOf(view.Session, 34)</span>
+                <span class="call-bar__text">
+                    <span class="call-bar__title">@view.Title</span>
+                    <span class="call-bar__line">
+                        <span class="call-bar__live @(speakingNow ? "is-speaking" : null)" aria-hidden="true">
+                            @if (view.Mode == ViewMode.Incoming)
+                            {
+                                <Icon Name="@IconNames.PhoneIncoming" Size="13" StrokeWidth="2.4" />
+                            }
+                            else
+                            {
+                                <i></i><i></i><i></i><i></i>
+                            }
+                        </span>
+                        <span @key="StatusKey(view)" class="call-bar__status sm-nums">@StatusText(view, view.Status)</span>
+                    </span>
+                </span>
+                @if (view.Mode == ViewMode.Incoming)
+                {
+                    <CallButton Compact="true" Icon="@IconNames.PhoneOff" Label="@L["calls.decline"]" Kind="CallButtonKind.Danger" OnClick="DeclineAsync" />
+                    <CallButton Compact="true" Icon="@IconNames.Phone" Label="@L["calls.accept"]" Kind="CallButtonKind.Accept" OnClick="() => AcceptAsync(false)" />
+                }
+                else if (live)
+                {
+                    <CallButton Compact="true" Icon="@(MicOn ? IconNames.Mic : IconNames.MicOff)" Label="@(MicOn ? L["calls.mute"] : L["calls.unmute"])" Active="!MicOn"
+                                Toggle="true" OnClick="ToggleMicAsync" />
+                    <CallButton Compact="true" Icon="@IconNames.PhoneOff" Label="@L["calls.hangup"]" Kind="CallButtonKind.Danger" OnClick="HangupAsync" />
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    // The avatar's shape (the kit's squircle, --sm-squircle) as a path, for the rings that ripple out of it.
+    private const string SquirclePath = "M50 0C88.6 0 100 11.4 100 50S88.6 100 50 100 0 88.6 0 50 11.4 0 50 0Z";
+
+    private RenderFragment Hero(CallView view, RemoteMediaInfo? peer) => __builder =>
+    {
+        var ringing = view.Mode is ViewMode.Incoming or ViewMode.Outgoing;
+        var speaking = view.Mode == ViewMode.Active && peer is { IsSpeaking: true };
+        var waiting = view.IsGroup && view.Mode is ViewMode.Active or ViewMode.Connecting && _remote.Count == 0;
+        var waitingNow = waiting && view.Mode == ViewMode.Active;
+        var connecting = view.Mode is ViewMode.Connecting or ViewMode.Reconnecting || waitingNow;
+        var calm = view.Mode == ViewMode.Active && !waitingNow;
+        // The moment a 1:1 call connects, one ring opens out of the face (once: not when the screen is opened again
+        // later).
+        var justConnected = calm && !view.IsGroup && view.Session.ConnectedAt is { } at && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(2);
+        var tone = ringing ? "ringing" : connecting ? "connecting" : calm ? "live" : "ended";
+        <div class="call-hero call-hero--@tone @(view.Mode == ViewMode.Ended ? "call-hero--ended" : null)">
+            <div class="call-hero__avatar @(speaking ? "is-speaking" : null)">
+                @if (ringing || connecting)
+                {
+                    @for (var i = 1; i <= 2; i++)
+                    {
+                        <svg class="call-hero__ring call-hero__ring--@i" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="@SquirclePath" /></svg>
+                    }
+                }
+                else if (calm)
+                {
+                    @* Voice ripples: always running, shown while the other side speaks (they fade in and out). *@
+                    <span class="call-hero__voices" aria-hidden="true">
+                        <svg class="call-hero__voice call-hero__voice--1" viewBox="0 0 100 100" focusable="false"><path d="@SquirclePath" /></svg>
+                        <svg class="call-hero__voice call-hero__voice--2" viewBox="0 0 100 100" focusable="false"><path d="@SquirclePath" /></svg>
+                    </span>
+                }
+                @if (justConnected)
+                {
+                    @* Just connected: one quiet ring opens out of the face. *@
+                    <svg @key="@("burst")" class="call-hero__burst" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="@SquirclePath" /></svg>
+                }
+                <div class="call-hero__face">@AvatarOf(view.Session, Layout.IsPhone ? 132 : 148)</div>
+                @* A thin glass rim around the face. *@
+                <svg class="call-hero__rim" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="@SquirclePath" /></svg>
+            </div>
+            <div class="call-hero__title">@view.Title</div>
+            @* Keyed by what it says (ringing, connecting, the timer…): a change fades in, the ticking timer does not. *@
+            <div @key="@(waitingNow ? "waiting" : StatusKey(view))" class="call-hero__status sm-nums @(calm ? "call-hero__status--live" : null)">
+                @if (calm)
+                {
+                    <span class="call-live-dot" aria-hidden="true"></span>
+                }
+                @StatusText(view, waitingNow ? L["calls.status.waiting"] : view.Status, waitingNow)
+            </div>
+            @if (view.Mode == ViewMode.Active)
+            {
+                var qualityIcon = CallUi.QualityIcon(LocalQuality);
+                var weak = LocalQuality is 0 or 1;
+                <div class="call-hero__chips">
+                    <span class="call-chip" title="@L["calls.chip.secureHint"]"><Icon Name="@IconNames.Lock" Size="13" StrokeWidth="2.4" /> @L["calls.chip.secure"]</span>
+                    @if (qualityIcon is not null)
+                    {
+                        <span class="call-chip @(weak ? "call-chip--weak" : null)"><Icon Name="@qualityIcon" Size="14" StrokeWidth="2.4" /> @(weak ? L["calls.quality.weak"] : L["calls.quality.good"])</span>
+                    }
+                </div>
+            }
+            @if (view.Mode == ViewMode.Active && !view.IsGroup && peer is { IsMuted: true })
+            {
+                <div class="call-hero__note"><Icon Name="@IconNames.MicOff" Size="15" /> @L["calls.peerMuted"]</div>
+            }
+        </div>
+    };
+
+    private RenderFragment AvatarOf(CallSession session, double size) => __builder =>
+    {
+        if (session.PeerUserId is { } peerId)
+        {
+            <UserAvatar UserId="peerId" Size="size" />
+        }
+        else if (ChatList.Get(session.Call.ChatId) is { } chat)
+        {
+            <ChatAvatar Chat="chat" Size="size" ShowOnline="false" />
+        }
+        else
+        {
+            <SkyMessage.Client.UI.Kit.Avatar Url="@MediaUrls.AvatarUrl(session.AvatarMediaId)" Name="@session.Title" Seed="session.Call.ChatId" Size="size" />
+        }
+    };
+
+    private RenderFragment MyTile() => __builder =>
+    {
+        var me = Auth.Me;
+        <CallTile @key="@("me")" SlotKey="local-camera" Name="@L["calls.you"]" HasVideo="CameraOn" Muted="!MicOn" Speaking="LocalSpeaking" Mirror="MirrorLocal"
+                  Quality="LocalQuality" MutedLabel="@L["calls.muted"]" WeakLabel="@L["calls.quality.weak"]">
+            <AvatarContent>
+                <SkyMessage.Client.UI.Kit.Avatar Url="@MediaUrls.AvatarUrl(me?.AvatarMediaId)" Name="@(me?.DisplayName ?? "")" Seed="@(me?.Id ?? Guid.Empty)"
+                                                 Size="@(Layout.IsPhone ? 68 : 92)" />
+            </AvatarContent>
+        </CallTile>
+    };
+
+    private RenderFragment RemoteTile(RemoteMediaInfo p) => __builder =>
+    {
+        var id = ParseId(p.UserId);
+        <CallTile @key="p.UserId" SlotKey="@($"cam:{p.UserId}")" Name="@Users.NameOf(id, L)" HasVideo="p.HasVideo" Muted="p.IsMuted" Speaking="p.IsSpeaking"
+                  Active="p.IsActiveSpeaker" Quality="p.Quality" MutedLabel="@L["calls.muted"]" WeakLabel="@L["calls.quality.weak"]">
+            <AvatarContent>
+                <UserAvatar UserId="id" Size="@(Layout.IsPhone ? 68 : 92)" />
+            </AvatarContent>
+        </CallTile>
+    };
+
+    private string AudioButtonLabel(AudioRouteKind? kind) => kind switch
+    {
+        AudioRouteKind.Earpiece or AudioRouteKind.Speaker => L["calls.audio.speakerButton"],
+        AudioRouteKind.Bluetooth => L["calls.route.bluetooth"],
+        AudioRouteKind.Wired => L["calls.route.wired"],
+        _ => L["calls.audio.button"],
+    };
+
+    private static string BarTone(ViewMode mode) => mode switch
+    {
+        ViewMode.Incoming => "incoming",
+        ViewMode.Ended => "ended",
+        ViewMode.Outgoing or ViewMode.Connecting or ViewMode.Reconnecting => "connecting",
+        _ => "active",
+    };
+
+    /// <summary>Changes when the status line starts saying something else (not when the timer ticks).</summary>
+    private static string StatusKey(CallView view) => view.Mode.ToString();
+
+    /// <summary>
+    /// The status line; "Calling…", "Connecting…" and the like end in dots that keep going instead of a static
+    /// ellipsis, so it is clear something is still happening.
+    /// </summary>
+    private RenderFragment StatusText(CallView view, string text, bool waiting = false) => __builder =>
+    {
+        var pending = waiting || view.Mode is ViewMode.Outgoing or ViewMode.Connecting or ViewMode.Reconnecting;
+        var bare = !pending ? null
+            : text.EndsWith('…') ? text[..^1]
+            : text.EndsWith("...", StringComparison.Ordinal) ? text[..^3]
+            : null;
+        if (bare is null)
+        {
+            @text
+        }
+        else
+        {
+            @bare<span class="call-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+        }
+    };
+}

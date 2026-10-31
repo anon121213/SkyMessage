@@ -1,0 +1,1370 @@
+/* The call screen — a calm night (docs/DESIGN.md, Calls): a deep, low-saturation sky of its own in both themes, small
+   round stars, the squircle face with thin rings opening out of it while it rings, white glass controls on a floating
+   deck, a rose hang-up pill. The minimized call is a capsule of the same night at the top of the app.
+   Restraint: no glows or halos, no colored blobs, no sparkles; light comes from the sky gradient alone.
+   Colors here are the night palette (the screen ignores the light theme on purpose); accents come from the tokens.
+   Performance: transform/opacity animations only; nothing on this screen uses backdrop-filter (it would re-blur a
+   playing video every frame); the sky is hidden behind a full-screen video, still behind the group grid and in lite. */
+
+/* ---- Expanded call screen: above dialogs (900), below banners (960) and toasts (980) ---- */
+
+.call-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 940;
+    display: flex;
+    flex-direction: column;
+    color: #FFFFFF;
+    background: #0C0E22;
+    transform-origin: 50% 0;
+    animation: call-screen-in var(--sm-dur-slow) var(--sm-ease-out);
+    overflow: hidden;
+    /* Nothing here scrolls (the big group grid and the share strip opt back in): calls.js owns the drags. */
+    touch-action: none;
+}
+
+@keyframes call-screen-in {
+    from {
+        opacity: 0;
+        transform: translateY(-14px) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* Dragged down to minimize (calls.js): a card that shrinks toward the top, the app showing through around it. */
+.call-screen.is-dragged {
+    border-radius: 34px;
+    transform-origin: 50% 0;
+    will-change: transform;
+    box-shadow: 0 30px 70px rgba(2, 3, 14, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.call-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 939;
+    background: #06071A;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.call-backdrop.is-shown {
+    visibility: visible;
+}
+
+/* ---- The night sky ---- */
+
+/* Darker overhead, a faint haze low down where the deck stands. */
+.call-sky {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background: linear-gradient(180deg, #0B0D20 0%, #10132B 42%, #161A37 78%, #1C2040 100%);
+    contain: strict;
+    transition: opacity 700ms ease;
+}
+
+/* One soft, colorless light drifting very slowly (barely there: it keeps the night from looking printed). */
+.call-sky__light {
+    position: absolute;
+    left: -30vmax;
+    top: -46vmax;
+    width: 120vmax;
+    height: 120vmax;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(150, 160, 214, 0.11), rgba(150, 160, 214, 0));
+    will-change: transform;
+    animation: call-sky-drift 40s ease-in-out infinite alternate;
+}
+
+@keyframes call-sky-drift {
+    from {
+        transform: translate3d(0, 0, 0);
+    }
+
+    to {
+        transform: translate3d(22%, 8%, 0);
+    }
+}
+
+/* Small round stars, thinning out toward the horizon; two fields twinkle slowly, out of phase. */
+.call-sky__stars {
+    position: absolute;
+    inset: 0 0 18% 0;
+}
+
+.call-sky__stars::before,
+.call-sky__stars::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    will-change: opacity;
+}
+
+.call-sky__stars::before {
+    background-image:
+        radial-gradient(1.4px 1.4px at 9% 14%, rgba(255, 255, 255, 0.85) 50%, transparent 52%),
+        radial-gradient(1px 1px at 24% 31%, rgba(255, 255, 255, 0.6) 50%, transparent 52%),
+        radial-gradient(1.6px 1.6px at 39% 8%, rgba(255, 255, 255, 0.9) 50%, transparent 52%),
+        radial-gradient(1px 1px at 53% 22%, rgba(255, 255, 255, 0.55) 50%, transparent 52%),
+        radial-gradient(1.3px 1.3px at 67% 12%, rgba(255, 255, 255, 0.75) 50%, transparent 52%),
+        radial-gradient(1px 1px at 80% 34%, rgba(255, 255, 255, 0.5) 50%, transparent 52%),
+        radial-gradient(1.5px 1.5px at 91% 6%, rgba(255, 255, 255, 0.85) 50%, transparent 52%),
+        radial-gradient(1px 1px at 95% 47%, rgba(255, 255, 255, 0.45) 50%, transparent 52%),
+        radial-gradient(1.2px 1.2px at 13% 55%, rgba(255, 255, 255, 0.55) 50%, transparent 52%),
+        radial-gradient(1px 1px at 34% 70%, rgba(255, 255, 255, 0.4) 50%, transparent 52%),
+        radial-gradient(1.2px 1.2px at 72% 63%, rgba(255, 255, 255, 0.5) 50%, transparent 52%);
+    animation: call-twinkle 7s ease-in-out infinite;
+}
+
+.call-sky__stars::after {
+    background-image:
+        radial-gradient(1px 1px at 17% 22%, rgba(255, 255, 255, 0.6) 50%, transparent 52%),
+        radial-gradient(1.4px 1.4px at 30% 46%, rgba(255, 255, 255, 0.7) 50%, transparent 52%),
+        radial-gradient(1px 1px at 46% 37%, rgba(255, 255, 255, 0.5) 50%, transparent 52%),
+        radial-gradient(1.2px 1.2px at 58% 5%, rgba(255, 255, 255, 0.8) 50%, transparent 52%),
+        radial-gradient(1px 1px at 75% 21%, rgba(255, 255, 255, 0.6) 50%, transparent 52%),
+        radial-gradient(1.4px 1.4px at 85% 52%, rgba(255, 255, 255, 0.65) 50%, transparent 52%),
+        radial-gradient(1px 1px at 4% 38%, rgba(255, 255, 255, 0.5) 50%, transparent 52%),
+        radial-gradient(1px 1px at 62% 44%, rgba(255, 255, 255, 0.45) 50%, transparent 52%),
+        radial-gradient(1.1px 1.1px at 23% 82%, rgba(255, 255, 255, 0.35) 50%, transparent 52%);
+    animation: call-twinkle 9s ease-in-out -4s infinite;
+}
+
+@keyframes call-twinkle {
+    0%,
+    100% {
+        opacity: 0.55;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+/* A full-screen video covers the sky: drop it. Behind the group grid it holds still. The call ended: it dims. */
+.call-screen--video .call-sky {
+    display: none;
+}
+
+.call-screen--group .call-sky *,
+.call-screen--group .call-sky *::before,
+.call-screen--group .call-sky *::after {
+    animation-play-state: paused;
+}
+
+.call-screen--ended .call-sky {
+    opacity: 0.7;
+}
+
+html[data-fx="lite"] .call-sky *,
+html[data-fx="lite"] .call-sky *::before,
+html[data-fx="lite"] .call-sky *::after {
+    animation: none !important;
+}
+
+/* Column: top bar · stage · controls (visual order via `order`; the stage comes first in the markup so the bars
+   paint above it). With a full-bleed video the stage spans the whole screen behind both bars. */
+
+.call-stage {
+    order: 1;
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 var(--sm-inset-right) 0 var(--sm-inset-left);
+}
+
+.call-screen--video .call-stage {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+}
+
+.call-screen--video::before,
+.call-screen--video::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.call-screen--video::before {
+    top: 0;
+    height: calc(var(--sm-inset-top) + 150px);
+    background: linear-gradient(to bottom, rgba(6, 7, 20, 0.66), rgba(6, 7, 20, 0.28) 55%, rgba(6, 7, 20, 0));
+}
+
+.call-screen--video::after {
+    bottom: 0;
+    height: calc(var(--sm-inset-bottom) + 240px);
+    background: linear-gradient(to top, rgba(6, 7, 20, 0.78), rgba(6, 7, 20, 0.36) 55%, rgba(6, 7, 20, 0));
+}
+
+.call-slot {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.call-slot.is-mirrored {
+    transform: scaleX(-1);
+}
+
+.call-main {
+    position: absolute;
+    inset: 0;
+    background: #05060F;
+}
+
+/* My own camera behind the face while the other side has no picture (calling with video): dimmed into the night. */
+.call-main--backdrop {
+    background: #0C0E22;
+}
+
+.call-main--backdrop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(11, 13, 32, 0.62) 0%, rgba(8, 9, 24, 0.76) 100%);
+}
+
+/* ---- Hero: the face, the name, the status ---- */
+
+.call-hero {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px calc(8px + 5vh);
+    text-align: center;
+}
+
+.call-hero__avatar {
+    position: relative;
+    display: inline-flex;
+    margin-bottom: 26px;
+    isolation: isolate;
+    animation: call-hero-in 560ms var(--sm-spring-soft) backwards;
+}
+
+@keyframes call-hero-in {
+    from {
+        opacity: 0;
+        transform: scale(0.88);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.call-hero__face {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    filter: drop-shadow(0 16px 26px rgba(2, 3, 14, 0.5));
+}
+
+/* A thin light rim around the face. */
+.call-hero__rim {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.call-hero__rim path {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.22);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+/* Ringing / connecting: thin rings in the face's own shape open out of it and fade. */
+.call-hero__ring,
+.call-hero__voice,
+.call-hero__burst {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.call-hero__ring {
+    z-index: -1;
+    opacity: 0;
+    animation: call-ring 3.6s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+
+.call-hero__ring path,
+.call-hero__voice path,
+.call-hero__burst path {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.5);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.call-hero__ring--2 {
+    animation-delay: 1.8s;
+}
+
+@keyframes call-ring {
+    0% {
+        opacity: 0;
+        transform: scale(1);
+    }
+
+    15% {
+        opacity: 0.55;
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1.55);
+    }
+}
+
+/* Connecting (and a group call nobody joined yet): slower still. */
+.call-hero--connecting .call-hero__ring {
+    animation-duration: 5s;
+}
+
+.call-hero--connecting .call-hero__ring--2 {
+    animation-delay: 2.5s;
+}
+
+/* Talking: short ripples while the other side speaks (they fade in and out with the voice). */
+.call-hero__voices {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 450ms ease;
+    pointer-events: none;
+}
+
+.call-hero__avatar.is-speaking .call-hero__voices {
+    opacity: 1;
+    transition-duration: 160ms;
+}
+
+.call-hero__voice {
+    animation: call-voice 1.6s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+
+.call-hero__voice--2 {
+    animation-delay: -0.8s;
+}
+
+@keyframes call-voice {
+    from {
+        opacity: 0.6;
+        transform: scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(1.22);
+    }
+}
+
+/* Just connected: one ring opens out of the face, once. */
+.call-hero__burst {
+    z-index: 1;
+    animation: call-connected 900ms var(--sm-ease-out) both;
+}
+
+.call-hero__burst path {
+    stroke: rgba(255, 255, 255, 0.7);
+    stroke-width: 1.5;
+}
+
+@keyframes call-connected {
+    from {
+        opacity: 0.9;
+        transform: scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(1.45);
+    }
+}
+
+.call-hero__title {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 1.625rem;
+    font-weight: 700;
+    line-height: 1.16;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    animation: sm-rise-in 420ms var(--sm-ease-out) 70ms backwards;
+}
+
+/* Status lines are re-created when they start saying something else (call-status-in), e.g. the timer appearing
+   once connected; the ticking timer itself does not animate. */
+.call-hero__status {
+    display: inline-flex;
+    align-items: center;
+    font-size: 1rem;
+    letter-spacing: 0.01em;
+    color: rgba(255, 255, 255, 0.72);
+    animation: call-status-in var(--sm-dur) var(--sm-ease-out);
+}
+
+/* Connected: the timer sits in a quiet glass capsule with a live dot. */
+.call-hero__status--live {
+    margin-top: 2px;
+    padding: 6px 16px 6px 13px;
+    border-radius: 999px;
+    font-family: var(--sm-font-display);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.call-live-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-right: 9px;
+    border-radius: 50%;
+    background: #43D39B;
+    animation: call-live 2s ease-in-out infinite;
+}
+
+@keyframes call-live {
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.45;
+    }
+}
+
+@keyframes call-status-in {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* "Calling…" with dots that keep going (a looping indicator; reduced motion leaves them still). */
+.call-dots > span {
+    display: inline-block;
+    animation: call-dot 1.4s ease-in-out infinite;
+}
+
+.call-dots > span:nth-child(2) {
+    animation-delay: 0.18s;
+}
+
+.call-dots > span:nth-child(3) {
+    animation-delay: 0.36s;
+}
+
+@keyframes call-dot {
+    0%,
+    55%,
+    100% {
+        opacity: 1;
+        transform: none;
+    }
+
+    25% {
+        opacity: 0.3;
+        transform: translateY(-3px);
+    }
+}
+
+/* Glass chips under the timer: the encrypted connection, the connection quality. */
+.call-hero__chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 6px;
+    animation: call-status-in var(--sm-dur-slow) var(--sm-ease-out) 120ms backwards;
+}
+
+.call-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 1.75rem;
+    padding: 0 12px 0 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    letter-spacing: 0.01em;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    white-space: nowrap;
+}
+
+.call-chip ::deep .sm-icon {
+    color: #8ED8B8;
+}
+
+.call-chip--weak ::deep .sm-icon {
+    color: #F2C36B;
+}
+
+.call-hero__note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 5px 13px;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.86);
+    background: rgba(255, 107, 134, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(255, 107, 134, 0.26);
+    animation: call-status-in var(--sm-dur) var(--sm-ease-out);
+}
+
+.call-hero__note ::deep .sm-icon {
+    color: #FF9BB0;
+}
+
+/* Call ended: the face dims (the ended hero is a new element, so this plays once). */
+.call-hero--ended .call-hero__avatar {
+    opacity: 0.55;
+    animation: call-dim var(--sm-dur-slow) ease;
+}
+
+.call-hero--ended .call-hero__title {
+    animation: none;
+}
+
+@keyframes call-dim {
+    from {
+        opacity: 1;
+    }
+}
+
+/* The call went away: the screen fades out (opacity only: menus inside are position: fixed). */
+.call-screen--leaving {
+    pointer-events: none;
+    animation: call-screen-out 200ms var(--sm-ease-in) forwards;
+}
+
+@keyframes call-screen-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+/* ---- Picture-in-picture (draggable; calls.js snaps it to a corner through data-corner) ---- */
+
+.call-pip {
+    position: absolute;
+    z-index: 3;
+    top: calc(var(--sm-inset-top) + 78px);
+    right: calc(var(--sm-inset-right) + 14px);
+    width: clamp(96px, 28vw, 150px);
+    aspect-ratio: 3 / 4;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #161A36;
+    box-shadow: 0 20px 40px -16px rgba(0, 0, 0, 0.7);
+    cursor: grab;
+    animation: call-pip-in 420ms var(--sm-spring-soft) backwards;
+}
+
+@keyframes call-pip-in {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* The glass rim, above the video. */
+.call-pip::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    pointer-events: none;
+}
+
+.call-screen:not(.call-screen--video) .call-pip {
+    top: 12px;
+}
+
+@media (min-width: 768px) {
+    .call-pip {
+        width: clamp(190px, 22vw, 290px);
+        aspect-ratio: 16 / 9;
+    }
+}
+
+.call-pip.is-dragging {
+    cursor: grabbing;
+    box-shadow: 0 30px 56px -16px rgba(0, 0, 0, 0.8);
+}
+
+.call-pip[data-corner="tl"] {
+    left: calc(var(--sm-inset-left) + 14px);
+    right: auto;
+}
+
+.call-pip[data-corner="bl"] {
+    top: auto;
+    bottom: calc(var(--sm-inset-bottom) + 158px);
+    left: calc(var(--sm-inset-left) + 14px);
+    right: auto;
+}
+
+.call-pip[data-corner="br"] {
+    top: auto;
+    bottom: calc(var(--sm-inset-bottom) + 158px);
+}
+
+.call-screen:not(.call-screen--video) .call-pip[data-corner="bl"],
+.call-screen:not(.call-screen--video) .call-pip[data-corner="br"] {
+    top: auto;
+    bottom: 12px;
+}
+
+/* ---- Group: a grid of people, or a shared screen with a strip of people ---- */
+
+.call-grid {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 10px;
+    padding: 4px 12px 8px;
+}
+
+.call-grid--scroll {
+    grid-auto-rows: minmax(150px, 1fr);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+.call-share {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 12px 6px;
+}
+
+.call-share__main {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #05060F;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.call-share__who {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 20px);
+    padding: 5px 12px 5px 10px;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: rgba(10, 12, 30, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.call-share__strip {
+    display: flex;
+    gap: 10px;
+    flex: 0 0 auto;
+    height: 116px;
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-x;
+}
+
+.call-share__strip ::deep .call-tile {
+    flex: 0 0 auto;
+    width: 150px;
+}
+
+/* ---- Top bar ---- */
+
+.call-top {
+    order: 0;
+    flex: none;
+    position: relative;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 64px;
+    padding: calc(var(--sm-inset-top) + 12px) calc(var(--sm-inset-right) + 12px) 8px calc(var(--sm-inset-left) + 12px);
+}
+
+.call-top ::deep .call-top__btn {
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+@media (hover: hover) {
+    .call-top ::deep .call-top__btn:hover {
+        color: #FFFFFF;
+        background: rgba(255, 255, 255, 0.16);
+    }
+}
+
+.call-top__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+}
+
+/* Name and timer over a video: a night capsule in the middle. */
+.call-top__pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 100%;
+    min-width: 0;
+    padding: 6px 20px 7px;
+    border-radius: 22px;
+    background: rgba(8, 10, 26, 0.46);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    animation: call-status-in var(--sm-dur) var(--sm-ease-out);
+}
+
+.call-top__title {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.call-top__status {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.78);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: call-status-in var(--sm-dur) var(--sm-ease-out);
+}
+
+.call-top__status .call-live-dot {
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+}
+
+/* Pull-down hint on touch screens. */
+.call-top__grabber {
+    position: absolute;
+    top: calc(var(--sm-inset-top) + 5px);
+    left: 50%;
+    width: 40px;
+    height: 5px;
+    margin-left: -20px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.26);
+    pointer-events: none;
+}
+
+@media (pointer: fine) {
+    .call-top__grabber {
+        display: none;
+    }
+}
+
+.call-top__spacer,
+.call-top__quality {
+    flex: none;
+    width: 2.625rem;
+    height: 2.625rem;
+}
+
+.call-top__quality {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: #8ED8B8;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.call-top__quality.is-weak {
+    color: #F2C36B;
+}
+
+/* ---- Banners: night capsules with the icon in a flat disc ---- */
+
+.call-banners {
+    position: absolute;
+    z-index: 5;
+    top: calc(var(--sm-inset-top) + 74px);
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    pointer-events: none;
+}
+
+.call-banner {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: min(100%, 440px);
+    min-height: 3rem;
+    padding: 7px 7px 7px 8px;
+    border-radius: 22px;
+    font-size: 0.875rem;
+    color: #FFFFFF;
+    background: rgba(20, 23, 48, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 16px 32px -16px rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+    animation: call-banner-in 380ms var(--sm-spring-soft);
+}
+
+@keyframes call-banner-in {
+    from {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.call-banner__icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.call-banner--warning .call-banner__icon {
+    color: #3A2306;
+    background: #F2C36B;
+}
+
+.call-banner--quiet {
+    width: auto;
+    min-height: 2.5rem;
+    padding: 5px 15px 5px 6px;
+    background: rgba(20, 23, 48, 0.72);
+}
+
+.call-banner--quiet .call-banner__icon {
+    width: 1.75rem;
+    height: 1.75rem;
+    color: #FF9BB0;
+    background: rgba(255, 107, 134, 0.16);
+}
+
+.call-banner__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.call-banner__action {
+    flex-shrink: 0;
+    min-height: 2.125rem;
+    padding: 0 15px;
+    border: 0;
+    border-radius: 999px;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #1E2147;
+    background: #FFFFFF;
+    cursor: pointer;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.call-banner__action:active {
+    transform: scale(0.94);
+}
+
+/* ---- Controls: a floating glass deck; ringing gets its two big orbs instead ---- */
+
+.call-controls {
+    order: 2;
+    flex: none;
+    position: relative;
+    z-index: 4;
+    margin-top: auto;
+    display: flex;
+    justify-content: center;
+    padding: 10px calc(var(--sm-inset-right) + 12px) calc(var(--sm-inset-bottom) + 14px) calc(var(--sm-inset-left) + 12px);
+}
+
+.call-deck {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-evenly;
+    gap: 2px;
+    width: min(100%, 470px);
+    padding: 14px 8px 12px;
+    border-radius: 34px;
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 24px 48px -26px rgba(0, 0, 0, 0.7);
+    animation: call-deck-in 440ms var(--sm-spring-soft) backwards;
+}
+
+@keyframes call-deck-in {
+    from {
+        opacity: 0;
+        transform: translateY(22px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.call-deck ::deep .call-btn {
+    flex: 1 1 0;
+}
+
+/* The hang-up is a rose pill, a little wider than the circles. */
+.call-deck ::deep .call-btn--hangup {
+    flex-grow: 1.3;
+}
+
+.call-deck ::deep .call-btn--hangup .call-btn__circle {
+    width: calc(var(--call-btn-size) * 1.3);
+    border-radius: 999px;
+}
+
+/* Over a video the deck darkens for contrast (still no blur: the picture moves). */
+.call-screen--video .call-deck {
+    background: rgba(8, 10, 26, 0.56);
+}
+
+/* Ringing: decline and answer far apart, big; "Audio only" in between for video calls. */
+.call-controls--incoming {
+    justify-content: space-evenly;
+    align-items: flex-start;
+    gap: 12px;
+    padding-top: 18px;
+    padding-bottom: calc(var(--sm-inset-bottom) + 44px);
+    padding-left: max(calc(var(--sm-inset-left) + 20px), calc((100% - 440px) / 2));
+    padding-right: max(calc(var(--sm-inset-right) + 20px), calc((100% - 440px) / 2));
+}
+
+.call-controls--incoming ::deep .call-btn {
+    --call-btn-size: 4.625rem;
+    flex: 1 1 0;
+}
+
+.call-controls--incoming ::deep .call-btn--audio-only {
+    --call-btn-size: 3.75rem;
+    padding-top: 7px;
+}
+
+/* The smaller orb sits on the others' center line and its caption on theirs. */
+.call-controls--incoming ::deep .call-btn--audio-only .call-btn__label {
+    margin-top: 7px;
+}
+
+.call-controls--incoming ::deep .call-btn__label {
+    max-width: 6.5rem;
+    font-size: 0.8125rem;
+}
+
+.call-controls--ended {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sm-dur-slow) ease;
+}
+
+.call-menu__heading {
+    padding: 10px 14px 4px;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--sm-text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+}
+
+.call-menu__empty {
+    padding: 12px 14px;
+    color: var(--sm-text-2);
+    font-size: 0.875rem;
+}
+
+/* ---- Short screens (phones in landscape): a smaller face, no captions, a slimmer deck ---- */
+
+@media (max-height: 560px) {
+    .call-hero {
+        gap: 4px;
+        padding-top: 0;
+    }
+
+    .call-hero__avatar {
+        margin-bottom: 12px;
+    }
+
+    .call-hero__face ::deep .sm-avatar {
+        --size: 5.25rem !important;
+    }
+
+    .call-hero__title {
+        font-size: 1.25rem;
+    }
+
+    .call-hero__chips {
+        display: none;
+    }
+
+    .call-top {
+        min-height: 52px;
+        padding-top: calc(var(--sm-inset-top) + 6px);
+    }
+
+    .call-deck {
+        padding: 8px 8px 8px;
+    }
+
+    .call-deck ::deep .call-btn__label {
+        display: none;
+    }
+
+    .call-controls--incoming {
+        padding-bottom: calc(var(--sm-inset-bottom) + 14px);
+    }
+
+    .call-pip[data-corner="bl"],
+    .call-pip[data-corner="br"] {
+        bottom: calc(var(--sm-inset-bottom) + 98px);
+    }
+}
+
+/* ---- Minimized: a night capsule, first item of the shell's flex column (pushes the app down, never covers it) ---- */
+
+.call-bar {
+    order: -1;
+    position: relative;
+    z-index: 6;
+    flex-shrink: 0;
+    padding: 6px 10px 2px;
+    animation: call-bar-in 420ms var(--sm-spring-soft);
+}
+
+@keyframes call-bar-in {
+    from {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.call-bar__pill {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 560px;
+    min-height: 3.375rem;
+    margin: 0 auto;
+    padding: 7px 8px 7px 8px;
+    border-radius: 999px;
+    color: #FFFFFF;
+    background: linear-gradient(180deg, #1C2042 0%, #13162F 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 26px -14px rgba(10, 12, 40, 0.6);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.call-bar__pill:active {
+    transform: scale(0.975);
+    transition-duration: 90ms;
+}
+
+.call-bar__pill:focus-visible {
+    outline: 2px solid var(--sm-accent);
+    outline-offset: 2px;
+}
+
+.call-bar__avatar {
+    flex: none;
+    display: inline-flex;
+}
+
+.call-bar--ended .call-bar__avatar {
+    opacity: 0.6;
+}
+
+.call-bar__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.2;
+}
+
+.call-bar__title {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.call-bar__line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+/* Tabular digits, keyed by what it says: the timer stays put while it ticks, a new status fades in. */
+.call-bar__status {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: call-status-in var(--sm-dur) var(--sm-ease-out);
+}
+
+/* Live level bars: idle gently, move while someone speaks. */
+.call-bar__live {
+    flex: none;
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+    color: #43D39B;
+}
+
+.call-bar__live i {
+    display: block;
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    background: currentColor;
+    transform-origin: 50% 100%;
+    transform: scaleY(0.35);
+    animation: call-eq 1.2s ease-in-out infinite;
+}
+
+.call-bar__live i:nth-child(2) {
+    animation-duration: 0.95s;
+    animation-delay: -0.4s;
+}
+
+.call-bar__live i:nth-child(3) {
+    animation-duration: 1.35s;
+    animation-delay: -0.7s;
+}
+
+.call-bar__live i:nth-child(4) {
+    animation-duration: 1.05s;
+    animation-delay: -0.2s;
+}
+
+@keyframes call-eq {
+    0%,
+    100% {
+        transform: scaleY(0.3);
+    }
+
+    50% {
+        transform: scaleY(0.55);
+    }
+}
+
+.call-bar__live.is-speaking i {
+    animation-name: call-eq-talk;
+    animation-duration: 0.55s;
+}
+
+.call-bar__live.is-speaking i:nth-child(2) {
+    animation-duration: 0.45s;
+}
+
+.call-bar__live.is-speaking i:nth-child(3) {
+    animation-duration: 0.62s;
+}
+
+@keyframes call-eq-talk {
+    0%,
+    100% {
+        transform: scaleY(0.35);
+    }
+
+    50% {
+        transform: scaleY(1);
+    }
+}
+
+/* Calling / connecting: amber bars in a travelling wave. */
+.call-bar--connecting .call-bar__live {
+    color: #F2C36B;
+}
+
+.call-bar--connecting .call-bar__live i {
+    animation: call-eq-wave 1.2s ease-in-out infinite;
+}
+
+.call-bar--connecting .call-bar__live i:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.call-bar--connecting .call-bar__live i:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.call-bar--connecting .call-bar__live i:nth-child(4) {
+    animation-delay: 0.45s;
+}
+
+@keyframes call-eq-wave {
+    0%,
+    60%,
+    100% {
+        transform: scaleY(0.3);
+    }
+
+    30% {
+        transform: scaleY(0.85);
+    }
+}
+
+.call-bar--ended .call-bar__live {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.call-bar--ended .call-bar__live i {
+    animation: none;
+}
+
+/* Ringing: the handset rocks. */
+.call-bar--incoming .call-bar__live {
+    align-items: center;
+    color: #8ED8B8;
+    animation: call-bar-ring 1.6s ease-in-out infinite;
+}
+
+@keyframes call-bar-ring {
+    0%,
+    40%,
+    100% {
+        transform: none;
+    }
+
+    6%,
+    18%,
+    30% {
+        transform: rotate(-14deg);
+    }
+
+    12%,
+    24% {
+        transform: rotate(14deg);
+    }
+}
+
+.call-bar--incoming .call-bar__status {
+    color: #C9F2E0;
+}
+
+/* The call went away while minimized: the capsule slides back up. */
+.call-bar--leaving {
+    pointer-events: none;
+    animation: call-bar-out 180ms var(--sm-ease-in) forwards;
+}
+
+@keyframes call-bar-out {
+    to {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+}

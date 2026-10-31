@@ -1,0 +1,36 @@
+@* Friendly error screen for an ErrorBoundary: a cloud with a band-aid by the sun, a calm explanation and the way
+   back. Full screen (the app's last resort) it brings its own sky; inside a pane it sits on the pane's. *@
+@inject NavigationService Nav
+
+<div class="crash @(Compact ? "crash--compact" : null)">
+    @if (!Compact)
+    {
+        <SkyBackdrop Sparkles="false" Comet="false" />
+    }
+    <div class="crash__content">
+        <EmptyState Title="@L["crash.title"]" Text="@L["crash.text"]">
+            <Art><SkyArt Kind="SkyArtKind.Crash" Size="@(Compact ? 200 : 236)" Class="crash__art" /></Art>
+            <Actions>
+                <Button Icon="@IconNames.RefreshCw" OnClick="RetryAsync">@L["crash.retry"]</Button>
+                <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.House" OnClick="HomeAsync">@L["crash.home"]</Button>
+            </Actions>
+        </EmptyState>
+    </div>
+</div>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public Exception? Exception { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    /// <summary>Inside a pane instead of full screen.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private Task RetryAsync() => OnRetry.InvokeAsync();
+
+    private async Task HomeAsync()
+    {
+        await OnRetry.InvokeAsync();
+        Nav.NavigateTo("/", replace: true);
+    }
+}

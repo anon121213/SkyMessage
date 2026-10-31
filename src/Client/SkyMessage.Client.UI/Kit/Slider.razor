@@ -1,0 +1,57 @@
+@using System.Globalization
+
+@* data-no-swipe-back: dragging the thumb right must not take the page away (docs/MOTION.md). *@
+<div class="sm-slider @Class" data-no-swipe-back>
+    @if (Label is not null || ShowValue)
+    {
+        <div class="sm-slider__head">
+            <span>@Label</span>
+            @if (ShowValue)
+            {
+                <span class="sm-slider__value">@(Format?.Invoke(Value) ?? Value.ToString("0.##", CultureInfo.CurrentCulture))</span>
+            }
+        </div>
+    }
+    @* @bind:get/set (not value= + @oninput): the renderer then keeps the thumb where the user dragged it instead of
+       writing back positions from input events that are still on their way to .NET (WebView). *@
+    <input type="range" min="@Text(Min)" max="@Text(Max)" step="@Text(Step)" disabled="@Disabled"
+           aria-label="@Label" style="@($"--fill:{Fill}%")" @bind:get="Value" @bind:set="OnInput" @bind:event="oninput"
+           @bind:culture="CultureInfo.InvariantCulture" @onchange="OnChange" />
+    @if (MinLabel is not null || MaxLabel is not null)
+    {
+        <div class="sm-slider__marks"><span>@MinLabel</span><span>@MaxLabel</span></div>
+    }
+</div>
+
+@code {
+    [Parameter] public double Value { get; set; }
+    [Parameter] public EventCallback<double> ValueChanged { get; set; }
+    /// <summary>Raised once when the user releases the thumb (save settings here).</summary>
+    [Parameter] public EventCallback<double> OnChangeEnd { get; set; }
+    [Parameter] public double Min { get; set; }
+    [Parameter] public double Max { get; set; } = 100;
+    [Parameter] public double Step { get; set; } = 1;
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public bool ShowValue { get; set; }
+    [Parameter] public Func<double, string>? Format { get; set; }
+    [Parameter] public string? MinLabel { get; set; }
+    [Parameter] public string? MaxLabel { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Fill => Max <= Min ? "0" : Text(Math.Clamp((Value - Min) / (Max - Min) * 100, 0, 100));
+
+    private static string Text(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+
+    private static double Parse(object? value) =>
+        double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var number) ? number : 0;
+
+    private Task OnInput(double value) => ValueChanged.InvokeAsync(value);
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        var value = Parse(e.Value);
+        await ValueChanged.InvokeAsync(value);
+        await OnChangeEnd.InvokeAsync(value);
+    }
+}

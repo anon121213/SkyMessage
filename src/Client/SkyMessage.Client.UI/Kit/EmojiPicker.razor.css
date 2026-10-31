@@ -1,0 +1,120 @@
+/* Emoji picker, on top of its base styles in app.css ("Emoji picker"): the category tabs sit in a soft capsule track
+   with a gradient pill that slides (spring) to the active one; section overlines are sticky glass chips; the recent
+   row lies on a pale gradient card; emoji press in deep and bounce back. Transparent itself: it takes the glass of
+   whatever holds it (the composer's sheet, a dialog). */
+
+.sm-emoji-picker__tabs {
+    display: block;
+    padding: 8px 8px 4px;
+    overflow-x: auto;
+    box-shadow: none;
+}
+
+/* Equal columns (they scroll sideways when they do not fit), so the pill moves one column per step. */
+.sm-emoji-picker__track {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(var(--tabs, 10), minmax(2.125rem, 1fr));
+    width: 100%;
+    min-width: max-content;
+    padding: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--sm-text) 5%, transparent);
+    box-shadow: inset 0 0 0 1px var(--sm-divider);
+}
+
+.sm-emoji-picker__pill {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc((100% - 6px) / var(--tabs, 10));
+    border-radius: 999px;
+    background: var(--sm-grad);
+    transform: translateX(calc(var(--tab, 0) * 100%));
+    transition: transform 440ms var(--sm-spring-soft);
+    pointer-events: none;
+}
+
+.sm-emoji-picker__tab {
+    position: relative;
+    z-index: 1;
+    height: 2.125rem;
+    border-radius: 999px;
+    color: var(--sm-text-3);
+    transition: color var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+.sm-emoji-picker__tab ::deep .sm-icon {
+    transition: transform 360ms var(--sm-spring);
+}
+
+.sm-emoji-picker__tab--active {
+    background: transparent;
+    color: #fff;
+}
+
+.sm-emoji-picker__tab--active ::deep .sm-icon {
+    transform: scale(1.1);
+}
+
+@media (hover: hover) {
+    .sm-emoji-picker__tab:hover:not(.sm-emoji-picker__tab--active) {
+        color: var(--sm-text);
+    }
+}
+
+.sm-emoji-picker__tab:active {
+    transform: scale(0.88);
+}
+
+.sm-emoji-picker__scroll {
+    padding: 0 8px 10px;
+}
+
+/* Overlines: chips that stay at the top while their section scrolls under them. */
+.sm-emoji-picker__heading {
+    position: sticky;
+    top: -2px;
+    z-index: 2;
+    display: flex;
+    padding: 8px 4px 6px;
+    background: none;
+    pointer-events: none;
+}
+
+.sm-emoji-picker__heading > span {
+    padding: 4px 10px 3px;
+    border-radius: 999px;
+    background: var(--sm-glass-strong);
+    box-shadow: var(--sm-edge), 0 4px 12px -6px rgba(40, 24, 110, 0.3);
+    color: var(--sm-text-2);
+}
+
+html[data-fx="lite"] .sm-emoji-picker__heading > span {
+    background: var(--sm-glass-solid);
+}
+
+.sm-emoji-picker__section--recent .sm-emoji-picker__grid {
+    padding: 3px;
+    border-radius: 22px;
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 12%, transparent);
+}
+
+.sm-emoji-btn {
+    border-radius: 16px;
+    transition: transform 380ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .sm-emoji-btn:hover {
+        background: var(--sm-accent-soft);
+        transform: scale(1.16);
+    }
+}
+
+.sm-emoji-btn:active {
+    transform: scale(0.74);
+    transition-duration: 70ms;
+}

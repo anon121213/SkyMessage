@@ -1,0 +1,21 @@
+# LiveKit SFU for 1:1 and group calls (local development).
+# Signaling (7880) is reverse-proxied by the API at /livekit; media uses 7881/tcp and 7882/udp directly.
+# The advertised IP comes from --node-ip (LIVEKIT_NODE_IP in .env); API keys come from LIVEKIT_KEYS.
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+# Webhooks are signed with this key's secret; it must be the key name in LIVEKIT_KEYS (LIVEKIT_API_KEY in .env)
+# and LiveKit:ApiKey of the API. Both `dotnet run` and the compose `api` service listen on host port 8080.
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:8080/api/livekit/webhook
+# A room nobody (re)joins closes after these and LiveKit sends room_finished, which ends the call in the API.
+# The API keeps a private call alive for 25 s after one side drops, so a reconnect has time to come back.
+room:
+  empty_timeout: 30
+  departure_timeout: 20
+logging:
+  level: info

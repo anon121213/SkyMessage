@@ -1,0 +1,15 @@
+{
+  "search.title": "Поиск",
+  "search.placeholder": "Люди, чаты и сообщения",
+  "search.recent": "Недавние",
+  "search.clearRecent": "Очистить",
+  "search.hintTitle": "Кого ищем?",
+  "search.hintText": "Ищите людей по имени или @имени_пользователя, а также чаты и сообщения.",
+  "search.tooShort": "Введите хотя бы 2 символа",
+  "search.chats": "Чаты",
+  "search.people": "Люди",
+  "search.messages": "Сообщения",
+  "search.nothing": "Ничего не нашлось",
+  "search.nothingHint": "Людей не из ваших контактов можно найти по началу имени пользователя (от 3 букв).",
+  "search.failed": "Поиск не удался"
+}

@@ -1,0 +1,75 @@
+@* Preview of the message being replied to (inside a bubble, or in the composer's reply/edit bar): sender, one line of
+   text or the kind of media, small thumbnail. Tap jumps to the original. *@
+@inherits UiComponentBase
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject IMediaUrlBuilder MediaUrls
+@inject MessagePreviewFormatter Preview
+
+<div class="rquote @(OnClick.HasDelegate ? "rquote--link" : null) @Class" style="--rq-color:@Color" @onclick="ClickAsync" @onclick:stopPropagation="@OnClick.HasDelegate"
+     role="@(OnClick.HasDelegate ? "button" : null)">
+    @if (ThumbUrl is { } thumb)
+    {
+        <img class="rquote__thumb" src="@thumb" alt="" draggable="false" />
+    }
+    <div class="rquote__body">
+        <div class="rquote__name">@(Title ?? SenderName)</div>
+        <div class="rquote__text @(Reply.IsDeleted ? "rquote__text--deleted" : null)" dir="auto">@Text</div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ReplyPreviewDto Reply { get; set; } = default!;
+    /// <summary>Overrides the sender line ("Editing").</summary>
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Color => Reply.SenderId is { } sender ? AvatarPalette.Color(sender) : "var(--sm-accent)";
+
+    private string SenderName
+    {
+        get
+        {
+            if (Reply.SenderId is not { } sender) return L["common.unknownUser"];
+            if (sender == Auth.UserId) return L["common.you"];
+            return Users.NameOf(sender, L);
+        }
+    }
+
+    private string Text
+    {
+        get
+        {
+            if (Reply.IsDeleted) return L["message.preview.deleted"];
+            var message = new MessageDto
+            {
+                Id = Reply.MessageId,
+                Seq = Reply.Seq,
+                SenderId = Reply.SenderId,
+                Type = Reply.Type,
+                Text = Reply.Text,
+                Attachments = Reply.Media is { } media ? [media] : [],
+            };
+            return Preview.FormatPreview(message);
+        }
+    }
+
+    private string? ThumbUrl
+    {
+        get
+        {
+            if (Reply.IsDeleted || Reply.Media is not { } media) return null;
+            if (media.Kind is not (MediaKind.Photo or MediaKind.Video or MediaKind.VideoNote)) return null;
+            return media.HasThumbnail ? MediaUrls.ThumbnailUrl(media.Id) : MediaUrls.MiniThumbnailDataUrl(media);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == Reply?.SenderId);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    private Task ClickAsync() => OnClick.HasDelegate ? OnClick.InvokeAsync() : Task.CompletedTask;
+}

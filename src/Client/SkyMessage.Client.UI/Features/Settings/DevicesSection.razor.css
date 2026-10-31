@@ -1,0 +1,106 @@
+/* Permission notices: a frosted card with a pastel tile. */
+.dev-alert {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px 14px;
+    margin: 0 0 22px;
+    padding: 14px 16px 14px 12px;
+}
+
+/* The action sits under the text (never squeezed or cut off on narrow phones). */
+.dev-alert ::deep .sm-btn {
+    grid-column: 2;
+    justify-self: start;
+}
+
+.dev-alert__tile {
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+.dev-alert__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.4;
+}
+
+/* Level meter: devices.js sets --level (0…1) on this element every frame while the test runs. A lavender capsule
+   filling with mint → gold → rose; a mint rim while live. */
+.dev-meter {
+    --level: 0;
+    position: relative;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--sm-surface-3);
+    box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.12);
+    overflow: hidden;
+}
+
+.dev-meter__fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #3DDC97 0%, #21AE86 55%, #FFC870 80%, #FF6B86 100%);
+    clip-path: inset(0 calc((1 - var(--level)) * 100%) 0 0 round 999px);
+    transition: clip-path 60ms linear;
+}
+
+.dev-meter:not(.is-live) .dev-meter__fill {
+    opacity: 0.35;
+}
+
+.dev-meter.is-live {
+    box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.12), 0 0 0 3px color-mix(in srgb, var(--sm-online) 18%, transparent);
+}
+
+/* Camera preview: a rounded window, deep indigo until the camera runs. */
+.dev-camera {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 16 / 9;
+    border-radius: 22px;
+    overflow: hidden;
+    background: linear-gradient(170deg, #241A58 0%, #110C2A 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), var(--sm-shadow-1);
+}
+
+.dev-camera__video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.dev-camera__video.is-mirrored {
+    transform: scaleX(-1);
+}
+
+.dev-camera__idle {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    text-align: center;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.dev-camera__orb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}

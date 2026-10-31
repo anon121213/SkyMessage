@@ -1,0 +1,1443 @@
+@* The message composer: auto-growing text field (chat.js owns the textarea value; .NET keeps the text model with
+   entities), emoji panel, attach menu with a tray of picked/pasted/dropped files ("send without compression"),
+   reply and edit bars, member suggestions that insert Mention{UserId} entities, drafts via IDraftStore, typing
+   notifications, and hold-to-record voice messages / round video notes (recorder.js).
+   Look (docs/DESIGN.md): a frosted-glass capsule floating over the chat sky (attach, text, emoji) with the send/record
+   orb beside it — a gradient circle whose glyph springs between mic / video / arrow-up. Recording turns the capsule
+   into a strip (rose dot, timer, live wave) while the orb grows with two thin pulsing rings and a lock pill rises
+   above it. Motion (docs/MOTION.md): the reply/edit card, the tray and its compression row are always rendered and
+   collapse by class, keeping their last content while they close; exits of removed elements, the tray's FLIP and the
+   send launch (the orb lifts, the arrow flies up) play in composer-fx.js on copies in the [data-fx-layer] that Blazor
+   never renders into. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Media
+@inject IMessageStore Messages
+@inject IDraftStore Drafts
+@inject ITypingStore Typing
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject IContactStore Contacts
+@inject ISkyApi Api
+@inject IRealtimeService Realtime
+@inject IFilePickerService Picker
+@inject IMediaCompressor Compressor
+@inject IPermissionService Permissions
+@inject IPlatformInfo Platform
+@inject ISettingsService Settings
+@inject NavigationService Nav
+@inject LayoutService Layout
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject AppJs AppJs
+@inject FormatService Format
+@inject IJSRuntime JS
+@inject ILogger<Composer> Logger
+
+<div class="composer @(Recording ? "composer--recording" : null) @(_recordState == "locked" ? "composer--locked" : null) @(_emojiOpen ? "composer--emoji" : null) @(_settled ? null : "composer--settling")"
+     @ref="_root" data-composer data-no-swipe-back>
+    @if (Notice is { } notice)
+    {
+        @* Nothing can be written here: a glass capsule says why (and offers Unblock when that is the reason). *@
+        <div class="composer__notice">
+            <span class="composer__notice-icon" aria-hidden="true"><Icon Name="@NoticeIcon" Size="18" StrokeWidth="2.2" /></span>
+            <span class="composer__notice-text">@notice</span>
+            @if (CanUnblock)
+            {
+                <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Class="composer__notice-action" OnClick="UnblockAsync">@L["chat.notice.unblock"]</Button>
+            }
+        </div>
+    }
+    else
+    {
+        @if (_suggestions.Count > 0)
+        {
+            <div class="composer__suggest" role="listbox" aria-label="@L["chat.mention.title"]">
+                @for (var i = 0; i < _suggestions.Count; i++)
+                {
+                    var user = _suggestions[i];
+                    var index = i;
+                    <button type="button" role="option" aria-selected="@(index == _suggestIndex ? "true" : "false")"
+                            class="composer__suggest-item @(index == _suggestIndex ? "composer__suggest-item--active" : null)"
+                            @onmousedown:preventDefault="true" @onclick="() => PickMentionAsync(user)">
+                        <UserAvatar UserId="user.Id" Embedded="user" Size="34" />
+                        <span class="composer__suggest-text">
+                            <span class="composer__suggest-name">@user.NameOf(L)</span>
+                            <span class="composer__suggest-handle">@user.Handle()</span>
+                        </span>
+                    </button>
+                }
+            </div>
+        }
+        var current = CurrentContext;
+        if (current is not null) _contextShown = current;
+        @* Reply/edit card. A restored draft may reply to a message that is not loaded (further up): it still goes out as
+           a reply, so it shows, can be cancelled, and turns into the real preview once that message loads. *@
+        <div class="composer__collapse @(current is not null ? "composer__collapse--open" : null)" inert="@(current is null)">
+            <div class="composer__collapse-inner">
+                @if (_contextShown is { } bar)
+                {
+                    <div class="composer__context">
+                        <span class="composer__context-icon" @key="bar.Icon"><Icon Name="@bar.Icon" Size="18" StrokeWidth="2.3" /></span>
+                        @* Keyed by target: another message crossfades in. *@
+                        <div class="composer__context-quote" @key="bar.Key">
+                            <ReplyQuote Reply="bar.Preview" Title="@bar.Title" Class="composer__quote" OnClick="@JumpCallback(bar)" />
+                        </div>
+                        <IconButton Icon="@IconNames.X" Label="@bar.CancelLabel" Size="34" StrokeWidth="2.4" Class="composer__context-close" OnClick="CloseContextAsync" />
+                    </div>
+                }
+            </div>
+        </div>
+        var trayOpen = _staged.Count > 0;
+        if (trayOpen) _trayShown = [.. _staged];
+        var tray = trayOpen ? _staged : _trayShown;
+        <div class="composer__collapse @(trayOpen ? "composer__collapse--open" : null)" inert="@(!trayOpen)">
+            <div class="composer__collapse-inner">
+                @if (tray.Count > 0)
+                {
+                    <div class="composer__tray">
+                        <div class="composer__tray-items">
+                            @foreach (var staged in tray)
+                            {
+                                var item = staged;
+                                <div @key="item.Id" class="composer__tray-item @(item.IsVisual ? "composer__tray-item--visual" : null)" data-fx-item>
+                                    @if (item.PreviewUrl is { } preview)
+                                    {
+                                        <img src="@preview" alt="" draggable="false" />
+                                    }
+                                    else if (item.Probing)
+                                    {
+                                        <span class="composer__tray-icon"><Spinner Size="22" /></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="composer__tray-icon"><Icon Name="@MediaFacts.FileIcon(item.File.FileName, item.File.ContentType)" Size="22" /></span>
+                                    }
+                                    @if (!item.IsVisual || item.PreviewUrl is null)
+                                    {
+                                        <span class="composer__tray-name">@item.File.FileName</span>
+                                    }
+                                    @if (item.Kind == MediaKind.Video && item.DurationMs is > 0)
+                                    {
+                                        <span class="composer__tray-badge sm-nums">@Format.DurationMs(item.DurationMs)</span>
+                                    }
+                                    <button type="button" class="composer__tray-remove" title="@L["common.remove"]" aria-label="@L["common.remove"]" data-fx-remove
+                                            @onclick="() => RemoveStaged(item)">
+                                        <Icon Name="@IconNames.X" Size="13" StrokeWidth="2.8" />
+                                    </button>
+                                </div>
+                            }
+                            @if (tray.Count < MaxStaged && CanSendMedia)
+                            {
+                                <button type="button" class="composer__tray-add" title="@L["chat.attach.more"]" aria-label="@L["chat.attach.more"]" @onclick="OpenAttachMenuAsync">
+                                    <Icon Name="@IconNames.Plus" Size="22" StrokeWidth="2.4" />
+                                </button>
+                            }
+                        </div>
+                        @{ var visual = tray.Any(s => s.IsVisual); }
+                        <div class="composer__collapse @(visual ? "composer__collapse--open" : null)" inert="@(!visual)">
+                            <div class="composer__collapse-inner">
+                                <div class="composer__tray-options">
+                                    <Checkbox @bind-Checked="_compress" Label="@L["chat.attach.compress"]" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="composer__row">
+            @* The glass capsule. While recording it stays (the recording strip draws on it) and only its content leaves. *@
+            <div class="composer__main" aria-hidden="@(Recording ? "true" : null)">
+                @if (CanSendMedia)
+                {
+                    <IconButton Icon="@IconNames.Plus" Label="@L["chat.attach.title"]" StrokeWidth="2.4" Class="composer__attach" OnClick="OpenAttachMenuAsync" />
+                }
+                <div class="composer__field">
+                    <textarea @ref="_textarea" class="composer__input" rows="1" data-composer-input placeholder="@Placeholder" aria-label="@L["chat.composer.placeholder"]"
+                              spellcheck="true" autocomplete="off" enterkeyhint="@(Settings.Current.Chats.SendByEnter ? "send" : "enter")" dir="auto"></textarea>
+                    <button type="button" class="sm-icon-btn composer__emoji-btn @(_emojiOpen ? "sm-icon-btn--active" : null)" title="@L["chat.emoji"]" aria-label="@L["chat.emoji"]"
+                            aria-pressed="@(_emojiOpen ? "true" : "false")" @onclick="ToggleEmojiAsync" @onmousedown:preventDefault="true">
+                        @{ var emojiIcon = _emojiOpen && Layout.IsPhone ? IconNames.Keyboard : IconNames.Smile; }
+                        <span class="composer__swap" @key="emojiIcon"><Icon Name="@emojiIcon" /></span>
+                    </button>
+                </div>
+            </div>
+            @if (Recording && _recordMode == "voice")
+            {
+                var locked = _recordState == "locked";
+                @* Recording a voice message, drawn on the capsule. recorder.js writes the timer and the wave, and plays the exit
+                   (sent / binned) on a copy; --slide (finger to the left, 0..1) fades the strip and turns the rose dot into a
+                   bin. Locked (hands-free): a bin button to discard; the orb sends. *@
+                <div class="composer__recbar @(locked ? "composer__recbar--locked" : null)" data-rec-slide>
+                    @if (locked)
+                    {
+                        <button type="button" class="composer__rec-delete" data-fx-part="tail" title="@L["chat.composer.discard"]" aria-label="@L["chat.composer.discard"]"
+                                @onclick="CancelRecordingAsync">
+                            <Icon Name="@IconNames.Trash2" Size="19" />
+                        </button>
+                    }
+                    @* The bin comes first so it never paints over the pulsing (composited) dot. *@
+                    <span class="composer__rec-mark" aria-hidden="true">
+                        <span class="composer__rec-bin" data-fx-part="bin"><Icon Name="@IconNames.Trash2" Size="20" /></span>
+                        <span class="composer__rec-dot" data-fx-part="dot"><span></span></span>
+                    </span>
+                    <span class="composer__rec-content" data-fx-part="content">
+                        <span class="composer__rec-time sm-nums" data-rec-time>0:00</span>
+                        @if (locked)
+                        {
+                            <span class="composer__rec-locked" aria-hidden="true"><Icon Name="@IconNames.Lock" Size="12" StrokeWidth="2.6" /></span>
+                        }
+                        <canvas class="composer__rec-wave" data-rec-wave aria-hidden="true"></canvas>
+                    </span>
+                    @if (!locked)
+                    {
+                        <span class="composer__rec-hint" data-fx-part="tail">
+                            <span class="composer__chevrons" aria-hidden="true"><Icon Name="@IconNames.ChevronLeft" Size="16" StrokeWidth="2.6" /><Icon Name="@IconNames.ChevronLeft" Size="16" StrokeWidth="2.6" /><Icon Name="@IconNames.ChevronLeft" Size="16" StrokeWidth="2.6" /></span>
+                            @L["chat.composer.slideCancel"]
+                        </span>
+                    }
+                </div>
+            }
+            @* The orb. Send and record share the spot: both are the same gradient circle, so swapping them reads as one orb
+               whose glyph springs from one to the other (ActionMode). With nothing to send and no media rights, a quiet
+               glass orb holds the place. *@
+            <div class="composer__action composer__action--@ActionMode" data-rec-action>
+                @* Two thin rings pulse out of the held orb; recorder.js sets the voice level (--level) here. *@
+                <span class="composer__halo" data-rec-halo aria-hidden="true"><span></span><span></span></span>
+                <span class="composer__idle" aria-hidden="true"><Icon Name="@IconNames.ArrowUp" Size="22" StrokeWidth="2.4" /></span>
+                @if (Recording && _recordState == "recording")
+                {
+                    @* Rises with the finger (--lift), fills with the gradient near the top; the shackle closes and snaps shut on
+                       lock (recorder.js). *@
+                    <div class="composer__lock" data-rec-lock aria-hidden="true">
+                        <span class="composer__lock-fill"></span>
+                        <span class="composer__lock-icon">
+                            <span class="composer__lock-open" data-fx-part="lock-open"><Icon Name="@IconNames.LockOpen" Size="18" StrokeWidth="2.2" /></span>
+                            <span class="composer__lock-closed" data-fx-part="lock-closed"><Icon Name="@IconNames.Lock" Size="18" StrokeWidth="2.2" /></span>
+                        </span>
+                        <span class="composer__lock-arrows"><Icon Name="@IconNames.ChevronUp" Size="15" StrokeWidth="2.6" /><Icon Name="@IconNames.ChevronUp" Size="15" StrokeWidth="2.6" /></span>
+                    </div>
+                }
+                <button type="button" class="composer__send" title="@SendLabel" aria-label="@SendLabel" aria-hidden="@(ShowSend ? null : "true")" data-fx-send
+                        tabindex="@(ShowSend ? null : "-1")" @onclick="SendClickAsync" @onmousedown:preventDefault="true">
+                    <span class="composer__glyph" @key="SendIcon"><Icon Name="@SendIcon" Size="24" StrokeWidth="2.5" /></span>
+                </button>
+                @* No title: a hover tooltip about holding the button is exactly the hint nobody wants to see. *@
+                <button type="button" @ref="_recordButton" class="composer__record" hidden="@(!CanSendMedia)" aria-label="@RecordLabel" data-rec-button
+                        aria-hidden="@(ShowSend ? "true" : null)" tabindex="@(ShowSend ? "-1" : null)">
+                    @* Keyed by mode: switching voice/video re-creates the icon, which plays the swap animation. *@
+                    <span class="composer__record-icon" @key="_recordMode"><Icon Name="@(_recordMode == "video" ? IconNames.Video : IconNames.Mic)" Size="24" StrokeWidth="2.2" /></span>
+                </button>
+            </div>
+        </div>
+        @if (_emojiOpen)
+        {
+            <div class="composer__emoji @(Layout.IsPhone ? null : "composer__emoji--popover")" @ref="_emojiPanel">
+                <EmojiPicker OnPick="InsertEmojiAsync" Height="@(Layout.IsPhone ? "17rem" : "22rem")" />
+            </div>
+        }
+        @if (Recording && _recordMode == "video")
+        {
+            @* Recording a round video over a night scrim. composer-fx.js grows the stage out of the record button;
+               recorder.js plays the exit (into the send button / binned) on a copy. The ring's gradient lives in the
+               composer's own defs (below), so a leaving copy keeps it. *@
+            <div class="composer__vrec @(_recordState == "locked" ? "composer__vrec--locked" : null)" data-rec-slide data-fx-grow data-no-swipe-back>
+                <div class="composer__vrec-stage" data-fx-part="stage">
+                    <div class="composer__vrec-circle"><canvas class="composer__vrec-canvas" data-rec-preview></canvas></div>
+                    <svg class="composer__vrec-ring" data-rec-ring viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+                        <circle class="composer__vrec-track" cx="50" cy="50" r="48.5" />
+                        <circle class="composer__vrec-progress" cx="50" cy="50" r="48.5" pathLength="100" stroke="url(#@RingGradientId)" />
+                    </svg>
+                    <span class="composer__vrec-time sm-nums"><span class="composer__rec-dot"><span></span></span><span data-rec-time>0:00</span></span>
+                </div>
+                @if (_recordState == "locked")
+                {
+                    <div class="composer__vrec-actions">
+                        <button type="button" class="composer__vrec-btn composer__vrec-btn--discard" @onclick="CancelRecordingAsync">
+                            <Icon Name="@IconNames.Trash2" Size="19" />
+                            <span>@L["common.cancel"]</span>
+                        </button>
+                        @if (_canFlip)
+                        {
+                            <button type="button" class="composer__vrec-btn composer__vrec-btn--round" title="@L["chat.record.flip"]" aria-label="@L["chat.record.flip"]" @onclick="FlipCameraAsync">
+                                <Icon Name="@IconNames.SwitchCamera" Size="22" />
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="composer__vrec-hint">
+                        <span class="composer__vrec-pill"><span class="composer__chevrons" aria-hidden="true"><Icon Name="@IconNames.ChevronLeft" Size="16" StrokeWidth="2.6" /><Icon Name="@IconNames.ChevronLeft" Size="16" StrokeWidth="2.6" /><Icon Name="@IconNames.ChevronLeft" Size="16" StrokeWidth="2.6" /></span> @L["chat.record.slideToCancel"]</span>
+                        <span class="composer__vrec-pill"><span class="composer__nudge-up" aria-hidden="true"><Icon Name="@IconNames.Lock" Size="15" StrokeWidth="2.4" /></span> @L["chat.record.slideToLock"]</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+    @* Paint servers for the composer (the round video's progress ring); outside anything that comes and goes. *@
+    <svg class="composer__defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="@RingGradientId" x1="0" y1="0" x2="1" y2="1">
+                <stop class="composer__stop composer__stop--a" offset="0" />
+                <stop class="composer__stop composer__stop--b" offset="0.55" />
+                <stop class="composer__stop composer__stop--c" offset="1" />
+            </linearGradient>
+        </defs>
+    </svg>
+    @* JS-owned: exits play here on copies (composer-fx.js). Last, so it paints over the row. *@
+    <div class="composer__fx" data-fx-layer aria-hidden="true"></div>
+</div>
+
+<ContextMenu @ref="_attachMenu" Title="@L["chat.attach.title"]">
+    <MenuItem Icon="@IconNames.Images" Label="@L["chat.attach.gallery"]" OnClick="() => PickMediaAsync(compress: true)" />
+    <MenuItem Icon="@IconNames.File" Label="@L["chat.attach.file"]" OnClick="PickFilesAsync" />
+    @if (Picker.CanCapture)
+    {
+        <MenuItem Icon="@IconNames.Camera" Label="@L["chat.attach.cameraPhoto"]" OnClick="() => CaptureAsync(video: false)" />
+        <MenuItem Icon="@IconNames.Video" Label="@L["chat.attach.cameraVideo"]" OnClick="() => CaptureAsync(video: true)" />
+    }
+    <MenuDivider />
+    <MenuItem Icon="@IconNames.ImageUp" Label="@L["chat.attach.uncompressed"]" Hint="@L["chat.attach.uncompressedHint"]" OnClick="() => PickMediaAsync(compress: false)" />
+</ContextMenu>
+
+@code {
+    private const int MaxStaged = 20;
+    private const int MaxSuggestions = 8;
+    private const string FxModule = "./_content/SkyMessage.Client.UI/js/composer-fx.js";
+    private static readonly TimeSpan DraftDelay = TimeSpan.FromMilliseconds(450);
+    private static readonly TimeSpan EditEndGuard = TimeSpan.FromMilliseconds(600);
+    /// <summary>How long after the first render the composer stays still (draft restore is loading, not a change).</summary>
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(400);
+
+    private ElementReference _root;
+    private ElementReference _textarea;
+    private ElementReference _recordButton;
+    private ElementReference _emojiPanel;
+    private ContextMenu? _attachMenu;
+    private JsModule? _chatJs;
+    private JsModule? _recorderJs;
+    private JsModule? _fxJs;
+    private JsObject? _composerHandle;
+    private JsObject? _recorderHandle;
+    private JsObject? _fxHandle;
+    private bool _settled;
+    /// <summary>What the reply/edit bar showed last: it keeps showing it while it collapses.</summary>
+    private ContextBar? _contextShown;
+    /// <summary>The tray's items as last shown: they stay in the tray while it collapses.</summary>
+    private List<StagedAttachment> _trayShown = [];
+    private JsHandle? _emojiOutside;
+    private OverlayHandle? _emojiOverlay;
+    private OverlayHandle? _recordOverlay;
+    private DotNetObjectReference<Composer>? _self;
+
+    private string _text = "";
+    /// <summary>Version of the last text written into the field (chat.js reports input with the version it had).</summary>
+    private int _textVersion;
+    private List<MessageEntityDto> _entities = [];
+    private MessageDto? _replyTo;
+    /// <summary>Reply of a restored draft whose message is not in the loaded window yet.</summary>
+    private Guid? _draftReplyId;
+    private MessageItem? _editing;
+    /// <summary>The composer as it was before editing (the tray too), put back after save or cancel.</summary>
+    private (string Text, List<MessageEntityDto> Entities, MessageDto? Reply, List<StagedAttachment> Staged, bool Compress)? _stash;
+    /// <summary>When edit mode last ended (see <see cref="SendAsync"/>).</summary>
+    private DateTimeOffset _editEndedAt;
+    private bool _confirmingDelete;
+    private readonly List<StagedAttachment> _staged = [];
+    private bool _compress = true;
+    private bool _emojiOpen;
+    private DateTimeOffset _emojiClosedOutsideAt;
+    private MentionQuery? _mention;
+    private List<UserSummaryDto> _suggestions = [];
+    private int _suggestIndex;
+    private IReadOnlyList<UserSummaryDto>? _members;
+    private Task? _membersLoading;
+    private string _recordMode = "voice";
+    private string _recordState = "idle";
+    private bool _canFlip;
+    private CancellationTokenSource? _draftDelay;
+    private CancellationTokenSource? _recordTyping;
+    private bool _draftDirty;
+    private bool _attached;
+    private bool _draftRestored;
+    private bool _lastSendByEnter;
+    /// <summary>Unique per composer: the id of its SVG paint server (the round video's gradient ring).</summary>
+    private readonly string _ringGradientId = "composer-ring-" + Guid.NewGuid().ToString("N")[..8];
+
+    [Parameter, EditorRequired] public Guid ChatId { get; set; }
+    [Parameter] public ChatSummaryDto? Chat { get; set; }
+    /// <summary>A message went out (the list scrolls to the bottom).</summary>
+    [Parameter] public EventCallback OnSent { get; set; }
+    /// <summary>Up in an empty field: edit my last message.</summary>
+    [Parameter] public EventCallback OnEditLast { get; set; }
+    /// <summary>Tap on the reply bar: show the original.</summary>
+    [Parameter] public EventCallback<long> OnJumpTo { get; set; }
+
+    private bool Recording => _recordState != "idle";
+    private bool ShowSend => _editing is not null || _staged.Count > 0 || !string.IsNullOrWhiteSpace(_text) || _recordState == "locked";
+    /// <summary>Which button holds the action spot: "send", "record" or "none" (no media rights, nothing to send).</summary>
+    private string ActionMode => ShowSend ? "send" : CanSendMedia ? "record" : "none";
+    private bool IsGroup => Chat?.Type == ChatType.Group;
+    private bool CanSendMedia => Chat?.CanSendMedia() ?? true;
+
+    private string Placeholder => _editing is not null ? L["chat.edit.placeholder"]
+        : _staged.Count > 0 ? L["chat.attach.caption"]
+        : L["chat.composer.placeholder"];
+
+    private string SendLabel => _editing is not null ? L["chat.edit.save"] : _recordState == "locked" ? L["chat.record.send"] : L["chat.send"];
+
+    private string RecordLabel => _recordMode == "video" ? L["chat.record.videoHint"] : L["chat.record.voiceHint"];
+
+    /// <summary>The send orb's glyph: arrow-up (send, send the recording) or a check (save an edit).</summary>
+    private string SendIcon => _editing is not null ? IconNames.Check : IconNames.ArrowUp;
+
+    private string RingGradientId => _ringGradientId;
+
+    private bool CanUnblock => Chat is { Type: ChatType.Private, Peer: { } peer } && Contacts.IsBlocked(peer.Id);
+
+    /// <summary>The icon of the read-only notice (same cases as <see cref="Notice"/>).</summary>
+    private string NoticeIcon
+    {
+        get
+        {
+            if (Chat is not { } chat) return IconNames.Lock;
+            if (chat.Type == ChatType.Private && chat.Peer is { } peer && (Users.Get(peer.Id) ?? peer).IsDeleted) return IconNames.UserRoundX;
+            if (chat.Type == ChatType.Group) return IconNames.Lock;
+            return CanUnblock ? IconNames.ShieldBan : IconNames.MessageCircleOff;
+        }
+    }
+
+    /// <summary>Why this chat cannot be written to, or null.</summary>
+    private string? Notice
+    {
+        get
+        {
+            if (Chat is not { } chat) return null;
+            if (chat.Type == ChatType.Private && chat.Peer is { } peer && (Users.Get(peer.Id) ?? peer).IsDeleted) return L["chat.notice.deleted"];
+            if (chat.CanSendMessages()) return null;
+            if (chat.Type == ChatType.Group) return L["chat.notice.readOnly"];
+            return CanUnblock ? L["chat.notice.youBlocked"] : L["chat.notice.cannotWrite"];
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        Action settings = () => _ = InvokeAsync(ApplySettingsAsync);
+        Settings.Changed += settings;
+        OnDispose(() => Settings.Changed -= settings);
+        Action<ChatRefEvent> members = e =>
+        {
+            if (e.ChatId == ChatId) _members = null;
+        };
+        Realtime.ChatMembersChanged += members;
+        OnDispose(() => Realtime.ChatMembersChanged -= members);
+        Action resynced = () => _members = null;
+        Realtime.Resynced += resynced;
+        OnDispose(() => Realtime.Resynced -= resynced);
+        // The message a restored draft replies to may load later (scrolling up, a jump): show it then.
+        Action<Guid> window = id =>
+        {
+            if (id == ChatId && _draftReplyId.HasValue) _ = InvokeAsync(ResolveDraftReplyAsync);
+        };
+        Messages.ChatChanged += window;
+        OnDispose(() => Messages.ChatChanged -= window);
+        _lastSendByEnter = Settings.Current.Chats.SendByEnter;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) _ = SettleLaterAsync();
+        if (Notice is not null)
+        {
+            // The field is gone (blocked, read-only): attach again when it comes back.
+            if (_attached) await DetachJsAsync();
+            return;
+        }
+        if (_attached) return;
+        _attached = true;
+        _self ??= DotNetObjectReference.Create(this);
+        _chatJs ??= new JsModule(JS, JsModule.Chat);
+        _recorderJs ??= new JsModule(JS, JsModule.Recorder);
+        _composerHandle = await _chatJs.AttachAsync("attachComposer", _textarea, _self,
+            new { sendByEnter = Settings.Current.Chats.SendByEnter, maxRows = Layout.IsPhone ? 6 : 10, version = _textVersion });
+        _recorderHandle = await _recorderJs.AttachAsync("attach", _recordButton, _root, _self, RecorderOptions());
+        if (!_draftRestored)
+        {
+            _draftRestored = true;
+            await RestoreDraftAsync();
+        }
+        else if (_text.Length > 0)
+        {
+            // A new, empty field (it came back after a notice).
+            await WriteTextAsync("", _text.Length);
+        }
+        if (!Layout.IsTouch) await FocusAsync();
+        if (_fxHandle is null)
+        {
+            // Motion only: after the field is live.
+            _fxJs ??= new JsModule(JS, FxModule);
+            _fxHandle = await _fxJs.AttachAsync("attach", _root);
+        }
+    }
+
+    /// <summary>
+    /// Opening a chat restores its draft (text, reply) right after the first render: that is loading, not a change, so
+    /// the bars and the send button appear without motion until then.
+    /// </summary>
+    private async Task SettleLaterAsync()
+    {
+        await Task.Delay(SettleDelay);
+        if (IsDisposed) return;
+        _settled = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DetachJsAsync()
+    {
+        _attached = false;
+        var composer = _composerHandle;
+        var recorder = _recorderHandle;
+        _composerHandle = null;
+        _recorderHandle = null;
+        if (recorder is not null) await recorder.DisposeAsync();
+        if (composer is not null) await composer.DisposeAsync();
+    }
+
+    // ---- Public API (chat page) ----
+
+    public async Task ReplyToAsync(MessageDto message)
+    {
+        if (Notice is not null) return;
+        if (_editing is not null) await CancelEditAsync();
+        _replyTo = message;
+        _draftReplyId = null;
+        ScheduleDraft();
+        await ConfigureJsAsync();
+        StateHasChanged();
+        await FocusAsync();
+    }
+
+    public Task BeginEditAsync(MessageItem item) => BeginEditAsync(item, null, null);
+
+    /// <summary>Edit mode for <paramref name="item"/>, with <paramref name="text"/> instead of its current text when given.</summary>
+    private async Task BeginEditAsync(MessageItem item, string? text, List<MessageEntityDto>? entities)
+    {
+        if (Notice is not null) return;
+        if (_editing is null) _stash = (_text, [.. _entities], _replyTo, [.. _staged], _compress);
+        _editing = item;
+        _replyTo = null;
+        _staged.Clear();
+        var known = _text;
+        _text = text ?? item.Message.Text ?? "";
+        _entities = entities ?? ComposerText.EditableEntities(item.Message.Entities, _text.Length);
+        CloseSuggestions();
+        await WriteTextAsync(known, _text.Length);
+        await ConfigureJsAsync();
+        StateHasChanged();
+        await FocusAsync();
+    }
+
+    /// <summary>Adds picked, pasted or dropped files to the tray.</summary>
+    public Task AddFilesAsync(IReadOnlyList<PickedFile> files, bool asFiles = false, bool? compress = null)
+    {
+        if (Notice is not null || files.Count == 0) return Task.CompletedTask;
+        if (!CanSendMedia)
+        {
+            Toasts.Warning(L["chat.notice.noMedia"]);
+            return Task.CompletedTask;
+        }
+        if (_editing is not null)
+        {
+            Toasts.Info(L["chat.edit.noAttachments"]);
+            return Task.CompletedTask;
+        }
+        var room = MaxStaged - _staged.Count;
+        if (files.Count > room) Toasts.Info(L.Format("chat.attach.limit", MaxStaged));
+        foreach (var file in files.Take(Math.Max(0, room)))
+        {
+            var kind = StagedAttachment.KindOf(file);
+            if (asFiles && kind is MediaKind.Photo or MediaKind.Video) kind = MediaKind.File;
+            var staged = new StagedAttachment { File = file, Kind = kind, Probing = kind is MediaKind.Photo or MediaKind.Video };
+            _staged.Add(staged);
+            if (staged.Probing) _ = ProbeAsync(staged);
+        }
+        if (compress is { } value) _compress = value;
+        StateHasChanged();
+        // Phones: keep the keyboard closed so the tray stays visible.
+        return Layout.IsTouch ? Task.CompletedTask : FocusAsync();
+    }
+
+    /// <summary>The window finished loading (or changed): attach the reply of a restored draft if its message is there now.</summary>
+    public async Task ResolveDraftReplyAsync()
+    {
+        if (_draftReplyId is not { } replyId || _replyTo is not null || _editing is not null) return;
+        var held = Messages.Find(ChatId, replyId);
+        if (held is not { IsPending: false }) return;
+        _replyTo = held.Message;
+        _draftReplyId = null;
+        await ConfigureJsAsync();
+        StateHasChanged();
+    }
+
+    public async Task FocusAsync()
+    {
+        if (_composerHandle is not null && !_emojiOpen) await _composerHandle.InvokeVoidAsync("focus", false);
+    }
+
+    /// <summary>
+    /// Writes <see cref="_text"/> into the field as a new version. <paramref name="known"/> is the text this side had
+    /// before the change: what the user typed after it while the write was on its way stays after the new text.
+    /// </summary>
+    private async Task WriteTextAsync(string known, int caret)
+    {
+        _textVersion++;
+        if (_composerHandle is not null) await _composerHandle.InvokeVoidAsync("setText", _text, caret, _textVersion, known);
+    }
+
+    // ---- JS callbacks: text ----
+
+    [JSInvokable]
+    public Task OnInput(string value, int caret, int version) => InvokeAsync(() => HandleInput(value, caret, version));
+
+    private void HandleInput(string value, int caret, int version)
+    {
+        // Typed before the last text written here had reached the field (WebView round trip): stale, or it would put
+        // back what was just sent / replaced. chat.js keeps those characters after the written text and reports again.
+        if (version != _textVersion) return;
+        value ??= "";
+        if (value != _text)
+        {
+            _entities = ComposerText.Adjust(_text, value, _entities);
+            var wasEmpty = string.IsNullOrWhiteSpace(_text);
+            _text = value;
+            if (_editing is null)
+            {
+                if (!string.IsNullOrWhiteSpace(_text)) Typing.NotifyLocalActivity(ChatId, TypingAction.Typing);
+                else if (!wasEmpty) Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
+                ScheduleDraft();
+            }
+        }
+        UpdateMentions(caret);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnSendKey() => InvokeAsync(SendAsync);
+
+    [JSInvokable]
+    public Task OnEditLastKey() => InvokeAsync(() => _editing is null && _staged.Count == 0 ? OnEditLast.InvokeAsync() : Task.CompletedTask);
+
+    [JSInvokable]
+    public Task OnEscapeKey() => InvokeAsync(HandleEscapeAsync);
+
+    private async Task HandleEscapeAsync()
+    {
+        if (_suggestions.Count > 0)
+        {
+            CloseSuggestions();
+            await ConfigureJsAsync();
+        }
+        else if (_editing is not null) await CancelEditAsync();
+        else if (_replyTo is not null || _draftReplyId is not null) await CancelReplyAsync();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnSuggestKey(string key) => InvokeAsync(() => HandleSuggestKeyAsync(key));
+
+    private async Task HandleSuggestKeyAsync(string key)
+    {
+        if (_suggestions.Count == 0) return;
+        switch (key)
+        {
+            case "ArrowUp":
+                _suggestIndex = (_suggestIndex - 1 + _suggestions.Count) % _suggestions.Count;
+                break;
+            case "ArrowDown":
+                _suggestIndex = (_suggestIndex + 1) % _suggestions.Count;
+                break;
+            default:
+                await PickMentionAsync(_suggestions[Math.Clamp(_suggestIndex, 0, _suggestions.Count - 1)]);
+                return;
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Phones: the keyboard takes the emoji panel's place.</summary>
+    [JSInvokable]
+    public Task OnFocus() => InvokeAsync(async () =>
+    {
+        if (_emojiOpen && Layout.IsPhone) await CloseEmojiAsync();
+    });
+
+    [JSInvokable]
+    public Task OnFiles(JsBlobInfo[] files) =>
+        InvokeAsync(() => AddFilesAsync(files.Select(f => JsBlobFile.Create(JS, f)).ToList()));
+
+    // ---- Sending ----
+
+    private async Task SendClickAsync()
+    {
+        if (_recordState == "locked")
+        {
+            if (_recorderHandle is not null) await _recorderHandle.InvokeVoidAsync("stop");
+            return;
+        }
+        await SendAsync();
+    }
+
+    private async Task SendAsync()
+    {
+        if (Notice is not null) return;
+        if (_editing is not null)
+        {
+            await SaveEditAsync();
+            return;
+        }
+        // The second tap of a double tap on ✓ (or a second Enter) arrives once the edit is saved and the draft that was
+        // put aside is back in the field: it must not send that half-written draft.
+        if (DateTimeOffset.UtcNow - _editEndedAt < EditEndGuard) return;
+        var (text, entities) = ComposerText.Trim(_text, _entities);
+        var reply = _replyTo?.Id ?? _draftReplyId;
+        if (_staged.Count > 0)
+        {
+            var attachments = _staged.Select(s => new OutgoingAttachment
+            {
+                Kind = s.Kind,
+                Source = s.File,
+                Compress = _compress,
+                Width = s.Width,
+                Height = s.Height,
+                DurationMs = s.DurationMs,
+                PreviewUrl = s.PreviewUrl,
+            }).ToList();
+            Launch("send");
+            await ClearAfterSendAsync();
+            Haptics.Tap();
+            await Messages.SendAttachmentsAsync(ChatId, attachments, text.Length > 0 ? text : null, reply);
+            await OnSent.InvokeAsync();
+            return;
+        }
+        if (text.Length == 0) return;
+        var withLinks = ComposerText.WithLinkEntities(text, entities);
+        Launch("send");
+        await ClearAfterSendAsync();
+        Haptics.Tap();
+        await Messages.SendTextAsync(ChatId, text, reply, withLinks.Count > 0 ? withLinks : null);
+        await OnSent.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Motion only: the orb sends off what goes out (it lifts, the arrow flies up) — composer-fx.js plays it on a copy
+    /// before the field clears. Not awaited: sending never waits for an animation.
+    /// </summary>
+    private void Launch(string kind)
+    {
+        if (_fxHandle is { IsActive: true } fx) _ = fx.InvokeVoidAsync("launch", kind).AsTask();
+    }
+
+    private async Task ClearAfterSendAsync()
+    {
+        var known = _text;
+        _text = "";
+        _entities = [];
+        _replyTo = null;
+        _draftReplyId = null;
+        _staged.Clear();
+        _compress = true;
+        CloseSuggestions();
+        CancelDraftTimer();
+        _draftDirty = false;
+        Drafts.Set(ChatId, null);
+        Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
+        await WriteTextAsync(known, 0);
+        await ConfigureJsAsync();
+        StateHasChanged();
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editing is not { } editing) return;
+        var (text, entities) = ComposerText.Trim(_text, _entities);
+        var original = editing.Message.Text ?? "";
+        if (text == original.Trim() && SameEntities(entities, editing.Message.Entities))
+        {
+            await CancelEditAsync();
+            return;
+        }
+        if (text.Length == 0 && editing.Message.Type == MessageType.Text)
+        {
+            // Edit mode lasts while the question is open: a second ✓ (double tap) must not ask again (and then restore
+            // the put-aside draft twice, the second time as an empty one).
+            if (_confirmingDelete) return;
+            _confirmingDelete = true;
+            bool delete;
+            try
+            {
+                delete = await Dialogs.ConfirmAsync(L["chat.edit.emptyTitle"], L["chat.edit.emptyText"], L["common.delete"], danger: true);
+            }
+            finally
+            {
+                _confirmingDelete = false;
+            }
+            if (!delete || !ReferenceEquals(_editing, editing)) return;
+            await RestoreAfterEditAsync();
+            try
+            {
+                await Messages.DeleteAsync(ChatId, [editing.Message.Id], forEveryone: true);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+            return;
+        }
+        var withLinks = ComposerText.WithLinkEntities(text, entities);
+        Launch("save");
+        await RestoreAfterEditAsync();
+        try
+        {
+            await Messages.EditAsync(ChatId, editing.Message.Id, text, withLinks.Count > 0 ? withLinks : null);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            await ReopenFailedEditAsync(editing.Message.Id, text, entities);
+        }
+    }
+
+    /// <summary>
+    /// The edit was refused or did not get through (the bubble went back to the old text): the new text exists nowhere
+    /// else, so it returns to edit mode for another try while the message can still be edited. What the field holds by
+    /// now is put aside again, as for any edit.
+    /// </summary>
+    private async Task ReopenFailedEditAsync(Guid messageId, string text, List<MessageEntityDto> entities)
+    {
+        if (IsDisposed || _editing is not null || Recording || Notice is not null) return;
+        if (Messages.Find(ChatId, messageId) is not { } current || !MessageRules.CanEdit(current, Auth.UserId ?? Guid.Empty, DateTimeOffset.UtcNow)) return;
+        await BeginEditAsync(current, text, entities);
+    }
+
+    private static bool SameEntities(IReadOnlyList<MessageEntityDto> a, IReadOnlyList<MessageEntityDto>? b)
+    {
+        var left = a.Where(e => e.Type is not (MessageEntityType.Url or MessageEntityType.Email)).ToList();
+        var right = (b ?? []).Where(e => e.Type is not (MessageEntityType.Url or MessageEntityType.Email)).ToList();
+        return left.SequenceEqual(right);
+    }
+
+    private async Task CancelEditAsync() => await RestoreAfterEditAsync();
+
+    private async Task RestoreAfterEditAsync()
+    {
+        _editing = null;
+        _editEndedAt = DateTimeOffset.UtcNow;
+        var stash = _stash;
+        _stash = null;
+        var known = _text;
+        _text = stash?.Text ?? "";
+        _entities = stash?.Entities ?? [];
+        _replyTo = stash?.Reply;
+        _staged.Clear();
+        if (stash?.Staged is { } staged) _staged.AddRange(staged);
+        _compress = stash?.Compress ?? true;
+        CloseSuggestions();
+        await WriteTextAsync(known, _text.Length);
+        await ConfigureJsAsync();
+        StateHasChanged();
+    }
+
+    private async Task CancelReplyAsync()
+    {
+        _replyTo = null;
+        _draftReplyId = null;
+        ScheduleDraft();
+        await ConfigureJsAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>What the reply/edit bar shows; <see cref="Key"/> changes with the target (the quote crossfades).</summary>
+    private sealed record ContextBar(string Key, string Icon, ReplyPreviewDto Preview, string? Title, string CancelLabel, long? JumpSeq);
+
+    private ContextBar? CurrentContext =>
+        _editing is { } editing ? new($"edit:{editing.Message.Id}", IconNames.Pencil, PreviewOf(editing.Message), L["chat.edit.title"], L["chat.edit.cancel"], null)
+        : _replyTo is { } reply ? new($"reply:{reply.Id}", IconNames.Reply, PreviewOf(reply), null, L["chat.reply.cancel"], reply.Seq)
+        : _draftReplyId is { } draftReply ? new($"draft:{draftReply}", IconNames.Reply, UnloadedPreview(draftReply), L["chat.reply.unloadedTitle"], L["chat.reply.cancel"], null)
+        : null;
+
+    private EventCallback JumpCallback(ContextBar bar) =>
+        bar.JumpSeq is { } seq ? EventCallback.Factory.Create(this, () => OnJumpTo.InvokeAsync(seq)) : default;
+
+    private Task CloseContextAsync() => _editing is not null ? CancelEditAsync() : CancelReplyAsync();
+
+    private static ReplyPreviewDto PreviewOf(MessageDto message) => new()
+    {
+        MessageId = message.Id,
+        Seq = message.Seq,
+        SenderId = message.SenderId,
+        Type = message.Type,
+        Text = message.Text is { Length: > Limits.ReplyPreviewTextLength } text ? text[..Limits.ReplyPreviewTextLength] : message.Text,
+        Media = message.Attachments.FirstOrDefault(),
+        IsDeleted = message.IsDeleted,
+    };
+
+    private ReplyPreviewDto UnloadedPreview(Guid messageId) => new()
+    {
+        MessageId = messageId,
+        Type = MessageType.Text,
+        Text = L["chat.reply.unloadedText"],
+    };
+
+    // ---- Drafts ----
+
+    private async Task RestoreDraftAsync()
+    {
+        if (Drafts.Get(ChatId) is not { } draft) return;
+        var known = _text;
+        _text = draft.Text ?? "";
+        _entities = ComposerText.EditableEntities(draft.Entities, _text.Length);
+        if (draft.ReplyToMessageId is { } replyId)
+        {
+            var held = Messages.Find(ChatId, replyId);
+            _replyTo = held is { IsPending: false } ? held.Message : null;
+            _draftReplyId = _replyTo is null ? replyId : null;
+        }
+        await WriteTextAsync(known, _text.Length);
+        await ConfigureJsAsync();
+        StateHasChanged();
+    }
+
+    private void ScheduleDraft()
+    {
+        if (_editing is not null) return;
+        _draftDirty = true;
+        CancelDraftTimer();
+        var cts = _draftDelay = new CancellationTokenSource();
+        _ = SaveDraftLaterAsync(cts.Token);
+    }
+
+    private async Task SaveDraftLaterAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(DraftDelay, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        SaveDraft();
+    }
+
+    private void SaveDraft()
+    {
+        if (!_draftDirty || _editing is not null) return;
+        _draftDirty = false;
+        var text = _text;
+        Drafts.Set(ChatId, string.IsNullOrWhiteSpace(text) && _replyTo is null && _draftReplyId is null
+            ? null
+            : new DraftDto(text, _entities.Count > 0 ? [.. _entities] : null, _replyTo?.Id ?? _draftReplyId, DateTimeOffset.UtcNow));
+    }
+
+    private void CancelDraftTimer()
+    {
+        _draftDelay?.Cancel();
+        _draftDelay = null;
+    }
+
+    // ---- Mentions ----
+
+    private void UpdateMentions(int caret)
+    {
+        if (!IsGroup)
+        {
+            CloseSuggestions();
+            return;
+        }
+        var query = ComposerText.FindMentionQuery(_text, caret, _entities);
+        _mention = query;
+        if (query is null)
+        {
+            if (_suggestions.Count > 0)
+            {
+                CloseSuggestions();
+                _ = ConfigureJsAsync();
+            }
+            return;
+        }
+        if (_members is null)
+        {
+            _membersLoading ??= LoadMembersAsync();
+            return;
+        }
+        FilterSuggestions(query.Query);
+        _ = ConfigureJsAsync();
+    }
+
+    private async Task LoadMembersAsync()
+    {
+        try
+        {
+            var details = await Api.GetChatDetailsAsync(ChatId);
+            var users = details.Members.Select(m => m.User).ToList();
+            Users.Upsert(users);
+            _members = users;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Members for mentions not loaded");
+            _members = [];
+        }
+        finally
+        {
+            _membersLoading = null;
+        }
+        if (_mention is { } query)
+        {
+            FilterSuggestions(query.Query);
+            await ConfigureJsAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void FilterSuggestions(string query)
+    {
+        var me = Auth.UserId;
+        var q = query.Trim();
+        _suggestions = (_members ?? [])
+            .Where(m => m.Id != me && !m.IsDeleted)
+            .Select(m => Users.Resolve(m))
+            .Select(m => (User: m, Score: Score(m, q)))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.User.NameOf(L), StringComparer.CurrentCultureIgnoreCase)
+            .Take(MaxSuggestions)
+            .Select(x => x.User)
+            .ToList();
+        _suggestIndex = 0;
+    }
+
+    private int Score(UserSummaryDto user, string query)
+    {
+        if (query.Length == 0) return 1;
+        var score = 0;
+        if (user.Username.StartsWith(query, StringComparison.OrdinalIgnoreCase)) score = Math.Max(score, 3);
+        foreach (var name in new[] { user.ContactName, user.DisplayName })
+        {
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            if (name.StartsWith(query, StringComparison.CurrentCultureIgnoreCase)) score = Math.Max(score, 4);
+            else if (name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(w => w.StartsWith(query, StringComparison.CurrentCultureIgnoreCase))) score = Math.Max(score, 2);
+        }
+        return score;
+    }
+
+    private async Task PickMentionAsync(UserSummaryDto user)
+    {
+        if (_mention is not { } query) return;
+        var label = string.IsNullOrWhiteSpace(user.DisplayName) ? "@" + user.Username : user.DisplayName.Trim();
+        var insert = label + " ";
+        var before = _text;
+        var after = before[..query.Start] + insert + before[Math.Min(query.End, before.Length)..];
+        var entities = ComposerText.Adjust(before, after, _entities);
+        entities.Add(new MessageEntityDto { Type = MessageEntityType.Mention, Offset = query.Start, Length = label.Length, UserId = user.Id });
+        _entities = entities.Where(e => e.Offset >= 0 && e.Offset + e.Length <= after.Length).OrderBy(e => e.Offset).ToList();
+        _text = after;
+        CloseSuggestions();
+        await WriteTextAsync(before, query.Start + insert.Length);
+        ScheduleDraft();
+        await ConfigureJsAsync();
+        StateHasChanged();
+        await FocusAsync();
+    }
+
+    private void CloseSuggestions()
+    {
+        _mention = null;
+        _suggestions = [];
+        _suggestIndex = 0;
+    }
+
+    // ---- Emoji ----
+
+    private async Task ToggleEmojiAsync()
+    {
+        if (_emojiOpen)
+        {
+            await CloseEmojiAsync();
+            await FocusAsync();
+            return;
+        }
+        // The pointerdown on this very button already closed the popover ("click outside"): that was the toggle.
+        if (DateTimeOffset.UtcNow - _emojiClosedOutsideAt < TimeSpan.FromMilliseconds(400)) return;
+        _emojiOpen = true;
+        if (Layout.IsPhone && _composerHandle is not null) await _composerHandle.InvokeVoidAsync("blur");
+        StateHasChanged();
+        _emojiOverlay = await Nav.OpenOverlayAsync(() => InvokeAsync(() =>
+        {
+            _emojiOverlay = null;
+            _emojiOpen = false;
+            _ = DetachEmojiOutsideAsync();
+            StateHasChanged();
+        }));
+        if (!_emojiOpen)
+        {
+            await _emojiOverlay.CloseAsync();
+            _emojiOverlay = null;
+            return;
+        }
+        await ConfigureJsAsync();
+        if (!Layout.IsPhone)
+        {
+            await Task.Yield();
+            _self ??= DotNetObjectReference.Create(this);
+            _emojiOutside = await AppJs.OnClickOutsideAsync(_emojiPanel, _self, nameof(OnEmojiOutside));
+        }
+    }
+
+    [JSInvokable]
+    public Task OnEmojiOutside() => InvokeAsync(async () =>
+    {
+        if (!_emojiOpen) return;
+        _emojiClosedOutsideAt = DateTimeOffset.UtcNow;
+        await CloseEmojiAsync();
+    });
+
+    private async Task CloseEmojiAsync()
+    {
+        if (!_emojiOpen) return;
+        _emojiOpen = false;
+        await DetachEmojiOutsideAsync();
+        var overlay = _emojiOverlay;
+        _emojiOverlay = null;
+        StateHasChanged();
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+        await ConfigureJsAsync();
+    }
+
+    private async Task DetachEmojiOutsideAsync()
+    {
+        var handle = _emojiOutside;
+        _emojiOutside = null;
+        if (handle is not null) await handle.DisposeAsync();
+    }
+
+    private async Task InsertEmojiAsync(string emoji)
+    {
+        if (_composerHandle is not null) await _composerHandle.InvokeVoidAsync("insert", emoji);
+    }
+
+    // ---- Attachments ----
+
+    private async Task OpenAttachMenuAsync(MouseEventArgs e)
+    {
+        if (_attachMenu is null) return;
+        var x = e.ClientX;
+        var y = e.ClientY;
+        if (x <= 0 && y <= 0)
+        {
+            x = 24;
+            y = Layout.Height - 80;
+        }
+        await _attachMenu.OpenAsync(x, y);
+    }
+
+    private async Task PickMediaAsync(bool compress)
+    {
+        try
+        {
+            var files = await Picker.PickMediaAsync(allowMultiple: true);
+            await AddFilesAsync(files, compress: compress);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogInformation(ex, "Picking media failed");
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task PickFilesAsync()
+    {
+        try
+        {
+            var files = await Picker.PickFilesAsync(allowMultiple: true);
+            await AddFilesAsync(files, asFiles: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogInformation(ex, "Picking files failed");
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CaptureAsync(bool video)
+    {
+        try
+        {
+            var file = video ? await Picker.CaptureVideoAsync() : await Picker.CapturePhotoAsync();
+            if (file is not null) await AddFilesAsync([file], compress: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogInformation(ex, "Camera capture failed");
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task ProbeAsync(StagedAttachment staged)
+    {
+        try
+        {
+            var probe = await Compressor.ProbeAsync(staged.File);
+            staged.Width = probe.Width;
+            staged.Height = probe.Height;
+            staged.DurationMs = probe.DurationMs;
+            if (probe.PreviewJpeg is { Length: > 0 } jpeg) staged.PreviewUrl = "data:image/jpeg;base64," + Convert.ToBase64String(jpeg);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Probing a picked file failed");
+        }
+        finally
+        {
+            staged.Probing = false;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void RemoveStaged(StagedAttachment staged)
+    {
+        _staged.Remove(staged);
+        if (_staged.Count == 0) _compress = true;
+        StateHasChanged();
+    }
+
+    // ---- Recording ----
+
+    private object RecorderOptions()
+    {
+        var devices = Settings.Current.Devices;
+        return new
+        {
+            mode = _recordMode,
+            microphoneId = devices.MicrophoneId,
+            cameraId = devices.CameraId,
+            echoCancellation = devices.EchoCancellation,
+            noiseSuppression = devices.NoiseSuppression,
+            autoGainControl = devices.AutoGainControl,
+            mirror = devices.MirrorFrontCamera,
+        };
+    }
+
+    [JSInvokable]
+    public Task OnRecordTap() => InvokeAsync(HandleRecordTapAsync);
+
+    private async Task HandleRecordTapAsync()
+    {
+        _recordMode = _recordMode == "voice" ? "video" : "voice";
+        Haptics.Selection();
+        if (_recorderHandle is not null) await _recorderHandle.InvokeVoidAsync("configure", RecorderOptions());
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnRecordState(string state, string mode, RecordStateInfo? info) => InvokeAsync(() => HandleRecordStateAsync(state, mode, info));
+
+    private async Task HandleRecordStateAsync(string state, string mode, RecordStateInfo? info)
+    {
+        var previous = _recordState;
+        _recordState = state is "recording" or "locked" ? state : "idle";
+        _recordMode = mode == "video" ? "video" : "voice";
+        _canFlip = info?.CanFlip == true;
+        if (_recordState == "recording" && previous == "idle")
+        {
+            Haptics.LongPress();
+            if (_emojiOpen) await CloseEmojiAsync();
+            StartRecordingTyping();
+        }
+        else if (_recordState == "locked" && previous != "locked")
+        {
+            Haptics.Selection();
+            _recordOverlay = await Nav.OpenOverlayAsync(() => InvokeAsync(async () =>
+            {
+                _recordOverlay = null;
+                if (_recordState != "idle" && _recorderHandle is not null) await _recorderHandle.InvokeVoidAsync("cancel");
+            }));
+        }
+        else if (_recordState == "idle")
+        {
+            StopRecordingTyping();
+            var overlay = _recordOverlay;
+            _recordOverlay = null;
+            if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnRecordDone(RecordingResult? result, string reason) => InvokeAsync(() => HandleRecordDoneAsync(result, reason));
+
+    private async Task HandleRecordDoneAsync(RecordingResult? result, string reason)
+    {
+        if (result is null)
+        {
+            Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
+            ReportRecordingProblem(reason);
+            return;
+        }
+        var video = result.Mode == "video";
+        var file = JsBlobFile.Create(JS, new JsBlobInfo(result.Ref, result.Name, result.Type, result.Size));
+        var attachment = new OutgoingAttachment
+        {
+            Kind = video ? MediaKind.VideoNote : MediaKind.Voice,
+            Source = file,
+            DurationMs = result.DurationMs,
+            Waveform = result.Waveform is { Length: > 0 } wave ? wave.Select(v => (byte)Math.Clamp(v, 0, 255)).ToArray() : null,
+            Width = result.Width,
+            Height = result.Height,
+        };
+        var reply = _replyTo?.Id ?? _draftReplyId;
+        _replyTo = null;
+        _draftReplyId = null;
+        ScheduleDraft();
+        await ConfigureJsAsync();
+        StateHasChanged();
+        Haptics.Success();
+        await Messages.SendAttachmentsAsync(ChatId, [attachment], null, reply);
+        await OnSent.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public Task OnRecordFlipFailed(string name) => InvokeAsync(() => Toasts.Warning(L["chat.record.flipFailed"]));
+
+    private void ReportRecordingProblem(string reason)
+    {
+        switch (reason)
+        {
+            case "cancel":
+                Haptics.Warning();
+                break;
+            case "short":
+                // A tap is the voice/video switch (OnRecordTap). A press too short to record gets no toast: recorder.js
+                // shakes the button, this adds a light tick.
+                Haptics.Tap();
+                break;
+            case "error:NotAllowedError" or "error:SecurityError" or "error:PermissionDeniedError":
+                var text = _recordMode == "video" ? L["chat.record.noCameraAccess"] : L["chat.record.noMicAccess"];
+                if (Platform.IsNativeApp) Toasts.Show(text, ToastKind.Error, L["chat.record.openSettings"], () => Permissions.OpenAppSettingsAsync());
+                else Toasts.Show(text, ToastKind.Error);
+                break;
+            case "error:NotFoundError" or "error:OverconstrainedError" or "error:DevicesNotFoundError":
+                Toasts.Show(_recordMode == "video" ? L["chat.record.noCamera"] : L["chat.record.noMic"], ToastKind.Error);
+                break;
+            case "error:NotReadableError" or "error:TrackStartError" or "error:AbortError":
+                Toasts.Show(L["chat.record.busy"], ToastKind.Error);
+                break;
+            case "error:NotSupportedError":
+                Toasts.Show(L["chat.record.unsupported"], ToastKind.Error);
+                break;
+            default:
+                if (reason.StartsWith("error:", StringComparison.Ordinal)) Toasts.Show(L["chat.record.failed"], ToastKind.Error);
+                break;
+        }
+    }
+
+    private async Task CancelRecordingAsync()
+    {
+        if (_recorderHandle is not null) await _recorderHandle.InvokeVoidAsync("cancel");
+    }
+
+    private async Task FlipCameraAsync()
+    {
+        if (_recorderHandle is not null) await _recorderHandle.InvokeVoidAsync("flip");
+    }
+
+    private void StartRecordingTyping()
+    {
+        StopRecordingTyping();
+        var cts = _recordTyping = new CancellationTokenSource();
+        var action = _recordMode == "video" ? TypingAction.RecordingVideoNote : TypingAction.RecordingVoice;
+        _ = LoopAsync(cts.Token);
+
+        async Task LoopAsync(CancellationToken token)
+        {
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    Typing.NotifyLocalActivity(ChatId, action);
+                    await Task.Delay(TimeSpan.FromSeconds(2), token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+    }
+
+    private void StopRecordingTyping()
+    {
+        _recordTyping?.Cancel();
+        _recordTyping = null;
+    }
+
+    // ---- Misc ----
+
+    private async Task ConfigureJsAsync()
+    {
+        if (_composerHandle is null) return;
+        await _composerHandle.InvokeVoidAsync("configure", new
+        {
+            sendByEnter = Settings.Current.Chats.SendByEnter,
+            hasContext = _editing is not null || _replyTo is not null || _draftReplyId is not null,
+            suggestOpen = _suggestions.Count > 0,
+        });
+    }
+
+    private async Task ApplySettingsAsync()
+    {
+        var sendByEnter = Settings.Current.Chats.SendByEnter;
+        if (sendByEnter != _lastSendByEnter)
+        {
+            _lastSendByEnter = sendByEnter;
+            await ConfigureJsAsync();
+        }
+        if (_recorderHandle is not null && !Recording) await _recorderHandle.InvokeVoidAsync("configure", RecorderOptions());
+        StateHasChanged();
+    }
+
+    private async Task UnblockAsync()
+    {
+        if (Chat?.Peer is not { } peer) return;
+        try
+        {
+            await Contacts.UnblockAsync(peer.Id);
+            Toasts.Success(L["chat.notice.unblocked"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        CancelDraftTimer();
+        SaveDraft();
+        StopRecordingTyping();
+        if (!string.IsNullOrWhiteSpace(_text) && _editing is null) Typing.NotifyLocalActivity(ChatId, TypingAction.Cancel);
+        await DetachEmojiOutsideAsync();
+        if (_emojiOverlay is { IsOpen: true } emoji) await emoji.CloseAsync();
+        if (_recordOverlay is { IsOpen: true } record) await record.CloseAsync();
+        if (_recorderHandle is not null) await _recorderHandle.DisposeAsync();
+        if (_composerHandle is not null) await _composerHandle.DisposeAsync();
+        if (_fxHandle is not null) await _fxHandle.DisposeAsync();
+        if (_recorderJs is not null) await _recorderJs.DisposeAsync();
+        if (_chatJs is not null) await _chatJs.DisposeAsync();
+        if (_fxJs is not null) await _fxJs.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

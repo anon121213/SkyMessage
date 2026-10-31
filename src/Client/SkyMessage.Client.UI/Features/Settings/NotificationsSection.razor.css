@@ -1,0 +1,67 @@
+/* Permission notices: a frosted card with a pastel tile (rose: blocked, gold: not asked yet). */
+.notif-alert {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px 14px;
+    margin: 0 0 22px;
+    padding: 14px 16px 14px 12px;
+}
+
+/* The action sits under the text (never squeezed or cut off on narrow phones). */
+.notif-alert ::deep .sm-btn {
+    grid-column: 2;
+    justify-self: start;
+}
+
+.notif-alert__tile {
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+/* The bell asking for permission rocks now and then. */
+.notif-alert__tile--ring ::deep .sm-icon {
+    transform-origin: 50% 10%;
+    animation: notif-ring 4.5s ease-in-out 1s infinite;
+}
+
+.notif-alert__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.4;
+}
+
+.notif-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0 0 22px;
+    padding: 14px 16px;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--sm-text-2);
+}
+
+.notif-hint ::deep .sm-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--sm-accent);
+}
+
+@keyframes notif-ring {
+    0%, 70%, 100% { transform: rotate(0deg); }
+    74% { transform: rotate(14deg); }
+    78% { transform: rotate(-12deg); }
+    82% { transform: rotate(8deg); }
+    86% { transform: rotate(-5deg); }
+    90% { transform: rotate(0deg); }
+}
+
+[inert] .notif-alert__tile--ring ::deep .sm-icon {
+    animation-play-state: paused;
+}
+
+html[data-fx="lite"] .notif-alert__tile--ring ::deep .sm-icon {
+    animation: none;
+}

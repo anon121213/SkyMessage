@@ -1,0 +1,607 @@
+@page "/chat/{ChatId:guid}/info"
+@* Chat info for every chat type: group (members, roles, invite link, edit, leave/delete), private chat (the
+   peer's profile + chat actions), Saved Messages. The same hero as a profile: a big squircle avatar in a thin
+   accent ring, title in the display font, actions as glass circles, glass cards with pastel tiles. Wide screens
+   show it in the info column. Once the large header has scrolled away the app bar shows the chat's (or the peer's)
+   avatar and name. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IChatListStore ChatList
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject IRealtimeService Realtime
+@inject ISkyApi Api
+@inject ICallService Calls
+@inject IServerEndpointService Endpoints
+@inject ILinkBuilder Links
+@inject IMediaUrlBuilder MediaUrls
+@inject AvatarUploader Avatars
+@inject ChatActions Actions
+@inject FormatService Format
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ShareHelper Share
+@inject AppJs Js
+
+<AppPage @ref="_page" Title="@PageTitle" BackFallback="@DeepLinks.ChatPath(ChatId)">
+    <TitleContent>
+        <InfoBarTitle Title="@PageTitle" Collapsed="_headerHidden" User="Peer" Chat="@(Peer is null ? Chat : null)" OnClick="ScrollToTopAsync" />
+    </TitleContent>
+    <Actions>
+        @if (Chat is { } c && (c.CanChangeInfo() || c.CanChangePermissions()))
+        {
+            <IconButton Icon="@IconNames.Pencil" Label="@L["groups.edit.title"]" OnClick="EditAsync" />
+        }
+    </Actions>
+    <ChildContent>
+        @if (Chat is not { } chat)
+        {
+            @if (_notFound)
+            {
+                <EmptyState Icon="@IconNames.MessageCircleOff" Title="@L["groups.info.notFound"]" Fill="true">
+                    <Actions><Button OnClick="@(() => Nav.NavigateTo("/", replace: true))">@L["notFound.home"]</Button></Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <SkeletonList Rows="5" />
+            }
+        }
+        else if (chat.Type == ChatType.Private && chat.Peer is { } peer)
+        {
+            <ProfileView UserId="peer.Id" InChatInfo="true" OnHeaderHidden="hidden => _headerHidden = hidden">
+                <Extra>@ChatSection(chat)</Extra>
+            </ProfileView>
+        }
+        else if (chat.Type == ChatType.Saved)
+        {
+            <div class="ginfo sm-stagger">
+                <div class="ginfo__head">
+                    <div class="ginfo__avatar">
+                        @Portrait()
+                        <ChatAvatar Chat="chat" Size="116" />
+                    </div>
+                    <h2 class="ginfo__title">@L["common.savedMessages"]<span @ref="_titleEl" class="ginfo__title-mark" aria-hidden="true"></span></h2>
+                    <p class="ginfo__sub">@L["groups.saved.text"]</p>
+                </div>
+                <div class="ginfo__sections">@ChatSection(chat)</div>
+            </div>
+        }
+        else
+        {
+            @GroupContent(chat)
+        }
+    </ChildContent>
+</AppPage>
+
+<ContextMenu @ref="_memberMenu" Title="@(_menuMember is null ? null : Users.NameOf(_menuMember.User.Id, L, _menuMember.User))">
+    @if (_menuMember is { } member && Chat is { } group)
+    {
+        <MenuItem Icon="@IconNames.UserRound" Label="@L["groups.member.profile"]" OnClick="() => Nav.OpenUser(member.User.Id)" />
+        <MenuItem Icon="@IconNames.MessageCircle" Label="@L["profile.action.message"]" OnClick="() => MessageAsync(member.User.Id)" />
+        @if (ChatRules.CanSetRoles(group.MyRole) && member.Role == ChatRole.Member)
+        {
+            <MenuItem Icon="@IconNames.Shield" Label="@L["groups.member.makeAdmin"]" OnClick="() => SetRoleAsync(member, ChatRole.Admin)" />
+        }
+        @if (ChatRules.CanSetRoles(group.MyRole) && member.Role == ChatRole.Admin)
+        {
+            <MenuItem Icon="@IconNames.ShieldBan" Label="@L["groups.member.removeAdmin"]" OnClick="() => SetRoleAsync(member, ChatRole.Member)" />
+        }
+        @if (ChatRules.CanSetRoles(group.MyRole) && member.Role != ChatRole.Owner)
+        {
+            <MenuItem Icon="@IconNames.Crown" Label="@L["groups.member.makeOwner"]" OnClick="() => TransferOwnershipAsync(member)" />
+        }
+        @if (ChatRules.CanRemoveMember(group.MyRole, member.Role))
+        {
+            <MenuDivider />
+            <MenuItem Icon="@IconNames.UserX" Label="@L["groups.member.remove"]" Danger="true" OnClick="() => RemoveMemberAsync(member)" />
+        }
+    }
+</ContextMenu>
+
+@code {
+    private ChatDetailsDto? _details;
+    private ChatSummaryDto? _fetched;
+    private bool _notFound;
+    private string? _inviteToken;
+    private bool _inviteBusy;
+    private ContextMenu? _memberMenu;
+    private ChatMemberDto? _menuMember;
+    private Guid _loadedFor;
+    private int _version;
+    private AppPage? _page;
+    private ElementReference _titleEl;
+    private HeaderTitleWatcher? _titleWatcher;
+    private bool _headerHidden;
+
+    [Parameter] public Guid ChatId { get; set; }
+
+    private ChatSummaryDto? Chat => ChatList.Get(ChatId) ?? _fetched;
+
+    private Guid? Me => Auth.UserId;
+
+    /// <summary>The other person of a private chat (its info is their profile).</summary>
+    private UserSummaryDto? Peer => Chat is { Type: ChatType.Private, Peer: { } peer } ? peer : null;
+
+    private bool CallsEnabled => Endpoints.Info?.CallsEnabled ?? true;
+
+    private string PageTitle => Chat?.Type switch
+    {
+        ChatType.Group => L["groups.info.title"],
+        ChatType.Saved => L["common.savedMessages"],
+        ChatType.Private => L["profile.title"],
+        _ => L["groups.info.title"],
+    };
+
+    private string? InviteLink => _inviteToken is null ? null : Links.InviteLink(_inviteToken);
+
+    /// <summary>Owner, admins, then everyone else (online first, then by name).</summary>
+    private IReadOnlyList<ChatMemberDto> Members =>
+        (_details?.Members ?? [])
+        .OrderByDescending(m => m.Role)
+        .ThenByDescending(m => Users.Resolve(m.User).IsOnline())
+        .ThenBy(m => Users.Resolve(m.User).NameOf(L), StringComparer.CurrentCultureIgnoreCase)
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => _details?.Members.Any(m => m.User.Id == id) == true);
+        Action<ChatRefEvent> members = e =>
+        {
+            if (e.ChatId == ChatId) Reload();
+        };
+        Action<ChatInfoDto> updated = e =>
+        {
+            if (e.Id == ChatId) Reload();
+        };
+        Action resynced = Reload;
+        Realtime.ChatMembersChanged += members;
+        Realtime.ChatUpdated += updated;
+        Realtime.Resynced += resynced;
+        OnDispose(() =>
+        {
+            Realtime.ChatMembersChanged -= members;
+            Realtime.ChatUpdated -= updated;
+            Realtime.Resynced -= resynced;
+        });
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == ChatId) return;
+        _loadedFor = ChatId;
+        _details = null;
+        _fetched = null;
+        _inviteToken = null;
+        _notFound = false;
+        _headerHidden = false;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Groups and Saved Messages have their own header; a private chat's ProfileView reports through OnHeaderHidden.
+        if (Chat is null || Peer is not null || IsDisposed) return;
+        _titleWatcher ??= new HeaderTitleWatcher(Js, hidden => InvokeAsync(() =>
+        {
+            if (IsDisposed || _headerHidden == hidden) return;
+            _headerHidden = hidden;
+            StateHasChanged();
+        }));
+        await _titleWatcher.WatchAsync(_titleEl);
+    }
+
+    private void Reload()
+    {
+        if (!IsDisposed) _ = InvokeAsync(LoadAsync);
+    }
+
+    private async Task LoadAsync()
+    {
+        var version = ++_version;
+        try
+        {
+            var summary = ChatList.Get(ChatId) ?? await ChatList.GetOrFetchAsync(ChatId);
+            if (version != _version || IsDisposed) return;
+            if (summary is null)
+            {
+                _notFound = true;
+                StateHasChanged();
+                return;
+            }
+            _fetched = summary;
+            if (summary.Type == ChatType.Group)
+            {
+                var details = await Api.GetChatDetailsAsync(ChatId);
+                if (version != _version || IsDisposed) return;
+                Users.Upsert(details.Members.Select(m => m.User));
+                _details = details;
+                _inviteToken = details.InviteToken ?? _inviteToken;
+            }
+        }
+        catch (ApiException ex) when (ex.StatusCode == 404)
+        {
+            _notFound = true;
+        }
+        catch (Exception ex)
+        {
+            if (_details is null && Chat?.Type == ChatType.Group) Toasts.Error(ex);
+        }
+        StateHasChanged();
+    }
+
+    // ---- Rendering ----
+
+    /// <summary>The thin accent ring around the large avatar (same as ProfileView).</summary>
+    private RenderFragment Portrait() => __builder =>
+    {
+        <span class="ginfo__ring" aria-hidden="true"></span>
+    };
+
+    private RenderFragment ChatSection(ChatSummaryDto chat) => __builder =>
+    {
+        var muted = chat.IsMuted(DateTimeOffset.UtcNow);
+        <Section DividerInset="64px">
+            <ListItem Icon="@IconNames.Images" IconColor="@SettingsTones.Orchid" Title="@L["groups.info.media"]" Chevron="true" OnClick="OpenMedia" />
+            @if (chat.Type != ChatType.Saved)
+            {
+                <SwitchItem Icon="@IconNames.Bell" IconColor="@SettingsTones.Rose" Title="@L["groups.info.notifications"]" Subtitle="@(muted ? MutedText(chat) : null)"
+                            Checked="!muted" CheckedChanged="_ => Actions.ToggleMuteAsync(chat)" />
+            }
+        </Section>
+        <Section DividerInset="64px">
+            <ListItem Icon="@IconNames.Eraser" IconColor="@SettingsTones.Mauve" Title="@L["chatlist.menu.clear"]" OnClick="() => Actions.ClearHistoryAsync(chat)" />
+            @if (chat.Type == ChatType.Private)
+            {
+                <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["chatlist.menu.delete"]" Danger="true" OnClick="() => Actions.DeleteAsync(chat)" />
+            }
+        </Section>
+    };
+
+    private RenderFragment GroupContent(ChatSummaryDto chat) => __builder =>
+    {
+        var muted = chat.IsMuted(DateTimeOffset.UtcNow);
+        <div class="ginfo sm-stagger">
+            <div class="ginfo__head">
+                <div class="ginfo__avatar">
+                    @Portrait()
+                    <ChatAvatar Chat="chat" Size="116" />
+                    @if (chat.CanChangeInfo())
+                    {
+                        <button type="button" class="ginfo__avatar-edit" aria-label="@L["groups.photo.change"]" title="@L["groups.photo.change"]" @onclick="ChangePhotoAsync">
+                            <Icon Name="@IconNames.Camera" />
+                        </button>
+                    }
+                </div>
+                @* The mark one header height above the title's bottom drives the app bar's compact title (see ProfileView). *@
+                <h2 class="ginfo__title" dir="auto">@chat.Title<span @ref="_titleEl" class="ginfo__title-mark" aria-hidden="true"></span></h2>
+                <p class="ginfo__sub">
+                    <Icon Name="@IconNames.UsersRound" Size="16" />
+                    <span>@Format.Members(chat.MemberCount)</span>
+                </p>
+            </div>
+
+            @* Actions: glass circles with labels; a call in progress shows as a mint circle with a faint pulse. *@
+            <div class="ginfo__actions">
+                @if (CallsEnabled && chat.CanSendMessages())
+                {
+                    <button type="button" class="ginfo__action @(chat.ActiveCallId is null ? "ginfo__action--primary" : "ginfo__action--live")" @onclick="() => CallAsync(chat)">
+                        <span class="ginfo__action-orb"><Icon Name="@(chat.ActiveCallId is null ? IconNames.Phone : IconNames.PhoneCall)" /></span>
+                        <span class="ginfo__action-label">@(chat.ActiveCallId is null ? L["groups.info.call"] : L["groups.info.joinCall"])</span>
+                    </button>
+                }
+                <button type="button" class="ginfo__action" @onclick="() => Actions.ToggleMuteAsync(chat)">
+                    <span class="ginfo__action-orb"><Icon Name="@(muted ? IconNames.Bell : IconNames.BellOff)" /></span>
+                    <span class="ginfo__action-label">@(muted ? L["chatlist.menu.unmute"] : L["chatlist.menu.mute"])</span>
+                </button>
+                @if (chat.CanAddMembers())
+                {
+                    <button type="button" class="ginfo__action" @onclick="() => AddMembersAsync(chat)">
+                        <span class="ginfo__action-orb"><Icon Name="@IconNames.UserRoundPlus" /></span>
+                        <span class="ginfo__action-label">@L["groups.info.add"]</span>
+                    </button>
+                }
+                <button type="button" class="ginfo__action ginfo__action--leave" @onclick="() => Actions.LeaveAsync(chat)">
+                    <span class="ginfo__action-orb"><Icon Name="@IconNames.DoorOpen" /></span>
+                    <span class="ginfo__action-label">@L["groups.info.leave"]</span>
+                </button>
+            </div>
+
+            <div class="ginfo__sections">
+                @if (!string.IsNullOrWhiteSpace(_details?.Description))
+                {
+                    <Section Title="@L["groups.field.descriptionShort"]">
+                        <ListItem Icon="@IconNames.Info" IconColor="@SettingsTones.Mauve" Multiline="true">
+                            <div class="sm-list-item__title"><LinkifiedText Text="@_details.Description" /></div>
+                        </ListItem>
+                    </Section>
+                }
+
+                @if (chat.CanAddMembers())
+                {
+                    <Section Title="@L["groups.invite.title"]" Footer="@L["groups.invite.footer"]" DividerInset="64px">
+                        @if (InviteLink is { } link)
+                        {
+                            <ListItem Icon="@IconNames.Link" IconColor="@SettingsTones.Sky" Title="@link" Subtitle="@L["groups.invite.tapToCopy"]" OnClick="@(() => Share.CopyAsync(link, L["common.linkCopied"]))">
+                                <Trailing>
+                                    <IconButton Icon="@IconNames.QrCode" Label="@L["profile.qr"]" Variant="IconButtonVariant.Tonal" Size="38" StopPropagation="true" OnClick="() => ShowInviteQrAsync(chat, link)" />
+                                    <IconButton Icon="@IconNames.Share2" Label="@L["common.share"]" Variant="IconButtonVariant.Tonal" Size="38" StopPropagation="true" OnClick="() => ShareInviteAsync(chat, link)" />
+                                </Trailing>
+                            </ListItem>
+                            <ListItem Icon="@IconNames.Link2Off" IconColor="@SettingsTones.Rose" Title="@L["groups.invite.revoke"]" Danger="true" OnClick="RevokeInviteAsync" />
+                        }
+                        else
+                        {
+                            <ListItem Icon="@IconNames.Link" IconColor="@SettingsTones.Sky" Title="@L["groups.invite.create"]" OnClick="CreateInviteAsync"
+                                      Disabled="_inviteBusy" />
+                        }
+                    </Section>
+                }
+
+                <Section Title="@L.Plural("plural.members", _details?.Members.Count ?? chat.MemberCount)" DividerInset="74px" Class="ginfo__members">
+                    @if (chat.CanAddMembers())
+                    {
+                        <ListItem Icon="@IconNames.UserRoundPlus" IconColor="@SettingsTones.Violet" Title="@L["groups.info.addMembers"]" Class="ginfo__add" OnClick="() => AddMembersAsync(chat)" />
+                    }
+                    @if (_details is null)
+                    {
+                        <SkeletonList Rows="Math.Min(5, Math.Max(1, chat.MemberCount))" />
+                    }
+                    else
+                    {
+                        @foreach (var member in Members)
+                        {
+                            var isMe = member.User.Id == Me;
+                            var canManage = !isMe && (ChatRules.CanSetRoles(chat.MyRole) || ChatRules.CanRemoveMember(chat.MyRole, member.Role));
+                            <ListItem @key="member.User.Id" OnClick="() => OpenMember(member)" OnContextMenu="position => OpenMemberMenuAsync(member, position)">
+                                <Leading><UserAvatar UserId="member.User.Id" Embedded="member.User" Size="44" ShowOnline="true" /></Leading>
+                                <ChildContent>
+                                    <div class="sm-list-item__title">@Users.NameOf(member.User.Id, L, member.User)@(isMe ? $" ({L["common.youLower"]})" : null)</div>
+                                    <div class="sm-list-item__subtitle"><PresenceText UserId="member.User.Id" Embedded="member.User" /></div>
+                                </ChildContent>
+                                <Trailing>
+                                    @if (member.Role == ChatRole.Owner)
+                                    {
+                                        <Badge Kind="BadgeKind.Label" Text="@L["groups.role.owner"]" Class="ginfo__role ginfo__role--owner" />
+                                    }
+                                    else if (member.Role == ChatRole.Admin)
+                                    {
+                                        <Badge Kind="BadgeKind.Label" Text="@L["groups.role.admin"]" Class="ginfo__role" />
+                                    }
+                                    @if (canManage)
+                                    {
+                                        <IconButton Icon="@IconNames.EllipsisVertical" Label="@L["common.more"]" Size="34" StopPropagation="true"
+                                                    OnClick="e => OpenMemberMenuAsync(member, new MenuPosition(e.ClientX, e.ClientY))" />
+                                    }
+                                </Trailing>
+                            </ListItem>
+                        }
+                    }
+                </Section>
+
+                @ChatSection(chat)
+
+                <Section DividerInset="64px">
+                    <ListItem Icon="@IconNames.DoorOpen" IconColor="@SettingsTones.Rose" Title="@L["groups.info.leave"]" Danger="true" OnClick="() => Actions.LeaveAsync(chat)" />
+                    @if (chat.MyRole == ChatRole.Owner)
+                    {
+                        <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["chatlist.deleteGroup.confirm"]" Danger="true" OnClick="() => Actions.DeleteGroupForEveryoneAsync(chat)" />
+                    }
+                </Section>
+            </div>
+        </div>
+    };
+
+    private string MutedText(ChatSummaryDto chat) =>
+        chat.IsMutedForever() ? L["groups.info.mutedForever"] : L.Format("groups.info.mutedUntil", Format.DateTime(chat.MutedUntil!.Value));
+
+    // ---- Actions ----
+
+    private void OpenMedia() => Nav.NavigateTo($"/chat/{ChatId}/media");
+
+    private Task ScrollToTopAsync() => _page?.ScrollToTopAsync().AsTask() ?? Task.CompletedTask;
+
+    private void OpenMember(ChatMemberDto member) => Nav.OpenUser(member.User.Id);
+
+    private async Task OpenMemberMenuAsync(ChatMemberDto member, MenuPosition position)
+    {
+        _menuMember = member;
+        if (_memberMenu is not null) await _memberMenu.OpenAsync(position);
+    }
+
+    private async Task MessageAsync(Guid userId)
+    {
+        try
+        {
+            Nav.OpenChat((await ChatList.OpenPrivateChatAsync(userId)).Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CallAsync(ChatSummaryDto chat)
+    {
+        try
+        {
+            if (chat.ActiveCallId is { } callId) await Calls.JoinAsync(callId, video: false);
+            else await Calls.StartAsync(chat.Id, video: false);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task EditAsync()
+    {
+        if (Chat is not { } chat) return;
+        var saved = await Dialogs.ShowAsync<EditGroupDialog>(L["groups.edit.title"], new Dictionary<string, object?>
+        {
+            [nameof(EditGroupDialog.Chat)] = chat,
+            [nameof(EditGroupDialog.Description)] = _details?.Description,
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Sheet });
+        if (saved is true) Reload();
+    }
+
+    private async Task ChangePhotoAsync()
+    {
+        if (Chat is not { } chat) return;
+        var options = new List<ChoiceOption<string>> { new("pick", L["groups.photo.choose"]) { Icon = IconNames.ImageUp } };
+        if (ChatList.AvatarOf(chat) is not null) options.Add(new ChoiceOption<string>("remove", L["groups.photo.remove"]) { Icon = IconNames.Trash2, Danger = true });
+        var choice = options.Count == 1 ? options[0] : await Dialogs.ChooseAsync(L["groups.photo.change"], options);
+        if (choice is null) return;
+        try
+        {
+            if (choice.Value == "remove")
+            {
+                await Api.RemoveChatAvatarAsync(chat.Id);
+                Toasts.Success(L["groups.photo.removed"]);
+                return;
+            }
+            if (await Avatars.PickAsync() is not { } photo) return;
+            Toasts.Info(L["groups.photo.uploading"]);
+            var media = await Avatars.UploadAsync(photo);
+            await Api.SetChatAvatarAsync(chat.Id, media.Id);
+            Toasts.Success(L["groups.photo.updated"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task AddMembersAsync(ChatSummaryDto chat)
+    {
+        var exclude = (_details?.Members ?? []).Select(m => m.User.Id).ToHashSet();
+        var picked = await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.Contacts.UserPickerDialog>(L["groups.info.addMembers"], new Dictionary<string, object?>
+        {
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.Multiple)] = true,
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.Exclude)] = (IReadOnlySet<Guid>)exclude,
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.ExcludedLabel)] = L["groups.member.already"],
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.ConfirmText)] = L["groups.info.add"],
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Sheet, Flush = true });
+        if (picked is not IReadOnlyList<UserSummaryDto> users || users.Count == 0) return;
+        try
+        {
+            var result = await Api.AddMembersAsync(chat.Id, new AddMembersRequest { UserIds = users.Select(u => u.Id).ToList() });
+            if (result.Added.Count > 0) Toasts.Success(L.Plural("groups.info.added", result.Added.Count));
+            if (result.Failed.Count > 0)
+            {
+                await Dialogs.ShowAsync<InviteFailuresDialog>(L["groups.failed.title"], new Dictionary<string, object?>
+                {
+                    [nameof(InviteFailuresDialog.ChatId)] = chat.Id,
+                    [nameof(InviteFailuresDialog.Failed)] = result.Failed,
+                    [nameof(InviteFailuresDialog.GroupTitle)] = chat.Title,
+                });
+            }
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SetRoleAsync(ChatMemberDto member, ChatRole role)
+    {
+        try
+        {
+            await Api.SetMemberRoleAsync(ChatId, member.User.Id, role);
+            Toasts.Success(role == ChatRole.Admin ? L["groups.member.nowAdmin"] : L["groups.member.noLongerAdmin"]);
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task TransferOwnershipAsync(ChatMemberDto member)
+    {
+        var name = Users.NameOf(member.User.Id, L, member.User);
+        if (!await Dialogs.ConfirmAsync(L.Format("groups.member.makeOwnerTitle", name), L["groups.member.makeOwnerText"], L["groups.member.makeOwner"], danger: true))
+            return;
+        try
+        {
+            await Api.SetMemberRoleAsync(ChatId, member.User.Id, ChatRole.Owner);
+            Toasts.Success(L.Format("groups.member.nowOwner", name));
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task RemoveMemberAsync(ChatMemberDto member)
+    {
+        var name = Users.NameOf(member.User.Id, L, member.User);
+        if (!await Dialogs.ConfirmAsync(L.Format("groups.member.removeTitle", name), L["groups.member.removeText"], L["groups.member.remove"], danger: true))
+            return;
+        try
+        {
+            await Api.RemoveMemberAsync(ChatId, member.User.Id);
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CreateInviteAsync()
+    {
+        _inviteBusy = true;
+        try
+        {
+            _inviteToken = (await Api.CreateInviteLinkAsync(ChatId)).Token;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _inviteBusy = false;
+        }
+    }
+
+    private async Task RevokeInviteAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["groups.invite.revokeTitle"], L["groups.invite.revokeText"], L["groups.invite.revoke"], danger: true))
+            return;
+        try
+        {
+            await Api.RevokeInviteLinkAsync(ChatId);
+            _inviteToken = null;
+            Toasts.Success(L["groups.invite.revoked"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private Task ShareInviteAsync(ChatSummaryDto chat, string link) =>
+        Share.ShareAsync(L.Format("groups.invite.shareText", chat.Title, link), chat.Title);
+
+    private async Task ShowInviteQrAsync(ChatSummaryDto chat, string link)
+    {
+        await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.Profile.QrShareDialog>(chat.Title, new Dictionary<string, object?>
+        {
+            [nameof(SkyMessage.Client.UI.Features.Profile.QrShareDialog.Link)] = link,
+            [nameof(SkyMessage.Client.UI.Features.Profile.QrShareDialog.Caption)] = L["groups.invite.title"],
+            [nameof(SkyMessage.Client.UI.Features.Profile.QrShareDialog.ShareText)] = L.Format("groups.invite.shareText", chat.Title, link),
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_titleWatcher is not null) await _titleWatcher.DisposeAsync();
+        Dispose();
+    }
+}

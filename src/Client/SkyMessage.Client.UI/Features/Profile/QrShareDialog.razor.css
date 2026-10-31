@@ -1,0 +1,83 @@
+.qr-share {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding-top: 6px;
+    text-align: center;
+}
+
+/* The card: white paper in a thin accent frame, resting on a soft shadow. */
+.qr-share__card {
+    position: relative;
+    padding: 3px;
+    margin: 6px 0 10px;
+    border-radius: 31px;
+    background: var(--sm-accent);
+    box-shadow: var(--sm-shadow-2);
+    animation: qr-pop 300ms var(--sm-ease-out) 40ms backwards;
+}
+
+.qr-share__paper {
+    position: relative;
+    display: flex;
+    padding: 14px;
+    border-radius: 28px;
+    background: #FFFFFF;
+}
+
+/* QrCode's own frame is replaced by the card. */
+.qr-share__paper ::deep .sm-qr {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+/* Our logo in the middle on a white squircle (the code's error correction covers it). */
+.qr-share__logo {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: flex;
+    padding: 5px;
+    transform: translate(-50%, -50%);
+    background: #FFFFFF;
+    border-radius: 16px;
+}
+
+.qr-share__caption,
+.qr-share__link,
+.qr-share__hint {
+    animation: qr-text-in var(--sm-dur) var(--sm-ease-out) 120ms backwards;
+}
+
+.qr-share__caption {
+    font-family: var(--sm-font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--sm-accent);
+}
+
+.qr-share__link {
+    max-width: 100%;
+    font-size: 0.875rem;
+    color: var(--sm-text-2);
+}
+
+.qr-share__hint {
+    max-width: 300px;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--sm-text-2);
+    text-wrap: balance;
+}
+
+@keyframes qr-pop {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes qr-text-in {
+    from { opacity: 0; transform: translateY(6px); }
+}

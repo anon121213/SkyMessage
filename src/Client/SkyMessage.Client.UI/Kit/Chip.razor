@@ -1,0 +1,20 @@
+@* Removable chip (selected people in pickers). *@
+<span class="sm-chip @(Leading is null ? "sm-chip--no-avatar" : null) @Class" title="@Text">
+    @Leading
+    <span class="sm-chip__text">@Text</span>
+    @if (OnRemove.HasDelegate)
+    {
+        <button type="button" class="sm-chip__remove" aria-label="@RemoveLabel" title="@RemoveLabel" @onclick="OnRemove" @onclick:stopPropagation="true">
+            <Icon Name="@IconNames.X" />
+        </button>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    /// <summary>Usually a small avatar (Size 24).</summary>
+    [Parameter] public RenderFragment? Leading { get; set; }
+    [Parameter] public string? RemoveLabel { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

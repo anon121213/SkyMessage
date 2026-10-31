@@ -1,0 +1,126 @@
+@page "/join/{Token}"
+@* Group invite link: preview as an invite card (title, photo, members) → join → open the chat. *@
+@inject ISkyApi Api
+@inject IChatListStore ChatList
+@inject IMediaUrlBuilder MediaUrls
+@inject FormatService Format
+@inject NavigationService Nav
+@inject ToastService Toasts
+
+<AppPage Title="@L["groups.join.title"]" BackFallback="/" Background="PageBackground.Surface">
+    @if (_preview is { } preview)
+    {
+        @* The invite as a card: the group's face in a thin accent ring, title, members and the join button. *@
+        <div class="join sm-stagger">
+            <div class="join__card sm-card">
+                <div class="join__face">
+                    <span class="join__ring" aria-hidden="true"></span>
+                    <Avatar Url="@MediaUrls.AvatarUrl(preview.AvatarMediaId)" Name="@preview.Title" Seed="preview.ChatId" Size="104" />
+                </div>
+                @if (!preview.IsMember)
+                {
+                    <div class="sm-overline join__invited">@L["groups.join.invited"]</div>
+                }
+                <h2 class="join__title" dir="auto">@preview.Title</h2>
+                <p class="join__members">
+                    <Icon Name="@IconNames.UsersRound" Size="16" />
+                    <span>@Format.Members(preview.MemberCount)</span>
+                </p>
+                @if (!string.IsNullOrWhiteSpace(preview.Description))
+                {
+                    <p class="join__description"><LinkifiedText Text="@preview.Description" /></p>
+                }
+                @if (preview.IsMember)
+                {
+                    <p class="join__already"><Icon Name="@IconNames.CircleCheck" Size="18" /><span>@L["groups.join.already"]</span></p>
+                    <Button Size="ButtonSize.Large" Block="true" Icon="@IconNames.MessageCircle" OnClick="() => Open(preview.ChatId)">@L["groups.join.open"]</Button>
+                }
+                else
+                {
+                    <Button Size="ButtonSize.Large" Block="true" Icon="@IconNames.Users" Loading="_joining" OnClick="JoinAsync">@L["groups.join.join"]</Button>
+                }
+            </div>
+        </div>
+    }
+    else if (_invalid)
+    {
+        <EmptyState Icon="@IconNames.Link2Off" Title="@L["groups.join.invalidTitle"]" Text="@L["groups.join.invalidText"]" Fill="true">
+            <Actions><Button OnClick="@(() => Nav.NavigateTo("/", replace: true))">@L["notFound.home"]</Button></Actions>
+        </EmptyState>
+    }
+    else if (_error is not null)
+    {
+        <EmptyState Icon="@IconNames.CloudOff" Title="@L["groups.join.failed"]" Text="@_error" Fill="true">
+            <Actions><Button Icon="@IconNames.RefreshCw" OnClick="LoadAsync">@L["common.retry"]</Button></Actions>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="join join--loading"><Skeleton Shape="SkeletonShape.Circle" Height="6.5rem" /><Skeleton Width="40%" Height="1.25rem" /><Skeleton Width="25%" /></div>
+    }
+</AppPage>
+
+@code {
+    private ChatInvitePreviewDto? _preview;
+    private bool _invalid;
+    private bool _joining;
+    private string? _error;
+    private string? _loadedFor;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public string Token { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Token) return;
+        _loadedFor = Token;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _invalid = false;
+        _preview = null;
+        try
+        {
+            _preview = await Api.GetInvitePreviewAsync(Token);
+        }
+        catch (ApiException ex) when (ex.StatusCode == 404 || ex.Code == ErrorCodes.InviteInvalid)
+        {
+            _invalid = true;
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+    }
+
+    private async Task JoinAsync()
+    {
+        if (_joining) return;
+        _joining = true;
+        try
+        {
+            var chat = await ChatList.JoinByInviteAsync(Token);
+            Toasts.Success(L["groups.join.joined"]);
+            Nav.NavigateTo(DeepLinks.ChatPath(chat.Id), replace: true);
+        }
+        catch (ApiException ex) when (ex.StatusCode == 404 || ex.Code == ErrorCodes.InviteInvalid)
+        {
+            _preview = null;
+            _invalid = true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _joining = false;
+        }
+    }
+
+    private void Open(Guid chatId) => Nav.NavigateTo(DeepLinks.ChatPath(chatId), replace: true);
+}

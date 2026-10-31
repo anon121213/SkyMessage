@@ -1,0 +1,123 @@
+/* Same look as LoginPage: the page fills the column (at least the screen height), the back button (AuthHeader) pins
+   to its top, the rest is centered; children rise in one after another (.sm-stagger). */
+.auth-page {
+    position: relative;
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* The form: a frosted card. */
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 18px 18px;
+    border-radius: var(--sm-radius-2xl);
+}
+
+/* The focused field lights its label and icon. */
+.auth-form ::deep .sm-field__label,
+.auth-form ::deep .sm-field__prefix {
+    transition: color var(--sm-dur-fast) ease;
+}
+
+.auth-form ::deep .sm-field:focus-within .sm-field__label,
+.auth-form ::deep .sm-field__box:focus-within .sm-field__prefix {
+    color: var(--sm-accent);
+}
+
+.auth-form ::deep .sm-field__box:focus-within .sm-field__prefix .sm-icon {
+    animation: sm-bump 260ms var(--sm-ease);
+}
+
+.auth-form ::deep .auth-form__submit {
+    margin-top: 4px;
+}
+
+/* The live username check: free / taken icons pop in. */
+.auth-form ::deep .auth-check {
+    animation: sm-pop 260ms var(--sm-ease-out) both;
+}
+
+/* Registration closed: the explanation on a card. */
+.auth-closed ::deep .sm-empty {
+    padding: 26px 20px 24px;
+    animation: none;
+}
+
+.auth-server {
+    display: flex;
+    flex-direction: column;
+    margin-top: 18px;
+}
+
+.auth-form__error {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 14px 11px 10px;
+    border-radius: 18px;
+    background: var(--sm-danger-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-danger) 22%, transparent);
+    color: var(--sm-text);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    animation: auth-error-in var(--sm-dur) var(--sm-ease-out) backwards;
+}
+
+.auth-form__error-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-top: -2px;
+    border-radius: 50%;
+    background: var(--sm-danger);
+    color: #FFFFFF;
+}
+
+.auth-alt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 20px;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+}
+
+.auth-alt ::deep .sm-btn--link {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-accent);
+}
+
+.auth-hint {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+    max-width: 360px;
+    margin: 12px auto 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--sm-text-2);
+    text-align: left;
+    text-wrap: pretty;
+}
+
+.auth-hint ::deep .sm-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--sm-accent);
+    opacity: 0.8;
+}
+
+@keyframes auth-error-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}

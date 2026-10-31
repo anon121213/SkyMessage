@@ -1,0 +1,108 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('linux'))">$(TargetFrameworks);net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
+
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SkyMessage.App</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <EnableDefaultCssItems>false</EnableDefaultCssItems>
+    <MauiXamlInflator>SourceGen</MauiXamlInflator>
+
+    <ApplicationTitle>SkyMessage</ApplicationTitle>
+    <ApplicationId>com.skymessage.messenger</ApplicationId>
+    <ApplicationDisplayVersion>$(SkyMessageVersion)</ApplicationDisplayVersion>
+    <ApplicationVersion>2</ApplicationVersion>
+
+    <!--
+      Server used until the user picks one in the app. Empty = development defaults
+      (Android emulator http://10.0.2.2:8080/, simulator/Mac/adb-reverse http://localhost:8080/).
+      Release builds: dotnet publish -p:SkyMessageDefaultServerUrl=https://chat.example.org/
+    -->
+    <SkyMessageDefaultServerUrl Condition="'$(SkyMessageDefaultServerUrl)' == ''"></SkyMessageDefaultServerUrl>
+
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <!--
+      Keychain group for SecureStorage. It needs a provisioning profile ($(AppIdentifierPrefix)); plain simulator
+      builds without a signing setup use an empty entitlements file instead (SecureStore then degrades in DEBUG).
+    -->
+    <_SkySimulatorWithoutSigning Condition="!$(RuntimeIdentifier.StartsWith('ios-')) And '$(CodesignKey)' == '' And '$(CodesignProvision)' == ''">true</_SkySimulatorWithoutSigning>
+    <CodesignEntitlements Condition="'$(_SkySimulatorWithoutSigning)' == 'true'">Platforms\iOS\Entitlements.Simulator.plist</CodesignEntitlements>
+    <CodesignEntitlements Condition="'$(_SkySimulatorWithoutSigning)' != 'true'">Platforms\iOS\Entitlements.plist</CodesignEntitlements>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+    <!--
+      keychain-access-groups needs a provisioning profile on macOS (an ad-hoc signed app claiming it does not
+      launch). Without CodesignProvision the build uses the same entitlements minus the keychain group.
+    -->
+    <CodesignEntitlements Condition="'$(CodesignProvision)' == ''">Platforms\MacCatalyst\Entitlements.Unsigned.plist</CodesignEntitlements>
+    <CodesignEntitlements Condition="'$(CodesignProvision)' != ''">Platforms\MacCatalyst\Entitlements.plist</CodesignEntitlements>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="SkyMessageDefaultServerUrl" Value="$(SkyMessageDefaultServerUrl)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Code shared by iOS and Mac Catalyst. -->
+    <MauiPlatformSpecificFolder Include="Platforms\Apple\" TargetPlatformIdentifiers="ios;maccatalyst" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Our own artwork: soft violet to sky-blue gradient cloud, no speech-bubble tail. -->
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#3D2BD9" />
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1245" BaseSize="128,128" />
+    <!-- Synthesized tones (tools/tones/render-tones.cs). iOS/Mac: bundle root, used as notification sounds. -->
+    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)"
+               Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <!-- Notification channels reference sounds as android.resource://<package>/raw/tone_<key>. -->
+    <AndroidResource Include="Resources\Raw\tone_*.wav" Link="Platforms\Android\Resources\raw\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <PackageReference Include="Xamarin.AndroidX.Media3.Transformer" />
+    <PackageReference Include="Xamarin.GooglePlayServices.Auth" />
+    <PackageReference Include="Xamarin.AndroidX.Fragment.Ktx" />
+    <PackageReference Include="Xamarin.AndroidX.WebKit" />
+    <PackageReference Include="Xamarin.AndroidX.ExifInterface" />
+    <!-- Version alignment only (see Directory.Packages.props); ProcessLifecycleOwner drives IAppLifecycle. -->
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Process" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core.Ktx" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkyMessage.Client.UI\SkyMessage.Client.UI.csproj" />
+    <ProjectReference Include="..\SkyMessage.Client.Core\SkyMessage.Client.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Client.UI embeds Localization/*.json (read through ILocalizer); the Razor SDK also flows them as content files,
+    which the Apple SDKs cannot place in the bundle (one warning per file). They are never needed as files.
+  -->
+  <Target Name="_SkyDropEmbeddedLocalizationContent" BeforeTargets="_ComputePublishLocation"
+          Condition="'$(TargetPlatformIdentifier)' == 'ios' Or '$(TargetPlatformIdentifier)' == 'maccatalyst'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.Extension)' == '.json' And $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Replace('\', '/').Contains('/SkyMessage.Client.UI/Localization/'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

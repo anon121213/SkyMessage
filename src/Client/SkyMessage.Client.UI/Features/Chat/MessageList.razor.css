@@ -1,0 +1,487 @@
+/* The message list scrolls under the chat's floating chrome (ChatPage): the content is padded by what the header stack
+   and the composer cover (--chat-top-h / --chat-bottom-h), and the same values are the scroller's scroll-padding, which
+   chat.js reads to know what is really on screen. Date chips, the unread divider and service lines are glass capsules
+   without blur (they are list rows); the floating date and the scroll-down button are real glass. */
+
+.mlist {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.mlist__defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.mlist__scroller {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    overflow-anchor: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-top: var(--chat-top-h, 0px);
+    scroll-padding-bottom: max(var(--chat-bottom-h, 0px), var(--sm-bottom-space));
+}
+
+.mlist__content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    width: 100%;
+    max-width: var(--chat-col, 60rem);
+    min-height: 100%;
+    margin: 0 auto;
+    padding: calc(var(--chat-top-h, 0px) + 4px) 0 calc(max(var(--chat-bottom-h, 0px), var(--sm-bottom-space)) + 10px);
+}
+
+.mlist__content ::deep img[data-fade] {
+    transition: opacity 260ms var(--sm-ease-out);
+}
+
+.mlist__content ::deep img[data-fade]:not([data-loaded]) {
+    opacity: 0;
+}
+
+.mlist__loader {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 44px;
+}
+
+.mlist__start {
+    flex-shrink: 0;
+    height: 8px;
+}
+
+/* ---------- Date chips: glass capsules ---------- */
+
+/* Not sticky: stuck sibling chips would pile up over each other (see .mlist__float). */
+.mlist__date {
+    display: flex;
+    justify-content: center;
+    padding: 12px 0 6px;
+    pointer-events: none;
+}
+
+.mlist__date-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--sm-surface) 74%, transparent);
+    box-shadow: var(--sm-edge), 0 6px 16px -9px rgba(40, 24, 110, 0.35);
+    color: var(--sm-text-2);
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+html[data-theme="dark"] .mlist__date-chip {
+    box-shadow: var(--sm-edge), 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+}
+
+/* The floating date over the list, shown by chat.js while the topmost day's own chip is scrolled away and the user
+   scrolls (it fades out shortly after). A zero-height sticky row at the top of the scroller: it takes no space, so
+   the rows keep their positions. It hangs just under the header stack. */
+.mlist__float {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    height: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--sm-dur) var(--sm-ease-in);
+}
+
+.mlist__float[data-show][data-active] {
+    opacity: 1;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-out);
+}
+
+.mlist__float .mlist__date-chip {
+    margin-top: calc(var(--chat-top-h, 0px) + 8px);
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    color: var(--sm-text);
+    transform: translateY(-6px) scale(0.96);
+    transition: transform var(--sm-dur) var(--sm-ease-in);
+}
+
+html[data-fx="lite"] .mlist__float .mlist__date-chip {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+.mlist__float[data-show][data-active] .mlist__date-chip {
+    transform: none;
+    transition: transform var(--sm-dur) var(--sm-spring-soft);
+}
+
+/* ---------- Unread divider: a gradient thread with a glass label ---------- */
+
+.mlist__unread {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 8px;
+    padding: 0 14px;
+    transition: opacity 160ms var(--sm-ease-in);
+}
+
+.mlist__unread::before,
+.mlist__unread::after {
+    content: "";
+    flex: 1 1 0;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sm-accent) 75%, transparent));
+}
+
+.mlist__unread::after {
+    background: linear-gradient(270deg, transparent, color-mix(in srgb, var(--sm-accent-2) 75%, transparent));
+}
+
+.mlist__unread span {
+    flex-shrink: 0;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--sm-surface) 82%, transparent);
+    box-shadow: var(--sm-edge), 0 4px 12px -7px rgba(40, 24, 110, 0.3);
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+/* Fades before it is removed (I sent something, so everything above counts as seen). */
+.mlist__unread--out {
+    opacity: 0;
+}
+
+/* ---------- Scroll-down and mention buttons: glass circles above the composer ---------- */
+
+.mlist__fabs {
+    position: absolute;
+    right: max(12px, calc((100% - var(--chat-col, 60rem)) / 2 + 12px));
+    bottom: calc(max(var(--chat-bottom-h, 0px), var(--sm-bottom-space)) + 12px);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+}
+
+/* Hidden buttons stay in place, scaled down and inert; visibility flips after the exit so nothing can focus them. */
+.mlist__fab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.875rem;
+    height: 2.875rem;
+    border-radius: 50%;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    color: var(--sm-text);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    pointer-events: auto;
+    transition: transform var(--sm-dur) var(--sm-spring), opacity var(--sm-dur-fast) var(--sm-ease-out), visibility 0s;
+}
+
+html[data-fx="lite"] .mlist__fab {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+.mlist__fab--hidden {
+    opacity: 0;
+    transform: scale(0.5) translateY(10px);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform var(--sm-dur-fast) var(--sm-ease-in), opacity var(--sm-dur-fast) var(--sm-ease-in), visibility 0s linear var(--sm-dur-fast);
+}
+
+/* With the scroll-down button gone, the mention button drops into its place. */
+.mlist__fabs:not(.mlist__fabs--down) .mlist__fab--mention {
+    translate: 0 calc(100% + 12px);
+}
+
+.mlist__fab--mention {
+    color: var(--sm-accent);
+    transition: transform var(--sm-dur) var(--sm-spring), opacity var(--sm-dur-fast) var(--sm-ease-out), visibility 0s,
+        translate var(--sm-dur) var(--sm-ease);
+}
+
+.mlist__fab--mention.mlist__fab--hidden {
+    transition: transform var(--sm-dur-fast) var(--sm-ease-in), opacity var(--sm-dur-fast) var(--sm-ease-in), visibility 0s linear var(--sm-dur-fast),
+        translate var(--sm-dur) var(--sm-ease);
+}
+
+@media (hover: hover) {
+    .mlist__fab:hover {
+        background: var(--sm-glass-strong);
+        color: var(--sm-accent);
+    }
+}
+
+.mlist__fab:active:not(.mlist__fab--hidden) {
+    transform: scale(0.9);
+    transition-duration: var(--sm-dur-fast);
+}
+
+.mlist__fab-badge {
+    position: absolute;
+    top: -7px;
+    left: 50%;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--sm-grad);
+    color: var(--sm-on-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.375rem;
+    text-align: center;
+    translate: -50% 0;
+}
+
+.mlist__fab--mention .mlist__fab-badge {
+    background: var(--sm-grad-warm);
+    color: #4A1A06;
+}
+
+/* A new message below: the count bumps (two names restart the animation on the same element). */
+.mlist__fab-badge--bump-a {
+    animation: sm-bump var(--sm-dur) var(--sm-ease-out);
+}
+
+.mlist__fab-badge--bump-b {
+    animation: mlist-bump var(--sm-dur) var(--sm-ease-out);
+}
+
+@keyframes mlist-bump {
+    0%, 100% {
+        transform: none;
+    }
+
+    40% {
+        transform: scale(1.22);
+    }
+}
+
+/* ---------- Loading: ghost bubbles breathing ---------- */
+
+.mlist__skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 12px;
+}
+
+.mlist__ghost {
+    height: 2.625rem;
+    border-radius: var(--sm-bubble-radius, 20px);
+    background: color-mix(in srgb, var(--sm-surface) 72%, transparent);
+    box-shadow: var(--sm-edge);
+    animation: sm-pulse 1.4s ease-in-out infinite;
+}
+
+.mlist__ghost--out {
+    align-self: flex-end;
+    background: color-mix(in srgb, var(--sm-accent) 26%, transparent);
+    box-shadow: none;
+}
+
+.mlist__ghost:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.mlist__ghost:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.mlist__ghost:nth-child(4) {
+    animation-delay: 0.45s;
+}
+
+.mlist__ghost:nth-child(5) {
+    animation-delay: 0.6s;
+}
+
+.mlist__ghost:nth-child(6) {
+    animation-delay: 0.75s;
+}
+
+/* ---------- Empty chat: a glass card with our own little flat drawing ---------- */
+
+.mlist__empty {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+}
+
+.mlist__empty-card {
+    position: relative;
+    max-width: 20rem;
+    padding: 24px 24px 22px;
+    border-radius: var(--sm-radius-xl);
+    background: var(--sm-card);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    text-align: center;
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) both;
+}
+
+html[data-fx="lite"] .mlist__empty-card {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-card-solid);
+}
+
+.mlist__art {
+    position: relative;
+    width: 10rem;
+    height: 6.75rem;
+    margin: 0 auto 14px;
+}
+
+.mlist__art-sky {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.mlist__art-sun {
+    fill: var(--sm-gold);
+}
+
+.mlist__art-cloud {
+    fill: color-mix(in srgb, var(--sm-accent) 20%, var(--sm-surface));
+}
+
+html[data-theme="dark"] .mlist__art-cloud {
+    fill: color-mix(in srgb, var(--sm-accent) 34%, var(--sm-surface));
+}
+
+/* The face of the cloud: a waving hand (or Saved Messages' bookmark), centred on its body. */
+.mlist__art-face {
+    position: absolute;
+    left: calc(51% - 1.25rem);
+    top: calc(61% - 1.25rem);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    color: var(--sm-accent);
+    font-size: 1.875rem;
+    line-height: 1;
+}
+
+.mlist__art-face--wave {
+    transform-origin: 70% 80%;
+    animation: mlist-wave 2.8s ease-in-out 0.4s infinite;
+}
+
+@keyframes mlist-wave {
+    0%, 55%, 100% {
+        transform: rotate(0deg);
+    }
+
+    8%, 24% {
+        transform: rotate(16deg);
+    }
+
+    16%, 32% {
+        transform: rotate(-9deg);
+    }
+
+    42% {
+        transform: rotate(6deg);
+    }
+}
+
+.mlist__empty-title {
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+}
+
+.mlist__empty-text {
+    margin-top: 6px;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+
+/* "Wave hello": a gradient capsule (the drawing's hand above does the waving). */
+.mlist__wave {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 2.875rem;
+    margin-top: 18px;
+    padding: 0 22px 0 16px;
+    border-radius: 999px;
+    background: var(--sm-grad);
+    color: var(--sm-on-accent);
+    box-shadow: 0 4px 12px -6px rgba(40, 24, 110, 0.4);
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    transition: transform var(--sm-dur) var(--sm-spring), filter var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .mlist__wave:hover {
+        filter: brightness(1.06) saturate(1.05);
+    }
+}
+
+.mlist__wave:active {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+}
+
+.mlist__wave-hand {
+    display: inline-block;
+    font-size: 1.25rem;
+    line-height: 1;
+}

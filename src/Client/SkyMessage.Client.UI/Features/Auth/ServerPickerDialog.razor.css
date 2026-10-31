@@ -1,0 +1,65 @@
+.server-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.server-picker__intro {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+/* The server glyph on a pastel tile, like the settings rows. */
+.server-picker__art {
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+.server-picker__intro .sm-dialog__message {
+    font-size: 0.9375rem;
+}
+
+.server-picker__test {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+/* The test result: a soft chip that pops in. */
+.server-picker__result {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 2rem;
+    padding: 0 12px 0 9px;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring);
+}
+
+.server-picker__result--ok {
+    color: var(--sm-success);
+    background: var(--sm-success-soft);
+}
+
+.server-picker__result--bad {
+    color: var(--sm-danger);
+    background: var(--sm-danger-soft);
+}
+
+.server-picker__reg {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: -4px;
+    font-size: 0.875rem;
+    color: var(--sm-text-2);
+}
+
+.server-picker__reg ::deep .sm-icon {
+    color: var(--sm-accent);
+}

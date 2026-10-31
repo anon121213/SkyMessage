@@ -1,0 +1,114 @@
+/* Flat palette of the illustrations: white clouds and cards at dawn, quiet indigo at night. Solid fills only. */
+.sky-art {
+    --art-cloud: #FFFFFF;
+    --art-cloud-alpha: 1;
+    --art-card: #FFFFFF;
+    --art-line: rgba(97, 90, 124, 0.32);
+    --art-horizon: rgba(97, 90, 124, 0.2);
+    --art-sun: #FFC872;
+    --art-warm: #FFAA7F;
+    --art-heart: #F47C98;
+    --art-star: rgba(106, 75, 255, 0.45);
+    display: block;
+    flex-shrink: 0;
+    max-width: 100%;
+    overflow: visible;
+}
+
+html[data-theme="dark"] .sky-art {
+    --art-cloud: #3B3374;
+    --art-cloud-alpha: 0.9;
+    --art-card: #2A2352;
+    --art-line: rgba(243, 240, 255, 0.28);
+    --art-horizon: rgba(243, 240, 255, 0.14);
+    --art-sun: #F6C46E;
+    --art-warm: #F29C76;
+    --art-heart: #E8708E;
+    --art-star: rgba(255, 255, 255, 0.7);
+}
+
+.sky-art__cloud {
+    fill: var(--art-cloud);
+    opacity: var(--art-cloud-alpha);
+}
+
+.sky-art__cloud--far {
+    opacity: calc(var(--art-cloud-alpha) * 0.7);
+}
+
+.sky-art__horizon {
+    stroke: var(--art-horizon);
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.sky-art__sun { fill: var(--art-sun); }
+.sky-art__card { fill: var(--art-card); }
+.sky-art__card--rim { stroke: var(--art-line); stroke-opacity: 0.5; stroke-width: 1; }
+.sky-art__line { fill: var(--art-line); }
+.sky-art__line--soft { opacity: 0.6; }
+.sky-art__accent { fill: var(--sm-accent); }
+.sky-art__warm { fill: var(--art-warm); }
+.sky-art__mint { fill: var(--sm-success); }
+.sky-art__heart { fill: var(--art-heart); }
+.sky-art__person { fill: #FFFFFF; opacity: 0.94; }
+.sky-art__dot { fill: #FFFFFF; }
+.sky-art__star { fill: var(--art-star); }
+.sky-art__pad { fill: #FFFFFF; opacity: 0.45; }
+.sky-art__pore { fill: #9C4A2A; opacity: 0.45; }
+.sky-art__drop { fill: var(--sm-accent); opacity: 0.75; }
+
+.sky-art__check {
+    fill: none;
+    stroke: #FFFFFF;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.sky-art__path {
+    fill: none;
+    stroke: var(--art-line);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 0.5 7;
+}
+
+/* ---- A little life, kept quiet ---- */
+
+.sky-art__float--a { animation: sky-art-float 6.5s ease-in-out infinite; }
+.sky-art__float--b { animation: sky-art-float 5.6s ease-in-out -2.4s infinite; }
+.sky-art__drift { animation: sky-art-drift 14s ease-in-out infinite alternate; }
+
+.sky-art__dot { animation: sky-art-hop 1.3s ease-in-out infinite; }
+.sky-art__dot--2 { animation-delay: 0.18s; }
+.sky-art__dot--3 { animation-delay: 0.36s; }
+
+.sky-art__drop { animation: sky-art-rain 1.9s ease-in infinite; }
+.sky-art__drop--2 { animation-delay: 0.62s; }
+.sky-art__drop--3 { animation-delay: 1.24s; }
+
+html[data-fx="lite"] .sky-art * {
+    animation: none !important;
+}
+
+@keyframes sky-art-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+@keyframes sky-art-drift {
+    from { transform: translateX(-4px); }
+    to { transform: translateX(6px); }
+}
+
+@keyframes sky-art-hop {
+    0%, 60%, 100% { transform: none; opacity: 0.55; }
+    30% { transform: translateY(-3px); opacity: 1; }
+}
+
+@keyframes sky-art-rain {
+    0% { transform: translateY(-6px); opacity: 0; }
+    25% { opacity: 0.75; }
+    100% { transform: translateY(14px); opacity: 0; }
+}

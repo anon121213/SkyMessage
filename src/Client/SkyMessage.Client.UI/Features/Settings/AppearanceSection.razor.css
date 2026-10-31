@@ -1,0 +1,548 @@
+.look-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+/* ---------- Live preview: a slice of a chat on the current sky ---------- */
+
+.look-preview {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 4px 0 26px;
+    padding: 10px 10px 18px;
+    border-radius: var(--sm-radius-2xl);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    overflow: hidden;
+}
+
+.look-preview__sky,
+.look-preview__fade,
+.look-preview__stars {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.look-preview__sky {
+    z-index: -3;
+}
+
+/* The previous sky, fading out over the new one. */
+.look-preview__fade {
+    z-index: -2;
+    animation: look-fade-out var(--sm-dur-slow) var(--sm-ease-in) forwards;
+}
+
+.look-preview__stars {
+    z-index: -1;
+    background-image:
+        radial-gradient(1.4px 1.4px at 12% 22%, #fff 50%, transparent 52%),
+        radial-gradient(1.1px 1.1px at 31% 9%, #fff 50%, transparent 52%),
+        radial-gradient(1.6px 1.6px at 58% 18%, #fff 50%, transparent 52%),
+        radial-gradient(1.1px 1.1px at 77% 34%, #fff 50%, transparent 52%),
+        radial-gradient(1.3px 1.3px at 90% 12%, #fff 50%, transparent 52%),
+        radial-gradient(1.2px 1.2px at 8% 62%, #fff 50%, transparent 52%),
+        radial-gradient(1.5px 1.5px at 46% 74%, #fff 50%, transparent 52%),
+        radial-gradient(1.1px 1.1px at 70% 88%, #fff 50%, transparent 52%),
+        radial-gradient(1.3px 1.3px at 94% 66%, #fff 50%, transparent 52%);
+    transition: opacity var(--sm-dur-slow) ease;
+}
+
+/* A floating glass capsule, like the chat header. */
+.look-preview__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 3.25rem;
+    padding: 0 16px 0 7px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+}
+
+html[data-fx="lite"] .look-preview__head {
+    background: var(--sm-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.look-preview__avatar {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.375rem;
+    height: 2.375rem;
+    background: #FFC7A8;
+    color: #5A2410;
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    font-size: 1rem;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.look-preview__who {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.look-preview__name {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+.look-preview__status {
+    font-size: 0.8125rem;
+    color: var(--sm-success);
+}
+
+.look-preview__chat {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 4px;
+}
+
+/* Bubbles in the chat's own language: no tails, the outgoing one in the accent gradient. */
+.look-bubble {
+    position: relative;
+    max-width: min(80%, 360px);
+    padding: 8px 12px 7px;
+    border-radius: var(--sm-bubble-radius);
+    font-size: 0.9375rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.look-bubble--in {
+    align-self: flex-start;
+    background: var(--sm-bubble-in);
+    color: var(--sm-bubble-in-text);
+    box-shadow: var(--sm-shadow-1);
+}
+
+.look-bubble--out {
+    align-self: flex-end;
+    background: var(--sm-bubble-out-bg);
+    color: var(--sm-bubble-out-text);
+    box-shadow: var(--sm-shadow-1);
+}
+
+.look-bubble__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    float: right;
+    margin: 7px 0 -3px 10px;
+    font-size: 0.75rem;
+    color: var(--sm-bubble-in-meta);
+}
+
+.look-bubble--out .look-bubble__meta {
+    color: var(--sm-bubble-out-meta);
+}
+
+/* ---------- Theme: three little flat skies ---------- */
+
+.look-modes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 11rem));
+    justify-content: center;
+    gap: 12px;
+    padding: 12px 10px 10px;
+}
+
+.look-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: var(--sm-text-2);
+    background: none;
+    cursor: pointer;
+}
+
+.look-mode:focus-visible {
+    outline: none;
+}
+
+.look-mode__art {
+    position: relative;
+    display: block;
+    aspect-ratio: 4 / 3;
+    border-radius: 18px;
+    box-shadow: var(--sm-shadow-1);
+    transition: transform 260ms var(--sm-spring);
+}
+
+.look-mode:active .look-mode__art {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.look-mode__scene {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 18px;
+}
+
+/* Selection ring: grows in around the picked scene, shrinks away from the old one. */
+.look-mode__art::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 23px;
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.92);
+    pointer-events: none;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.look-mode.is-selected .look-mode__art::after,
+.look-mode:focus-visible .look-mode__art::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+.look-mode__check,
+.look-sky__check {
+    position: absolute;
+    z-index: 1;
+    right: -6px;
+    bottom: -6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    color: var(--sm-on-accent);
+    background: var(--sm-accent);
+    box-shadow: 0 0 0 2.5px var(--sm-card-solid);
+}
+
+.look-modes.is-live .look-mode__check,
+.look-skies.is-live .look-sky__check {
+    animation: sm-pop 320ms var(--sm-spring);
+}
+
+.look-mode__name {
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.look-mode.is-selected .look-mode__name {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+/* Flat shapes; only the cloud drifts a little and the star dots twinkle softly. */
+.look-mode__sun {
+    fill: #FFC66E;
+}
+
+.look-mode__cloud {
+    fill: #FFFFFF;
+    opacity: 0.95;
+    animation: look-cloud 8s ease-in-out infinite;
+}
+
+.look-mode__star {
+    fill: #FFFFFF;
+    animation: look-twinkle 3.2s ease-in-out infinite;
+}
+
+.look-mode__star--2 {
+    animation-delay: -1.2s;
+    animation-duration: 3.8s;
+}
+
+.look-mode__star--3 {
+    animation-delay: -2.1s;
+}
+
+.look-mode__moon {
+    fill: #F1EAFF;
+}
+
+.look-mode__horizon {
+    stroke: rgba(255, 255, 255, 0.8);
+    stroke-width: 1.2;
+}
+
+/* ---------- Accent: gradient pairs ---------- */
+
+.look-accents {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 8px 10px;
+}
+
+.look-accents__grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px 18px;
+    padding: 4px 0;
+}
+
+.look-accents.is-live ::deep .sm-swatch--selected .sm-icon {
+    animation: sm-pop 320ms var(--sm-spring);
+}
+
+/* The chosen color's name under the swatches. */
+.look-accents__name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 0 2px;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--sm-text-2);
+}
+
+.look-accents__dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 34%;
+}
+
+/* ---------- The sky: mini skies ---------- */
+
+.look-skies {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px 8px;
+    padding: 12px 8px 10px;
+}
+
+@media (min-width: 600px) {
+    .look-skies {
+        grid-template-columns: repeat(auto-fill, minmax(5.75rem, 6.75rem));
+        justify-content: center;
+    }
+}
+
+.look-sky {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: var(--sm-text-2);
+    background: none;
+    cursor: pointer;
+}
+
+.look-sky:focus-visible {
+    outline: none;
+}
+
+.look-sky__tile {
+    position: relative;
+    display: block;
+    aspect-ratio: 3 / 4;
+    border-radius: 16px;
+    transition: transform 260ms var(--sm-spring);
+}
+
+.look-sky:active .look-sky__tile {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.look-sky__paint {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
+}
+
+.look-sky__stars {
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(1.2px 1.2px at 18% 14%, #fff 50%, transparent 52%),
+        radial-gradient(1px 1px at 62% 10%, #fff 50%, transparent 52%),
+        radial-gradient(1.3px 1.3px at 82% 30%, #fff 50%, transparent 52%),
+        radial-gradient(1px 1px at 34% 36%, #fff 50%, transparent 52%),
+        radial-gradient(1.1px 1.1px at 12% 52%, #fff 50%, transparent 52%),
+        radial-gradient(1px 1px at 74% 48%, #fff 50%, transparent 52%);
+}
+
+/* Two tiny bubbles: it is the backdrop of the chats too. */
+.look-sky__bubble {
+    position: absolute;
+    height: 10%;
+    border-radius: 999px;
+}
+
+.look-sky__bubble--in {
+    left: 10%;
+    bottom: 31%;
+    width: 54%;
+    background: var(--sm-bubble-in);
+    box-shadow: 0 1px 3px rgba(20, 10, 60, 0.12);
+}
+
+.look-sky__bubble--out {
+    right: 10%;
+    bottom: 13%;
+    width: 46%;
+    background: var(--sm-bubble-out-bg);
+}
+
+.look-sky__tile::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 21px;
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.92);
+    pointer-events: none;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.look-sky.is-selected .look-sky__tile::after,
+.look-sky:focus-visible .look-sky__tile::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+.look-sky__name {
+    font-size: 0.75rem;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.look-sky.is-selected .look-sky__name {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+/* ---------- Text & bubbles: a small sample above the sliders ---------- */
+
+.look-text {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 10px 10px 12px;
+}
+
+.look-text__sample {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border-radius: 20px;
+    background: var(--sm-chat-wallpaper);
+    background-color: var(--sm-chat-bg);
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+}
+
+.look-mini {
+    position: relative;
+    max-width: 84%;
+    padding: 7px 12px;
+    border-radius: var(--sm-bubble-radius);
+    font-size: 0.9375rem;
+    line-height: 1.35;
+}
+
+.look-mini--in {
+    align-self: flex-start;
+    background: var(--sm-bubble-in);
+    color: var(--sm-bubble-in-text);
+    box-shadow: var(--sm-shadow-1);
+}
+
+.look-mini--out {
+    align-self: flex-end;
+    background: var(--sm-bubble-out-bg);
+    color: var(--sm-bubble-out-text);
+    box-shadow: var(--sm-shadow-1);
+}
+
+.look-text ::deep .sm-slider {
+    padding: 0 6px;
+}
+
+/* "A … A": the small letter and the big one. */
+.look-text ::deep .look-text__font .sm-slider__marks {
+    align-items: flex-end;
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+}
+
+.look-text ::deep .look-text__font .sm-slider__marks > :first-child {
+    font-size: 0.75rem;
+}
+
+.look-text ::deep .look-text__font .sm-slider__marks > :last-child {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes look-fade-out {
+    to { opacity: 0; }
+}
+
+@keyframes look-cloud {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(4px); }
+}
+
+@keyframes look-twinkle {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+}
+
+/* Covered by another page, slow devices: the little skies hold still. */
+[inert] .look-mode__scene * {
+    animation-play-state: paused;
+}
+
+html[data-fx="lite"] .look-mode__scene * {
+    animation: none;
+}

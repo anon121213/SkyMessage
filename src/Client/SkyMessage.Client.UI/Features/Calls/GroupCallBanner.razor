@@ -1,0 +1,167 @@
+@* A glass pill under the chat header while a group call runs in this chat (ChatSummaryDto.ActiveCallId): a live
+   phone disc, who is in it (overlapping squircle faces) and a Join button — or "Return" when I am already in it on this
+   device. Renders nothing otherwise. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IChatListStore ChatList
+@inject ICallService Calls
+@inject ISkyApi Api
+@inject IRealtimeService Realtime
+@inject IUserStore Users
+@inject ToastService Toasts
+@inject ILogger<GroupCallBanner> Logger
+
+@if (Chat is { Type: ChatType.Group, ActiveCallId: { } callId })
+{
+    var mine = Calls.Current is { Phase: not CallPhase.Ended } current && current.Call.Id == callId;
+    var joined = Joined;
+    <div class="group-call @(mine ? "group-call--mine" : null)" role="status">
+        <span class="group-call__icon" aria-hidden="true"><Icon Name="@IconNames.PhoneCall" Size="18" StrokeWidth="2.2" /></span>
+        <div class="group-call__text">
+            <div class="group-call__title">@(mine ? L["calls.banner.inCall"] : L["calls.banner.groupCall"])</div>
+            <div class="group-call__meta">
+                @if (joined.Count > 0)
+                {
+                    <span class="group-call__faces">
+                        @foreach (var id in joined.Take(3))
+                        {
+                            <UserAvatar @key="id" UserId="id" Size="22" />
+                        }
+                    </span>
+                    <span>@L.Plural("calls.participants", joined.Count)</span>
+                }
+                else
+                {
+                    <span>@(_call is null ? L["calls.banner.loading"] : L["calls.banner.nobody"])</span>
+                }
+            </div>
+        </div>
+        @if (mine)
+        {
+            <Button Size="ButtonSize.Small" Variant="ButtonVariant.Tonal" OnClick="CallUi.Expand">@L["calls.banner.return"]</Button>
+        }
+        else
+        {
+            <Button Size="ButtonSize.Small" Icon="@IconNames.Phone" Loading="_joining" Disabled="@(CallUi.IsLive(Calls.Current))" OnClick="() => JoinAsync(callId)">
+                @L["calls.banner.join"]
+            </Button>
+        }
+    </div>
+}
+
+@code {
+    private CallDto? _call;
+    private Guid? _loadedFor;
+    private bool _joining;
+    private CancellationTokenSource? _cts;
+
+    [Parameter] public Guid ChatId { get; set; }
+
+    private ChatSummaryDto? Chat => ChatList.Get(ChatId);
+
+    private IReadOnlyList<Guid> Joined =>
+        _call?.Participants.Where(p => p.Status == CallParticipantStatus.Joined).Select(p => p.UserId).Distinct().ToList() ?? [];
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Calls.Changed += h, h => Calls.Changed -= h);
+        ChatList.Changed += OnChatsChanged;
+        Realtime.CallUpdated += OnCallUpdated;
+        Realtime.IncomingCall += OnCallUpdated;
+        Realtime.Resynced += OnResynced;
+        OnDispose(() =>
+        {
+            ChatList.Changed -= OnChatsChanged;
+            Realtime.CallUpdated -= OnCallUpdated;
+            Realtime.IncomingCall -= OnCallUpdated;
+            Realtime.Resynced -= OnResynced;
+        });
+    }
+
+    protected override void OnParametersSet() => Refresh(force: false);
+
+    private void OnChatsChanged() => _ = InvokeAsync(() =>
+    {
+        Refresh(force: false);
+        StateHasChanged();
+    });
+
+    private void OnResynced() => _ = InvokeAsync(() => Refresh(force: true));
+
+    private void OnCallUpdated(CallDto call)
+    {
+        if (call.ChatId != ChatId) return;
+        _ = InvokeAsync(() =>
+        {
+            if (Chat?.ActiveCallId == call.Id || _loadedFor == call.Id)
+            {
+                _call = call;
+                _loadedFor = call.Id;
+                StateHasChanged();
+            }
+        });
+    }
+
+    /// <summary>Loads who is in the chat's active call when it changes (direct realtime subscriber: refetch on Resynced).</summary>
+    private void Refresh(bool force)
+    {
+        var callId = Chat is { Type: ChatType.Group } chat ? chat.ActiveCallId : null;
+        if (callId is null)
+        {
+            _call = null;
+            _loadedFor = null;
+            return;
+        }
+        if (!force && _loadedFor == callId) return;
+        _loadedFor = callId;
+        _ = LoadAsync(callId.Value);
+    }
+
+    private async Task LoadAsync(Guid callId)
+    {
+        _cts?.Cancel();
+        var cts = _cts = new CancellationTokenSource();
+        try
+        {
+            var call = await Api.GetCallAsync(callId, cts.Token);
+            if (cts.IsCancellationRequested || _loadedFor != callId) return;
+            _call = call;
+            var missing = call.Participants.Where(p => p.Status == CallParticipantStatus.Joined && Users.Get(p.UserId) is null).Select(p => p.UserId).ToList();
+            foreach (var id in missing) _ = Users.GetOrFetchAsync(id);
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ApiException ex)
+        {
+            Logger.LogDebug("Group call details unavailable ({Code})", ex.Code);
+        }
+    }
+
+    private async Task JoinAsync(Guid callId)
+    {
+        if (_joining) return;
+        _joining = true;
+        try
+        {
+            await Calls.JoinAsync(callId, video: false);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _joining = false;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

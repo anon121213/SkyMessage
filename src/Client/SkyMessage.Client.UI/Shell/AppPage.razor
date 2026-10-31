@@ -1,0 +1,134 @@
+@* Screen scaffold over the sky (docs/DESIGN.md §5, §7). A page pushed over the phone's root screen paints its own still
+   sky (it keeps the layer opaque while it slides, and reaches up under the status bar); elsewhere the page is
+   transparent over the shell's sky or panel. The header (AppBar + optional toolbar) is pinned at the top of the
+   scrolling body, so the content passes under it and it turns into floating glass once the body scrolls (app.js
+   attachScrollState sets [data-scrolled] on the page). Optional sticky footer. *@
+@implements IAsyncDisposable
+@inject AppJs Js
+
+<div @ref="_root" class="app-page @(OwnSky ? "app-page--sky" : null) @(LargeTitle ? "app-page--large" : null) @(Toolbar is not null ? "app-page--toolbar" : null) @Class">
+    @if (OwnSky)
+    {
+        <SkyBackdrop Still="true" Sparkles="false" Comet="false" Class="app-page__sky" />
+    }
+    @if (Scroll)
+    {
+        <div @ref="_body" class="app-page__body sm-scroll @BodyClass">
+            @if (HasHead)
+            {
+                <div class="app-page__head">@Head</div>
+            }
+            @Content
+        </div>
+    }
+    else
+    {
+        @if (HasHead)
+        {
+            <div class="app-page__head app-page__head--static">@Head</div>
+        }
+        <div @ref="_body" class="app-page__body app-page__body--fixed @BodyClass">@Content</div>
+    }
+    @if (Footer is not null)
+    {
+        <div class="app-page__footer">@Footer</div>
+    }
+</div>
+
+@code {
+    private ElementReference _root;
+    private ElementReference _body;
+    private JsHandle? _scrollState;
+    private string? _scrollFor;
+    private bool _attaching;
+    private bool _disposed;
+
+    [CascadingParameter] public ShellContext? Shell { get; set; }
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? TitleContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? Leading { get; set; }
+    /// <summary>Under the bar, pinned with it (search box, tabs).</summary>
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Sticky bottom area (primary action).</summary>
+    [Parameter] public RenderFragment? Footer { get; set; }
+    /// <summary>Null = automatic back button.</summary>
+    [Parameter] public bool? Back { get; set; }
+    [Parameter] public string BackFallback { get; set; } = "/";
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public bool HideHeader { get; set; }
+    [Parameter] public bool LargeTitle { get; set; }
+    /// <summary>Body scrolls (default). False: the content manages its own scrolling.</summary>
+    [Parameter] public bool Scroll { get; set; } = true;
+    /// <summary>Readable centered column with padding (settings-like screens).</summary>
+    [Parameter] public bool Padded { get; set; }
+    /// <summary>Kept for compatibility: every page now sits on the sky.</summary>
+    [Parameter] public PageBackground Background { get; set; } = PageBackground.Grouped;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? BodyClass { get; set; }
+
+    /// <summary>The scroll container (for scroll restoration or infinite lists).</summary>
+    public ElementReference Body => _body;
+
+    /// <summary>Phone pages above the root screen paint their own (still) sky; everything else shows the shell's.</summary>
+    private bool OwnSky => Shell is { IsPhone: true, Pane: ShellPane.Page };
+
+    private bool HasHead => !HideHeader || Toolbar is not null;
+
+    private RenderFragment Head => __builder =>
+    {
+        if (!HideHeader)
+        {
+            @* With a toolbar the bar and the toolbar share one glass card (AppPage), so the bar draws no capsule. *@
+            <AppBar Title="@Title" Subtitle="@Subtitle" TitleContent="TitleContent" Actions="Actions" Leading="Leading" Back="Back"
+                    BackFallback="@BackFallback" OnBack="OnBack" Large="LargeTitle" GlassActions="true" Transparent="@(Toolbar is not null)" />
+        }
+        if (Toolbar is not null)
+        {
+            <div class="app-page__toolbar">@Toolbar</div>
+        }
+    };
+
+    private RenderFragment Content => __builder =>
+    {
+        if (Padded)
+        {
+            <div class="sm-page-content">@ChildContent</div>
+        }
+        else
+        {
+            @ChildContent
+        }
+    };
+
+    public ValueTask ScrollToTopAsync(bool smooth = true) => Js.ScrollToTopAsync(_body, smooth);
+
+    // The header follows the scrolling body (the body element changes when Scroll does).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var target = Scroll ? _body.Id : null;
+        if (_attaching || _disposed || target == _scrollFor) return;
+        _attaching = true;
+        try
+        {
+            if (_scrollState is not null) await _scrollState.DisposeAsync();
+            _scrollState = null;
+            _scrollFor = target;
+            if (target is not null) _scrollState = await Js.AttachAsync("attachScrollState", _body, _root, "data-scrolled", 6);
+            if (_disposed && _scrollState is not null) await _scrollState.DisposeAsync();
+        }
+        finally
+        {
+            _attaching = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_scrollState is not null) await _scrollState.DisposeAsync();
+    }
+}

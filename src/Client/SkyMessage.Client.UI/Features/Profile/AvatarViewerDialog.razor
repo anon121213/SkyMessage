@@ -1,0 +1,36 @@
+@* A profile/group photo shown large (full image via IMediaUrlBuilder). Drag it down to close, as in the media viewer. *@
+@implements IAsyncDisposable
+@inject IMediaUrlBuilder MediaUrls
+@inject AppJs Js
+
+<div @ref="_frame" class="avatar-viewer">
+    <img src="@MediaUrls.ContentUrl(MediaId)" alt="@Dialog.Title" draggable="false" />
+</div>
+
+@code {
+    private ElementReference _frame;
+    private DotNetObjectReference<AvatarViewerDialog>? _ref;
+    private JsHandle? _swipe;
+    private bool _disposed;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public Guid MediaId { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _ref = DotNetObjectReference.Create(this);
+        _swipe = await Js.AttachSwipeAsync(_frame, _ref, nameof(OnSwipedDown), "down", 96);
+        if (_disposed) await _swipe.DisposeAsync();
+    }
+
+    [JSInvokable]
+    public Task OnSwipedDown() => _disposed ? Task.CompletedTask : InvokeAsync(Dialog.Cancel);
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_swipe is not null) await _swipe.DisposeAsync();
+        _ref?.Dispose();
+    }
+}

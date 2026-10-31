@@ -1,0 +1,189 @@
+@* Notifications & sounds: system permission, message/call toggles, in-app sounds, tone pickers with previews, and
+   (Android) keeping the connection alive in background + the battery exemption. iPhones and browsers get a hint
+   about when messages and calls can arrive until push notifications exist. *@
+@inherits UiComponentBase
+@inject ISettingsService Settings
+@inject ISoundService Sounds
+@inject IPermissionService Permissions
+@inject ILocalNotificationService Notifications
+@inject IBackgroundConnectionService Background
+@inject IPlatformInfo Platform
+@inject ToastService Toasts
+
+<SettingsScaffold Title="@L["settings.notifications.title"]">
+    @{
+        var n = Settings.Current.Notifications;
+    }
+    @if (_permission is PermissionState.Denied or PermissionState.Restricted)
+    {
+        <div class="notif-alert sm-card">
+            <span class="sm-list-item__icon notif-alert__tile" style="--icon-bg:@SettingsTones.Rose"><Icon Name="@IconNames.BellOff" /></span>
+            <div class="notif-alert__text">
+                <div class="sm-strong">@L["settings.notifications.blocked"]</div>
+                <div class="sm-caption">@(Platform.IsNativeApp ? L["settings.notifications.blockedText"] : L["settings.notifications.blockedTextWeb"])</div>
+            </div>
+            @if (Platform.IsNativeApp)
+            {
+                <Button Size="ButtonSize.Small" Variant="ButtonVariant.Tonal" OnClick="Permissions.OpenAppSettingsAsync">@L["settings.openSystemSettings"]</Button>
+            }
+        </div>
+    }
+    else if (_permission is PermissionState.Unknown && n.Enabled)
+    {
+        <div class="notif-alert sm-card">
+            <span class="sm-list-item__icon notif-alert__tile notif-alert__tile--ring" style="--icon-bg:@SettingsTones.Gold"><Icon Name="@IconNames.BellRing" /></span>
+            <div class="notif-alert__text">
+                <div class="sm-strong">@L["settings.notifications.ask"]</div>
+                <div class="sm-caption">@L["settings.notifications.askText"]</div>
+            </div>
+            <Button Size="ButtonSize.Small" OnClick="RequestPermissionAsync">@L["settings.notifications.allow"]</Button>
+        </div>
+    }
+
+    @if (Platform.Platform == ClientPlatform.iOS)
+    {
+        <div class="notif-hint sm-card">
+            <Icon Name="@IconNames.Info" Size="20" />
+            <span>@L["settings.notifications.iosHint"]</span>
+        </div>
+    }
+    else if (!Platform.IsNativeApp)
+    {
+        <div class="notif-hint sm-card">
+            <Icon Name="@IconNames.Info" Size="20" />
+            <span>@L["settings.notifications.webHint"]</span>
+        </div>
+    }
+
+    <Section Title="@L["settings.notifications.messages"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.Bell" IconColor="@SettingsTones.Rose" Title="@L["settings.notifications.enabled"]" Subtitle="@L["settings.notifications.enabledHint"]"
+                    Checked="n.Enabled" CheckedChanged="v => SetAsync(s => s.Notifications.Enabled = v, requestPermission: v)" />
+        <SwitchItem Icon="@IconNames.Eye" IconColor="@SettingsTones.Violet" Title="@L["settings.notifications.preview"]" Subtitle="@L["settings.notifications.previewHint"]"
+                    Checked="n.ShowPreview" Disabled="!n.Enabled" CheckedChanged="v => SetAsync(s => s.Notifications.ShowPreview = v)" />
+        <SwitchItem Icon="@IconNames.Users" IconColor="@SettingsTones.Peach" Title="@L["settings.notifications.groups"]" Checked="n.GroupsEnabled" Disabled="!n.Enabled"
+                    CheckedChanged="v => SetAsync(s => s.Notifications.GroupsEnabled = v)" />
+        <SwitchItem Icon="@IconNames.AtSign" IconColor="@SettingsTones.Sky" Title="@L["settings.notifications.mentions"]" Subtitle="@L["settings.notifications.mentionsHint"]"
+                    Checked="n.MentionsBypassMute" Disabled="!n.Enabled" CheckedChanged="v => SetAsync(s => s.Notifications.MentionsBypassMute = v)" />
+        <SwitchItem Icon="@IconNames.Volume2" IconColor="@SettingsTones.Mint" Title="@L["settings.notifications.sound"]" Checked="n.Sound" Disabled="!n.Enabled"
+                    CheckedChanged="v => SetAsync(s => s.Notifications.Sound = v)" />
+        @if (Platform.IsMobile)
+        {
+            <SwitchItem Icon="@IconNames.Vibrate" IconColor="@SettingsTones.Lagoon" Title="@L["settings.notifications.vibrate"]" Checked="n.Vibrate" Disabled="!n.Enabled"
+                        CheckedChanged="v => SetAsync(s => s.Notifications.Vibrate = v)" />
+        }
+    </Section>
+
+    <Section Title="@L["settings.notifications.messageTone"]" Footer="@L["settings.notifications.toneHint"]">
+        <ChoiceList TValue="string" Options="MessageTones" Value="n.MessageTone" ValueChanged="SetMessageToneAsync" />
+    </Section>
+
+    <Section Title="@L["settings.notifications.calls"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.PhoneIncoming" IconColor="@SettingsTones.Mint" Title="@L["settings.notifications.callsEnabled"]" Subtitle="@L["settings.notifications.callsHint"]"
+                    Checked="n.CallsEnabled" CheckedChanged="v => SetAsync(s => s.Notifications.CallsEnabled = v, requestPermission: v)" />
+    </Section>
+
+    <Section Title="@L["settings.notifications.ringtone"]">
+        <ChoiceList TValue="string" Options="Ringtones" Value="n.Ringtone" ValueChanged="SetRingtoneAsync" />
+    </Section>
+
+    <Section Title="@L["settings.notifications.inApp"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.Music" IconColor="@SettingsTones.Orchid" Title="@L["settings.notifications.inAppSounds"]" Checked="n.InAppSounds"
+                    CheckedChanged="v => SetAsync(s => s.Notifications.InAppSounds = v)" />
+        @if (Platform.IsMobile)
+        {
+            <SwitchItem Icon="@IconNames.Vibrate" IconColor="@SettingsTones.Lagoon" Title="@L["settings.notifications.inAppVibrate"]" Checked="n.InAppVibrate"
+                        CheckedChanged="v => SetAsync(s => s.Notifications.InAppVibrate = v)" />
+        }
+    </Section>
+
+    @if (Background.IsSupported)
+    {
+        <Section Title="@L["settings.notifications.background"]" Footer="@L["settings.notifications.backgroundHint"]" DividerInset="64px">
+            <SwitchItem Icon="@IconNames.PlugZap" IconColor="@SettingsTones.Violet" Title="@L["settings.notifications.keepConnected"]" Subtitle="@L["settings.notifications.keepConnectedHint"]"
+                        Checked="n.KeepConnectedInBackground" CheckedChanged="SetKeepConnectedAsync" />
+            <ListItem Icon="@IconNames.BatteryCharging" IconColor="@SettingsTones.Mint" Title="@L["settings.notifications.battery"]" Subtitle="@L["settings.notifications.batteryHint"]"
+                      Multiline="true" Disabled="@(!n.KeepConnectedInBackground)" OnClick="RequestBatteryExemptionAsync" Chevron="true" />
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private PermissionState? _permission;
+
+    private IReadOnlyList<ChoiceOption<string>> MessageTones =>
+        Sounds.Tones.MessageTones.Select(t => new ChoiceOption<string>(t.Key, L[t.NameKey]))
+            .Append(new ChoiceOption<string>(ToneCatalog.None, L["sound.tone.none"]))
+            .ToList();
+
+    private IReadOnlyList<ChoiceOption<string>> Ringtones =>
+        Sounds.Tones.Ringtones.Select(t => new ChoiceOption<string>(t.Key, L[t.NameKey])).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        await CheckPermissionAsync();
+    }
+
+    private async Task CheckPermissionAsync()
+    {
+        try
+        {
+            _permission = await Permissions.CheckAsync(AppPermission.Notifications);
+        }
+        catch (Exception)
+        {
+            _permission = PermissionState.NotApplicable;
+        }
+    }
+
+    private async Task SetAsync(Action<AppSettings> change, bool requestPermission = false)
+    {
+        await Settings.UpdateAsync(change);
+        if (requestPermission && _permission is PermissionState.Unknown) await RequestPermissionAsync();
+    }
+
+    private async Task RequestPermissionAsync()
+    {
+        try
+        {
+            var granted = await Notifications.RequestPermissionAsync();
+            await CheckPermissionAsync();
+            if (!granted && _permission is not (PermissionState.Denied or PermissionState.Restricted)) _permission = PermissionState.Denied;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SetMessageToneAsync(string key)
+    {
+        Sounds.Preview(key);
+        await Settings.UpdateAsync(s => s.Notifications.MessageTone = key);
+    }
+
+    private async Task SetRingtoneAsync(string key)
+    {
+        Sounds.Preview(key);
+        await Settings.UpdateAsync(s => s.Notifications.Ringtone = key);
+    }
+
+    private async Task SetKeepConnectedAsync(bool enabled)
+    {
+        // The bootstrapper starts/stops the background service when this setting changes.
+        await Settings.UpdateAsync(s => s.Notifications.KeepConnectedInBackground = enabled);
+        if (enabled) await RequestBatteryExemptionAsync();
+    }
+
+    private async Task RequestBatteryExemptionAsync()
+    {
+        try
+        {
+            if (await Background.RequestBatteryExemptionAsync()) Toasts.Success(L["settings.notifications.batteryDone"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

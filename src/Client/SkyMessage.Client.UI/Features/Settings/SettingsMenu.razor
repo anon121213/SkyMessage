@@ -1,0 +1,117 @@
+@* The settings menu: my profile as a hero card (large squircle avatar in a thin accent ring, name in the display font,
+   @username, a small "edit profile" capsule), grouped glass cards with pastel tiles, sign out. On wide screens it sits
+   left of the open section. *@
+@inherits UiComponentBase
+@inject IAuthService Auth
+@inject ISettingsService Settings
+@inject IMediaUrlBuilder MediaUrls
+@inject IPlatformInfo Platform
+@inject DialogService Dialogs
+
+<div class="settings-menu sm-stagger">
+    @if (Auth.Me is { } me)
+    {
+        @* Wrapped: the wrapper rises in with the page, the card keeps its own press spring. *@
+        <div class="settings-hero-wrap">
+            <button type="button" class="settings-hero sm-card @(ActiveKey == SettingsRoutes.Profile ? "is-selected" : null)"
+                    @onclick="() => OnOpen.InvokeAsync(SettingsRoutes.Profile)">
+                <span class="settings-hero__avatar">
+                    <span class="settings-hero__ring" aria-hidden="true"></span>
+                    <Avatar Url="@MediaUrls.AvatarUrl(me.AvatarMediaId)" Name="@me.DisplayName" Seed="me.Id" Size="96" />
+                </span>
+                <span class="settings-hero__name" dir="auto">@me.DisplayName</span>
+                <span class="settings-hero__meta">
+                    <span class="settings-hero__handle">@("@" + me.Username)</span>
+                    @if (!string.IsNullOrEmpty(me.PhoneNumber))
+                    {
+                        <span class="settings-hero__dot" aria-hidden="true"></span>
+                        <span class="sm-nums">@PhoneFormat.Display(me.PhoneNumber)</span>
+                    }
+                </span>
+                <span class="settings-hero__edit">
+                    <Icon Name="@IconNames.UserPen" Size="16" />
+                    <span>@L["settings.profile.edit"]</span>
+                    <Icon Name="@IconNames.ChevronRight" Size="16" Class="settings-hero__chevron" />
+                </span>
+            </button>
+        </div>
+    }
+
+    <Section Title="@L["settings.group.account"]" DividerInset="64px">
+        @foreach (var item in SettingsCatalog.Account)
+        {
+            @Row(item)
+        }
+    </Section>
+
+    <Section Title="@L["settings.group.app"]" DividerInset="64px">
+        @foreach (var item in SettingsCatalog.App)
+        {
+            @Row(item)
+        }
+    </Section>
+
+    <Section DividerInset="64px">
+        @foreach (var item in SettingsCatalog.Help)
+        {
+            @Row(item)
+        }
+    </Section>
+
+    <Section>
+        <ListItem Icon="@IconNames.LogOut" IconColor="@SettingsTones.Rose" Title="@L["auth.signOut"]" Danger="true" OnClick="SignOutAsync" />
+    </Section>
+
+    <p class="settings-version">
+        <Logo Size="18" Mark="true" />
+        <span>SkyMessage @Platform.AppVersion</span>
+    </p>
+</div>
+
+@code {
+    /// <summary>Highlighted row (wide screens).</summary>
+    [Parameter] public string? ActiveKey { get; set; }
+    [Parameter] public EventCallback<string> OnOpen { get; set; }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Auth.Changed += h, h => Auth.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    private RenderFragment Row(SettingsSectionInfo item) => __builder =>
+    {
+        <ListItem @key="item.Key" Icon="@item.Icon" IconColor="@item.Color" Title="@L[item.TitleKey]" Meta="@MetaOf(item.Key)" Chevron="true"
+                  Selected="@(ActiveKey == item.Key)" OnClick="() => OnOpen.InvokeAsync(item.Key)" />
+    };
+
+    private string? MetaOf(string key)
+    {
+        var settings = Settings.Current;
+        return key switch
+        {
+            SettingsRoutes.Language => settings.Language switch
+            {
+                "ru" => L["settings.language.ru"],
+                "en" => L["settings.language.en"],
+                _ => L["settings.language.auto.short"],
+            },
+            SettingsRoutes.Notifications => settings.Notifications.Enabled ? L["common.on"] : L["common.off"],
+            SettingsRoutes.Phone => string.IsNullOrEmpty(Auth.Me?.PhoneNumber) ? L["settings.phone.none.short"] : null,
+            SettingsRoutes.Appearance => settings.Appearance.Theme switch
+            {
+                ThemeMode.Light => L["theme.mode.light"],
+                ThemeMode.Dark => L["theme.mode.dark"],
+                _ => null,
+            },
+            _ => null,
+        };
+    }
+
+    private async Task SignOutAsync()
+    {
+        if (await Dialogs.ConfirmAsync(L["auth.signOut.confirm"], L["auth.signOut.text"], L["auth.signOut"], danger: true))
+            await Auth.LogoutAsync();
+    }
+}

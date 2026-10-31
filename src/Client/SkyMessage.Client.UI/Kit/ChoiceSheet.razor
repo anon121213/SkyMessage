@@ -1,0 +1,40 @@
+@* Content of DialogService.ChooseAsync: an action list. Result: the chosen ChoiceOption. *@
+@typeparam T
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <p class="sm-dialog__message sm-px-m sm-mb-s" style="padding-left:24px;padding-right:24px">@Message</p>
+}
+<div class="sm-col sm-gap-0" role="menu">
+    @foreach (var option in Options)
+    {
+        <button type="button" role="menuitem" class="sm-menu-item @(option.Danger ? "sm-menu-item--danger" : null)" disabled="@option.Disabled" @onclick="() => Choose(option)">
+            @if (option.Icon is not null)
+            {
+                <Icon Name="@option.Icon" />
+            }
+            <span class="sm-menu-item__label">
+                @option.Label
+                @if (option.Description is not null)
+                {
+                    <span class="sm-caption" style="display:block">@option.Description</span>
+                }
+            </span>
+            @if (option.Selected)
+            {
+                <Icon Name="@IconNames.Check" Class="sm-accent-text" />
+            }
+        </button>
+    }
+</div>
+
+@code {
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<T>> Options { get; set; } = [];
+    [Parameter] public string? Message { get; set; }
+
+    private void Choose(ChoiceOption<T> option)
+    {
+        if (!option.Disabled) Dialog.Close(option);
+    }
+}

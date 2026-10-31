@@ -1,0 +1,98 @@
+@* "Server: host — connected / unreachable" as a glass chip with a live dot (a mint light that keeps sending out a
+   ring while connected, a gold one breathing while checking, rose when unreachable), with a button to change the
+   server (hidden on the web client, which always talks to the server it was loaded from). *@
+@inherits UiComponentBase
+@inject IServerEndpointService Endpoints
+@inject IPlatformInfo Platform
+@inject ClientCoreOptions CoreOptions
+@inject DialogService Dialogs
+
+<div class="server-status server-status--@_state.ToString().ToLowerInvariant()" role="status">
+    <span class="server-status__dot" aria-hidden="true"></span>
+    <div class="server-status__text">
+        <div class="server-status__name">@ServerName</div>
+        <div class="server-status__state">@StateText</div>
+    </div>
+    @if (!CoreOptions.UseHostOrigin)
+    {
+        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.Server" OnClick="ChangeAsync">@L["auth.server.change"]</Button>
+    }
+    else if (_state == State.Unreachable)
+    {
+        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.RefreshCw" OnClick="TestAsync">@L["common.retry"]</Button>
+    }
+</div>
+@if (Outdated)
+{
+    <p class="server-status__update" role="status">
+        <Icon Name="@IconNames.TriangleAlert" Size="18" />
+        <span>@L["app.updateRequired"]</span>
+    </p>
+}
+
+@code {
+    private enum State
+    {
+        Checking,
+        Online,
+        Unreachable,
+    }
+
+    private State _state = State.Checking;
+    private ServerInfoDto? _info;
+    private CancellationTokenSource? _test;
+
+    /// <summary>Raised with the server info after each check (null = unreachable).</summary>
+    [Parameter] public EventCallback<ServerInfoDto?> OnChecked { get; set; }
+
+    private string ServerName => _info is { } info && !string.IsNullOrWhiteSpace(info.Name) && info.Name != "SkyMessage"
+        ? $"{info.Name} · {Endpoints.BaseUri.Host}"
+        : Endpoints.BaseUri.Host + (Endpoints.BaseUri.IsDefaultPort ? "" : ":" + Endpoints.BaseUri.Port);
+
+    private bool Outdated => AppVersionCheck.IsOutdated(Platform.AppVersion, (_info ?? Endpoints.Info)?.MinClientVersion);
+
+    private string StateText => _state switch
+    {
+        State.Online => L["auth.server.online"],
+        State.Unreachable => L["auth.server.unreachable"],
+        _ => L["auth.server.checking"],
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Action changed = () => _ = InvokeAsync(TestAsync);
+        Endpoints.Changed += changed;
+        OnDispose(() =>
+        {
+            Endpoints.Changed -= changed;
+            _test?.Cancel();
+        });
+        _info = Endpoints.Info;
+        await TestAsync();
+    }
+
+    private async Task TestAsync()
+    {
+        _test?.Cancel();
+        var cts = _test = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        _state = State.Checking;
+        StateHasChanged();
+        ServerInfoDto? info = null;
+        try
+        {
+            info = await Endpoints.TestAsync(Endpoints.BaseUri, cancellationToken: cts.Token);
+        }
+        catch (Exception)
+        {
+            info = null;
+        }
+        if (cts.IsCancellationRequested && info is null && _test != cts) return;
+        _info = info ?? _info;
+        _state = info is null ? State.Unreachable : State.Online;
+        await OnChecked.InvokeAsync(info);
+        StateHasChanged();
+    }
+
+    private Task ChangeAsync() => Dialogs.ShowAsync<ServerPickerDialog>(L["auth.server.title"],
+        options: new DialogOptions { Size = DialogSize.Small, Presentation = OverlayPresentation.Sheet });
+}

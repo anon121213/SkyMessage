@@ -1,0 +1,31 @@
+@* Lucide icon by name (see IconNames). The markup is compile-time geometry from lucide-static, never user content. *@
+@if (IconData.TryGet(Name, out var markup))
+{
+    <svg class="sm-icon @(Spin ? "sm-icon--spin" : null) @Class" style="@SizeStyle" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="@StrokeText" stroke-linecap="round" stroke-linejoin="round"
+         aria-hidden="@(Title is null ? "true" : null)" role="@(Title is null ? null : "img")" aria-label="@Title" focusable="false">
+        @if (Title is not null)
+        {
+            <title>@Title</title>
+        }
+        @((MarkupString)markup)
+    </svg>
+}
+
+@code {
+    /// <summary>Icon name, e.g. <c>IconNames.Search</c> ("search").</summary>
+    [Parameter, EditorRequired] public string? Name { get; set; }
+    /// <summary>Size in px at 100% font scale (rendered in rem so it follows the font size). Null = CSS default (20px).</summary>
+    [Parameter] public double? Size { get; set; }
+    [Parameter] public double StrokeWidth { get; set; } = 2;
+    /// <summary>Accessible label; without it the icon is decorative (aria-hidden).</summary>
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public bool Spin { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string? SizeStyle => Size is { } px
+        ? $"width:{(px / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}rem;height:{(px / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}rem"
+        : null;
+
+    private string StrokeText => StrokeWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

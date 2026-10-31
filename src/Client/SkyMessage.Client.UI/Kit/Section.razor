@@ -1,0 +1,35 @@
+@* A titled group of list items on a rounded card (settings, profiles). *@
+<section class="sm-section @(Flat ? "sm-section--flat" : null) @Class">
+    @if (Title is not null || HeaderActions is not null)
+    {
+        <div class="sm-section__header">
+            <h3 class="sm-section__title">@Title</h3>
+            @HeaderActions
+        </div>
+    }
+    <div class="sm-section__body" style="@($"--divider-inset:{DividerInset}")">
+        @ChildContent
+    </div>
+    @if (FooterContent is not null)
+    {
+        <div class="sm-section__footer">@FooterContent</div>
+    }
+    else if (!string.IsNullOrEmpty(Footer))
+    {
+        <div class="sm-section__footer">@Footer</div>
+    }
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Explanation under the card.</summary>
+    [Parameter] public string? Footer { get; set; }
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+    /// <summary>No card background (lists that fill the screen).</summary>
+    [Parameter] public bool Flat { get; set; }
+    /// <summary>Left inset of the dividers between rows: 16px plain, 64px with icon tiles, 78px with 48px avatars.</summary>
+    [Parameter] public string DividerInset { get; set; } = "16px";
+    [Parameter] public string? Class { get; set; }
+}

@@ -1,0 +1,46 @@
+/* A glass card dropping in at the top of the screen (inside the shell's notices stack). */
+.update-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: min(100%, 28rem);
+    padding: 10px 6px 10px 12px;
+    border-radius: var(--sm-radius-xl);
+    pointer-events: auto;
+    animation: update-card-in 560ms var(--sm-spring-soft) backwards;
+}
+
+.update-card--leaving {
+    pointer-events: none;
+    animation: update-card-out 200ms var(--sm-ease-in) forwards;
+}
+
+.update-card__disc {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.625rem;
+    height: 2.625rem;
+    border-radius: 50%;
+    background: var(--sm-gold);
+    color: #4A1A06;
+}
+
+.update-card__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+@keyframes update-card-in {
+    from { opacity: 0; transform: translateY(-110%) scale(0.94); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes update-card-out {
+    to { opacity: 0; transform: translateY(-40%) scale(0.94); }
+}

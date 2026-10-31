@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Local Mac builds without a provisioning profile (no CodesignProvision): the same sandbox entitlements as
+  Entitlements.plist minus keychain-access-groups, which only a profile can authorize (macOS refuses to launch
+  an ad-hoc signed app that claims it). SecureStorage then reports a Keychain error and SecureStore falls back
+  to preferences in DEBUG / memory in release. Signed builds use Entitlements.plist.
+-->
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.personal-information.addressbook</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+</dict>
+</plist>

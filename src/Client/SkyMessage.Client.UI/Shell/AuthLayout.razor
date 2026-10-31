@@ -1,0 +1,47 @@
+@* Layout of the signed-out screens (welcome, login, register): the sky with a few restrained, flat decorations — three
+   soft clouds drifting at the edges, a plain sun disc by day, a crescent moon by night — and one centered column of
+   content on top. Pure decoration (aria-hidden): still under reduced motion and in data-fx="lite". *@
+@inherits LayoutComponentBase
+@inject LayoutService Layout
+
+<div class="auth-shell">
+    <SkyBackdrop Sparkles="false" Comet="false" />
+    <div class="auth-deco" aria-hidden="true">
+        <span class="auth-deco__sun"></span>
+        <svg class="auth-deco__moon" viewBox="0 0 64 64" focusable="false">
+            <path d="M38 8a24 24 0 1 0 18 40A20 20 0 0 1 38 8Z" />
+        </svg>
+        <svg class="auth-deco__cloud auth-deco__cloud--1" viewBox="0 0 240 120" focusable="false">@Cloud</svg>
+        <svg class="auth-deco__cloud auth-deco__cloud--2" viewBox="0 0 240 120" focusable="false">@Cloud</svg>
+        <svg class="auth-deco__cloud auth-deco__cloud--3" viewBox="0 0 240 120" focusable="false">@Cloud</svg>
+    </div>
+    <div class="auth-shell__scroll">
+        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Page, false))">
+            <main class="auth-shell__column">
+                <ErrorBoundary @ref="_boundary">
+                    <ChildContent>@Body</ChildContent>
+                    <ErrorContent Context="error">
+                        <CrashScreen Exception="error" Compact="true" OnRetry="() => _boundary?.Recover()" />
+                    </ErrorContent>
+                </ErrorBoundary>
+            </main>
+        </CascadingValue>
+    </div>
+    <DialogHost />
+    <ToastHost />
+</div>
+
+@code {
+    private ErrorBoundary? _boundary;
+
+    // A flat puff (three circles on a rounded base); its color comes from the theme.
+    private static readonly RenderFragment Cloud = __builder =>
+    {
+        <g class="auth-deco__puff">
+            <circle cx="78" cy="70" r="38" />
+            <circle cx="128" cy="52" r="48" />
+            <circle cx="178" cy="76" r="32" />
+            <rect x="36" y="66" width="180" height="46" rx="23" />
+        </g>
+    };
+}

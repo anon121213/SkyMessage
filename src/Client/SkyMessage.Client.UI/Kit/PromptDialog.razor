@@ -1,0 +1,40 @@
+@* Content of DialogService.PromptAsync. Result: the entered string. *@
+<form @onsubmit="Submit" @onsubmit:preventDefault="true">
+    @if (!string.IsNullOrEmpty(Options.Message))
+    {
+        <p class="sm-dialog__message sm-mb-m">@Options.Message</p>
+    }
+    @if (Options.Multiline)
+    {
+        <TextArea @bind-Value="_value" Label="@Options.Label" Placeholder="@Options.Placeholder" MaxLength="Options.MaxLength" Error="@_error" Autofocus="true" ShowCounter="true" />
+    }
+    else
+    {
+        <TextField @bind-Value="_value" Label="@Options.Label" Placeholder="@Options.Placeholder" MaxLength="Options.MaxLength" Type="@Options.InputType"
+                   Error="@_error" Autofocus="true" Clearable="true" />
+    }
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Type="submit" Disabled="@(!Options.AllowEmpty && string.IsNullOrWhiteSpace(_value))">@(Options.ConfirmText ?? L["common.save"])</Button>
+    </DialogActions>
+</form>
+
+@code {
+    private string _value = "";
+    private string? _error;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public PromptOptions Options { get; set; } = default!;
+
+    protected override void OnInitialized() => _value = Options.InitialValue ?? "";
+
+    private void Submit()
+    {
+        var value = _value.Trim();
+        if (!Options.AllowEmpty && value.Length == 0) return;
+        _error = Options.Validate?.Invoke(value);
+        if (_error is not null) return;
+        Dialog.Close(value);
+    }
+}

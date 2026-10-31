@@ -1,0 +1,85 @@
+/* The typing bubble: shaped like an incoming message (MessageBubble.razor.css), three dots shading from the accent to
+   its partner hue ride a wave. A looping indicator: it keeps moving only while someone types. */
+
+.mtyping {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 8px 10px 2px;
+    pointer-events: none;
+}
+
+.mtyping--enter {
+    transform-origin: 0 100%;
+    animation: mtyping-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+@keyframes mtyping-in {
+    from {
+        opacity: 0;
+        transform: translateX(-12px) scale(0.8);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.mtyping__avatar {
+    flex-shrink: 0;
+    width: 2.125rem;
+}
+
+.mtyping__bubble {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 2.5rem;
+    padding: 0 16px;
+    border-radius: var(--sm-bubble-radius, 20px);
+    background: var(--sm-bubble-in);
+    color: var(--sm-accent);
+    box-shadow: inset 0 0 0 1px rgba(80, 60, 170, 0.06), var(--sm-shadow-1);
+}
+
+html[data-theme="dark"] .mtyping__bubble {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--sm-shadow-1);
+}
+
+.mtyping__dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 1rem;
+}
+
+.mtyping__dots i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    animation: mtyping-wave 1.25s ease-in-out infinite;
+}
+
+.mtyping__dots i:nth-child(2) {
+    background: color-mix(in srgb, var(--sm-accent) 50%, var(--sm-accent-2));
+    animation-delay: 0.17s;
+}
+
+.mtyping__dots i:nth-child(3) {
+    background: var(--sm-accent-2);
+    animation-delay: 0.34s;
+}
+
+@keyframes mtyping-wave {
+    0%, 60%, 100% {
+        opacity: 0.35;
+        transform: translateY(0) scale(0.82);
+    }
+
+    28% {
+        opacity: 1;
+        transform: translateY(-5px) scale(1);
+    }
+}

@@ -1,0 +1,170 @@
+@* Emoji picker: recent emoji (per account) + curated Unicode categories. Emits the chosen emoji string. Category tabs
+   with a sliding gradient pill, sticky overline chips, the recent row on a pale gradient card (EmojiPicker.razor.css). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Kit.Emoji
+@inject EmojiCatalog Catalog
+@inject EmojiRecents Recents
+@inject AppJs Js
+
+<div class="sm-emoji-picker @Class" style="--picker-h:@Height">
+    <div class="sm-emoji-picker__tabs" role="tablist">
+        @* Equal columns, so the accent pill slides to the active one with a plain translate (one column per step). *@
+        <div class="sm-emoji-picker__track" style="--tabs:@TabCount;--tab:@ActiveIndex">
+            <span class="sm-emoji-picker__pill" aria-hidden="true"></span>
+            @if (ShowRecent)
+            {
+                <button type="button" role="tab" aria-selected="@(_active == EmojiCatalog.RecentKey ? "true" : "false")"
+                        class="sm-emoji-picker__tab @(_active == EmojiCatalog.RecentKey ? "sm-emoji-picker__tab--active" : null)"
+                        title="@L["emoji.category.recent"]" aria-label="@L["emoji.category.recent"]" @onclick="() => JumpAsync(EmojiCatalog.RecentKey)">
+                    <Icon Name="@IconNames.Clock" />
+                </button>
+            }
+            @foreach (var category in Catalog.Categories)
+            {
+                <button type="button" role="tab" aria-selected="@(_active == category.Key ? "true" : "false")"
+                        class="sm-emoji-picker__tab @(_active == category.Key ? "sm-emoji-picker__tab--active" : null)"
+                        title="@L[category.NameKey]" aria-label="@L[category.NameKey]" @onclick="() => JumpAsync(category.Key)">
+                    <Icon Name="@category.Icon" />
+                </button>
+            }
+        </div>
+    </div>
+    <div class="sm-emoji-picker__scroll" @ref="_scroll">
+        @if (ShowRecent)
+        {
+            <section class="sm-emoji-picker__section sm-emoji-picker__section--recent" @ref="_sections[EmojiCatalog.RecentKey]">
+                <div class="sm-emoji-picker__heading"><span>@L["emoji.category.recent"]</span></div>
+                <div class="sm-emoji-picker__grid">
+                    @foreach (var emoji in _recent)
+                    {
+                        <button type="button" class="sm-emoji-btn" aria-label="@emoji" @onclick="() => PickAsync(emoji)">@emoji</button>
+                    }
+                </div>
+            </section>
+        }
+        @foreach (var category in Catalog.Categories)
+        {
+            <section class="sm-emoji-picker__section" @ref="_sections[category.Key]">
+                <div class="sm-emoji-picker__heading"><span>@L[category.NameKey]</span></div>
+                <div class="sm-emoji-picker__grid">
+                    @foreach (var emoji in category.Emoji)
+                    {
+                        <button type="button" class="sm-emoji-btn" aria-label="@emoji" @onclick="() => PickAsync(emoji)">@emoji</button>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly Dictionary<string, ElementReference> _sections = new();
+
+    private int TabCount => Catalog.Categories.Count + (ShowRecent ? 1 : 0);
+
+    /// <summary>Column of the active tab (where the pill sits).</summary>
+    private int ActiveIndex
+    {
+        get
+        {
+            if (ShowRecent && _active == EmojiCatalog.RecentKey) return 0;
+            var offset = ShowRecent ? 1 : 0;
+            for (var i = 0; i < Catalog.Categories.Count; i++)
+            {
+                if (Catalog.Categories[i].Key == _active) return i + offset;
+            }
+            return 0;
+        }
+    }
+    private ElementReference _scroll;
+    private IReadOnlyList<string> _recent = [];
+    private string _active = EmojiCatalog.RecentKey;
+    private DotNetObjectReference<EmojiPicker>? _self;
+    private JsHandle? _observer;
+    private CancellationTokenSource? _reload;
+
+    /// <summary>Called with the chosen emoji (it is also added to the recent list).</summary>
+    [Parameter] public EventCallback<string> OnPick { get; set; }
+    [Parameter] public bool ShowRecent { get; set; } = true;
+    /// <summary>CSS height of the picker.</summary>
+    [Parameter] public string Height { get; set; } = "340px";
+    [Parameter] public string? Class { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ShowRecent) _active = Catalog.Categories[0].Key;
+        Recents.Changed += OnRecentsChanged;
+        OnDispose(() => Recents.Changed -= OnRecentsChanged);
+        _recent = await Recents.GetAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        _observer = await Js.CreateIntersectionObserverAsync(_scroll, _self, nameof(OnSectionsVisible), "0px 0px -70% 0px");
+        foreach (var (key, element) in _sections) await _observer.InvokeVoidAsync("observe", element, key);
+    }
+
+    [JSInvokable]
+    public void OnSectionsVisible(VisibilityChange[] changes)
+    {
+        var visible = changes.Where(c => c.Visible).Select(c => c.Key).ToList();
+        if (visible.Count == 0) return;
+        var order = OrderOf();
+        var top = visible.OrderBy(k => order.IndexOf(k)).First();
+        if (top == _active) return;
+        _active = top;
+        RequestRender();
+    }
+
+    private List<string> OrderOf()
+    {
+        var order = new List<string>();
+        if (ShowRecent) order.Add(EmojiCatalog.RecentKey);
+        order.AddRange(Catalog.Categories.Select(c => c.Key));
+        return order;
+    }
+
+    private async Task JumpAsync(string key)
+    {
+        _active = key;
+        if (_sections.TryGetValue(key, out var section)) await Js.ScrollIntoViewAsync(section, "start", smooth: false);
+    }
+
+    private async Task PickAsync(string emoji)
+    {
+        await OnPick.InvokeAsync(emoji);
+        await Recents.AddAsync(emoji);
+    }
+
+    private void OnRecentsChanged()
+    {
+        // Do not reshuffle the grid under the user's finger; refresh shortly after picking stops.
+        _reload?.Cancel();
+        var cts = _reload = new CancellationTokenSource();
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(1500, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            if (IsDisposed) return;
+            _recent = await Recents.GetAsync();
+            StateHasChanged();
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _reload?.Cancel();
+        if (_observer is not null) await _observer.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

@@ -1,0 +1,6 @@
+/* Permission prompts (SkyMessage). */
+"NSCameraUsageDescription" = "SkyMessage использует камеру для видеозвонков, видеосообщений и фото, которые вы отправляете.";
+"NSMicrophoneUsageDescription" = "SkyMessage использует микрофон для звонков и голосовых сообщений.";
+"NSContactsUsageDescription" = "SkyMessage находит в вашей телефонной книге людей, которые уже пользуются SkyMessage. Без вашего подтверждения ничего не импортируется.";
+"NSPhotoLibraryAddUsageDescription" = "SkyMessage сохраняет выбранные вами фото и видео в медиатеку.";
+"NSLocalNetworkUsageDescription" = "SkyMessage подключается к серверу в вашей локальной сети, если вы его используете.";

@@ -1,0 +1,11 @@
+* text=auto
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.wav binary
+*.mp3 binary
+*.m4a binary
+*.jar binary

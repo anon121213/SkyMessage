@@ -1,0 +1,80 @@
+@* The phone dock on the root screen (docs/DESIGN.md §7): a frosted capsule floating 12px above the bottom edge with the
+   four areas. A flat gradient pill glides (stretching a little on the way) behind the selected tab, whose icon gives a
+   small bounce. Nothing replays on the first render. *@
+@inherits UiComponentBase
+@inject NavigationService Nav
+@inject IChatListStore ChatList
+@inject HapticFeedback Haptics
+
+<nav class="tab-bar sm-glass" aria-label="@L["nav.main"]" style="--i:@Index">
+    <span class="tab-bar__pill @PillMotion" aria-hidden="true"></span>
+    @foreach (var tab in Tabs)
+    {
+        var active = Current == tab.Section;
+        var fresh = active && _bounceKey > 0;
+        <button type="button" class="tab-bar__item @(active ? "tab-bar__item--active" : null)" aria-current="@(active ? "page" : null)"
+                @onclick="() => Select(tab.Section)">
+            <span @key="@($"icon-{(active ? _bounceKey : 0)}")" class="tab-bar__icon @(fresh ? "tab-bar__icon--bounce" : null)">
+                <Icon Name="@tab.Icon" StrokeWidth="@(active ? 2.3 : 2)" />
+            </span>
+            @if (tab.Section == ShellSection.Chats)
+            {
+                <span class="tab-bar__badge"><Badge Count="ChatList.TotalUnread" Animate="true" /></span>
+            }
+            <span class="tab-bar__label">@L[tab.LabelKey]</span>
+        </button>
+    }
+</nav>
+
+@code {
+    private sealed record Tab(ShellSection Section, string Icon, string LabelKey);
+
+    private static readonly Tab[] Tabs =
+    [
+        new(ShellSection.Chats, IconNames.MessageCircle, "nav.chats"),
+        new(ShellSection.Contacts, IconNames.ContactRound, "nav.contacts"),
+        new(ShellSection.Calls, IconNames.Phone, "nav.calls"),
+        new(ShellSection.Settings, IconNames.Settings, "nav.settings"),
+    ];
+
+    private ShellSection? _shown;
+    private int _bounceKey;
+
+    /// <summary>Area shown as active (the shell passes the area of its root screen); null = the current area.</summary>
+    [Parameter] public ShellSection? Active { get; set; }
+
+    private ShellSection Current => Active ?? Nav.Section;
+
+    private int Index => Math.Max(0, Array.FindIndex(Tabs, t => t.Section == Current));
+
+    // Alternating names restart the jewel's stretch on every change (none on the first render).
+    private string? PillMotion => _bounceKey == 0 ? null : _bounceKey % 2 == 0 ? "tab-bar__pill--a" : "tab-bar__pill--b";
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        RenderOn(h => Nav.Changed += h, h => Nav.Changed -= h);
+    }
+
+    protected override void OnParametersSet() => TrackActive();
+
+    protected override bool ShouldRender()
+    {
+        TrackActive();
+        return true;
+    }
+
+    // A change of the active tab after the first render re-creates its icon with the bounce class (restarts the animation).
+    private void TrackActive()
+    {
+        var current = Current;
+        if (_shown is { } shown && shown != current) _bounceKey++;
+        _shown = current;
+    }
+
+    private void Select(ShellSection section)
+    {
+        if (section != Current) Haptics.Selection();
+        Nav.GoToSection(section);
+    }
+}

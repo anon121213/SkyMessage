@@ -1,0 +1,35 @@
+@* SegmentedControl for settings pickers whose selection slides: one thumb behind the options moves to the chosen one,
+   and its icon bumps (only after the user changed it, not when the page opens). *@
+@typeparam TValue
+
+<div class="seg-slide @(Index < 0 ? "seg-slide--none" : null) @(_changed ? "is-changed" : null)"
+     style="@($"--seg-count:{Math.Max(1, Options.Count)};--seg-index:{Math.Max(0, Index)}")">
+    <SegmentedControl TValue="TValue" Options="Options" Value="Value" ValueChanged="OnChangedAsync" Label="@Label" />
+</div>
+
+@code {
+    private bool _changed;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<TValue>> Options { get; set; } = [];
+    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+
+    private int Index
+    {
+        get
+        {
+            for (var i = 0; i < Options.Count; i++)
+            {
+                if (EqualityComparer<TValue>.Default.Equals(Options[i].Value, Value!)) return i;
+            }
+            return -1;
+        }
+    }
+
+    private Task OnChangedAsync(TValue value)
+    {
+        _changed = true;
+        return ValueChanged.InvokeAsync(value);
+    }
+}

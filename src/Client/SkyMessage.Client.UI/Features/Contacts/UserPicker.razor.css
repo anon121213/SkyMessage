@@ -1,0 +1,67 @@
+.picker {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+}
+
+.picker__search {
+    flex-shrink: 0;
+    padding: 4px 16px 10px;
+}
+
+/* The people picked so far, as chips that pop in. */
+.picker__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-shrink: 0;
+    max-height: 7.5rem;
+    overflow-y: auto;
+    padding: 0 16px 10px;
+}
+
+.picker__chips ::deep .sm-chip {
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 16%, transparent);
+    font-weight: 500;
+}
+
+.picker__list {
+    flex: 1 1 auto;
+    min-height: 12rem;
+    padding: 0 8px 8px;
+}
+
+.picker__heading {
+    padding: 12px 12px 6px;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--sm-text-3);
+}
+
+.picker__list ::deep .picker__row {
+    min-height: 3.75rem;
+    border-radius: 20px;
+}
+
+.picker__list ::deep .picker__row.sm-list-item--selected {
+    background: var(--sm-grad-soft);
+}
+
+.picker__name {
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+    font-size: 0.9875rem;
+    letter-spacing: -0.006em;
+}
+
+.picker__lead {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}

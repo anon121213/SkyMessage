@@ -1,0 +1,15 @@
+@* Loading indicator: a comet — a gradient arc chasing its tail (pure CSS, app.css .sm-spinner). *@
+<span class="sm-spinner @(Inherit ? "sm-spinner--inherit" : null) @Class" style="--size:@Rem" role="status" aria-label="@(Label ?? L["common.loading"])"></span>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    /// <summary>Size in px at 100% font scale.</summary>
+    [Parameter] public double Size { get; set; } = 24;
+    /// <summary>Use the current text color instead of the accent.</summary>
+    [Parameter] public bool Inherit { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Rem => (Size / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "rem";
+}

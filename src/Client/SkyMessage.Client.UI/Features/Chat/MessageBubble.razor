@@ -1,0 +1,570 @@
+@* One row of the message list: a bubble of any type (text, photo/video/album, files, voice, round video, call log,
+   jumbo emoji) with sender, forward header, reply preview, reactions, time and delivery mark, or a centered system
+   line. Re-renders only when its message snapshot, grouping, selection, motion flags or the chat view changes (store
+   snapshots are immutable, so reference checks are enough); a system line also when a user it names loads or its
+   group call starts or ends. Gestures (menu, swipe to reply, double tap to react) are delegated to chat.js through
+   the data-* attributes; parts with a tap action of their own carry data-no-dbltap. *@
+@inherits UiComponentBase
+@using SkyMessage.Client.UI.Features.Media
+@inject IUserStore Users
+@inject FormatService Format
+@inject MessagePreviewFormatter Preview
+@inject IChatListStore ChatList
+
+@if (Message.Type == MessageType.System)
+{
+    <div class="msg-service @(Enter ? "msg-service--enter" : null)" data-key="@KeyText" data-seq="@SeqAttr">
+        <span class="msg-service__pill @(ServiceTarget is not null ? "msg-service__pill--link" : null)" dir="auto" @onclick="ServiceClickAsync">@Preview.FormatSystem(Message)</span>
+        @if (JoinableCallId is { } callId && !View.SelectionMode)
+        {
+            <button type="button" class="msg-service__join" @onclick="() => Controller.JoinCallAsync(callId)">@L["chat.call.join"]</button>
+        }
+    </div>
+}
+else
+{
+    <div class="@RowClass" data-msg data-key="@KeyText" data-seq="@SeqAttr" data-reply="@(CanSwipeReply ? "" : null)" data-react="@(CanReact ? "" : null)"
+         @onclick="RowClickAsync">
+        @* Always present so it can slide in and out with selection mode. *@
+        <span class="msg__check @(Selected ? "msg__check--on" : null)" aria-hidden="true">
+            @if (Selected)
+            {
+                <Icon Name="@IconNames.Check" Size="14" StrokeWidth="3" />
+            }
+        </span>
+        @* Behind the bubble at the row's edge; chat.js grows it with a swipe to reply. *@
+        <span class="msg__reply-hint" data-reply-hint aria-hidden="true"><Icon Name="@IconNames.Reply" Size="18" /></span>
+        @if (Row.AvatarColumn)
+        {
+            <div class="msg__avatar" data-no-dbltap data-swipe-also>
+                @if (Row.ShowAvatar && Message.SenderId is { } senderId)
+                {
+                    <UserAvatar UserId="senderId" Size="34" OnClick="OpenSenderAsync" />
+                }
+            </div>
+        }
+        @* msg__swipe--bubble: a real bubble (not a round note or jumbo emoji) — it gets the lift shadow. *@
+        <div class="msg__swipe @(Kind is BubbleKind.Jumbo or BubbleKind.VideoNote ? null : "msg__swipe--bubble")" data-swipe>
+            @switch (Kind)
+            {
+                case BubbleKind.Jumbo:
+                    @JumboBody
+                    break;
+                case BubbleKind.VideoNote:
+                    @NoteBody
+                    break;
+                default:
+                    @BubbleBody
+                    break;
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private enum BubbleKind
+    {
+        Text,
+        Visual,
+        Files,
+        Voice,
+        VideoNote,
+        Call,
+        Jumbo,
+    }
+
+    private enum MetaPlacement
+    {
+        /// <summary>Floats at the bottom right of the last text line (a hidden copy reserves the room).</summary>
+        Pad,
+        /// <summary>Drawn over the media (no caption).</summary>
+        Overlay,
+        /// <summary>Inside the component's own info line (voice, single file, call log).</summary>
+        Trailing,
+        /// <summary>Own row at the bottom, after the reactions.</summary>
+        Footer,
+    }
+
+    /// <summary>How long a changed delivery mark keeps its animation class (longer than the animation).</summary>
+    private const long StatusAnimMs = 600;
+
+    private MessageItem? _lastItem;
+    private MessageRow? _lastRow;
+    private ChatView? _lastView;
+    private bool _lastSelected;
+    private string? _lastMine;
+    private bool _lastEnter;
+    private bool _lastLifted;
+    private bool _dirty = true;
+    private bool _watchingSystem;
+    /// <summary>Rendered at least once: later changes (reactions, delivery marks) happen in front of the user.</summary>
+    private bool _rendered;
+    private long _statusAnimUntil;
+
+    [Parameter, EditorRequired] public MessageItem Item { get; set; } = default!;
+    [Parameter, EditorRequired] public MessageRow Row { get; set; } = default!;
+    [Parameter, EditorRequired] public ChatView View { get; set; } = default!;
+    [Parameter] public bool Selected { get; set; }
+    /// <summary>My reaction on this message (from the window's MyReactions).</summary>
+    [Parameter] public string? MyReaction { get; set; }
+    /// <summary>Just arrived while the chat is open (sent from here or live): animates in.</summary>
+    [Parameter] public bool Enter { get; set; }
+    /// <summary>Its menu is open: the bubble lifts.</summary>
+    [Parameter] public bool Lifted { get; set; }
+    [CascadingParameter] public ChatController Controller { get; set; } = default!;
+
+    private MessageDto Message => Item.Message;
+    private string KeyText => Item.Key.ToString();
+    private long? SeqAttr => Message.Seq > 0 ? Message.Seq : null;
+    private bool Interactive => !View.SelectionMode;
+    private bool Pending => Item.SendState is MessageSendState.Preparing or MessageSendState.Uploading;
+    private bool CanSwipeReply => View.CanSend && !View.SelectionMode && MessageRules.CanReply(Item);
+    private bool CanReact => View.CanSend && !View.SelectionMode && MessageRules.CanReact(Item);
+    private bool HasReactions => Message.Reactions.Count > 0;
+    private bool HasCaption => !string.IsNullOrEmpty(Message.Text) && Kind is not (BubbleKind.Jumbo or BubbleKind.Call or BubbleKind.Voice or BubbleKind.VideoNote);
+    private bool HasHead => (Row.ShowSender && Message.SenderId is not null) || Message.Forward is not null || Message.ReplyTo is not null;
+
+    private IReadOnlyList<MediaDto> Attachments => Message.Attachments;
+    private IReadOnlyList<LocalAttachmentPreview> Locals => Item.LocalPreviews;
+    private int AttachmentCount => Attachments.Count > 0 ? Attachments.Count : Locals.Count;
+
+    private BubbleKind _kind;
+    private MetaPlacement _placement;
+
+    private BubbleKind Kind => _kind;
+
+    private MetaPlacement Placement => _placement;
+
+    private BubbleKind ComputeKind()
+    {
+        switch (Message.Type)
+        {
+            case MessageType.Photo or MessageType.Video or MessageType.Album:
+                return AttachmentCount > 0 ? BubbleKind.Visual : BubbleKind.Text;
+            case MessageType.File or MessageType.Audio:
+                return AttachmentCount > 0 ? BubbleKind.Files : BubbleKind.Text;
+            case MessageType.Voice:
+                return BubbleKind.Voice;
+            case MessageType.VideoNote:
+                return BubbleKind.VideoNote;
+            case MessageType.Call:
+                return BubbleKind.Call;
+            default:
+                return Message.ReplyTo is null && Message.Forward is null && !HasReactions && MessageTextLayout.JumboEmojiCount(Message.Text) > 0
+                    ? BubbleKind.Jumbo
+                    : BubbleKind.Text;
+        }
+    }
+
+    /// <summary>Where the time goes; needs <see cref="Kind"/> computed first.</summary>
+    private MetaPlacement ComputePlacement()
+    {
+        if (HasReactions) return MetaPlacement.Footer;
+        if (HasCaption || Kind == BubbleKind.Text) return MetaPlacement.Pad;
+        return Kind switch
+        {
+            BubbleKind.Visual => MetaPlacement.Overlay,
+            BubbleKind.Voice or BubbleKind.Call => MetaPlacement.Trailing,
+            BubbleKind.Files => AttachmentCount == 1 ? MetaPlacement.Trailing : MetaPlacement.Footer,
+            _ => MetaPlacement.Footer,
+        };
+    }
+
+    // No tails (docs/DESIGN.md): grouping shows in the corners — consecutive bubbles of one sender tighten the corners
+    // on the sender's side (MessageBubble.razor.css).
+    private string RowClass =>
+        $"msg {(Row.Outgoing ? "msg--out" : "msg--in")} {(Row.FirstInGroup ? "msg--first" : null)} {(Row.LastInGroup ? "msg--last" : null)} " +
+        $"{(Selected ? "msg--selected" : null)} {(Item.IsPending ? "msg--pending" : null)} " +
+        $"{(Item.SendState == MessageSendState.Failed ? "msg--failed" : null)} {(Enter ? "msg--enter" : null)} {(Lifted ? "msg--lifted" : null)}";
+
+    private bool IsBare => Kind == BubbleKind.Visual && !HasCaption && !HasHead && !HasReactions;
+
+    private string BubbleClass =>
+        $"msg__bubble msg__bubble--{Kind.ToString().ToLowerInvariant()} {(IsBare ? "msg__bubble--bare" : null)}";
+
+    /// <summary>The sender's palette color (their avatar's), for names in groups; CSS lightens it on dark bubbles.</summary>
+    private static string SenderStyle(Guid sender) => "--sender:" + AvatarPalette.Color(sender);
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_lastItem, Item) || _lastRow != Row || _lastView != View || _lastSelected != Selected || _lastMine != MyReaction
+            || _lastEnter != Enter || _lastLifted != Lifted)
+            _dirty = true;
+        if (!ReferenceEquals(_lastItem, Item))
+        {
+            _kind = ComputeKind();
+            _placement = ComputePlacement();
+        }
+        // A delivery mark that changes on screen (sent ✓, read ✓✓) animates once.
+        if (_rendered && _lastRow is { } before && before.Status != Row.Status && Row.Status is DeliveryStatus.Sent or DeliveryStatus.Read)
+            _statusAnimUntil = Environment.TickCount64 + StatusAnimMs;
+        _lastItem = Item;
+        _lastRow = Row;
+        _lastView = View;
+        _lastSelected = Selected;
+        _lastMine = MyReaction;
+        _lastEnter = Enter;
+        _lastLifted = Lifted;
+        if (!_watchingSystem && Message.Type == MessageType.System) WatchSystem();
+    }
+
+    protected override bool ShouldRender()
+    {
+        if (!_dirty) return false;
+        _dirty = false;
+        return true;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _rendered = true;
+    }
+
+    private string? StatusAnimClass => Environment.TickCount64 < _statusAnimUntil ? "msg__status--anim" : null;
+
+    /// <summary>
+    /// A system line shows names of users that may not be loaded yet ("Unknown user" until the store fetches them) and
+    /// "Join" only while its group call runs (ChatList's ActiveCallId). Neither is a parameter, so changes of those
+    /// re-render the line here.
+    /// </summary>
+    private void WatchSystem()
+    {
+        _watchingSystem = true;
+        Action<Guid> users = id =>
+        {
+            if (Message.SystemEvent is { } e && (e.ActorId == id || e.TargetUserIds.Contains(id))) Invalidate();
+        };
+        Users.UserChanged += users;
+        OnDispose(() => Users.UserChanged -= users);
+        if (Message.SystemEvent?.Type != SystemEventType.GroupCallStarted) return;
+        var joinable = JoinableCallId;
+        Action chats = () =>
+        {
+            var now = JoinableCallId;
+            if (now == joinable) return;
+            joinable = now;
+            Invalidate();
+        };
+        ChatList.Changed += chats;
+        OnDispose(() => ChatList.Changed -= chats);
+    }
+
+    private void Invalidate()
+    {
+        _dirty = true;
+        RequestRender();
+    }
+
+    // ---- Parts ----
+
+    private RenderFragment BubbleBody => __builder =>
+    {
+        <div class="@BubbleClass">
+            @if (HasHead)
+            {
+                <div class="msg__head">
+                    @if (Row.ShowSender && Message.SenderId is { } sender)
+                    {
+                        <div class="msg__sender" style="@SenderStyle(sender)" data-no-dbltap @onclick="OpenSenderAsync" @onclick:stopPropagation="@Interactive"><UserName UserId="sender" /></div>
+                    }
+                    @if (Message.Forward is { } forward)
+                    {
+                        <div class="msg__fwd" data-no-dbltap @onclick="OpenForwardSourceAsync" @onclick:stopPropagation="@Interactive">
+                            <span class="msg__fwd-icon"><Icon Name="@IconNames.Forward" Size="12" StrokeWidth="2.4" /></span>
+                            <span class="msg__fwd-text"><span class="msg__fwd-label">@L["chat.forwarded"]</span> <strong>@ForwardName(forward)</strong></span>
+                        </div>
+                    }
+                    @if (Message.ReplyTo is { } reply)
+                    {
+                        <ReplyQuote Reply="reply" Class="msg__reply" OnClick="@JumpCallback(reply)" />
+                    }
+                </div>
+            }
+            @switch (Kind)
+            {
+                case BubbleKind.Visual:
+                    @VisualBlock
+                    break;
+                case BubbleKind.Files:
+                    @FilesBlock
+                    break;
+                case BubbleKind.Voice:
+                    <div class="msg__voice" data-no-dbltap>
+                        <VoicePlayer Media="@Attachments.FirstOrDefault()" Local="@Locals.FirstOrDefault()" TrackPlayed="@(!Row.Outgoing)" Outgoing="Row.Outgoing"
+                                     Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync"
+                                     Trailing="@(Placement == MetaPlacement.Trailing ? MetaInline : null)" />
+                    </div>
+                    break;
+                case BubbleKind.Call:
+                    @CallBlock
+                    break;
+            }
+            @if (Kind == BubbleKind.Text || HasCaption)
+            {
+                <div class="msg__text">
+                    <MessageText Text="@Message.Text" Entities="Message.Entities" Interactive="Interactive">
+                        @if (Placement == MetaPlacement.Pad)
+                        {
+                            <span class="msg__meta-pad" aria-hidden="true">@MetaContent</span>
+                        }
+                    </MessageText>
+                </div>
+                @if (Placement == MetaPlacement.Pad)
+                {
+                    <span class="msg__meta">@MetaContent</span>
+                }
+            }
+            @if (Placement == MetaPlacement.Footer)
+            {
+                <div class="msg__footer">
+                    @if (HasReactions)
+                    {
+                        <ReactionsBar Reactions="Message.Reactions" Mine="@MyReaction" Interactive="@(Interactive && !Item.IsPending)" Animate="_rendered" OnToggle="ToggleReactionAsync" />
+                    }
+                    <span class="msg__meta msg__meta--inline">@MetaContent</span>
+                </div>
+            }
+        </div>
+    };
+
+    private RenderFragment VisualBlock => __builder =>
+    {
+        var overlay = Placement == MetaPlacement.Overlay ? MetaOverlay : null;
+        if (AttachmentCount == 1)
+        {
+            var media = Attachments.FirstOrDefault();
+            var local = media is null ? Locals.FirstOrDefault() : null;
+            var aspect = Math.Clamp(media is not null ? AlbumLayout.AspectOf(media) : AlbumLayout.AspectOf(local?.Width, local?.Height), 0.5, 2.2);
+            <div class="msg__media msg__media--single" data-no-dbltap style="--ar:@aspect.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)">
+                <MediaTile Media="media" Local="local" Large="true" Autoplay="View.AutoplayVideos" Interactive="Interactive"
+                           Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync" OnOpen="() => Controller.OpenMediaAsync(Item, 0)" Overlay="overlay" />
+            </div>
+        }
+        else
+        {
+            <div class="msg__media msg__media--album" data-no-dbltap>
+                <AlbumGrid Items="@(Attachments.Count > 0 ? Attachments : null)" Locals="@(Attachments.Count > 0 ? null : Locals)" Interactive="Interactive"
+                           Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync" OnOpen="index => Controller.OpenMediaAsync(Item, index)" Overlay="overlay" />
+            </div>
+        }
+    };
+
+    private RenderFragment FilesBlock => __builder =>
+    {
+        <div class="msg__files" data-no-dbltap>
+            @if (Attachments.Count > 0)
+            {
+                for (var i = 0; i < Attachments.Count; i++)
+                {
+                    var media = Attachments[i];
+                    var last = i == Attachments.Count - 1;
+                    <FileCard @key="media.Id" Media="media" Interactive="Interactive" Trailing="@(last && Placement == MetaPlacement.Trailing ? MetaInline : null)" />
+                }
+            }
+            else
+            {
+                for (var i = 0; i < Locals.Count; i++)
+                {
+                    var local = Locals[i];
+                    var last = i == Locals.Count - 1;
+                    <FileCard Local="local" Pending="@(Item.IsPending)" Progress="Item.Progress" OnCancel="CancelSendAsync"
+                              Trailing="@(last && Placement == MetaPlacement.Trailing ? MetaInline : null)" />
+                }
+            }
+        </div>
+    };
+
+    private RenderFragment CallBlock => __builder =>
+    {
+        var call = Message.Call;
+        var video = call?.IsVideo == true;
+        <div class="msg__call @(Interactive ? "msg__call--link" : null)" data-no-dbltap @onclick="CallBackAsync" @onclick:stopPropagation="@Interactive">
+            <span class="msg__call-icon @(CallMissed ? "msg__call-icon--missed" : null)"><Icon Name="@CallIcon" Size="20" /></span>
+            <div class="msg__call-body">
+                <div class="msg__call-title">@CallTitle</div>
+                <div class="msg__call-sub">
+                    @if (CallSubtitle is { } sub)
+                    {
+                        <span>@sub</span>
+                    }
+                    <span class="msg__call-spacer"></span>
+                    @if (Placement == MetaPlacement.Trailing)
+                    {
+                        @MetaInline
+                    }
+                </div>
+            </div>
+            <span class="msg__call-again" aria-hidden="true"><Icon Name="@(video ? IconNames.Video : IconNames.Phone)" Size="18" /></span>
+        </div>
+    };
+
+    private RenderFragment NoteBody => __builder =>
+    {
+        <div class="msg__note">
+            @if (Message.Forward is not null || Message.ReplyTo is not null)
+            {
+                <div class="msg__note-head">
+                    @if (Message.Forward is { } forward)
+                    {
+                        <div class="msg__fwd msg__fwd--pill">
+                            <span class="msg__fwd-icon"><Icon Name="@IconNames.Forward" Size="12" StrokeWidth="2.4" /></span>
+                            <span class="msg__fwd-text"><span class="msg__fwd-label">@L["chat.forwarded"]</span> <strong>@ForwardName(forward)</strong></span>
+                        </div>
+                    }
+                    @if (Message.ReplyTo is { } reply)
+                    {
+                        <ReplyQuote Reply="reply" Class="msg__reply msg__reply--pill" OnClick="@JumpCallback(reply)" />
+                    }
+                </div>
+            }
+            @* A playable note is role="button" (its own tap): chat.js does not take double taps there. *@
+            <VideoNoteView Media="@Attachments.FirstOrDefault()" Local="@Locals.FirstOrDefault()" TrackPlayed="@(!Row.Outgoing)" Autoplay="View.AutoplayNotes"
+                           Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync" />
+            <div class="msg__note-foot">
+                @if (HasReactions)
+                {
+                    <ReactionsBar Reactions="Message.Reactions" Mine="@MyReaction" Interactive="@(Interactive && !Item.IsPending)" Animate="_rendered" OnToggle="ToggleReactionAsync" />
+                }
+                <span class="msg__meta msg__meta--pill">@MetaContent</span>
+            </div>
+        </div>
+    };
+
+    private RenderFragment JumboBody => __builder =>
+    {
+        <div class="msg__jumbo">
+            @if (Row.ShowSender && Message.SenderId is { } sender)
+            {
+                <div class="msg__sender msg__sender--pill" style="@SenderStyle(sender)"><UserName UserId="sender" /></div>
+            }
+            <div class="msg__jumbo-text msg__jumbo-text--@MessageTextLayout.JumboEmojiCount(Message.Text) sm-emoji">@Message.Text</div>
+            <div class="msg__note-foot">
+                <span class="msg__meta msg__meta--pill">@MetaContent</span>
+            </div>
+        </div>
+    };
+
+    private RenderFragment MetaInline => __builder =>
+    {
+        <span class="msg__meta msg__meta--inline">@MetaContent</span>
+    };
+
+    private RenderFragment MetaOverlay => __builder =>
+    {
+        <span class="msg__meta msg__meta--overlay">@MetaContent</span>
+    };
+
+    private RenderFragment MetaContent => __builder =>
+    {
+        if (Message.EditedAt is not null && !Item.IsPending)
+        {
+            <span class="msg__edited">@L["chat.edited"]</span>
+        }
+        <span class="msg__time sm-nums">@Format.Time(Message.CreatedAt)</span>
+        // Our own delivery marks: a small comet ring while sending, a clock while waiting for the network, a rounded
+        // check once sent and a double one when read; a mark that changes on screen draws itself (msg__status--anim).
+        switch (Row.Status)
+        {
+            case DeliveryStatus.Sending:
+                <span class="msg__status msg__status--wait" title="@L["chat.status.sending"]"><span class="msg__spin" aria-hidden="true"></span></span>
+                break;
+            case DeliveryStatus.Queued:
+                <span class="msg__status msg__status--wait" title="@L["chat.status.queued"]"><Icon Name="@IconNames.Clock" Size="12" StrokeWidth="2.4" /></span>
+                break;
+            case DeliveryStatus.Failed:
+                <span class="msg__status msg__status--failed" title="@L["chat.status.failed"]"><Icon Name="@IconNames.CircleAlert" Size="14" StrokeWidth="2.4" /></span>
+                break;
+            case DeliveryStatus.Sent:
+                <span class="msg__status msg__status--sent @StatusAnimClass" title="@L["chat.status.sent"]">
+                    <svg class="msg__tick" viewBox="0 0 18 12" aria-hidden="true" focusable="false"><path d="M3.6 6.3 7 9.4 14.2 2.5" /></svg>
+                </span>
+                break;
+            case DeliveryStatus.Read:
+                <span class="msg__status msg__status--read @StatusAnimClass" title="@L["chat.status.read"]">
+                    <svg class="msg__tick" viewBox="0 0 18 12" aria-hidden="true" focusable="false"><path d="M1.4 6.3 4.8 9.4 11.6 2.5" /><path class="msg__tick-2" d="M7.8 8 9.3 9.4 16.4 2.5" /></svg>
+                </span>
+                break;
+        }
+    };
+
+    // ---- Calls ----
+
+    private bool CallMissed =>
+        Message.Call is { } call && call.InitiatorId != View.Me && call.Status is CallStatus.Missed or CallStatus.Cancelled or CallStatus.Declined or CallStatus.Busy;
+
+    private string CallIcon
+    {
+        get
+        {
+            if (Message.Call is not { } call) return IconNames.Phone;
+            if (CallMissed) return IconNames.PhoneMissed;
+            if (call.Status is CallStatus.Ringing or CallStatus.Active) return IconNames.PhoneCall;
+            return call.InitiatorId == View.Me ? IconNames.PhoneOutgoing : IconNames.PhoneIncoming;
+        }
+    }
+
+    /// <summary>The call line without the leading emoji of the preview text.</summary>
+    private string CallTitle
+    {
+        get
+        {
+            var text = Preview.FormatCall(Message);
+            var space = text.IndexOf(' ');
+            var line = space > 0 && space <= 3 ? text[(space + 1)..] : text;
+            var dot = line.IndexOf(" · ", StringComparison.Ordinal);
+            return dot > 0 ? line[..dot] : line;
+        }
+    }
+
+    private string? CallSubtitle =>
+        Message.Call is { Status: CallStatus.Ended, DurationSeconds: > 0 } call ? Format.DurationWords(call.DurationSeconds) : null;
+
+    // ---- Service messages ----
+
+    private Guid? ServiceTarget => Message.SystemEvent is { Type: SystemEventType.MessagePinned, MessageId: { } id } ? id : null;
+
+    private Guid? JoinableCallId
+    {
+        get
+        {
+            if (Message.SystemEvent is not { Type: SystemEventType.GroupCallStarted, CallId: { } callId }) return null;
+            return ChatList.Get(View.ChatId)?.ActiveCallId == callId ? callId : null;
+        }
+    }
+
+    // ---- Actions ----
+
+    private string ForwardName(ForwardInfoDto forward) =>
+        forward.FromUserId is { } id && Users.Get(id) is { } user ? user.NameOf(L)
+        : string.IsNullOrWhiteSpace(forward.SenderName) ? L["common.unknownUser"] : forward.SenderName;
+
+    private EventCallback JumpCallback(ReplyPreviewDto reply) =>
+        Interactive && reply.Seq > 0 && !reply.IsDeleted ? EventCallback.Factory.Create(this, () => Controller.JumpToSeqAsync(reply.Seq)) : default;
+
+    private async Task RowClickAsync()
+    {
+        if (View.SelectionMode)
+        {
+            await Controller.ToggleSelectAsync(Item);
+            return;
+        }
+        if (Item.SendState is MessageSendState.Failed or MessageSendState.Queued)
+            await Controller.PendingActionsAsync(Item);
+    }
+
+    private Task ServiceClickAsync() =>
+        Interactive && ServiceTarget is { } target ? Controller.JumpToMessageAsync(target) : Task.CompletedTask;
+
+    private Task OpenSenderAsync() =>
+        Interactive && Message.SenderId is { } sender ? Controller.OpenUserAsync(sender) : Task.CompletedTask;
+
+    private Task OpenForwardSourceAsync() =>
+        Interactive && Message.Forward?.FromUserId is { } user ? Controller.OpenUserAsync(user) : Task.CompletedTask;
+
+    private Task CallBackAsync() =>
+        Interactive ? Controller.CallAsync(Message.Call?.IsVideo == true) : Task.CompletedTask;
+
+    private Task CancelSendAsync() => Controller.CancelSendAsync(Item);
+
+    private Task ToggleReactionAsync(string emoji) => Controller.ToggleReactionAsync(Item, emoji);
+}

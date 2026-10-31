@@ -1,0 +1,345 @@
+@* Full-screen photo/video viewer (an overlay: Back / Escape close it) on a night sky that blurs the page below. Swipe or
+   arrow keys between items, pinch / wheel / double-tap zoom with panning (viewer.js), swipe down to close, tap to hide
+   the chrome: a glass top bar (sender, date, actions) and a bottom stack (counter chip, caption, and for videos our own
+   controls — a glass play orb, a gradient progress line; never the native <video controls>, viewer.js drives them).
+   It opens out of the tapped thumbnail and closes back into it (viewer.js finds it by the media id). Save goes through
+   IMediaDownloadService; forward and "show in chat" are delegated to the owner. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Chat
+@inject IMediaUrlBuilder MediaUrls
+@inject IMediaDownloadService Downloads
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject FormatService Format
+@inject NavigationService Nav
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+@if (_open && Current is { } item)
+{
+    var isVideo = item.IsVideo;
+    <div class="viewer @(_chrome ? null : "viewer--bare") @(isVideo ? "viewer--video" : null)" data-viewer-open data-no-swipe-back role="dialog" aria-modal="true"
+         aria-label="@L["media.viewer.title"]">
+        <div class="viewer__stage" @ref="_stage">
+            <div class="viewer__backdrop"></div>
+            <div class="viewer__track" data-track>
+                @* The frame has the item's proportions: viewer.js flies it between the thumbnail and full size. *@
+                @if (isVideo)
+                {
+                    <div @key="item.Media.Id" class="viewer__frame viewer__frame--video" data-frame style="--ar:@AspectText(item.Media)">
+                        <video class="viewer__video" src="@MediaUrls.ContentUrl(item.Media)" poster="@PosterOf(item.Media)"
+                               autoplay playsinline preload="auto" disablepictureinpicture></video>
+                        @* Shown while the video is paused or has ended (viewer.js sets data-vstate on the viewer). *@
+                        <button type="button" class="viewer__play" data-vplay aria-label="@L["media.viewer.play"]" title="@L["media.viewer.play"]">
+                            <Icon Name="@IconNames.Play" Size="30" Class="viewer__i-play" />
+                            <Icon Name="@IconNames.RotateCcw" Size="28" Class="viewer__i-replay" />
+                        </button>
+                        <span class="viewer__wait" aria-hidden="true"><Spinner Size="46" /></span>
+                    </div>
+                }
+                else
+                {
+                    <div @key="item.Media.Id" class="viewer__frame" data-frame style="--ar:@AspectText(item.Media)">
+                        <div class="viewer__photo" data-zoom>
+                            @if (PosterOf(item.Media) is { } poster)
+                            {
+                                <img class="viewer__img viewer__img--low" src="@poster" alt="" draggable="false" />
+                            }
+                            <img class="viewer__img" src="@MediaUrls.ContentUrl(item.Media)" alt="@Caption(item)" draggable="false" decoding="async" />
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="viewer__top">
+            <div class="viewer__bar">
+                <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Class="viewer__btn" OnClick="CloseAsync" />
+                @if (item.Message.SenderId is { } senderId)
+                {
+                    <UserAvatar UserId="senderId" Size="34" Class="viewer__avatar" />
+                }
+                <div class="viewer__who">
+                    <div class="viewer__name">@SenderName(item)</div>
+                    <div class="viewer__date">@Format.DateTime(item.Message.CreatedAt)</div>
+                </div>
+                <div class="viewer__actions">
+                    @if (OnShowInChat.HasDelegate)
+                    {
+                        <IconButton Icon="@IconNames.MessageCircle" Label="@L["media.showInChat"]" Class="viewer__btn" OnClick="ShowInChatAsync" />
+                    }
+                    @if (OnForward.HasDelegate)
+                    {
+                        <IconButton Icon="@IconNames.Forward" Label="@L["chat.menu.forward"]" Class="viewer__btn" OnClick="ForwardAsync" />
+                    }
+                    <IconButton Icon="@IconNames.Download" Label="@L["media.save"]" Class="viewer__btn" OnClick="SaveAsync" />
+                </div>
+            </div>
+        </div>
+        <div class="viewer__bottom">
+            @if (_items.Count > 1)
+            {
+                <span class="viewer__count sm-nums">@L.Format("media.viewer.position", _index + 1, _items.Count)</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(item.Message.Text))
+            {
+                <div class="viewer__caption" data-no-gesture>
+                    <MessageText Text="@item.Message.Text" Entities="item.Message.Entities" />
+                </div>
+            }
+            @if (isVideo)
+            {
+                @* Our own controls; viewer.js plays/pauses, paints the progress (--vp) and the times, and seeks on drags. *@
+                <div class="viewer__vbar" data-vbar data-no-gesture>
+                    <button type="button" class="viewer__vbtn" data-vplay aria-label="@L["media.viewer.playPause"]" title="@L["media.viewer.playPause"]">
+                        <Icon Name="@IconNames.Play" Size="20" Class="viewer__i-play" />
+                        <Icon Name="@IconNames.Pause" Size="20" Class="viewer__i-pause" />
+                    </button>
+                    <span class="viewer__time sm-nums" data-vcur>0:00</span>
+                    <div class="viewer__scrub" data-vscrub role="slider" tabindex="0" aria-label="@L["media.viewer.seek"]" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <span class="viewer__rail"><span class="viewer__fill"></span></span>
+                        <span class="viewer__knob-track"><span class="viewer__knob"></span></span>
+                    </div>
+                    <span class="viewer__time viewer__time--total sm-nums" data-vdur>@Format.DurationMs(item.Media.DurationMs)</span>
+                </div>
+            }
+        </div>
+        @if (_index > 0)
+        {
+            <button type="button" class="viewer__nav viewer__nav--prev" aria-label="@L["media.viewer.previous"]" title="@L["media.viewer.previous"]" @onclick="() => MoveAsync(-1)">
+                <Icon Name="@IconNames.ChevronLeft" Size="26" />
+            </button>
+        }
+        @if (_index < _items.Count - 1)
+        {
+            <button type="button" class="viewer__nav viewer__nav--next" aria-label="@L["media.viewer.next"]" title="@L["media.viewer.next"]" @onclick="() => MoveAsync(1)">
+                <Icon Name="@IconNames.ChevronRight" Size="26" />
+            </button>
+        }
+    </div>
+}
+
+@code {
+    private ElementReference _stage;
+    private IReadOnlyList<MediaViewerItem> _items = [];
+    private int _index;
+    private bool _open;
+    private bool _chrome = true;
+    private bool _attachPending;
+    // The shown item changed: after the render viewer.js brings it in (from the right when > 0, the left when < 0).
+    private bool _showPending;
+    private int _enterFrom;
+    private bool _closing;
+    private OverlayHandle? _overlay;
+    private JsModule? _module;
+    private JsObject? _gestures;
+    private JsObject? _presses;
+    private DotNetObjectReference<MediaViewer>? _self;
+
+    /// <summary>Forward the message of the shown item.</summary>
+    [Parameter] public EventCallback<MediaViewerItem> OnForward { get; set; }
+    /// <summary>Open the chat at the shown item's message.</summary>
+    [Parameter] public EventCallback<MediaViewerItem> OnShowInChat { get; set; }
+    /// <summary>The viewer opened (true) or closed (false): it covers the screen below completely.</summary>
+    [Parameter] public EventCallback<bool> OnOpenChanged { get; set; }
+
+    public bool IsOpen => _open;
+
+    private MediaViewerItem? Current => _index >= 0 && _index < _items.Count ? _items[_index] : null;
+
+    private string? CurrentId => Current?.Media.Id.ToString();
+
+    private bool HasPrevious => _index > 0;
+
+    private bool HasNext => _index < _items.Count - 1;
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => Current?.Message.SenderId == id);
+    }
+
+    public async Task OpenAsync(IReadOnlyList<MediaViewerItem> items, int index)
+    {
+        if (items.Count == 0) return;
+        _items = items;
+        _index = Math.Clamp(index, 0, items.Count - 1);
+        _chrome = true;
+        if (_open)
+        {
+            _enterFrom = 0;
+            _showPending = true;
+            StateHasChanged();
+            return;
+        }
+        _open = true;
+        _attachPending = true;
+        StateHasChanged();
+        await OnOpenChanged.InvokeAsync(true);
+        _overlay = await Nav.OpenOverlayAsync(() => InvokeAsync(async () =>
+        {
+            // Back / Escape: the picture still flies home first.
+            _overlay = null;
+            await PlayCloseAsync();
+            await HideAsync();
+        }));
+        if (!_open)
+        {
+            var overlay = _overlay;
+            _overlay = null;
+            if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+        }
+    }
+
+    public async Task CloseAsync()
+    {
+        if (!_open || _closing) return;
+        await PlayCloseAsync();
+        await HideAsync();
+        var overlay = _overlay;
+        _overlay = null;
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+    }
+
+    /// <summary>The picture flies back into its thumbnail (or fades) before the viewer goes; instant with reduced motion.</summary>
+    private async Task PlayCloseAsync()
+    {
+        if (!_open || _closing || _gestures is not { } gestures) return;
+        _closing = true;
+        try
+        {
+            await gestures.InvokeAsync<bool>("close", CurrentId);
+        }
+        finally
+        {
+            _closing = false;
+        }
+    }
+
+    private async Task HideAsync()
+    {
+        if (!_open) return;
+        _open = false;
+        _attachPending = false;
+        _showPending = false;
+        if (_gestures is not null)
+        {
+            await _gestures.DisposeAsync();
+            _gestures = null;
+        }
+        StateHasChanged();
+        await OnOpenChanged.InvokeAsync(false);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Where presses go down tells which copy of a thumbnail was tapped; it also loads viewer.js ahead, so the
+            // first open can start growing out of its thumbnail right away.
+            _module ??= new JsModule(JS, JsModule.Viewer);
+            _presses = await _module.AttachAsync("track");
+        }
+        if (!_open) return;
+        if (_attachPending)
+        {
+            _attachPending = false;
+            _showPending = false;
+            _self ??= DotNetObjectReference.Create(this);
+            _module ??= new JsModule(JS, JsModule.Viewer);
+            _gestures = await _module.AttachAsync("attach", _stage, _self, new { mediaId = CurrentId, hasPrev = HasPrevious, hasNext = HasNext });
+            if (!_open && _gestures is not null)
+            {
+                await _gestures.DisposeAsync();
+                _gestures = null;
+            }
+            return;
+        }
+        if (_showPending && _gestures is not null)
+        {
+            _showPending = false;
+            var from = _enterFrom;
+            _enterFrom = 0;
+            await _gestures.InvokeVoidAsync("show", from, CurrentId, HasPrevious, HasNext);
+        }
+    }
+
+    [JSInvokable]
+    public Task OnNavigate(int delta) => InvokeAsync(() => MoveAsync(delta));
+
+    [JSInvokable]
+    public Task OnDismiss() => InvokeAsync(CloseAsync);
+
+    [JSInvokable]
+    public Task OnTap() => InvokeAsync(() =>
+    {
+        _chrome = !_chrome;
+        StateHasChanged();
+    });
+
+    private Task MoveAsync(int delta)
+    {
+        var next = _index + Math.Sign(delta);
+        if (next < 0 || next >= _items.Count) return Task.CompletedTask;
+        _index = next;
+        _enterFrom = Math.Sign(delta);
+        _showPending = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Current is not { } item) return;
+        try
+        {
+            if (await Downloads.SaveToDeviceAsync(item.Media)) Toasts.Success(L["media.saved"]);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task ForwardAsync()
+    {
+        if (Current is not { } item) return;
+        await OnForward.InvokeAsync(item);
+    }
+
+    private async Task ShowInChatAsync()
+    {
+        if (Current is not { } item) return;
+        await CloseAsync();
+        await OnShowInChat.InvokeAsync(item);
+    }
+
+    private string SenderName(MediaViewerItem item)
+    {
+        if (item.Message.SenderId is not { } sender) return "";
+        if (sender == Auth.UserId) return L["common.you"];
+        return Users.NameOf(sender, L);
+    }
+
+    private string Caption(MediaViewerItem item) =>
+        string.IsNullOrWhiteSpace(item.Message.Text) ? L["message.preview.photo"] : MessagePreviewFormatter.OneLine(item.Message.Text, 120);
+
+    private string? PosterOf(MediaDto media) =>
+        media.HasThumbnail ? MediaUrls.ThumbnailUrl(media.Id) : MediaUrls.MiniThumbnailDataUrl(media);
+
+    private static string AspectText(MediaDto media) =>
+        Math.Clamp(AlbumLayout.AspectOf(media), 0.1, 10).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_gestures is not null) await _gestures.DisposeAsync();
+        if (_presses is not null) await _presses.DisposeAsync();
+        if (_overlay is { IsOpen: true } overlay) await overlay.CloseAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

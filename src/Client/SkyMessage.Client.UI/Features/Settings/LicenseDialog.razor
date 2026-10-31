@@ -1,0 +1,73 @@
+@* DialogService content: the full text of a third-party license (static file or embedded), shown as plain text. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject LinkService Links
+@inject ILogger<LicenseDialog> Logger
+
+<div class="license">
+    <div class="license__meta">
+        <span class="sm-list-item__icon license__tile" style="--icon-bg:@SettingsTones.Mauve"><Icon Name="@IconNames.ScrollText" /></span>
+        <div class="license__who">
+            <div class="license__name">@Info.License</div>
+            <div class="sm-caption">@Info.Copyright</div>
+            @if (Info.NoteKey is not null)
+            {
+                <div class="sm-caption">@L[Info.NoteKey]</div>
+            }
+        </div>
+    </div>
+    @if (Info.Link is not null)
+    {
+        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.ExternalLink" Class="license__link" OnClick="OpenLinkAsync">@L["settings.licenses.openTerms"]</Button>
+    }
+    @if (_loading)
+    {
+        <div class="sm-center sm-p-l"><Spinner /></div>
+    }
+    else if (_text is not null)
+    {
+        <pre class="license__text">@_text</pre>
+    }
+    else if (Info.Link is null)
+    {
+        <p class="sm-caption">@L["settings.licenses.unavailable"]</p>
+    }
+    @if (_extra is not null)
+    {
+        <h4 class="license__heading">@L["settings.licenses.bundled"]</h4>
+        <pre class="license__text">@_extra</pre>
+    }
+</div>
+
+@code {
+    private MediaDevicesJs? _files;
+    private string? _text;
+    private string? _extra;
+    private bool _loading = true;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public LicenseInfo Info { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _text = Info.Text;
+        if (Info.TextUrl is not null || Info.ExtraUrl is not null)
+        {
+            _files = new MediaDevicesJs(JS, Logger);
+            if (Info.TextUrl is not null) _text = await _files.FetchTextAsync(Info.TextUrl);
+            if (Info.ExtraUrl is not null) _extra = await _files.FetchTextAsync(Info.ExtraUrl);
+        }
+        _loading = false;
+    }
+
+    private async Task OpenLinkAsync()
+    {
+        if (Info.Link is not null) await Links.OpenAsync(Info.Link, Info.Link);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_files is not null) await _files.DisposeAsync();
+    }
+}

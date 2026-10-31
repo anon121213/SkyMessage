@@ -1,0 +1,58 @@
+@* Several photos/videos of one message as justified rows of 1–3 tiles (see AlbumLayout). Pending albums show the
+   local previews with one progress ring for the whole message. *@
+@using System.Globalization
+
+<div class="album @Class">
+    @foreach (var row in _rows)
+    {
+        <div class="album__row" style="aspect-ratio:@Num(row.Aspect)">
+            @foreach (var tile in row.Tiles)
+            {
+                var index = tile.Index;
+                <div class="album__cell" style="flex:@Num(tile.Aspect) 1 0%">
+                    <MediaTile Media="MediaAt(index)" Local="LocalAt(index)" Small="@(row.Tiles.Count > 1)" Interactive="Interactive"
+                               OnOpen="() => OnOpen.InvokeAsync(index)" />
+                </div>
+            }
+        </div>
+    }
+    @if (Pending)
+    {
+        <div class="album__progress">
+            <ProgressRing Value="Progress" Size="52" Indeterminate="@(Progress <= 0.01)" OnCancel="OnCancel" />
+        </div>
+    }
+    @Overlay
+</div>
+
+@code {
+    private IReadOnlyList<AlbumRow> _rows = [];
+    private object? _laidOutFor;
+
+    [Parameter] public IReadOnlyList<MediaDto>? Items { get; set; }
+    [Parameter] public IReadOnlyList<LocalAttachmentPreview>? Locals { get; set; }
+    [Parameter] public bool Pending { get; set; }
+    [Parameter] public double Progress { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<int> OnOpen { get; set; }
+    [Parameter] public bool Interactive { get; set; } = true;
+    [Parameter] public RenderFragment? Overlay { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        object? source = Items is { Count: > 0 } ? Items : Locals;
+        if (ReferenceEquals(source, _laidOutFor)) return;
+        _laidOutFor = source;
+        var aspects = Items is { Count: > 0 } items
+            ? items.Select(AlbumLayout.AspectOf).ToList()
+            : (Locals ?? []).Select(l => AlbumLayout.AspectOf(l.Width, l.Height)).ToList();
+        _rows = AlbumLayout.Compute(aspects);
+    }
+
+    private MediaDto? MediaAt(int index) => Items is { } items && index < items.Count ? items[index] : null;
+
+    private LocalAttachmentPreview? LocalAt(int index) => Items is { Count: > 0 } ? null : Locals is { } locals && index < locals.Count ? locals[index] : null;
+
+    private static string Num(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+}

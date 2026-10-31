@@ -1,0 +1,926 @@
+@* The scrolling message list of a chat. Renders a slice of the store's window (bounded DOM, extended both ways as the
+   user scrolls, loading older/newer pages at the ends), date chips, the "Unread messages" divider, the scroll-down
+   and mention buttons. chat.js keeps the visual position stable and reports what is visible; read marks go out only
+   for confirmed messages actually on screen while the chat is in front and the app is in foreground. Messages that
+   arrive while the chat is open (sent from here, or live) animate in; opening, paging, jumps and catch-ups do not. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Media
+@inject IMessageStore Messages
+@inject IChatListStore ChatList
+@inject IAuthService Auth
+@inject IAppLifecycle Lifecycle
+@inject IRealtimeService Realtime
+@inject ICallService Calls
+@inject ISettingsService Settings
+@inject IMediaUrlBuilder MediaUrls
+@inject IAccountLocalStore LocalStore
+@inject FormatService Format
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+@inject ILogger<MessageList> Logger
+
+@{
+    BuildRows();
+}
+<div class="mlist @(SelectionMode ? "mlist--selecting" : null)" data-selecting="@(SelectionMode ? "" : null)">
+    @* Paint servers for the list's progress rings (uploads, downloads, round notes): referenced from CSS as
+       url(#sm-chat-grad) with a plain color fallback. Not display:none — hidden gradients do not paint. *@
+    <svg class="mlist__defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="sm-chat-grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" style="stop-color:var(--sm-accent)" />
+                <stop offset="1" style="stop-color:var(--sm-accent-2)" />
+            </linearGradient>
+            <linearGradient id="sm-chat-grad-light" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#FFFFFF" />
+                <stop offset="1" stop-color="#F2C9FF" />
+            </linearGradient>
+        </defs>
+    </svg>
+    <div class="mlist__scroller" @ref="_scroller">
+        @* The day of the topmost visible message while its own chip is scrolled away (text and visibility: chat.js). *@
+        <div class="mlist__float" data-float-date aria-hidden="true"><span class="mlist__date-chip">&nbsp;</span></div>
+        <div class="mlist__content" @ref="_content" data-voice-scope>
+            @if (ShowTopLoader)
+            {
+                <div class="mlist__loader" aria-hidden="@(!State.IsLoadingBefore)">
+                    @if (State.IsLoadingBefore || _busyUp)
+                    {
+                        <Spinner Size="22" />
+                    }
+                </div>
+            }
+            else if (_rows.Count > 0)
+            {
+                <div class="mlist__start"></div>
+            }
+            @foreach (var row in _rows)
+            {
+                switch (row.Kind)
+                {
+                    case RowKind.Date:
+                        <div @key="row.Key" class="mlist__date" data-date><span class="mlist__date-chip">@row.Text</span></div>
+                        break;
+                    case RowKind.Unread:
+                        <div @key="row.Key" class="mlist__unread @(_dividerFading ? "mlist__unread--out" : null)" data-key="unread"><span>@L["chat.unread"]</span></div>
+                        break;
+                    default:
+                        var item = row.Item!;
+                        <MessageBubble @key="item.Key" Item="item" Row="row.Row!" View="_view" Selected="@(Selected?.Contains(item.Key) == true)"
+                                       MyReaction="@MyReactionOf(item)" Enter="@_entering.ContainsKey(item.Key)" Lifted="@(LiftedKey == item.Key)" />
+                        break;
+                }
+            }
+            @if (ShowBottomLoader)
+            {
+                <div class="mlist__loader">
+                    @if (State.IsLoadingAfter || _busyDown)
+                    {
+                        <Spinner Size="22" />
+                    }
+                </div>
+            }
+            else if (!SelectionMode && _rows.Count > 0 && ChatType != ChatType.Saved)
+            {
+                <TypingBubble ChatId="ChatId" Group="@(ChatType == ChatType.Group)" />
+            }
+            @if (State.IsInitialized && State.Items.Count == 0 && !State.HasMoreBefore)
+            {
+                var saved = ChatType == ChatType.Saved;
+                <div class="mlist__empty">
+                    <div class="mlist__empty-card">
+                        @* Our own little drawing, flat: a pale cloud with the sun peeking out behind it and a waving hand on
+                           it (a bookmark in Saved Messages). *@
+                        <div class="mlist__art" aria-hidden="true">
+                            <svg class="mlist__art-sky" viewBox="0 0 160 108" focusable="false">
+                                <circle class="mlist__art-sun" cx="116" cy="34" r="23" />
+                                <g class="mlist__art-cloud">
+                                    <circle cx="50" cy="66" r="25" />
+                                    <circle cx="82" cy="50" r="33" />
+                                    <circle cx="117" cy="68" r="21" />
+                                    <rect x="25" y="62" width="114" height="34" rx="17" />
+                                </g>
+                            </svg>
+                            @if (saved)
+                            {
+                                <span class="mlist__art-face"><Icon Name="@IconNames.Bookmark" Size="26" StrokeWidth="2.2" /></span>
+                            }
+                            else
+                            {
+                                <span class="mlist__art-face mlist__art-face--wave sm-emoji">👋</span>
+                            }
+                        </div>
+                        <div class="mlist__empty-title">@(saved ? L["chat.empty.savedTitle"] : L["chat.empty.title"])</div>
+                        <div class="mlist__empty-text">@(saved ? L["chat.empty.savedText"] : L["chat.empty.text"])</div>
+                        @if (!saved && CanSend && OnGreet.HasDelegate)
+                        {
+                            <button type="button" class="mlist__wave" @onclick="() => OnGreet.InvokeAsync()">
+                                <span class="mlist__wave-hand sm-emoji">👋</span> @L["chat.empty.wave"]
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+            else if (!State.IsInitialized && State.Items.Count == 0)
+            {
+                <div class="mlist__skeleton" aria-hidden="true">
+                    @for (var i = 0; i < 6; i++)
+                    {
+                        <div class="mlist__ghost @(i % 3 == 1 ? "mlist__ghost--out" : null)" style="width:@(35 + (i * 17) % 40)%"></div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    @* Both buttons stay in the DOM and scale in/out (hidden ones are inert); the mention button sits above the
+       scroll-down button and drops into its place while that one is hidden. *@
+    @{
+        var showDown = ShowScrollDown && !SelectionMode;
+        var showMention = MentionCount > 0 && !SelectionMode;
+    }
+    <div class="mlist__fabs @(showDown ? "mlist__fabs--down" : null)">
+        <button type="button" class="mlist__fab mlist__fab--mention @(showMention ? null : "mlist__fab--hidden")" title="@L["chat.jump.mention"]"
+                aria-label="@L["chat.jump.mention"]" aria-hidden="@(showMention ? null : "true")" tabindex="@(showMention ? null : "-1")" @onclick="JumpToMentionAsync">
+            <Icon Name="@IconNames.AtSign" Size="20" />
+            @if (MentionCount > 0)
+            {
+                <span class="mlist__fab-badge">@FormatService.BadgeCount(MentionCount)</span>
+            }
+        </button>
+        <button type="button" class="mlist__fab @(showDown ? null : "mlist__fab--hidden")" title="@L["chat.jump.latest"]" aria-label="@L["chat.jump.latest"]"
+                aria-hidden="@(showDown ? null : "true")" tabindex="@(showDown ? null : "-1")" @onclick="() => ScrollToLatestAsync(true)">
+            <Icon Name="@IconNames.ChevronDown" Size="22" />
+            @if (UnreadCount > 0)
+            {
+                @* Bumps when the count grows (a new message below); two class names restart the animation. *@
+                <span class="mlist__fab-badge @BadgeBumpClass">@FormatService.BadgeCount(UnreadCount)</span>
+            }
+        </button>
+    </div>
+</div>
+
+@code {
+    private const int InitialCount = 50;
+    private const int Step = 40;
+    private const int MaxRendered = 220;
+    private static readonly TimeSpan GroupWindow = TimeSpan.FromMinutes(5);
+
+    private enum RowKind
+    {
+        Message,
+        Date,
+        Unread,
+    }
+
+    private sealed record ListRow(RowKind Kind, object Key, MessageItem? Item = null, MessageRow? Row = null, string? Text = null);
+
+    private ElementReference _scroller;
+    private ElementReference _content;
+    private JsModule? _module;
+    private JsObject? _list;
+    private JsObject? _autoplay;
+    private PlayerBridge? _player;
+    private DotNetObjectReference<MessageList>? _self;
+    private List<ListRow> _rows = [];
+    private ChatView _view = default!;
+    private int _mediaVersion;
+    private double _rate = 1;
+    private bool _autoplayEnabled;
+    private bool _inCall;
+
+    // Slice of the window that is rendered (by key, with the seq as a fallback when a message vanished).
+    private Guid? _startKey;
+    private long _startSeq;
+    private Guid? _endKey;
+    private long _endSeq;
+
+    private ViewportReport? _report;
+    private bool _atBottom = true;
+    private bool _busyUp;
+    private bool _busyDown;
+    private long _markedSeq;
+    private long _lastMentionSeq;
+    private bool _positioned;
+    private bool _dividerHidden;
+    private bool _dividerFading;
+    private bool _lastActive = true;
+    private (string Key, string Block, bool Highlight, int Tries)? _pendingScroll;
+    private bool? _pendingBottom;
+
+    // Enter motion: keys held at the last render, rows animating in (key → start tick), and a quiet period after
+    // opening, jumps and catch-ups during which nothing animates (docs/MOTION.md: animate changes, not loading).
+    private const long EnterMs = 700;
+    private const long QuietMs = 700;
+    /// <summary>More arrivals than this in one render are a catch-up (reconnect, resync), not live messages.</summary>
+    private const int MaxEntering = 3;
+    private readonly HashSet<Guid> _knownKeys = [];
+    private readonly Dictionary<Guid, long> _entering = [];
+    private long _knownMaxSeq;
+    private bool _knownLive;
+    private long _quietUntil;
+
+    // Scroll-down badge: bumps when the unread count grows.
+    private int _lastUnread;
+    private int _badgeBumps;
+
+    [Parameter, EditorRequired] public Guid ChatId { get; set; }
+    /// <summary>The chat summary (unread counters, read marks of others, permissions).</summary>
+    [Parameter] public ChatSummaryDto? Chat { get; set; }
+    [Parameter] public bool SelectionMode { get; set; }
+    [Parameter] public IReadOnlySet<Guid>? Selected { get; set; }
+    /// <summary>False while the chat is covered by another page: no read marks, no autoplay.</summary>
+    [Parameter] public bool Active { get; set; } = true;
+    /// <summary>The message whose menu is open: its bubble lifts.</summary>
+    [Parameter] public Guid? LiftedKey { get; set; }
+    /// <summary>Empty chat: the "wave" button.</summary>
+    [Parameter] public EventCallback OnGreet { get; set; }
+    [CascadingParameter] public ChatController Controller { get; set; } = default!;
+
+    private ChatMessagesState State => Messages.GetState(ChatId);
+    private ChatType ChatType => Chat?.Type ?? ChatType.Private;
+    private bool CanSend => Chat?.CanSendMessages() ?? true;
+    private int UnreadCount => Chat?.UnreadCount ?? 0;
+    private int MentionCount => Chat?.UnreadMentionCount ?? 0;
+    private bool IsLive => _endKey is null;
+    private bool ShowScrollDown => !_atBottom || !IsLive || State.HasMoreAfter;
+    private bool ShowTopLoader => State.HasMoreBefore || (_rows.Count > 0 && FirstRenderedIndex > 0);
+    private bool ShowBottomLoader => !IsLive || State.HasMoreAfter;
+    private int FirstRenderedIndex { get; set; }
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Messages.ChatChanged += h, h => Messages.ChatChanged -= h, id => id == ChatId);
+        Action<Guid, long> jump = (chatId, seq) =>
+        {
+            if (chatId == ChatId) _ = InvokeAsync(() => FocusSeq(seq, highlight: true));
+        };
+        Messages.JumpRequested += jump;
+        OnDispose(() => Messages.JumpRequested -= jump);
+
+        Action urls = () =>
+        {
+            Interlocked.Increment(ref _mediaVersion);
+            RequestRender();
+        };
+        MediaUrls.Changed += urls;
+        OnDispose(() => MediaUrls.Changed -= urls);
+
+        Action<bool> foreground = isForeground =>
+        {
+            // Messages caught up after coming back are not "arriving now".
+            if (isForeground) Quiet(QuietMs + 500);
+            _ = InvokeAsync(RefreshAsync);
+        };
+        Lifecycle.ForegroundChanged += foreground;
+        OnDispose(() => Lifecycle.ForegroundChanged -= foreground);
+
+        Action sync = () => Quiet(QuietMs);
+        Realtime.SyncStateChanged += sync;
+        OnDispose(() => Realtime.SyncStateChanged -= sync);
+
+        Action settings = () => _ = InvokeAsync(ApplySettingsAsync);
+        Settings.Changed += settings;
+        OnDispose(() => Settings.Changed -= settings);
+
+        _inCall = InCall;
+        Action calls = () => _ = InvokeAsync(PauseForCallAsync);
+        Calls.Changed += calls;
+        OnDispose(() => Calls.Changed -= calls);
+
+        _rate = Settings.Current.Chats.VoicePlaybackRate;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_list is null || Active == _lastActive) return;
+        _lastActive = Active;
+        _ = SyncActiveAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            _module = new JsModule(JS, JsModule.Chat);
+            _list = await _module.AttachAsync("attachList", _scroller, _content, _self, new { stick = true, swipe = true });
+            _player = new PlayerBridge(JS, PlayedMediaStore.For(LocalStore, Auth), OnPlaybackErrorAsync);
+            await _player.InitAsync(_rate);
+            _autoplayEnabled = AutoplayAllowed;
+            _autoplay = await _player.ObserveAsync(_content, _autoplayEnabled);
+            _lastActive = Active;
+            if (!Active) await _list.InvokeVoidAsync("setActive", false);
+        }
+        if (_list is null || !_list.IsActive) return;
+
+        if (_pendingScroll is { } scroll)
+        {
+            _pendingScroll = null;
+            var done = await _list.InvokeAsync<bool>("scrollToKey", scroll.Key, scroll.Block, scroll.Highlight);
+            if (!done && scroll.Tries < 3)
+            {
+                _pendingScroll = scroll with { Tries = scroll.Tries + 1 };
+                StateHasChanged();
+            }
+        }
+        else if (_pendingBottom is { } smooth)
+        {
+            _pendingBottom = null;
+            await _list.InvokeVoidAsync("scrollToBottom", smooth);
+        }
+    }
+
+    // ---- Rows ----
+
+    private void BuildRows()
+    {
+        var state = State;
+        var items = state.Items;
+        var me = Auth.UserId ?? Guid.Empty;
+        var chat = Chat;
+        TrackArrivals(state);
+        TrackUnread();
+        _view = new ChatView(
+            ChatId,
+            ChatType,
+            me,
+            CanSend,
+            SelectionMode,
+            Settings.Current.Chats.AutoplayVideoNotes,
+            Settings.Current.Chats.AutoplayVideos,
+            _mediaVersion);
+
+        var rows = new List<ListRow>(Math.Min(items.Count, MaxRendered) + 16);
+        if (items.Count == 0)
+        {
+            FirstRenderedIndex = 0;
+            _rows = rows;
+            return;
+        }
+
+        var (start, end) = ResolveSlice(items);
+        // Live at the bottom: drop the oldest rows so the DOM stays bounded (the list keeps its position).
+        if (IsLive && _atBottom && end - start + 1 > MaxRendered) start = end - MaxRendered + 1;
+        RememberStart(items, start);
+        if (!IsLive) RememberEnd(items, end);
+        FirstRenderedIndex = start;
+
+        var group = ChatType == ChatType.Group;
+        var unreadSeq = _dividerHidden ? null : state.FirstUnreadSeq;
+        var unreadPlaced = false;
+        DateTime? day = null;
+        var days = new HashSet<DateTime>();
+        for (var i = start; i <= end; i++)
+        {
+            var item = items[i];
+            var message = item.Message;
+            var date = message.CreatedAt.ToLocalTime().Date;
+            // Pending items sort after confirmed ones whatever their time: one from an earlier day (failed or queued
+            // since then) stays under the current chip instead of opening that day again.
+            if (item.IsPending && day is { } current && date < current) date = current;
+            if (day != date)
+            {
+                day = date;
+                // A day can still come back (server clock, a DST switch at midnight). Sibling keys must stay unique
+                // (a duplicate makes the render throw), so a repeated day is keyed by its first message.
+                var key = "d" + date.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+                rows.Add(new ListRow(RowKind.Date, days.Add(date) ? key : key + ":" + item.Key, Text: Format.DateChip(message.CreatedAt)));
+            }
+            if (!unreadPlaced && unreadSeq is { } firstUnread && message.Seq > 0 && message.Seq >= firstUnread && message.SenderId != me)
+            {
+                unreadPlaced = true;
+                if (i > 0 || !state.HasMoreBefore || message.Seq == firstUnread) rows.Add(new ListRow(RowKind.Unread, "unread"));
+            }
+            rows.Add(new ListRow(RowKind.Message, item.Key, item));
+        }
+
+        // Grouping needs neighbours, so it runs after the rows exist.
+        for (var r = 0; r < rows.Count; r++)
+        {
+            if (rows[r].Kind != RowKind.Message) continue;
+            var item = rows[r].Item!;
+            var message = item.Message;
+            var outgoing = message.SenderId == me && message.Type != MessageType.System;
+            var previous = r > 0 && rows[r - 1].Kind == RowKind.Message ? rows[r - 1].Item : null;
+            var next = r + 1 < rows.Count && rows[r + 1].Kind == RowKind.Message ? rows[r + 1].Item : null;
+            var first = previous is null || !SameGroup(previous.Message, message);
+            var last = next is null || !SameGroup(message, next.Message);
+            var row = new MessageRow(
+                outgoing,
+                first,
+                last,
+                ShowSender: group && !outgoing && first,
+                ShowAvatar: group && !outgoing && last,
+                AvatarColumn: group && !outgoing,
+                Status: StatusOf(item, chat, outgoing));
+            rows[r] = rows[r] with { Row = row };
+        }
+        _rows = rows;
+    }
+
+    private static bool SameGroup(MessageDto a, MessageDto b) =>
+        a.Type != MessageType.System && b.Type != MessageType.System
+        && a.SenderId == b.SenderId
+        && a.CreatedAt.ToLocalTime().Date == b.CreatedAt.ToLocalTime().Date
+        && (b.CreatedAt - a.CreatedAt).Duration() <= GroupWindow;
+
+    private DeliveryStatus StatusOf(MessageItem item, ChatSummaryDto? chat, bool outgoing)
+    {
+        if (!outgoing || ChatType == ChatType.Saved || item.Message.Type == MessageType.Call) return item.IsPending ? PendingStatus(item) : DeliveryStatus.None;
+        if (item.IsPending) return PendingStatus(item);
+        return chat is not null && item.Message.Seq <= chat.OthersLastReadSeq ? DeliveryStatus.Read : DeliveryStatus.Sent;
+    }
+
+    private static DeliveryStatus PendingStatus(MessageItem item) => item.SendState switch
+    {
+        MessageSendState.Failed => DeliveryStatus.Failed,
+        MessageSendState.Queued => DeliveryStatus.Queued,
+        MessageSendState.Sent => DeliveryStatus.Sent,
+        _ => DeliveryStatus.Sending,
+    };
+
+    private string? MyReactionOf(MessageItem item) =>
+        State.MyReactions.TryGetValue(item.Message.Id, out var emoji) ? emoji : null;
+
+    // ---- Motion ----
+
+    /// <summary>
+    /// Marks the rows that just appeared while the chat is open: my pending messages, and messages newer than anything
+    /// held before that arrive while the window sits at the newest message. Opening, history pages, jumps, catch-ups
+    /// (more than <see cref="MaxEntering"/> at once) and re-renders stay still; a pending message keeps its key when
+    /// confirmed, so it never animates twice.
+    /// </summary>
+    private void TrackArrivals(ChatMessagesState state)
+    {
+        var now = Environment.TickCount64;
+        if (_entering.Count > 0)
+        {
+            // Done animating: a row re-created later (scrolled out of the slice and back) must stay still.
+            foreach (var (key, at) in _entering.ToList())
+                if (now - at > EnterMs) _entering.Remove(key);
+        }
+        var items = state.Items;
+        var live = state.IsInitialized && !state.HasMoreAfter;
+        var animate = _positioned && _knownLive && live && IsLive && Active && Lifecycle.IsForeground && !Realtime.IsSyncing
+                      && now >= Interlocked.Read(ref _quietUntil);
+        List<Guid>? fresh = null;
+        long maxSeq = 0;
+        foreach (var item in items)
+        {
+            var seq = item.Message.Seq;
+            if (seq > maxSeq) maxSeq = seq;
+            if (animate && !_knownKeys.Contains(item.Key) && (item.IsPending || seq > _knownMaxSeq)) (fresh ??= []).Add(item.Key);
+        }
+        if (fresh is { Count: <= MaxEntering })
+            foreach (var key in fresh) _entering[key] = now;
+        _knownKeys.Clear();
+        foreach (var item in items) _knownKeys.Add(item.Key);
+        _knownMaxSeq = maxSeq;
+        _knownLive = live;
+    }
+
+    /// <summary>Nothing animates in for a while (thread-safe: realtime and lifecycle events come from any thread).</summary>
+    private void Quiet(long ms)
+    {
+        var until = Environment.TickCount64 + ms;
+        long seen;
+        do
+        {
+            seen = Interlocked.Read(ref _quietUntil);
+            if (seen >= until) return;
+        }
+        while (Interlocked.CompareExchange(ref _quietUntil, until, seen) != seen);
+    }
+
+    /// <summary>A new unread message below (not the count the chat opened with, nor reads going out) bumps the badge.</summary>
+    private void TrackUnread()
+    {
+        var unread = UnreadCount;
+        if (_positioned && unread > _lastUnread) _badgeBumps++;
+        _lastUnread = unread;
+    }
+
+    private string? BadgeBumpClass => _badgeBumps == 0 ? null : _badgeBumps % 2 == 0 ? "mlist__fab-badge--bump-b" : "mlist__fab-badge--bump-a";
+
+    // ---- Slice ----
+
+    private (int Start, int End) ResolveSlice(IReadOnlyList<MessageItem> items)
+    {
+        var count = items.Count;
+        var end = count - 1;
+        if (_endKey is { } endKey)
+        {
+            end = IndexOfKey(items, endKey);
+            if (end < 0) end = LastIndexAtOrBefore(items, _endSeq);
+            if (end < 0) end = count - 1;
+        }
+        var start = -1;
+        if (_startKey is { } startKey)
+        {
+            start = IndexOfKey(items, startKey);
+            if (start < 0) start = FirstIndexAtOrAfter(items, _startSeq);
+        }
+        if (start < 0 || start > end) start = Math.Max(0, end - InitialCount + 1);
+        return (start, end);
+    }
+
+    private void RememberStart(IReadOnlyList<MessageItem> items, int index)
+    {
+        if (index < 0 || index >= items.Count) return;
+        _startKey = items[index].Key;
+        _startSeq = items[index].Message.Seq;
+    }
+
+    private void RememberEnd(IReadOnlyList<MessageItem> items, int index)
+    {
+        if (index < 0 || index >= items.Count) return;
+        if (index >= items.Count - 1)
+        {
+            _endKey = null;
+            return;
+        }
+        _endKey = items[index].Key;
+        _endSeq = items[index].Message.Seq;
+    }
+
+    private static int IndexOfKey(IReadOnlyList<MessageItem> items, Guid key)
+    {
+        for (var i = 0; i < items.Count; i++)
+            if (items[i].Key == key) return i;
+        return -1;
+    }
+
+    private static int FirstIndexAtOrAfter(IReadOnlyList<MessageItem> items, long seq)
+    {
+        for (var i = 0; i < items.Count; i++)
+            if (items[i].Message.Seq > 0 && items[i].Message.Seq >= seq) return i;
+        return -1;
+    }
+
+    private static int LastIndexAtOrBefore(IReadOnlyList<MessageItem> items, long seq)
+    {
+        for (var i = items.Count - 1; i >= 0; i--)
+            if (items[i].Message.Seq > 0 && items[i].Message.Seq <= seq) return i;
+        return -1;
+    }
+
+    private async Task ExtendUpAsync()
+    {
+        if (_busyUp) return;
+        var items = State.Items;
+        var (start, _) = ResolveSlice(items);
+        if (start > 0)
+        {
+            GrowUp(items, start);
+            StateHasChanged();
+            return;
+        }
+        if (!State.HasMoreBefore || State.IsLoadingBefore) return;
+        _busyUp = true;
+        StateHasChanged();
+        try
+        {
+            await Messages.LoadOlderAsync(ChatId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Older messages not loaded");
+        }
+        finally
+        {
+            _busyUp = false;
+        }
+        items = State.Items;
+        (start, _) = ResolveSlice(items);
+        if (start > 0) GrowUp(items, start);
+        StateHasChanged();
+    }
+
+    private void GrowUp(IReadOnlyList<MessageItem> items, int start)
+    {
+        var (_, end) = ResolveSlice(items);
+        var newStart = Math.Max(0, start - Step);
+        RememberStart(items, newStart);
+        if (end - newStart + 1 > MaxRendered) RememberEnd(items, newStart + MaxRendered - 1);
+    }
+
+    private async Task ExtendDownAsync()
+    {
+        if (_busyDown) return;
+        var items = State.Items;
+        var (start, end) = ResolveSlice(items);
+        if (!IsLive && end < items.Count - 1)
+        {
+            var newEnd = Math.Min(items.Count - 1, end + Step);
+            RememberEnd(items, newEnd);
+            if (newEnd - start + 1 > MaxRendered) RememberStart(items, newEnd - MaxRendered + 1);
+            StateHasChanged();
+            return;
+        }
+        if (!IsLive || !State.HasMoreAfter || State.IsLoadingAfter) return;
+        _busyDown = true;
+        StateHasChanged();
+        try
+        {
+            await Messages.LoadNewerAsync(ChatId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Newer messages not loaded");
+        }
+        finally
+        {
+            _busyDown = false;
+        }
+        items = State.Items;
+        (start, end) = ResolveSlice(items);
+        if (end - start + 1 > MaxRendered) RememberStart(items, end - MaxRendered + 1);
+        StateHasChanged();
+    }
+
+    /// <summary>Renders the slice around a message and scrolls to it (store JumpRequested, reply taps, search).</summary>
+    private void FocusSeq(long seq, bool highlight)
+    {
+        var items = State.Items;
+        var index = -1;
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i].Message.Seq == seq)
+            {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) index = FirstIndexAtOrAfter(items, seq);
+        if (index < 0) index = LastIndexAtOrBefore(items, seq);
+        if (index < 0) return;
+        Quiet(QuietMs);
+        RememberStart(items, Math.Max(0, index - 25));
+        var end = Math.Min(items.Count - 1, index + 25);
+        if (end >= items.Count - 1) _endKey = null;
+        else RememberEnd(items, end);
+        _positioned = true;
+        _pendingBottom = null;
+        _pendingScroll = (items[index].Key.ToString(), "center", highlight, 0);
+        StateHasChanged();
+    }
+
+    // ---- API for the chat page ----
+
+    /// <summary>The store finished opening the chat: show the first unread message, else the bottom.</summary>
+    public void Opened()
+    {
+        if (_positioned) return;
+        _positioned = true;
+        Quiet(QuietMs);
+        var state = State;
+        var items = state.Items;
+        if (state.FirstUnreadSeq is { } firstUnread && items.Count > 0)
+        {
+            var me = Auth.UserId;
+            var index = -1;
+            for (var i = 0; i < items.Count; i++)
+            {
+                if (items[i].Message.Seq > 0 && items[i].Message.Seq >= firstUnread && items[i].Message.SenderId != me)
+                {
+                    index = i;
+                    break;
+                }
+            }
+            if (index >= 0)
+            {
+                RememberStart(items, Math.Max(0, index - 12));
+                _endKey = null;
+                _pendingScroll = ("unread", "start", false, 0);
+                StateHasChanged();
+                return;
+            }
+        }
+        _pendingBottom = false;
+        StateHasChanged();
+    }
+
+    /// <summary>Back to the newest message (after sending, the scroll-down button).</summary>
+    public async Task ScrollToLatestAsync(bool smooth)
+    {
+        if (State.HasMoreAfter)
+        {
+            // The window is replaced by the newest page: that is a jump, not new messages.
+            Quiet(QuietMs);
+            try
+            {
+                await Messages.JumpToLatestAsync(ChatId);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+        var items = State.Items;
+        _endKey = null;
+        if (!IsLive || !_atBottom) RememberStart(items, Math.Max(0, items.Count - InitialCount));
+        _pendingScroll = null;
+        _pendingBottom = smooth;
+        _positioned = true;
+        StateHasChanged();
+    }
+
+    /// <summary>Hides the unread divider (I wrote something, so everything above counts as seen): it fades, then goes.</summary>
+    public void HideUnreadDivider()
+    {
+        if (_dividerHidden || _dividerFading) return;
+        if (!_rows.Any(r => r.Kind == RowKind.Unread))
+        {
+            _dividerHidden = true;
+            StateHasChanged();
+            return;
+        }
+        _dividerFading = true;
+        StateHasChanged();
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(180);
+            if (IsDisposed) return;
+            _dividerHidden = true;
+            _dividerFading = false;
+            StateHasChanged();
+        });
+    }
+
+    private async Task JumpToMentionAsync()
+    {
+        IReadOnlyList<long> seqs;
+        try
+        {
+            seqs = await Messages.GetUnreadMentionsAsync(ChatId);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return;
+        }
+        if (seqs.Count == 0)
+        {
+            Toasts.Info(L["chat.jump.noMentions"]);
+            return;
+        }
+        var next = seqs.FirstOrDefault(s => s > _lastMentionSeq);
+        if (next == 0) next = seqs[0];
+        _lastMentionSeq = next;
+        await Controller.JumpToSeqAsync(next);
+    }
+
+    // ---- JS callbacks ----
+
+    [JSInvokable]
+    public Task OnViewport(ViewportReport report) => InvokeAsync(() => HandleViewportAsync(report));
+
+    private async Task HandleViewportAsync(ViewportReport report)
+    {
+        if (IsDisposed) return;
+        _report = report;
+        var wasAtBottom = _atBottom;
+        _atBottom = report.AtBottom;
+        TryMarkRead();
+        if (report.NearTop) await ExtendUpAsync();
+        if (report.NearBottom) await ExtendDownAsync();
+        if (wasAtBottom != _atBottom) StateHasChanged();
+    }
+
+    /// <summary>Long-press (<paramref name="touch"/>) or right-click on a message.</summary>
+    [JSInvokable]
+    public Task OnMessageMenu(string key, double x, double y, bool touch) => InvokeAsync(() => HandleMenuAsync(key, x, y, touch));
+
+    private Task HandleMenuAsync(string key, double x, double y, bool touch)
+    {
+        if (IsDisposed || !Guid.TryParse(key, out var id)) return Task.CompletedTask;
+        var item = State.Items.FirstOrDefault(i => i.Key == id);
+        if (item is null) return Task.CompletedTask;
+        if (SelectionMode) return Controller.ToggleSelectAsync(item);
+        if (touch && item.Message.Type != MessageType.System) Haptics.LongPress();
+        return Controller.ShowMenuAsync(item, new MenuPosition(x, y));
+    }
+
+    /// <summary>A swipe to reply crossed its trigger: releasing now replies.</summary>
+    [JSInvokable]
+    public Task OnSwipeArmed() => InvokeAsync(() =>
+    {
+        if (!IsDisposed) Haptics.Selection();
+    });
+
+    /// <summary>Double tap on a bubble: toggles the quick reaction (Settings › Chats) with a burst at the finger.</summary>
+    [JSInvokable]
+    public Task OnDoubleTap(string key, double x, double y) => InvokeAsync(() => HandleDoubleTapAsync(key, x, y));
+
+    private async Task HandleDoubleTapAsync(string key, double x, double y)
+    {
+        if (IsDisposed || SelectionMode || !CanSend || !Guid.TryParse(key, out var id)) return;
+        var item = State.Items.FirstOrDefault(i => i.Key == id);
+        var emoji = Settings.Current.Chats.QuickReaction;
+        if (item is null || !MessageRules.CanReact(item) || string.IsNullOrWhiteSpace(emoji)) return;
+        if (_list is not null) await _list.InvokeVoidAsync("burst", key, emoji, x, y, MyReactionOf(item) != emoji);
+        await Controller.ToggleReactionAsync(item, emoji);
+    }
+
+    [JSInvokable]
+    public Task OnSwipeReply(string key) => InvokeAsync(() => HandleSwipeReplyAsync(key));
+
+    private Task HandleSwipeReplyAsync(string key)
+    {
+        if (IsDisposed || SelectionMode || !Guid.TryParse(key, out var id)) return Task.CompletedTask;
+        var item = State.Items.FirstOrDefault(i => i.Key == id);
+        return item is null ? Task.CompletedTask : OnSwipeReplyRequested.InvokeAsync(item);
+    }
+
+    /// <summary>Swipe to reply on a message.</summary>
+    [Parameter] public EventCallback<MessageItem> OnSwipeReplyRequested { get; set; }
+
+    // ---- Read tracking, autoplay ----
+
+    private bool AutoplayAllowed => Active && Lifecycle.IsForeground;
+
+    private void TryMarkRead()
+    {
+        if (!Active || !Lifecycle.IsForeground || _report is not { } report) return;
+        var seq = report.MaxSeq;
+        if (seq <= 0 || seq <= _markedSeq) return;
+        _markedSeq = seq;
+        var chat = ChatList.Get(ChatId);
+        if (chat is not null && seq <= chat.MyLastReadSeq) return;
+        _ = MarkReadAsync(seq);
+    }
+
+    private async Task MarkReadAsync(long seq)
+    {
+        try
+        {
+            await ChatList.MarkReadAsync(ChatId, seq);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Read mark not sent");
+        }
+    }
+
+    private async Task SyncActiveAsync()
+    {
+        if (_list is null) return;
+        await _list.InvokeVoidAsync("setActive", Active);
+        await UpdateAutoplayAsync();
+        if (Active) TryMarkRead();
+    }
+
+    private async Task UpdateAutoplayAsync()
+    {
+        var allowed = AutoplayAllowed;
+        if (allowed == _autoplayEnabled || _autoplay is null) return;
+        _autoplayEnabled = allowed;
+        await _autoplay.InvokeVoidAsync("setEnabled", allowed);
+    }
+
+    private async Task RefreshAsync()
+    {
+        await UpdateAutoplayAsync();
+        if (_list is not null) await _list.InvokeVoidAsync("refresh");
+    }
+
+    private async Task ApplySettingsAsync()
+    {
+        var rate = Settings.Current.Chats.VoicePlaybackRate;
+        if (Math.Abs(rate - _rate) > 0.001 && _player is not null)
+        {
+            _rate = rate;
+            await _player.SetRateAsync(rate);
+        }
+        StateHasChanged();
+    }
+
+    private Task OnPlaybackErrorAsync(Guid mediaId)
+    {
+        Toasts.Show(L["media.playbackFailed"], ToastKind.Error);
+        return Task.CompletedTask;
+    }
+
+    private bool InCall => Calls.Current is { Phase: not CallPhase.Ended };
+
+    /// <summary>A call starts (dialing or accepted): a voice message or round note must not play over it.</summary>
+    private async Task PauseForCallAsync()
+    {
+        var inCall = InCall;
+        if (inCall == _inCall) return;
+        _inCall = inCall;
+        if (inCall && _player is not null) await _player.PauseAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_autoplay is not null) await _autoplay.DisposeAsync();
+        if (_list is not null) await _list.DisposeAsync();
+        if (_player is not null) await _player.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

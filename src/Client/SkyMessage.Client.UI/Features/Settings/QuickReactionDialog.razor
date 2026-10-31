@@ -1,0 +1,23 @@
+@* DialogService content: choose the quick reaction (double-tap / one-tap reaction). Result: the emoji string. *@
+@inject EmojiCatalog Emoji
+@inject ISettingsService Settings
+
+<div class="reaction-pick">
+    <div class="reaction-pick__quick" role="listbox" aria-label="@L["settings.chats.quickReaction"]">
+        @foreach (var emoji in Emoji.QuickReactions)
+        {
+            <button type="button" class="reaction-pick__item sm-emoji @(emoji == Settings.Current.Chats.QuickReaction ? "is-selected" : null)"
+                    role="option" aria-selected="@(emoji == Settings.Current.Chats.QuickReaction ? "true" : "false")" @onclick="() => Dialog.Close(emoji)">
+                @emoji
+            </button>
+        }
+    </div>
+    <EmojiPicker OnPick="Pick" Height="300px" ShowRecent="false" />
+</div>
+
+@code {
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    private void Pick(string emoji) => Dialog.Close(emoji);
+}

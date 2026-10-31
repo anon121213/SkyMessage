@@ -1,0 +1,169 @@
+@* Data & storage: auto-download per network type, photo/video quality for sending, save to gallery, media cache
+   (size, limit, clear) and low data mode. *@
+@inherits UiComponentBase
+@inject ISettingsService Settings
+@inject IMediaDownloadService Downloads
+@inject IMediaFileStore FileStore
+@inject IFileSaveService FileSave
+@inject INetworkStatusService Network
+@inject FormatService Format
+@inject DialogService Dialogs
+@inject ToastService Toasts
+
+<SettingsScaffold Title="@L["settings.data.title"]">
+    @{
+        var data = Settings.Current.Data;
+    }
+    <Section Title="@L["settings.data.wifi"]" Footer="@(Network.Kind is NetworkKind.Wifi or NetworkKind.Ethernet ? L["settings.data.nowWifi"] : null)" DividerInset="64px">
+        @AutoDownloadRows(data.AutoDownloadWifi, wifi: true)
+    </Section>
+
+    <Section Title="@L["settings.data.mobile"]" Footer="@(Network.Kind == NetworkKind.Cellular ? L["settings.data.nowMobile"] : null)" DividerInset="64px">
+        @AutoDownloadRows(data.AutoDownloadMobile, wifi: false)
+    </Section>
+
+    <Section Title="@L["settings.data.photoQuality"]" Footer="@L["settings.data.qualityHint"]">
+        <ChoiceList TValue="MediaQuality" Options="PhotoQualities" Value="data.PhotoQuality" ValueChanged="v => Settings.UpdateAsync(s => s.Data.PhotoQuality = v)" />
+    </Section>
+
+    <Section Title="@L["settings.data.videoQuality"]">
+        <ChoiceList TValue="MediaQuality" Options="VideoQualities" Value="data.VideoQuality" ValueChanged="v => Settings.UpdateAsync(s => s.Data.VideoQuality = v)" />
+    </Section>
+
+    <Section DividerInset="64px">
+        @if (FileSave.CanSaveToGallery)
+        {
+            <SwitchItem Icon="@IconNames.Images" IconColor="@SettingsTones.Orchid" Title="@L["settings.data.gallery"]" Subtitle="@L["settings.data.galleryHint"]"
+                        Checked="data.SaveToGallery" CheckedChanged="v => Settings.UpdateAsync(s => s.Data.SaveToGallery = v)" />
+        }
+        <SwitchItem Icon="@IconNames.Leaf" IconColor="@SettingsTones.Mint" Title="@L["settings.data.lowData"]" Subtitle="@L["settings.data.lowDataHint"]"
+                    Checked="data.LowDataMode" CheckedChanged="v => Settings.UpdateAsync(s => s.Data.LowDataMode = v)" />
+    </Section>
+
+    @if (FileStore.IsSupported)
+    {
+        <Section Title="@L["settings.data.storage"]" Footer="@L["settings.data.storageHint"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.HardDrive" IconColor="@SettingsTones.Mauve" Title="@L["settings.data.cacheSize"]"
+                      Meta="@(_cacheSize is { } size ? Format.FileSize(size) : L["common.loading"])" />
+            <div class="sm-p-m">
+                <Select TValue="int" Options="CacheLimits" Value="data.CacheLimitMb" ValueChanged="SetCacheLimitAsync" Label="@L["settings.data.cacheLimit"]" />
+            </div>
+            <ListItem Icon="@IconNames.Eraser" IconColor="@SettingsTones.Rose" Title="@L["settings.data.clear"]" Danger="true" Disabled="@(_clearing || _cacheSize == 0)"
+                      OnClick="ClearAsync">
+                <Trailing>
+                    @if (_clearing)
+                    {
+                        <Spinner Size="18" />
+                    }
+                </Trailing>
+            </ListItem>
+        </Section>
+    }
+    else
+    {
+        <Section Title="@L["settings.data.storage"]">
+            <div class="data-browser">
+                <ListItem Icon="@IconNames.Globe" IconColor="@SettingsTones.Gold" Title="@L["settings.data.browserCache"]" Multiline="true" />
+            </div>
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private static readonly int[] FileLimits = [1, 5, 10, 20, 50, 100, 300, 1000];
+    private static readonly int[] CacheSizes = [256, 512, 1024, 2048, 5120, 10240];
+
+    private long? _cacheSize;
+    private bool _clearing;
+
+    private IReadOnlyList<ChoiceOption<MediaQuality>> PhotoQualities =>
+    [
+        new(MediaQuality.Low, L["settings.data.quality.low"]) { Description = L["settings.data.photo.low"] },
+        new(MediaQuality.Standard, L["settings.data.quality.standard"]) { Description = L["settings.data.photo.standard"] },
+        new(MediaQuality.High, L["settings.data.quality.high"]) { Description = L["settings.data.photo.high"] },
+    ];
+
+    private IReadOnlyList<ChoiceOption<MediaQuality>> VideoQualities =>
+    [
+        new(MediaQuality.Low, L["settings.data.quality.low"]) { Description = L["settings.data.video.low"] },
+        new(MediaQuality.Standard, L["settings.data.quality.standard"]) { Description = L["settings.data.video.standard"] },
+        new(MediaQuality.High, L["settings.data.quality.high"]) { Description = L["settings.data.video.high"] },
+    ];
+
+    private IReadOnlyList<ChoiceOption<int>> FileSizes(int current) =>
+        FileLimits.Append(current).Distinct().Order()
+            .Select(mb => new ChoiceOption<int>(mb, L.Format("settings.data.upTo", Format.FileSize(mb * 1024L * 1024L))))
+            .ToList();
+
+    private IReadOnlyList<ChoiceOption<int>> CacheLimits =>
+        CacheSizes.Append(Settings.Current.Data.CacheLimitMb).Distinct().Order()
+            .Select(mb => new ChoiceOption<int>(mb, Format.FileSize(mb * 1024L * 1024L)))
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        RenderOn(h => Network.Changed += h, h => Network.Changed -= h);
+        await LoadCacheSizeAsync();
+    }
+
+    private RenderFragment AutoDownloadRows(AutoDownloadSettings auto, bool wifi) => __builder =>
+    {
+        <SwitchItem Icon="@IconNames.Image" IconColor="@SettingsTones.Sky" Title="@L["settings.data.photos"]" Checked="auto.Photos"
+                    CheckedChanged="v => UpdateAuto(wifi, a => a.Photos = v)" />
+        <SwitchItem Icon="@IconNames.Film" IconColor="@SettingsTones.Violet" Title="@L["settings.data.videos"]" Checked="auto.Videos"
+                    CheckedChanged="v => UpdateAuto(wifi, a => a.Videos = v)" />
+        <SwitchItem Icon="@IconNames.File" IconColor="@SettingsTones.Peach" Title="@L["settings.data.files"]" Checked="auto.Files"
+                    CheckedChanged="v => UpdateAuto(wifi, a => a.Files = v)" />
+        @if (auto.Videos || auto.Files)
+        {
+            <div class="sm-p-m">
+                <Select TValue="int" Options="FileSizes(auto.MaxFileMb)" Value="auto.MaxFileMb" Label="@L["settings.data.maxSize"]"
+                        ValueChanged="v => UpdateAuto(wifi, a => a.MaxFileMb = v)" />
+            </div>
+        }
+    };
+
+    private Task UpdateAuto(bool wifi, Action<AutoDownloadSettings> change) =>
+        Settings.UpdateAsync(s => change(wifi ? s.Data.AutoDownloadWifi : s.Data.AutoDownloadMobile));
+
+    private async Task LoadCacheSizeAsync()
+    {
+        if (!FileStore.IsSupported) return;
+        try
+        {
+            _cacheSize = await Downloads.GetCacheSizeAsync();
+        }
+        catch (Exception)
+        {
+            _cacheSize = 0;
+        }
+    }
+
+    private async Task SetCacheLimitAsync(int mb)
+    {
+        await Settings.UpdateAsync(s => s.Data.CacheLimitMb = mb);
+        // The download service trims to the new limit on its next write; show the current size again shortly.
+        await LoadCacheSizeAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["settings.data.clearTitle"], L["settings.data.clearText"], L["settings.data.clearConfirm"], danger: true)) return;
+        _clearing = true;
+        try
+        {
+            await Downloads.ClearCacheAsync();
+            Toasts.Success(L["settings.data.cleared"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _clearing = false;
+        }
+        await LoadCacheSizeAsync();
+    }
+}

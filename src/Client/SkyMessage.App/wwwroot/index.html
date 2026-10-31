@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>SkyMessage</title>
+    <base href="/" />
+    <style>
+        /* First paint only; the UI stylesheet takes over (theme applied early by boot.js). */
+        html, body { margin: 0; height: 100%; background: #ECE6FF; }
+        @media (prefers-color-scheme: dark) { html, body { background: #150F38; } }
+        #blazor-error-ui { display: none; }
+    </style>
+    <link rel="stylesheet" href="_content/SkyMessage.Client.UI/css/app.css" />
+    <link rel="stylesheet" href="SkyMessage.App.styles.css" />
+    <script src="_content/SkyMessage.Client.UI/js/boot.js"></script>
+</head>
+<body>
+    <div id="app"></div>
+
+    <div id="blazor-error-ui" data-nosnippet>
+        <span class="blazor-error-text"></span>
+        <a href="" class="reload">⟳</a>
+        <a class="dismiss">✕</a>
+    </div>
+
+    <script src="_framework/blazor.webview.js" autostart="false"></script>
+</body>
+</html>

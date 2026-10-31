@@ -1,0 +1,99 @@
+@* Edit a group's title/description and (admins) member permissions. Result: true when saved. *@
+@inject ISkyApi Api
+@inject ToastService Toasts
+
+<form class="edit-group" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+    <div class="sm-col sm-gap-m">
+        @if (CanChangeInfo)
+        {
+            <TextField @bind-Value="_title" Label="@L["groups.field.title"]" MaxLength="Limits.GroupTitleMaxLength" Autocapitalize="sentences" />
+            <TextArea @bind-Value="_description" Label="@L["groups.field.description"]" MaxLength="Limits.GroupDescriptionMaxLength" Rows="2" MaxRows="6" ShowCounter="true" />
+        }
+        @if (CanChangePermissions)
+        {
+            <Section Title="@L["groups.permissions.title"]" Footer="@L["groups.permissions.footer"]" Class="edit-group__perms">
+                <SwitchItem Icon="@IconNames.MessageCircle" IconColor="@SettingsTones.Sky" Title="@L["groups.permissions.send"]" @bind-Checked="_sendMessages" />
+                <SwitchItem Icon="@IconNames.Image" IconColor="@SettingsTones.Orchid" Title="@L["groups.permissions.media"]" @bind-Checked="_sendMedia" Disabled="@(!_sendMessages)" />
+                <SwitchItem Icon="@IconNames.UserRoundPlus" IconColor="@SettingsTones.Mint" Title="@L["groups.permissions.add"]" @bind-Checked="_addMembers" />
+                <SwitchItem Icon="@IconNames.Pin" IconColor="@SettingsTones.Gold" Title="@L["groups.permissions.pin"]" @bind-Checked="_pinMessages" />
+                <SwitchItem Icon="@IconNames.Pencil" IconColor="@SettingsTones.Violet" Title="@L["groups.permissions.info"]" @bind-Checked="_changeInfo" />
+            </Section>
+        }
+        @if (_error is not null)
+        {
+            <p class="edit-group__error" role="alert">@_error</p>
+        }
+    </div>
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Type="submit" Loading="_saving" Disabled="@(CanChangeInfo && string.IsNullOrWhiteSpace(_title))">@L["common.save"]</Button>
+    </DialogActions>
+</form>
+
+@code {
+    private string _title = "";
+    private string _description = "";
+    private bool _sendMessages;
+    private bool _sendMedia;
+    private bool _addMembers;
+    private bool _pinMessages;
+    private bool _changeInfo;
+    private bool _saving;
+    private string? _error;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public ChatSummaryDto Chat { get; set; } = default!;
+    [Parameter] public string? Description { get; set; }
+
+    private bool CanChangeInfo => Chat.CanChangeInfo();
+    private bool CanChangePermissions => Chat.CanChangePermissions();
+
+    protected override void OnInitialized()
+    {
+        _title = Chat.Title;
+        _description = Description ?? "";
+        _sendMessages = Chat.Permissions.SendMessages;
+        _sendMedia = Chat.Permissions.SendMedia;
+        _addMembers = Chat.Permissions.AddMembers;
+        _pinMessages = Chat.Permissions.PinMessages;
+        _changeInfo = Chat.Permissions.ChangeInfo;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            var permissions = new ChatPermissionsDto
+            {
+                SendMessages = _sendMessages,
+                SendMedia = _sendMedia,
+                AddMembers = _addMembers,
+                PinMessages = _pinMessages,
+                ChangeInfo = _changeInfo,
+            };
+            var title = _title.Trim();
+            var description = _description.Trim();
+            await Api.UpdateChatAsync(Chat.Id, new UpdateChatRequest
+            {
+                Title = CanChangeInfo && title != Chat.Title ? title : null,
+                Description = CanChangeInfo && description != (Description ?? "") ? description : null,
+                Permissions = CanChangePermissions && permissions != Chat.Permissions ? permissions : null,
+            });
+            Toasts.Success(L["groups.edit.saved"]);
+            Dialog.Close(true);
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

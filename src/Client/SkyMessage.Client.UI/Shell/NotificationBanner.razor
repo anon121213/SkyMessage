@@ -1,0 +1,133 @@
+@* In-app banner + tone for messages arriving while the app is in foreground (INotificationCoordinator): a glass card
+   dropping from the top with a little spring — squircle avatar, the sender in display type, the message, and a thin
+   thread running out until it leaves on its own. It follows the finger upward (a swipe up hides it) and
+   leaves with a short lift. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject INotificationCoordinator Notifications
+@inject ISettingsService Settings
+@inject ISoundService Sounds
+@inject HapticFeedback Haptics
+@inject IChatListStore ChatList
+@inject IMediaUrlBuilder MediaUrls
+@inject NavigationService Nav
+@inject AppJs Js
+
+@if (_current is { } item)
+{
+    <div class="banner-wrap">
+        <div @ref="_element" @key="item.Id" class="banner sm-glass sm-glass--strong @(_leaving ? "banner--leaving" : null)" role="alert" @onclick="OpenAsync">
+            <span class="banner__avatar">
+                @if (ChatList.Get(item.Notification.ChatId) is { } chat)
+                {
+                    <ChatAvatar Chat="chat" Size="46" ShowOnline="false" />
+                }
+                else
+                {
+                    <Avatar Url="@MediaUrls.AvatarUrl(item.Notification.AvatarMediaId)" Name="@item.Notification.Title" Seed="item.Notification.ChatId" Size="46" />
+                }
+                <span class="banner__bubble" aria-hidden="true"><Icon Name="@IconNames.MessageCircle" Size="11" StrokeWidth="2.6" /></span>
+            </span>
+            <div class="banner__text">
+                <div class="banner__title">@item.Notification.Title</div>
+                <div class="banner__body">@item.Notification.Body</div>
+            </div>
+            <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="32" StopPropagation="true" Class="banner__close" OnClick="DismissAsync" />
+            <span class="banner__timer" aria-hidden="true"></span>
+        </div>
+    </div>
+}
+
+@code {
+    private const int LeaveMs = 220;
+
+    private sealed record Item(Guid Id, InAppNotification Notification);
+
+    private Item? _current;
+    private bool _leaving;
+    private ElementReference _element;
+    private CancellationTokenSource? _timer;
+    private DotNetObjectReference<NotificationBanner>? _self;
+    private JsHandle? _swipe;
+    private Guid _swipeFor;
+
+    protected override void OnInitialized()
+    {
+        Notifications.InAppNotificationRaised += OnRaised;
+        OnDispose(() => Notifications.InAppNotificationRaised -= OnRaised);
+    }
+
+    private void OnRaised(InAppNotification notification) => _ = InvokeAsync(() =>
+    {
+        if (IsDisposed) return;
+        var settings = Settings.Current.Notifications;
+        if (settings.InAppSounds) Sounds.PlayMessageTone(settings.MessageTone);
+        if (settings.InAppVibrate) Haptics.Tap();
+        _current = new Item(Guid.NewGuid(), notification);
+        _leaving = false;
+        Restart(_current.Id);
+        StateHasChanged();
+    });
+
+    private void Restart(Guid id)
+    {
+        _timer?.Cancel();
+        var cts = _timer = new CancellationTokenSource();
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(4500, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            if (_current?.Id != id || IsDisposed) return;
+            await DismissAsync();
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_current is { } item && item.Id != _swipeFor && !_leaving)
+        {
+            _swipeFor = item.Id;
+            if (_swipe is not null) await _swipe.DisposeAsync();
+            _self ??= DotNetObjectReference.Create(this);
+            _swipe = await Js.AttachSwipeAsync(_element, _self, nameof(OnSwiped), "up", 30);
+        }
+    }
+
+    [JSInvokable]
+    public Task OnSwiped() => InvokeAsync(DismissAsync);
+
+    // Slides it away (from wherever a swipe left it), then removes it unless a new banner took its place.
+    private async Task DismissAsync()
+    {
+        _timer?.Cancel();
+        if (_current is not { } item || _leaving) return;
+        _leaving = true;
+        StateHasChanged();
+        await Task.Delay(LeaveMs);
+        if (IsDisposed || _current?.Id != item.Id || !_leaving) return;
+        _current = null;
+        _leaving = false;
+        StateHasChanged();
+    }
+
+    private async Task OpenAsync()
+    {
+        if (_current is not { } item || _leaving) return;
+        Nav.OpenChat(item.Notification.ChatId);
+        await DismissAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _timer?.Cancel();
+        if (_swipe is not null) await _swipe.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

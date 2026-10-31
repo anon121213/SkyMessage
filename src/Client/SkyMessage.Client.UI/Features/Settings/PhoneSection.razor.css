@@ -1,0 +1,31 @@
+/* No number yet: a frosted card with the phone on a pastel tile. */
+.phone-intro {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0 0 22px;
+    padding: 16px 18px 16px 14px;
+    line-height: 1.45;
+}
+
+.phone-intro__art {
+    flex-shrink: 0;
+    width: 3rem;
+    height: 3rem;
+}
+
+.phone-intro__art ::deep .sm-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.phone-intro__text {
+    min-width: 0;
+}
+
+.phone-intro__title {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+    margin-bottom: 2px;
+}

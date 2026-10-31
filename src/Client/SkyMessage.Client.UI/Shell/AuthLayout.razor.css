@@ -1,0 +1,175 @@
+/* The signed-out shell: sky + a few flat decorations behind one scrolling, centered column. */
+.auth-shell {
+    position: fixed;
+    inset: 0 0 var(--sm-keyboard) 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--sm-bg);
+    color: var(--sm-text);
+}
+
+/* ---------- Decoration: flat shapes only ---------- */
+
+.auth-deco {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+/* By day: a plain warm disc low in the corner, no glow. */
+.auth-deco__sun {
+    position: absolute;
+    top: calc(28px + var(--sm-inset-top));
+    right: -34px;
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    background: #FFDDAA;
+    opacity: 0.85;
+}
+
+/* By night: a pale crescent instead. */
+.auth-deco__moon {
+    position: absolute;
+    top: calc(30px + var(--sm-inset-top));
+    right: 22px;
+    width: 64px;
+    height: 64px;
+    display: none;
+    fill: #EDE6FF;
+    opacity: 0.92;
+}
+
+html[data-theme="dark"] .auth-deco__sun {
+    display: none;
+}
+
+html[data-theme="dark"] .auth-deco__moon {
+    display: block;
+}
+
+/* Three flat clouds at the edges, drifting a few pixels (transform only). */
+.auth-deco__cloud {
+    position: absolute;
+    overflow: visible;
+    animation: auth-cloud 16s ease-in-out infinite;
+}
+
+.auth-deco__puff {
+    fill: #FFFFFF;
+}
+
+.auth-deco__cloud {
+    opacity: 0.78;
+}
+
+html[data-theme="dark"] .auth-deco__puff {
+    fill: #B6A6FF;
+}
+
+html[data-theme="dark"] .auth-deco__cloud {
+    opacity: 0.08;
+}
+
+.auth-deco__cloud--1 {
+    top: calc(120px + var(--sm-inset-top));
+    left: -70px;
+    width: 172px;
+}
+
+.auth-deco__cloud--2 {
+    top: 47%;
+    right: -80px;
+    width: 156px;
+    animation-duration: 19s;
+    animation-delay: -6s;
+}
+
+.auth-deco__cloud--3 {
+    bottom: 5%;
+    left: -92px;
+    width: 220px;
+    animation-duration: 22s;
+    animation-delay: -11s;
+}
+
+@keyframes auth-cloud {
+    0%, 100% { transform: translate3d(0, 0, 0); }
+    50% { transform: translate3d(14px, 0, 0); }
+}
+
+/* Slow devices and reduced motion: a still picture. */
+html[data-fx="lite"] .auth-deco *,
+html[data-reduce-motion="true"] .auth-deco * {
+    animation: none !important;
+}
+
+/* ---------- Content column ---------- */
+
+/* The column is at least as tall as the screen, so a page can pin its back button to the top and center the rest. */
+.auth-shell__scroll {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: calc(10px + var(--sm-inset-top)) calc(18px + var(--sm-inset-right)) calc(18px + var(--sm-bottom-space)) calc(18px + var(--sm-inset-left));
+}
+
+.auth-shell__column {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    min-height: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+@media (min-width: 768px) {
+    .auth-shell__scroll {
+        padding-top: calc(32px + var(--sm-inset-top));
+        padding-bottom: calc(32px + var(--sm-bottom-space));
+    }
+
+    .auth-shell__column {
+        max-width: 440px;
+    }
+
+    .auth-deco__sun {
+        top: 64px;
+        right: 9%;
+        width: 150px;
+        height: 150px;
+    }
+
+    .auth-deco__moon {
+        top: 64px;
+        right: 10%;
+        width: 92px;
+        height: 92px;
+    }
+
+    .auth-deco__cloud--1 {
+        top: 15%;
+        left: 7%;
+        width: 250px;
+    }
+
+    .auth-deco__cloud--2 {
+        top: 54%;
+        right: 7%;
+        width: 210px;
+    }
+
+    .auth-deco__cloud--3 {
+        bottom: 6%;
+        left: 15%;
+        width: 290px;
+    }
+}

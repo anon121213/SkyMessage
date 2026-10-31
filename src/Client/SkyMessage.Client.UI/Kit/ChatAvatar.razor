@@ -1,0 +1,28 @@
+@* Avatar of a chat: Saved Messages bookmark, the peer of a private chat (live, with online dot), or the group photo. *@
+@inherits UiComponentBase
+@inject IChatListStore ChatList
+@inject IMediaUrlBuilder MediaUrls
+
+@switch (Chat.Type)
+{
+    case ChatType.Saved:
+        <Avatar Name="@L["common.savedMessages"]" Seed="Chat.Id" Size="Size" Icon="@IconNames.Bookmark" Background="var(--sm-accent)" Class="@Class" />
+        break;
+    case ChatType.Private when Chat.Peer is { } peer:
+        <UserAvatar UserId="peer.Id" Embedded="peer" Size="Size" ShowOnline="ShowOnline" Class="@Class" />
+        break;
+    default:
+        <Avatar Url="@MediaUrls.AvatarUrl(ChatList.AvatarOf(Chat))" Name="@Title" Seed="Chat.Id" Size="Size" Class="@Class" />
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public ChatSummaryDto Chat { get; set; } = default!;
+    [Parameter] public double Size { get; set; } = 54;
+    [Parameter] public bool ShowOnline { get; set; } = true;
+    [Parameter] public string? Class { get; set; }
+
+    private string Title => ChatList.TitleOf(Chat);
+
+    protected override void OnInitialized() => RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+}

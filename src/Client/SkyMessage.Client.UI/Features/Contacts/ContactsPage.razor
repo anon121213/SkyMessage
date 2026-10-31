@@ -1,0 +1,19 @@
+@page "/contacts"
+@* Phones show ContactsPanel as the shell's base screen; wide screens show it in the list panel, so this page only
+   renders the placeholder of the content area: a glass card over the sky with our two-friends illustration. *@
+@inject LayoutService Layout
+
+@if (Layout.IsWide)
+{
+    <div class="contacts-placeholder">
+        <div class="contacts-placeholder__card sm-glass">
+            <EmptyState Title="@L["contacts.placeholder.title"]" Text="@L["contacts.placeholder.text"]">
+                <Art><SkyArt Kind="SkyArtKind.Contacts" Size="200" /></Art>
+            </EmptyState>
+        </div>
+    </div>
+}
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+}

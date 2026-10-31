@@ -1,0 +1,265 @@
+@* My phone number: detect it from the SIM (Android, IPhoneNumberService), enter it by hand with a country, unlink it,
+   and choose who may find me by it / see it. Numbers are never SMS-verified; they only help relatives find me. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IAuthService Auth
+@inject ISkyApi Api
+@inject IPhoneNumberService PhoneNumbers
+@inject IPlatformInfo Platform
+@inject IPermissionService Permissions
+@inject DialogService Dialogs
+@inject ToastService Toasts
+
+<SettingsScaffold Title="@L["settings.phone.title"]">
+    @if (Auth.Me is { } me)
+    {
+        @if (!string.IsNullOrEmpty(me.PhoneNumber))
+        {
+            <Section Footer="@L["settings.phone.linkedHint"]" DividerInset="64px">
+                <ListItem Icon="@IconNames.Smartphone" IconColor="@SettingsTones.Mint" Title="@PhoneFormat.Display(me.PhoneNumber)"
+                          Subtitle="@(me.PhoneSource == PhoneSource.Sim ? L["settings.phone.source.sim"] : L["settings.phone.source.manual"])" />
+                <ListItem Icon="@IconNames.Unplug" IconColor="@SettingsTones.Rose" Title="@L["settings.phone.unlink"]" Danger="true" OnClick="UnlinkAsync" />
+            </Section>
+        }
+        else
+        {
+            <div class="phone-intro sm-card">
+                <span class="sm-list-item__icon phone-intro__art" style="--icon-bg:@SettingsTones.Mint" aria-hidden="true">
+                    <Icon Name="@IconNames.Smartphone" />
+                </span>
+                <div class="phone-intro__text">
+                    <div class="phone-intro__title">@L["settings.phone.none"]</div>
+                    <div class="sm-caption">@L["settings.phone.noneText"]</div>
+                </div>
+            </div>
+        }
+
+        @if (PhoneNumbers.IsSupported)
+        {
+            <Section Title="@L["settings.phone.detect.title"]" Footer="@L["settings.phone.detect.hint"]" DividerInset="64px">
+                <ListItem Icon="@IconNames.ScanQrCode" IconColor="@SettingsTones.Lagoon" Title="@L["settings.phone.detect.action"]" Disabled="_detecting" OnClick="DetectAsync">
+                    <Trailing>
+                        @if (_detecting)
+                        {
+                            <Spinner Size="18" />
+                        }
+                    </Trailing>
+                </ListItem>
+                @foreach (var candidate in _candidates)
+                {
+                    var current = string.Equals(candidate.Number, me.PhoneNumber, StringComparison.Ordinal);
+                    <ListItem @key="candidate.Number" Icon="@(current ? IconNames.CircleCheck : IconNames.Smartphone)" IconColor="@SettingsTones.Mint" Title="@PhoneFormat.Display(candidate.Number)"
+                              Subtitle="@CandidateSubtitle(candidate)" Meta="@(current ? L["settings.phone.current"] : null)" Disabled="@(current || _saving)"
+                              OnClick="() => LinkAsync(candidate.Number, PhoneSource.Sim, candidate.CountryCode)" />
+                }
+            </Section>
+        }
+
+        <Section Title="@(string.IsNullOrEmpty(me.PhoneNumber) ? L["settings.phone.manual.title"] : L["settings.phone.manual.change"])">
+            <form class="sm-p-m sm-col sm-gap-m" @onsubmit="LinkManualAsync" @onsubmit:preventDefault="true">
+                <Select TValue="string" Options="RegionOptions" Value="_region" ValueChanged="OnRegionChanged" Label="@L["settings.phone.country"]" />
+                <TextField Value="@_number" ValueChanged="OnNumberChanged" Label="@L["settings.phone.number"]" Type="tel" InputMode="tel" Autocomplete="tel"
+                           Prefix="@(_number.TrimStart().StartsWith('+') ? null : PhoneRegions.Find(_region)?.DialCode)" Placeholder="@L["settings.phone.numberPlaceholder"]"
+                           Error="@_numberError" />
+                @if (string.IsNullOrEmpty(me.PhoneNumber) || me.Privacy.FindByPhone == PrivacyLevel.Nobody)
+                {
+                    <Checkbox @bind-Checked="_allowFind" Label="@L["settings.phone.allowFind"]" />
+                }
+                <Button Type="submit" Loading="_saving" Disabled="@string.IsNullOrWhiteSpace(_number)">@L["settings.phone.manual.link"]</Button>
+            </form>
+        </Section>
+
+        <Section Title="@L["settings.phone.findBy.title"]" Footer="@L["settings.phone.findBy.hint"]">
+            <ChoiceList TValue="PrivacyLevel" Options="Levels" Value="me.Privacy.FindByPhone" ValueChanged="SetFindByAsync" />
+        </Section>
+
+        <Section Title="@L["settings.phone.show.title"]" Footer="@L["settings.phone.show.hint"]">
+            <ChoiceList TValue="PrivacyLevel" Options="Levels" Value="me.Privacy.PhoneNumber" ValueChanged="SetShowAsync" />
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private IReadOnlyList<PhoneCandidate> _candidates = [];
+    private bool _detecting;
+    private bool _saving;
+    private string _region = "RU";
+    private string _number = "";
+    private string? _numberError;
+    private bool _allowFind = true;
+    private CancellationTokenSource _lifetime = new();
+
+    private IReadOnlyList<ChoiceOption<string>> RegionOptions =>
+        PhoneRegions.All
+            .Select(r => new ChoiceOption<string>(r.Code, $"{L[r.NameKey]} ({r.DialCode})"))
+            .OrderBy(o => o.Value == _region ? 0 : 1)
+            .ThenBy(o => o.Label, StringComparer.Create(L.Culture, ignoreCase: true))
+            .ToList();
+
+    private IReadOnlyList<ChoiceOption<PrivacyLevel>> Levels =>
+    [
+        new(PrivacyLevel.Everybody, L["settings.privacy.level.everybody"]),
+        new(PrivacyLevel.Contacts, L["settings.privacy.level.contacts"]),
+        new(PrivacyLevel.Nobody, L["settings.privacy.level.nobody"]),
+    ];
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Auth.Changed += h, h => Auth.Changed -= h);
+        _region = PhoneRegions.Find(Platform.CountryCode)?.Code
+                  ?? PhoneRegions.OfNumber(Auth.Me?.PhoneNumber)?.Code
+                  ?? "RU";
+    }
+
+    private string? CandidateSubtitle(PhoneCandidate candidate)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(candidate.CarrierName)) parts.Add(candidate.CarrierName!);
+        if (PhoneRegions.Find(candidate.CountryCode) is { } region) parts.Add(L[region.NameKey]);
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    private void OnRegionChanged(string code)
+    {
+        _region = code;
+        _numberError = null;
+    }
+
+    private void OnNumberChanged(string value)
+    {
+        _number = value;
+        _numberError = null;
+    }
+
+    private async Task DetectAsync()
+    {
+        if (_detecting) return;
+        _detecting = true;
+        try
+        {
+            var result = await PhoneNumbers.DetectAsync(_lifetime.Token);
+            switch (result.Status)
+            {
+                case PhoneDetectionStatus.Detected when result.Candidates.Count > 0:
+                    _candidates = result.Candidates;
+                    // One SIM with one number: link it right away (the system chooser already asked the user).
+                    if (result.Candidates.Count == 1 && result.Candidates[0].Number != Auth.Me?.PhoneNumber)
+                        await LinkAsync(result.Candidates[0].Number, PhoneSource.Sim, result.Candidates[0].CountryCode);
+                    break;
+                case PhoneDetectionStatus.PermissionDenied:
+                    if (await Dialogs.ConfirmAsync(L["settings.phone.detect.deniedTitle"], L["settings.phone.detect.denied"], L["settings.openSystemSettings"]))
+                        await Permissions.OpenAppSettingsAsync();
+                    break;
+                case PhoneDetectionStatus.Cancelled:
+                    break;
+                default:
+                    Toasts.Info(L["settings.phone.detect.notFound"]);
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _detecting = false;
+        }
+    }
+
+    private Task LinkManualAsync()
+    {
+        var text = _number.Trim();
+        if (text.Length < 5 || text.Count(char.IsAsciiDigit) < 5)
+        {
+            _numberError = L.Error(ErrorCodes.PhoneInvalid);
+            return Task.CompletedTask;
+        }
+        return LinkAsync(text, PhoneSource.Manual, _region);
+    }
+
+    private async Task LinkAsync(string number, PhoneSource source, string? region)
+    {
+        if (_saving || Auth.Me is not { } me) return;
+        if (!string.IsNullOrEmpty(me.PhoneNumber) && me.PhoneNumber != number
+            && !await Dialogs.ConfirmAsync(L["settings.phone.replaceTitle"], L.Format("settings.phone.replaceText", PhoneFormat.Display(me.PhoneNumber)), L["settings.phone.replace"]))
+            return;
+        _saving = true;
+        _numberError = null;
+        StateHasChanged();
+        try
+        {
+            var findBy = me.Privacy.FindByPhone == PrivacyLevel.Nobody && _allowFind ? PrivacyLevel.Everybody : (PrivacyLevel?)null;
+            var updated = await Api.SetPhoneAsync(new SetPhoneRequest
+            {
+                PhoneNumber = number,
+                Source = source,
+                DefaultRegion = region ?? _region,
+                FindByPhone = findBy,
+            }, _lifetime.Token);
+            Auth.UpdateMe(updated);
+            _number = "";
+            Toasts.Success(L["settings.phone.linked"]);
+        }
+        catch (ApiException ex) when (ex.Code is ErrorCodes.PhoneInvalid or ErrorCodes.PhoneTaken or ErrorCodes.Validation)
+        {
+            if (source == PhoneSource.Manual) _numberError = L.Error(ex);
+            else Toasts.Error(ex);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task UnlinkAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["settings.phone.unlinkTitle"], L["settings.phone.unlinkText"], L["settings.phone.unlink"], danger: true)) return;
+        try
+        {
+            var updated = await Api.RemovePhoneAsync(_lifetime.Token);
+            Auth.UpdateMe(updated);
+            _candidates = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private Task SetFindByAsync(PrivacyLevel level) => UpdatePrivacyAsync(p => p with { FindByPhone = level });
+
+    private Task SetShowAsync(PrivacyLevel level) => UpdatePrivacyAsync(p => p with { PhoneNumber = level });
+
+    private async Task UpdatePrivacyAsync(Func<PrivacySettingsDto, PrivacySettingsDto> change)
+    {
+        if (Auth.Me is not { } me) return;
+        try
+        {
+            var saved = await Api.SetPrivacyAsync(change(me.Privacy), _lifetime.Token);
+            if (Auth.Me is { } latest) Auth.UpdateMe(latest with { Privacy = saved });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

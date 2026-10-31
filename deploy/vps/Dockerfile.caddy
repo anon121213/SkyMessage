@@ -1,0 +1,4 @@
+# Stock Caddy plus the Cloudflare DNS module (for the ACME DNS challenge). bin/caddy is cross-built by deploy.sh
+# with xcaddy, so nothing is compiled on the shared VPS.
+FROM caddy:2-alpine
+COPY bin/caddy /usr/bin/caddy

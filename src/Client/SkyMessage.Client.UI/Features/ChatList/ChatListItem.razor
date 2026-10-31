@@ -1,0 +1,229 @@
+@* One chat row on the sky: squircle avatar (a thin accent ring while unread), name in display type, time, my last
+   message status, two-line preview (typing / draft / sender), badges. No separators: air between rows, a rounded
+   press highlight. Touch: swipe left for Mute/Archive, right for Pin/Read (js/app.js attachRowSwipe on the list; the
+   buttons are rendered once the row is first swiped, see SwipeActions): colored squircle chips come out of the edge,
+   and a full swipe fills the space with the primary one's color. *@
+@inherits UiComponentBase
+@inject IChatListStore ChatList
+@inject ITypingStore Typing
+@inject IDraftStore Drafts
+@inject IUserStore Users
+@inject IAuthService Auth
+@inject FormatService Format
+@inject IMessagePreviewFormatter Preview
+@inject ISettingsService Settings
+
+<div class="chat-row-wrap" role="listitem" data-swipe-row="@Chat.Id" data-swipe-start="@(StartActions.Count > 0 ? "true" : "false")">
+    @if (SwipeActions)
+    {
+        @* Behind the row, inner button first (the last one is the side's primary action, run by a full swipe). They
+           duplicate the long-press menu, so they stay out of the tab order and the accessibility tree. *@
+        @foreach (var side in Sides)
+        {
+            var actions = side == "start" ? StartActions : EndActions;
+            <div class="chat-row__actions chat-row__actions--@side" data-swipe-actions="@side" aria-hidden="true">
+                @for (var i = 0; i < actions.Count; i++)
+                {
+                    var action = actions[i];
+                    var primary = i == actions.Count - 1;
+                    <button type="button" tabindex="-1" class="chat-row__action chat-row__action--@action.Kind @(primary ? "chat-row__action--primary" : null)"
+                            style="--k:@Factor(actions.Count - i, actions.Count)" data-row-action="@action.Kind" @onclick="() => RunAsync(action.Kind)">
+                        <span class="chat-row__action-body">
+                            <span class="chat-row__action-chip"><Icon Name="@action.Icon" Size="22" StrokeWidth="2.2" /></span>
+                            <span class="chat-row__action-label">@action.Label</span>
+                        </span>
+                    </button>
+                }
+            </div>
+        }
+    }
+    <ListItem Class="@($"chat-row {(Unread ? "chat-row--unread" : null)}")" Selected="Selected" OnClick="OpenAsync" OnContextMenu="MenuAsync"
+              Tooltip="@(Layout?.IsWide == true ? Title : null)" data-swipe-content="">
+        <Leading>
+            <span class="chat-row__avatar @(Unread ? "chat-row__avatar--ring" : null) @(Unread && Muted ? "chat-row__avatar--quiet" : null)">
+                <ChatAvatar Chat="Chat" Size="@(Compact ? 46 : 54)" />
+            </span>
+        </Leading>
+        <ChildContent>
+            <div class="chat-row__top">
+                <span class="chat-row__title">@Title</span>
+                @if (Muted)
+                {
+                    <Icon Name="@IconNames.BellOff" Size="14" StrokeWidth="2.2" Class="chat-row__muted" Title="@L["chatlist.muted"]" />
+                }
+                <span class="chat-row__spacer"></span>
+                @if (Chat.ActiveCallId is not null)
+                {
+                    <span class="chat-row__call"><Icon Name="@IconNames.PhoneCall" Size="13" StrokeWidth="2.4" Title="@L["chatlist.activeCall"]" /></span>
+                }
+                @if (ShowStatus)
+                {
+                    <Icon Name="@(Chat.LastMessageReadByOthers() ? IconNames.CheckCheck : IconNames.Check)" Size="16" StrokeWidth="2.2"
+                          Class="@(Chat.LastMessageReadByOthers() ? "chat-row__status chat-row__status--read" : "chat-row__status")"
+                          Title="@(Chat.LastMessageReadByOthers() ? L["chatlist.status.read"] : L["chatlist.status.sent"])" />
+                }
+                @if (Time is not null)
+                {
+                    <span class="chat-row__time @(Unread && !Muted ? "chat-row__time--unread" : null)">@Time</span>
+                }
+            </div>
+            <div class="chat-row__bottom">
+                @if (TypingText is { } typing)
+                {
+                    <span class="chat-row__preview chat-row__preview--typing">
+                        <span class="chat-row__typing">@typing</span><span class="chat-row__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    </span>
+                }
+                else
+                {
+                    <span class="chat-row__preview">
+                        @if (DraftText is { } draft)
+                        {
+                            <span class="chat-row__draft">@(L["chatlist.draft"].TrimEnd(':', ' '))</span>
+                            @draft
+                        }
+                        else
+                        {
+                            @if (SenderPrefix is { } sender)
+                            {
+                                <span class="chat-row__sender">@sender: </span>
+                            }
+                            @PreviewText
+                        }
+                    </span>
+                }
+                <span class="chat-row__badges">
+                    @if (Chat.UnreadMentionCount > 0)
+                    {
+                        <Badge Kind="BadgeKind.Mention" Title="@L["chatlist.mentions"]" Pop="_mentionPop" />
+                    }
+                    <Badge Count="Chat.UnreadCount" Muted="Muted" Animate="true" />
+                    @if (Chat.UnreadCount == 0 && Chat.IsPinned)
+                    {
+                        <Icon Name="@IconNames.Pin" Size="15" StrokeWidth="2.2" Class="chat-row__pin" Title="@L["chatlist.pinned"]" />
+                    }
+                </span>
+            </div>
+        </ChildContent>
+    </ListItem>
+</div>
+
+@code {
+    private static readonly string[] Sides = ["start", "end"];
+    private bool _initialized;
+    private int _lastMentions;
+    private bool _mentionPop;
+
+    /// <summary>A swipe action: Kind is what <see cref="OnAction"/> receives ("pin", "read", "mute", "archive").</summary>
+    public sealed record SwipeAction(string Kind, string Icon, string Label);
+
+    [CascadingParameter] public ShellContext? Layout { get; set; }
+
+    [Parameter, EditorRequired] public ChatSummaryDto Chat { get; set; } = default!;
+    [Parameter] public bool Selected { get; set; }
+    /// <summary>Render the swipe buttons (the list asks for them when the row is first swiped).</summary>
+    [Parameter] public bool SwipeActions { get; set; }
+    [Parameter] public EventCallback<ChatSummaryDto> OnOpen { get; set; }
+    [Parameter] public EventCallback<(ChatSummaryDto Chat, MenuPosition Position)> OnMenu { get; set; }
+    /// <summary>A swipe button was tapped.</summary>
+    [Parameter] public EventCallback<(ChatSummaryDto Chat, string Action)> OnAction { get; set; }
+
+    private Guid? Me => Auth.UserId;
+    private bool Compact => Settings.Current.Appearance.CompactChatList;
+    private bool Muted => Chat.IsMuted(DateTimeOffset.UtcNow);
+    private bool Unread => Chat.UnreadCount > 0 || Chat.UnreadMentionCount > 0;
+
+    private string Title => Chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(Chat);
+
+    /// <summary>Right swipe (left side): Pin (primary, outermost) and Read when there is something unread.</summary>
+    private IReadOnlyList<SwipeAction> StartActions
+    {
+        get
+        {
+            var list = new List<SwipeAction>(2);
+            if (Unread) list.Add(new("read", IconNames.CheckCheck, L["chatlist.swipe.read"]));
+            if (!Chat.IsArchived)
+            {
+                list.Add(Chat.IsPinned
+                    ? new("pin", IconNames.PinOff, L["chatlist.swipe.unpin"])
+                    : new("pin", IconNames.Pin, L["chatlist.swipe.pin"]));
+            }
+            return list;
+        }
+    }
+
+    /// <summary>Left swipe (right side): Mute and Archive (primary, outermost).</summary>
+    private IReadOnlyList<SwipeAction> EndActions =>
+    [
+        Muted ? new("mute", IconNames.Bell, L["chatlist.swipe.unmute"]) : new("mute", IconNames.BellOff, L["chatlist.swipe.mute"]),
+        Chat.IsArchived
+            ? new("archive", IconNames.ArchiveRestore, L["chatlist.swipe.unarchive"])
+            : new("archive", IconNames.Archive, L["chatlist.swipe.archive"]),
+    ];
+
+    private string? Time
+    {
+        get
+        {
+            var at = Chat.LastMessage?.CreatedAt ?? Chat.LastActivityAt;
+            return at == default ? null : Format.ChatListTime(at);
+        }
+    }
+
+    private bool ShowStatus =>
+        Chat.Type != ChatType.Saved && Chat.LastMessage is { IsDeleted: false } last && last.SenderId == Me && last.Type is not (MessageType.System or MessageType.Call);
+
+    /// <summary>"Anna is typing" without the trailing ellipsis: animated dots follow it.</summary>
+    private string? TypingText => Format.Typing(Typing.Get(Chat.Id), withNames: Chat.Type == ChatType.Group)?.TrimEnd('…', '.', ' ');
+
+    private string? DraftText
+    {
+        get
+        {
+            if (ChatList.ActiveChatId == Chat.Id) return null;
+            var draft = Drafts.Get(Chat.Id);
+            return string.IsNullOrWhiteSpace(draft?.Text) ? null : MessagePreviewFormatter.OneLine(draft!.Text);
+        }
+    }
+
+    private string? SenderPrefix
+    {
+        get
+        {
+            if (Chat.LastMessage is not { IsDeleted: false } last || last.SenderId is not { } sender) return null;
+            if (last.Type is MessageType.System or MessageType.Call) return null;
+            if (Chat.Type != ChatType.Group) return null;
+            if (sender == Me) return L["common.you"];
+            var embedded = Chat.LastMessageSender?.Id == sender ? Chat.LastMessageSender : null;
+            return FormatService.FirstName(Users.NameOf(sender, L, embedded));
+        }
+    }
+
+    private string PreviewText => Chat.LastMessage is { } last ? Preview.FormatPreview(last) : L["chatlist.noMessages"];
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Typing.Changed += h, h => Typing.Changed -= h, id => id == Chat.Id);
+        RenderOn<Guid>(h => Drafts.Changed += h, h => Drafts.Changed -= h, id => id == Chat.Id);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h,
+            id => id == Chat.Peer?.Id || id == Chat.LastMessage?.SenderId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        // The @ badge pops in when a mention arrives (not on the first render).
+        var mentions = Chat.UnreadMentionCount;
+        _mentionPop = _initialized && _lastMentions == 0 && mentions > 0 || _mentionPop && mentions > 0;
+        _lastMentions = mentions;
+        _initialized = true;
+    }
+
+    private static string Factor(int numerator, int denominator) =>
+        ((double)numerator / denominator).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private Task OpenAsync() => OnOpen.InvokeAsync(Chat);
+
+    private Task MenuAsync(MenuPosition position) => OnMenu.InvokeAsync((Chat, position));
+
+    private Task RunAsync(string action) => OnAction.InvokeAsync((Chat, action));
+}

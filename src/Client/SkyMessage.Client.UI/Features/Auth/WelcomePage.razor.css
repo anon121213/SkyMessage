@@ -1,0 +1,95 @@
+/* The page fills the column (at least the screen height) and centers its content; children rise in (.sm-stagger). */
+.auth-page {
+    position: relative;
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+}
+
+.welcome__notice {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px 10px 10px;
+    border-radius: 20px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    color: var(--sm-text);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+}
+
+.welcome__notice-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    color: var(--sm-on-accent);
+}
+
+/* What it is: three rows on a frosted card, each with a pastel squircle tile. */
+.welcome__features {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+}
+
+.welcome__feature {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 8px 8px 6px;
+    color: var(--sm-text);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    text-wrap: pretty;
+}
+
+.welcome__tile {
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+.welcome__tile ::deep .sm-icon {
+    width: 1.375rem;
+    height: 1.375rem;
+}
+
+.welcome__buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+/* The second button is a glass capsule over the sky. */
+.welcome__buttons ::deep .sm-btn--secondary {
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    color: var(--sm-accent);
+}
+
+@media (hover: hover) {
+    .welcome__buttons ::deep .sm-btn--secondary:hover:not(:disabled) {
+        background: var(--sm-glass-strong);
+    }
+}
+
+html[data-fx="lite"] .welcome__notice,
+html[data-fx="lite"] .welcome__buttons ::deep .sm-btn--secondary {
+    background: var(--sm-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}

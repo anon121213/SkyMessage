@@ -1,0 +1,444 @@
+@* A person's profile as a hero over the page's sky: a big squircle avatar in a thin accent ring with the online dot,
+   name in the display font, presence; actions as glass circles with labels (message is a solid accent circle); info
+   and contact actions on glass cards with pastel tiles. Scrolling tucks the large header away (CSS
+   scroll-driven animation); OnHeaderHidden tells the page when to show the compact title in its app bar
+   (InfoBarTitle). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IUserStore Users
+@inject IContactStore Contacts
+@inject IChatListStore ChatList
+@inject ICallService Calls
+@inject IAuthService Auth
+@inject IMediaUrlBuilder MediaUrls
+@inject IServerEndpointService Endpoints
+@inject ILinkBuilder Links
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ShareHelper Share
+@inject LinkService LinkOpener
+@inject IRealtimeService Realtime
+@inject AppJs Js
+
+@if (_profile is null)
+{
+    @if (_notFound)
+    {
+        <EmptyState Icon="@IconNames.UserX" Title="@L["profile.notFound.title"]" Text="@L["profile.notFound.text"]" Fill="true" />
+    }
+    else if (_error is not null)
+    {
+        <EmptyState Icon="@IconNames.CloudOff" Title="@L["profile.loadFailed"]" Text="@_error" Fill="true">
+            <Actions><Button Icon="@IconNames.RefreshCw" OnClick="() => LoadAsync(true)">@L["common.retry"]</Button></Actions>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="profile__loading"><Skeleton Shape="SkeletonShape.Circle" Height="7.75rem" /><Skeleton Width="50%" Height="1.5rem" /><Skeleton Width="30%" /></div>
+    }
+}
+else
+{
+    var user = User!;
+    var isMe = user.Id == Auth.UserId;
+    <div class="profile sm-stagger">
+        <div class="profile__head">
+            <div class="profile__portrait">
+                <span class="profile__ring" aria-hidden="true"></span>
+                <UserAvatar UserId="user.Id" Embedded="user" Size="124" ShowOnline="@(!isMe && !user.IsDeleted)" OnClick="ViewPhotoAsync" Class="profile__avatar" />
+            </div>
+            @* The mark one header height above the name's bottom drives the app bar's compact title (HeaderTitleWatcher):
+               the name counts as gone once it has slid under the floating header, not when it leaves the screen. *@
+            <h2 class="profile__name" dir="auto">@user.NameOf(L)<span @ref="_nameEl" class="profile__title-mark" aria-hidden="true"></span></h2>
+            @if (!user.IsDeleted)
+            {
+                @if (isMe)
+                {
+                    <div class="profile__presence profile__presence--me">@L["profile.thisIsYou"]</div>
+                }
+                else
+                {
+                    <PresenceText UserId="user.Id" Embedded="user" Class="profile__presence" />
+                }
+            }
+        </div>
+
+        @if (!user.IsDeleted)
+        {
+            @* Actions: glass circles with labels; the first (message / edit) is a solid accent circle. *@
+            <div class="profile__actions">
+                @if (isMe)
+                {
+                    <button type="button" class="profile__action profile__action--primary" @onclick="EditMe">
+                        <span class="profile__action-orb"><Icon Name="@IconNames.SquarePen" /></span><span class="profile__action-label">@L["profile.action.edit"]</span>
+                    </button>
+                    <button type="button" class="profile__action" @onclick="OpenSavedAsync">
+                        <span class="profile__action-orb"><Icon Name="@IconNames.Bookmark" /></span><span class="profile__action-label">@L["common.savedMessages"]</span>
+                    </button>
+                    <button type="button" class="profile__action" @onclick="ShowQrAsync">
+                        <span class="profile__action-orb"><Icon Name="@IconNames.QrCode" /></span><span class="profile__action-label">@L["profile.qr"]</span>
+                    </button>
+                }
+                else
+                {
+                    @if (!InChatInfo)
+                    {
+                        <button type="button" class="profile__action profile__action--primary" disabled="@(!_profile.CanMessage && _profile.PrivateChatId is null)" @onclick="MessageAsync">
+                            <span class="profile__action-orb"><Icon Name="@IconNames.MessageCircle" /></span><span class="profile__action-label">@L["profile.action.message"]</span>
+                        </button>
+                    }
+                    @if (CallsEnabled)
+                    {
+                        <button type="button" class="profile__action @(InChatInfo ? "profile__action--primary" : null)" disabled="@(!_profile.CanCall)" @onclick="() => CallAsync(false)">
+                            <span class="profile__action-orb"><Icon Name="@IconNames.Phone" /></span><span class="profile__action-label">@L["profile.action.call"]</span>
+                        </button>
+                        <button type="button" class="profile__action" disabled="@(!_profile.CanCall)" @onclick="() => CallAsync(true)">
+                            <span class="profile__action-orb"><Icon Name="@IconNames.Video" /></span><span class="profile__action-label">@L["profile.action.video"]</span>
+                        </button>
+                    }
+                    <button type="button" class="profile__action" @onclick="ShareLinkAsync">
+                        <span class="profile__action-orb"><Icon Name="@IconNames.Share2" /></span><span class="profile__action-label">@L["profile.action.share"]</span>
+                    </button>
+                }
+            </div>
+            @if (!isMe && !_profile.CanMessage && _profile.PrivateChatId is null && !_profile.IsBlockedByMe)
+            {
+                <p class="profile__notice"><Icon Name="@IconNames.Lock" Size="18" /><span>@L["profile.cannotMessage"]</span></p>
+            }
+            @if (_profile.IsBlockedByMe)
+            {
+                <p class="profile__notice profile__notice--danger"><Icon Name="@IconNames.ShieldBan" Size="18" /><span>@L["profile.blockedNotice"]</span></p>
+            }
+        }
+
+        <div class="profile__sections">
+            @if (!user.IsDeleted)
+            {
+                <Section Title="@L["profile.info"]" DividerInset="64px">
+                    <ListItem Icon="@IconNames.AtSign" IconColor="@SettingsTones.Violet" Title="@user.Handle()" Subtitle="@L["profile.username"]" OnClick="CopyUsernameAsync" />
+                    @if (!string.IsNullOrWhiteSpace(_profile.Bio))
+                    {
+                        <ListItem Icon="@IconNames.Info" IconColor="@SettingsTones.Mauve" Multiline="true">
+                            <div class="sm-list-item__title"><LinkifiedText Text="@_profile.Bio" /></div>
+                            <div class="sm-list-item__subtitle">@L["profile.bio"]</div>
+                        </ListItem>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_profile.PhoneNumber))
+                    {
+                        <ListItem Icon="@IconNames.Phone" IconColor="@SettingsTones.Mint" Title="@_profile.PhoneNumber" Subtitle="@L["profile.phone"]" OnClick="PhoneAsync" />
+                    }
+                    <ListItem Icon="@IconNames.Link" IconColor="@SettingsTones.Sky" Title="@ProfileLink" Subtitle="@L["profile.link"]" OnClick="CopyLinkAsync">
+                        <Trailing>
+                            <IconButton Icon="@IconNames.QrCode" Label="@L["profile.qr"]" Variant="IconButtonVariant.Tonal" StopPropagation="true" OnClick="ShowQrAsync" />
+                        </Trailing>
+                    </ListItem>
+                    @if (_profile.CommonGroupsCount > 0 && !isMe)
+                    {
+                        <ListItem Icon="@IconNames.Users" IconColor="@SettingsTones.Peach" Title="@L.Plural("profile.commonGroups", _profile.CommonGroupsCount)" />
+                    }
+                </Section>
+            }
+
+            @if (!isMe && !user.IsDeleted)
+            {
+                <Section DividerInset="64px">
+                    @if (Contacts.IsContact(user.Id))
+                    {
+                        <ListItem Icon="@IconNames.UserPen" IconColor="@SettingsTones.Violet" Title="@L["profile.contact.rename"]" OnClick="RenameAsync" />
+                        <ListItem Icon="@IconNames.UserMinus" IconColor="@SettingsTones.Mauve" Title="@L["profile.contact.remove"]" OnClick="RemoveContactAsync" />
+                    }
+                    else
+                    {
+                        <ListItem Icon="@IconNames.UserRoundPlus" IconColor="@SettingsTones.Mint" Title="@L["profile.contact.add"]" OnClick="AddContactAsync" />
+                    }
+                    @if (_profile.IsBlockedByMe)
+                    {
+                        <ListItem Icon="@IconNames.ShieldCheck" IconColor="@SettingsTones.Mint" Title="@L["profile.unblock"]" OnClick="UnblockAsync" />
+                    }
+                    else
+                    {
+                        <ListItem Icon="@IconNames.ShieldBan" IconColor="@SettingsTones.Rose" Title="@L["profile.block"]" Danger="true" OnClick="BlockAsync" />
+                    }
+                </Section>
+            }
+            @Extra
+        </div>
+    </div>
+}
+
+@code {
+    private UserProfileDto? _profile;
+    private bool _notFound;
+    private string? _error;
+    private ElementReference _nameEl;
+    private HeaderTitleWatcher? _titleWatcher;
+
+    /// <summary>Either the user id...</summary>
+    [Parameter] public Guid? UserId { get; set; }
+    /// <summary>...or a username (from /u/{username} links).</summary>
+    [Parameter] public string? Username { get; set; }
+    /// <summary>Shown as a private chat's info (no "Message" button).</summary>
+    [Parameter] public bool InChatInfo { get; set; }
+    /// <summary>Extra sections under the profile (chat info adds mute/clear/delete).</summary>
+    [Parameter] public RenderFragment? Extra { get; set; }
+    /// <summary>Raised with the loaded profile (page titles).</summary>
+    [Parameter] public EventCallback<UserProfileDto> OnLoaded { get; set; }
+    /// <summary>True once the large name has scrolled out of view, false when it is back (the page's compact app bar title).</summary>
+    [Parameter] public EventCallback<bool> OnHeaderHidden { get; set; }
+
+    private UserSummaryDto? User => _profile is null ? null : Users.Resolve(_profile.User);
+
+    private bool CallsEnabled => Endpoints.Info?.CallsEnabled ?? true;
+
+    private string ProfileLink => User is { } user ? Links.ProfileLink(user.Username) : "";
+
+    protected override void OnInitialized()
+    {
+        // Presence and names re-render from the user store; profile fields (bio, phone, privacy) are refetched
+        // when the server says the user changed, when contacts change, and after a resync.
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == _profile?.User.Id);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        Action<UserRefEvent> userChanged = e =>
+        {
+            if (e.UserId == _profile?.User.Id) Refetch();
+        };
+        Action<ContactsChangedEvent> contactsChanged = _ => Refetch();
+        Action resynced = Refetch;
+        Action localContacts = Refetch;
+        Realtime.UserChanged += userChanged;
+        Realtime.ContactsChanged += contactsChanged;
+        Realtime.Resynced += resynced;
+        Contacts.Changed += localContacts;
+        OnDispose(() =>
+        {
+            Realtime.UserChanged -= userChanged;
+            Realtime.ContactsChanged -= contactsChanged;
+            Realtime.Resynced -= resynced;
+            Contacts.Changed -= localContacts;
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_profile is null || !OnHeaderHidden.HasDelegate || IsDisposed) return;
+        _titleWatcher ??= new HeaderTitleWatcher(Js, hidden => InvokeAsync(() => OnHeaderHidden.InvokeAsync(hidden)));
+        await _titleWatcher.WatchAsync(_nameEl);
+    }
+
+    private void Refetch()
+    {
+        if (_profile is null || IsDisposed) return;
+        _ = InvokeAsync(() => LoadAsync(true));
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_profile is not null && ((UserId is not null && _profile.User.Id == UserId)
+                                     || (UserId is null && string.Equals(_profile.User.Username, Username, StringComparison.OrdinalIgnoreCase))))
+            return;
+        _profile = null;
+        await LoadAsync(false);
+    }
+
+    private async Task LoadAsync(bool refresh)
+    {
+        _error = null;
+        _notFound = false;
+        try
+        {
+            UserProfileDto? profile;
+            if (UserId is { } id) profile = await Users.GetProfileAsync(id, refresh);
+            else if (!string.IsNullOrWhiteSpace(Username)) profile = await Users.GetProfileByUsernameAsync(Username.TrimStart('@'));
+            else profile = null;
+            if (IsDisposed) return;
+            _profile = profile;
+            _notFound = profile is null;
+            if (profile is not null) await OnLoaded.InvokeAsync(profile);
+        }
+        catch (ApiException ex) when (ex.StatusCode == 404)
+        {
+            _profile = null;
+            _notFound = true;
+        }
+        catch (Exception ex)
+        {
+            if (_profile is null) _error = L.Error(ex);
+        }
+        StateHasChanged();
+    }
+
+    private async Task MessageAsync()
+    {
+        if (_profile is null) return;
+        try
+        {
+            var chatId = _profile.PrivateChatId ?? (await ChatList.OpenPrivateChatAsync(_profile.User.Id)).Id;
+            Nav.OpenChat(chatId);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CallAsync(bool video)
+    {
+        if (_profile is null) return;
+        try
+        {
+            var chatId = _profile.PrivateChatId ?? (await ChatList.OpenPrivateChatAsync(_profile.User.Id)).Id;
+            await Calls.StartAsync(chatId, video);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private void EditMe() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Profile));
+
+    private async Task OpenSavedAsync()
+    {
+        try
+        {
+            Nav.OpenChat((await ChatList.GetSavedMessagesAsync()).Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private Task CopyUsernameAsync() => User is { } user ? Share.CopyAsync(user.Handle(), L["profile.usernameCopied"]) : Task.CompletedTask;
+
+    private Task CopyLinkAsync() => Share.CopyAsync(ProfileLink, L["common.linkCopied"]);
+
+    private Task ShareLinkAsync() => User is { } user
+        ? Share.ShareAsync(L.Format("profile.shareText", user.NameOf(L), ProfileLink), user.NameOf(L))
+        : Task.CompletedTask;
+
+    private async Task ShowQrAsync()
+    {
+        if (User is not { } user) return;
+        await Dialogs.ShowAsync<QrShareDialog>(user.NameOf(L), new Dictionary<string, object?>
+        {
+            [nameof(QrShareDialog.Link)] = ProfileLink,
+            [nameof(QrShareDialog.Caption)] = user.Handle(),
+            [nameof(QrShareDialog.ShareText)] = L.Format("profile.shareText", user.NameOf(L), ProfileLink),
+        });
+    }
+
+    private async Task PhoneAsync()
+    {
+        if (_profile?.PhoneNumber is not { } phone) return;
+        var choice = await Dialogs.ChooseAsync(phone,
+        [
+            new ChoiceOption<string>("call", L["profile.phone.call"]) { Icon = IconNames.PhoneOutgoing, Description = L["profile.phone.callHint"] },
+            new ChoiceOption<string>("copy", L["common.copy"]) { Icon = IconNames.Copy },
+        ]);
+        if (choice?.Value == "call") await LinkOpener.OpenAsync("tel:" + new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray()));
+        else if (choice?.Value == "copy") await Share.CopyAsync(phone);
+    }
+
+    private async Task ViewPhotoAsync()
+    {
+        if (User is not { AvatarMediaId: { } mediaId } user) return;
+        await Dialogs.ShowAsync<AvatarViewerDialog>(user.NameOf(L), new Dictionary<string, object?>
+        {
+            [nameof(AvatarViewerDialog.MediaId)] = mediaId,
+        }, new DialogOptions { Size = DialogSize.Medium, Flush = true });
+    }
+
+    private async Task AddContactAsync()
+    {
+        if (User is not { } user) return;
+        try
+        {
+            await Contacts.AddAsync(user.Id);
+            Toasts.Success(L.Format("contacts.added", user.NameOf(L)));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task RenameAsync()
+    {
+        if (User is not { } user) return;
+        var name = await Dialogs.PromptAsync(new PromptOptions
+        {
+            Title = L["profile.contact.rename"],
+            Message = L["profile.contact.renameHint"],
+            Label = L["profile.contact.nameLabel"],
+            InitialValue = user.ContactName ?? user.DisplayName,
+            MaxLength = Limits.ContactNameMaxLength,
+            AllowEmpty = true,
+        });
+        if (name is null) return;
+        try
+        {
+            await Contacts.RenameAsync(user.Id, string.IsNullOrWhiteSpace(name) ? null : name);
+            Toasts.Success(L["profile.contact.renamed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task RemoveContactAsync()
+    {
+        if (User is not { } user) return;
+        if (!await Dialogs.ConfirmAsync(L.Format("profile.contact.removeTitle", user.NameOf(L)), L["profile.contact.removeText"], L["profile.contact.remove"], danger: true))
+            return;
+        try
+        {
+            await Contacts.RemoveAsync(user.Id);
+            Toasts.Success(L["profile.contact.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task BlockAsync()
+    {
+        if (User is not { } user) return;
+        if (!await Dialogs.ConfirmAsync(L.Format("profile.blockTitle", user.NameOf(L)), L["profile.blockText"], L["profile.block"], danger: true))
+            return;
+        try
+        {
+            await Contacts.BlockAsync(user.Id);
+            Toasts.Success(L["profile.blocked"]);
+            await LoadAsync(true);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task UnblockAsync()
+    {
+        if (User is not { } user) return;
+        try
+        {
+            await Contacts.UnblockAsync(user.Id);
+            Toasts.Success(L["profile.unblocked"]);
+            await LoadAsync(true);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_titleWatcher is not null) await _titleWatcher.DisposeAsync();
+        Dispose();
+    }
+}

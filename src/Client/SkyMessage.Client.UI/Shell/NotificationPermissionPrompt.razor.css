@@ -1,0 +1,87 @@
+/* A glass card dropping in at the top of the screen (inside the shell's notices stack). */
+.notify-card {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    width: min(100%, 28rem);
+    padding: 14px 8px 14px 14px;
+    border-radius: var(--sm-radius-xl);
+    pointer-events: auto;
+    overflow: hidden;
+    animation: notify-card-in 560ms var(--sm-spring-soft) backwards;
+}
+
+.notify-card--leaving {
+    pointer-events: none;
+    animation: notify-card-out 200ms var(--sm-ease-in) forwards;
+}
+
+/* The bell in a flat accent disc; it rings once as the card arrives. */
+.notify-card__disc {
+    position: relative;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.875rem;
+    height: 2.875rem;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    color: #FFFFFF;
+}
+
+.notify-card__disc ::deep .sm-icon {
+    transform-origin: 50% 12%;
+    animation: notify-bell 1.2s var(--sm-ease) 0.5s;
+}
+
+.notify-card__body {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-top: 1px;
+}
+
+.notify-card__title {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+}
+
+.notify-card__text {
+    margin-top: 2px;
+    font-size: 0.875rem;
+    line-height: 1.42;
+    color: var(--sm-text-2);
+}
+
+.notify-card__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.notify-card ::deep .notify-card__close {
+    position: relative;
+    margin: -4px 0 0 -6px;
+}
+
+@keyframes notify-card-in {
+    from { opacity: 0; transform: translateY(-110%) scale(0.94); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes notify-card-out {
+    to { opacity: 0; transform: translateY(-40%) scale(0.94); }
+}
+
+@keyframes notify-bell {
+    0%, 100% { transform: none; }
+    15% { transform: rotate(12deg); }
+    35% { transform: rotate(-9deg); }
+    55% { transform: rotate(5deg); }
+    75% { transform: rotate(-2deg); }
+}

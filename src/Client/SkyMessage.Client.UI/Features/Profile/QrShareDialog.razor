@@ -1,0 +1,36 @@
+@* QR code of a profile or invite link on a white card in a thin accent frame (deep indigo modules, our logo in the
+   middle), with copy/share. *@
+@inject ShareHelper Share
+
+<div class="qr-share">
+    <div class="qr-share__card">
+        <div class="qr-share__paper">
+            <QrCode Text="@Link" Size="216" Dark="#1C1634" />
+            <span class="qr-share__logo" aria-hidden="true"><Logo Size="40" /></span>
+        </div>
+    </div>
+    @if (Caption is not null)
+    {
+        <div class="qr-share__caption">@Caption</div>
+    }
+    <div class="qr-share__link sm-break">@Link</div>
+    <p class="qr-share__hint">@L["profile.qrHint"]</p>
+</div>
+<DialogActions Stack="true">
+    <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.Copy" OnClick="CopyAsync">@L["common.copy"]</Button>
+    <Button Icon="@IconNames.Share2" OnClick="ShareAsync">@L["common.share"]</Button>
+</DialogActions>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Link { get; set; } = "";
+    [Parameter] public string? Caption { get; set; }
+    /// <summary>Text for the share sheet (defaults to the link).</summary>
+    [Parameter] public string? ShareText { get; set; }
+
+    private Task CopyAsync() => Share.CopyAsync(Link, L["common.linkCopied"]);
+
+    private Task ShareAsync() => Share.ShareAsync(ShareText ?? Link, Caption);
+}

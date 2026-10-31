@@ -1,0 +1,211 @@
+@* Active sessions (devices signed in to my account): this device first, end one or all the others. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject ISkyApi Api
+@inject FormatService Format
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject IRealtimeService Realtime
+
+<SettingsScaffold Title="@L["settings.sessions.title"]">
+    <Actions>
+        <IconButton Icon="@IconNames.RefreshCw" Label="@L["settings.sessions.refresh"]" Disabled="_loading" OnClick="LoadAsync" />
+    </Actions>
+    <ChildContent>
+        @if (_sessions is null)
+        {
+            @if (_error is not null)
+            {
+                <EmptyState Icon="@IconNames.CloudOff" Title="@L["settings.sessions.error"]" Text="@L.Error(_error)">
+                    <Actions><Button Variant="ButtonVariant.Tonal" Icon="@IconNames.RefreshCw" OnClick="LoadAsync">@L["common.retry"]</Button></Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <SkeletonList Rows="3" />
+            }
+        }
+        else
+        {
+            var current = _sessions.FirstOrDefault(s => s.IsCurrent);
+            var others = _sessions.Where(s => !s.IsCurrent).OrderByDescending(s => s.LastActiveAt).ToList();
+            @if (current is not null)
+            {
+                <Section Title="@L["settings.sessions.current"]" DividerInset="64px">
+                    @Row(current)
+                </Section>
+            }
+            @if (others.Count > 0)
+            {
+                <Section Footer="@L["settings.sessions.terminateAllHint"]">
+                    <ListItem Icon="@IconNames.LogOut" IconColor="@SettingsTones.Rose" Title="@L["settings.sessions.terminateAll"]" Danger="true" Disabled="_busy" OnClick="TerminateOthersAsync" />
+                </Section>
+                <Section Title="@L["settings.sessions.others"]" Footer="@L["settings.sessions.tapHint"]" DividerInset="64px">
+                    @foreach (var session in others)
+                    {
+                        @Row(session)
+                    }
+                </Section>
+            }
+            else
+            {
+                <p class="sm-caption sm-center-text sm-mt-m">@L["settings.sessions.onlyThis"]</p>
+            }
+        }
+    </ChildContent>
+</SettingsScaffold>
+
+@code {
+    private IReadOnlyList<SessionDto>? _sessions;
+    private string? _error;
+    private bool _loading;
+    private bool _busy;
+    private readonly CancellationTokenSource _lifetime = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Realtime.Resynced += OnResynced;
+        OnDispose(() => Realtime.Resynced -= OnResynced);
+        await LoadAsync();
+    }
+
+    private void OnResynced() => _ = InvokeAsync(LoadAsync);
+
+    private RenderFragment Row(SessionDto session) => __builder =>
+    {
+        var icon = PlatformIcon(session.Platform);
+        var color = session.IsCurrent ? SettingsTones.Mint : SettingsTones.Mauve;
+        if (session.IsCurrent)
+        {
+            <ListItem @key="session.Id" Icon="@icon" IconColor="@color" Multiline="true">@RowBody(session)</ListItem>
+        }
+        else
+        {
+            <ListItem @key="session.Id" Icon="@icon" IconColor="@color" Multiline="true" OnClick="() => TerminateAsync(session)">@RowBody(session)</ListItem>
+        }
+    };
+
+    private RenderFragment RowBody(SessionDto session) => __builder =>
+    {
+        <div class="sm-list-item__title">@(string.IsNullOrWhiteSpace(session.DeviceName) ? PlatformName(session.Platform) : session.DeviceName)</div>
+        <div class="sm-list-item__subtitle">@Describe(session)</div>
+        <div class="sm-list-item__subtitle sm-faint">
+            @if (session.IsCurrent)
+            {
+                <span class="sm-success-text">@L["settings.sessions.online"]</span>
+            }
+            else
+            {
+                @L.Format("settings.sessions.lastActive", Format.DateTime(session.LastActiveAt))
+            }
+            @if (!string.IsNullOrEmpty(session.IpAddress))
+            {
+                <span> · @session.IpAddress</span>
+            }
+        </div>
+    };
+
+    private string Describe(SessionDto session)
+    {
+        var parts = new List<string> { $"SkyMessage {session.AppVersion}".Trim() };
+        var platform = PlatformName(session.Platform);
+        parts.Add(string.IsNullOrWhiteSpace(session.OsVersion) ? platform : $"{platform} {session.OsVersion}");
+        return string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    private static string PlatformIcon(ClientPlatform platform) => platform switch
+    {
+        ClientPlatform.Android or ClientPlatform.iOS => IconNames.Smartphone,
+        ClientPlatform.MacOS => IconNames.Laptop,
+        ClientPlatform.Windows or ClientPlatform.Linux => IconNames.Monitor,
+        ClientPlatform.Web => IconNames.Globe,
+        _ => IconNames.MonitorSmartphone,
+    };
+
+    private string PlatformName(ClientPlatform platform) => platform switch
+    {
+        ClientPlatform.Android => "Android",
+        ClientPlatform.iOS => "iOS",
+        ClientPlatform.MacOS => "macOS",
+        ClientPlatform.Windows => "Windows",
+        ClientPlatform.Linux => "Linux",
+        ClientPlatform.Web => L["settings.sessions.browser"],
+        _ => L["settings.sessions.unknownDevice"],
+    };
+
+    private async Task LoadAsync()
+    {
+        if (_loading) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _sessions = await Api.GetSessionsAsync(_lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = ex is ApiException api ? api.Code : ClientErrorCodes.Network;
+            if (_sessions is not null) Toasts.Error(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task TerminateAsync(SessionDto session)
+    {
+        var name = string.IsNullOrWhiteSpace(session.DeviceName) ? PlatformName(session.Platform) : session.DeviceName;
+        if (!await Dialogs.ConfirmAsync(L["settings.sessions.terminateTitle"], L.Format("settings.sessions.terminateText", name), L["settings.sessions.terminate"], danger: true))
+            return;
+        _busy = true;
+        try
+        {
+            await Api.TerminateSessionAsync(session.Id, _lifetime.Token);
+            _sessions = _sessions?.Where(s => s.Id != session.Id).ToList();
+            Toasts.Success(L["settings.sessions.terminated"]);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task TerminateOthersAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["settings.sessions.terminateAllTitle"], L["settings.sessions.terminateAllText"], L["settings.sessions.terminateAllConfirm"], danger: true))
+            return;
+        _busy = true;
+        try
+        {
+            await Api.TerminateOtherSessionsAsync(_lifetime.Token);
+            _sessions = _sessions?.Where(s => s.IsCurrent).ToList();
+            Toasts.Success(L["settings.sessions.terminatedAll"]);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

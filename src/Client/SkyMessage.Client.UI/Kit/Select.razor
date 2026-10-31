@@ -1,0 +1,55 @@
+@* A choice field: looks like a text field and opens our own choice sheet (DialogService.ChooseAsync) — never the
+   platform's native picker. *@
+@typeparam TValue
+@inject DialogService Dialogs
+
+<div class="sm-field @(Disabled ? "sm-field--disabled" : null) @Class">
+    @if (Label is not null)
+    {
+        <span class="sm-field__label" id="@($"{_id}-label")">@Label</span>
+    }
+    <button type="button" class="sm-field__box sm-select__button" disabled="@Disabled" aria-haspopup="listbox"
+            aria-expanded="@(_open ? "true" : "false")" aria-labelledby="@(Label is not null ? $"{_id}-label {_id}-value" : null)"
+            @onclick="OpenAsync">
+        <span id="@($"{_id}-value")" class="sm-select__value @(Current is null ? "sm-select__value--empty" : null)">@(Current?.Label ?? "—")</span>
+        <span class="sm-select__chevron"><Icon Name="@IconNames.ChevronDown" Size="18" /></span>
+    </button>
+    @if (Hint is not null)
+    {
+        <div class="sm-field__meta"><span>@Hint</span></div>
+    }
+</div>
+
+@code {
+    private readonly string _id = "s" + Guid.NewGuid().ToString("N")[..10];
+    private bool _open;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<TValue>> Options { get; set; } = [];
+    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>The option holding <see cref="Value"/>; null when none does.</summary>
+    private ChoiceOption<TValue>? Current => Options.FirstOrDefault(o => EqualityComparer<TValue>.Default.Equals(o.Value, Value!));
+
+    private async Task OpenAsync()
+    {
+        if (_open || Disabled || Options.Count == 0) return;
+        _open = true;
+        try
+        {
+            var current = Current;
+            var options = Options.Select(o => o with { Selected = ReferenceEquals(o, current) }).ToList();
+            var chosen = await Dialogs.ChooseAsync(Label, options);
+            if (chosen is not null && !chosen.Disabled && !EqualityComparer<TValue>.Default.Equals(chosen.Value, Value!))
+                await ValueChanged.InvokeAsync(chosen.Value);
+        }
+        finally
+        {
+            _open = false;
+        }
+    }
+}

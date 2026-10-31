@@ -1,0 +1,288 @@
+/* Shared media over the sky: pill tabs with one sliding gradient pill, a grid of rounded tiles grouped by month, files /
+   voice / links on one frosted card (rows separated by air), round notes with date chips. */
+
+.smedia {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+/* ---------- Tabs: a lavender track; one gradient pill slides under the active tab (viewer.js sharedMedia) ---------- */
+
+.smedia-tabs {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    padding: 4px;
+    border-radius: 999px;
+    background: var(--sm-surface-2);
+    box-shadow: inset 0 0 0 1px var(--sm-border), inset 0 1px 2px rgba(30, 16, 90, 0.06);
+}
+
+.smedia-tabs__ink {
+    position: absolute;
+    z-index: 0;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 0;
+    border-radius: 999px;
+    background: var(--sm-grad);
+    box-shadow: 0 2px 6px -2px rgba(30, 16, 90, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transform-origin: 0 50%;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.smedia-tabs[data-ink] .smedia-tabs__ink {
+    opacity: 1;
+}
+
+.smedia-tabs ::deep .sm-tabs {
+    position: relative;
+    z-index: 1;
+    gap: 2px;
+    padding: 0;
+    /* Labels scrolled to the track's ends fade out instead of being cut. */
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+
+.smedia-tabs ::deep .sm-tabs--pill .sm-tab {
+    height: 2.375rem;
+    padding: 0 15px;
+    gap: 7px;
+    background: transparent;
+    font-size: 0.8125rem;
+}
+
+.smedia-tabs ::deep .sm-tabs--pill .sm-tab .sm-icon {
+    width: 1.0625rem;
+    height: 1.0625rem;
+}
+
+@media (hover: hover) {
+    .smedia-tabs ::deep .sm-tabs--pill .sm-tab:not(.sm-tab--active):hover {
+        color: var(--sm-text);
+    }
+}
+
+.smedia-tabs ::deep .sm-tabs--pill .sm-tab--active {
+    box-shadow: none;
+}
+
+/* Once the pill is placed, the tabs themselves stay clear (before that, the kit's own active pill shows). */
+.smedia-tabs[data-ink] ::deep .sm-tabs--pill .sm-tab--active {
+    background: transparent;
+    box-shadow: none;
+}
+
+/* ---------- Photos & videos: rounded tiles with air between them ---------- */
+
+.smedia__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+    gap: 6px;
+    padding: 2px 12px 12px;
+}
+
+.smedia__month {
+    grid-column: 1 / -1;
+    padding: 14px 6px 4px;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--sm-text-2);
+}
+
+.smedia__grid ::deep .smedia__cell {
+    position: relative;
+    aspect-ratio: 1;
+}
+
+.smedia__tile {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    padding: 0;
+    border-radius: 14px;
+    background: var(--sm-surface-3);
+    box-shadow: var(--sm-shadow-1);
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.smedia__tile:active {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+}
+
+/* A thin light rim over the picture. */
+.smedia__tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+    pointer-events: none;
+}
+
+.smedia__mini {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(8px);
+    transform: scale(1.1);
+}
+
+.smedia__img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: opacity var(--sm-dur) ease;
+}
+
+/* A thumbnail fades in over its blurred placeholder once it has loaded (only while viewer.js watches the loads). */
+.smedia[data-fading] .smedia__img[data-fade]:not([data-loaded]) {
+    opacity: 0;
+}
+
+/* Video: a night-glass capsule with a play glyph and the length (no blur in a grid). */
+.smedia__badge {
+    position: absolute;
+    z-index: 1;
+    left: 6px;
+    bottom: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 1.25rem;
+    padding: 0 8px 0 6px;
+    border-radius: 999px;
+    background: rgba(14, 9, 38, 0.58);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    color: #FFFFFF;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+/* ---------- Files, voice, links: rows on one frosted card ---------- */
+
+.smedia__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 8px 12px 12px;
+    padding: 6px;
+    border-radius: var(--sm-radius-xl);
+    background: var(--sm-card);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+}
+
+.smedia__list:empty,
+.smedia__list:not(:has(> *)) {
+    display: none;
+}
+
+html[data-fx="lite"] .smedia__list {
+    background: var(--sm-card-solid);
+}
+
+.smedia__list ::deep .smedia__row {
+    padding: 10px 12px;
+    border-radius: 20px;
+}
+
+.smedia__list ::deep .smedia__row .sm-list-item {
+    margin: -10px -12px;
+    border-radius: 20px;
+}
+
+.smedia__list ::deep .file,
+.smedia__list ::deep .voice {
+    max-width: none;
+}
+
+.smedia__list ::deep .sm-list-item__title {
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+}
+
+.smedia__who {
+    margin-bottom: 6px;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sm-text-2);
+}
+
+.smedia__date {
+    color: var(--sm-text-3);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+/* Link rows: a pastel squircle tile with the link glyph. */
+.smedia__link-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 13px;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    color: var(--sm-accent);
+    background: var(--sm-accent-soft);
+    background: linear-gradient(140deg, color-mix(in srgb, var(--sm-accent) 24%, transparent), color-mix(in srgb, var(--sm-accent) 9%, transparent));
+}
+
+.smedia__url {
+    color: var(--sm-link);
+    word-break: break-all;
+}
+
+.smedia__snippet {
+    margin-top: 2px;
+    color: var(--sm-text-2);
+    font-size: 0.8125rem;
+}
+
+/* ---------- Round video messages ---------- */
+
+.smedia__notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+    justify-items: center;
+    gap: 18px 8px;
+    padding: 16px 12px;
+}
+
+.smedia__notes ::deep .smedia__note {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.smedia__notes .smedia__date {
+    padding: 2px 9px;
+    border-radius: 999px;
+    color: var(--sm-text-2);
+    background: var(--sm-card);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+}
+
+.smedia__sentinel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+}

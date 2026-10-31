@@ -1,0 +1,45 @@
+@* Circular progress (uploads, downloads). Value 0..1; Indeterminate spins. Optional cancel button in the center. *@
+@using System.Globalization
+
+<div class="sm-progress-ring @(Indeterminate ? "sm-progress-ring--indeterminate" : null) @Class" style="--size:@Rem" role="progressbar"
+     aria-valuemin="0" aria-valuemax="100" aria-valuenow="@(Indeterminate ? null : Percent)">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+        <circle class="sm-progress-ring__track" cx="24" cy="24" r="@R" fill="none" stroke-width="@Num(Stroke)" />
+        <circle class="sm-progress-ring__bar" cx="24" cy="24" r="@R" fill="none" stroke-width="@Num(Stroke)" stroke-linecap="round"
+                stroke-dasharray="@Num(Circumference)" stroke-dashoffset="@Num(Offset)" />
+    </svg>
+    @if (OnCancel.HasDelegate)
+    {
+        <button type="button" class="sm-progress-ring__cancel" aria-label="@(CancelLabel ?? L["common.cancel"])" title="@(CancelLabel ?? L["common.cancel"])"
+                @onclick="OnCancel" @onclick:stopPropagation="true">
+            <Icon Name="@IconNames.X" StrokeWidth="2.6" />
+        </button>
+    }
+    else if (ChildContent is not null)
+    {
+        <span class="sm-progress-ring__center">@ChildContent</span>
+    }
+</div>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public double Value { get; set; }
+    [Parameter] public bool Indeterminate { get; set; }
+    /// <summary>Diameter in px at 100% font scale.</summary>
+    [Parameter] public double Size { get; set; } = 44;
+    /// <summary>Stroke width in viewBox units (48).</summary>
+    [Parameter] public double Stroke { get; set; } = 3.5;
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string? CancelLabel { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Rem => (Size / 16).ToString("0.###", CultureInfo.InvariantCulture) + "rem";
+    private string R => Num(24 - Stroke / 2 - 0.5);
+    private double Circumference => 2 * Math.PI * (24 - Stroke / 2 - 0.5);
+    private double Offset => Indeterminate ? Circumference * 0.72 : Circumference * (1 - Math.Clamp(Value, 0, 1));
+    private string Percent => Math.Round(Math.Clamp(Value, 0, 1) * 100).ToString(CultureInfo.InvariantCulture);
+
+    private static string Num(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+}

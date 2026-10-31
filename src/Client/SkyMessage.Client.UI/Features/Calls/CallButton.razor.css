@@ -1,0 +1,312 @@
+/* Call controls live on the night call screen (always dark) and in the call bar's night capsule: white glass circles,
+   a white circle when switched on, mint and rose orbs to answer and to hang up. Restrained: no colored glows, no gloss.
+   No backdrop blur either: the circles may sit over a playing video, where a blur would cost a repaint every frame. */
+
+.call-btn {
+    --call-btn-size: 4rem;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 0;
+    color: #FFFFFF;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    /* New buttons (the call screen opening, a call getting connected) rise in, one after another. */
+    animation: call-btn-in 380ms var(--sm-spring-soft) backwards;
+}
+
+.call-btn:nth-child(2) {
+    animation-delay: 40ms;
+}
+
+.call-btn:nth-child(3) {
+    animation-delay: 80ms;
+}
+
+.call-btn:nth-child(4) {
+    animation-delay: 120ms;
+}
+
+.call-btn:nth-child(n + 5) {
+    animation-delay: 160ms;
+}
+
+@keyframes call-btn-in {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.86);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.call-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* ---- The circle: white glass with a lit rim ---- */
+
+.call-btn__circle {
+    position: relative;
+    /* Own stacking context: the ring (z-index -1) stays behind the orb's icon, not behind the call screen. */
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--call-btn-size);
+    height: var(--call-btn-size);
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.13);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    /* Pressing sinks quickly; letting go springs back. */
+    transition: transform var(--sm-dur) var(--sm-spring), opacity var(--sm-dur-fast) ease;
+}
+
+/* The switched-on state: a white circle fading in on its own layer. */
+.call-btn__circle::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: #F4F3FA;
+    opacity: 0;
+    transform: scale(0.82);
+    transition: opacity var(--sm-dur) ease, transform var(--sm-dur-slow) var(--sm-spring);
+}
+
+.call-btn.is-active .call-btn__circle {
+    color: #1E2147;
+}
+
+.call-btn.is-active .call-btn__circle::before {
+    opacity: 1;
+    transform: none;
+}
+
+.call-btn:not(:disabled):active .call-btn__circle {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .call-btn:not(:disabled):hover .call-btn__circle {
+        background: rgba(255, 255, 255, 0.2);
+    }
+}
+
+.call-btn:focus-visible {
+    outline: none;
+}
+
+.call-btn:focus-visible .call-btn__circle {
+    outline: 2px solid #FFFFFF;
+    outline-offset: 3px;
+}
+
+/* The icon element is re-created when the icon changes (mute, camera, speaker): it turns in. */
+.call-btn__icon {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    transition: color var(--sm-dur-fast) ease;
+}
+
+.call-btn__icon.is-swapped {
+    animation: call-icon-in var(--sm-dur-slow) var(--sm-spring);
+}
+
+@keyframes call-icon-in {
+    from {
+        opacity: 0;
+        transform: rotate(-70deg) scale(0.4);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ---- Answer (mint) and hang-up / decline (rose) ---- */
+
+.call-btn--accept .call-btn__circle {
+    background: var(--sm-grad-success);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
+}
+
+.call-btn--danger .call-btn__circle {
+    background: var(--sm-grad-danger);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
+}
+
+@media (hover: hover) {
+    .call-btn--accept:not(:disabled):hover .call-btn__circle {
+        background: var(--sm-grad-success);
+        filter: brightness(1.07);
+    }
+
+    .call-btn--danger:not(:disabled):hover .call-btn__circle {
+        background: var(--sm-grad-danger);
+        filter: brightness(1.07);
+    }
+}
+
+.call-btn--accept .call-btn__circle::before,
+.call-btn--danger .call-btn__circle::before {
+    display: none;
+}
+
+/* ---- Ringing: a thin ring opens out of the orb, and the answer orb hops like a phone on a table ---- */
+
+.call-btn__ring {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    animation: call-btn-ring 2.4s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+
+.call-btn--accept .call-btn__ring {
+    box-shadow: inset 0 0 0 1.5px rgba(120, 222, 178, 0.6);
+}
+
+.call-btn--danger .call-btn__ring {
+    box-shadow: inset 0 0 0 1.5px rgba(255, 150, 170, 0.5);
+    animation-delay: 1.2s;
+}
+
+@keyframes call-btn-ring {
+    0% {
+        opacity: 0.8;
+        transform: scale(1);
+    }
+
+    75%,
+    100% {
+        opacity: 0;
+        transform: scale(1.45);
+    }
+}
+
+.call-btn--glow.call-btn--accept .call-btn__circle {
+    animation: call-btn-hop 2.4s var(--sm-ease) infinite;
+}
+
+.call-btn--glow.call-btn--accept .call-btn__icon ::deep svg {
+    animation: call-btn-wiggle 2.4s ease-in-out infinite;
+}
+
+@keyframes call-btn-hop {
+    0%,
+    40%,
+    100% {
+        transform: none;
+    }
+
+    8% {
+        transform: translateY(-6px);
+    }
+
+    16% {
+        transform: none;
+    }
+
+    23% {
+        transform: translateY(-3px);
+    }
+
+    30% {
+        transform: none;
+    }
+}
+
+@keyframes call-btn-wiggle {
+    0%,
+    34%,
+    100% {
+        transform: none;
+    }
+
+    4%,
+    12%,
+    20% {
+        transform: rotate(-14deg);
+    }
+
+    8%,
+    16%,
+    24% {
+        transform: rotate(14deg);
+    }
+
+    28% {
+        transform: rotate(-4deg);
+    }
+}
+
+/* Pressing an orb that hops: the press wins. */
+.call-btn--glow.call-btn--accept:not(:disabled):active .call-btn__circle {
+    animation: none;
+    transform: scale(0.88);
+}
+
+/* ---- Caption ---- */
+
+/* Up to two centered lines ("Выключить / камеру"): the circles stay in one row, a long caption grows downward. */
+.call-btn__label {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    max-width: calc(100% + 8px);
+    min-width: 0;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.18;
+    letter-spacing: 0.01em;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.82);
+    overflow: hidden;
+    overflow-wrap: break-word;
+}
+
+/* ---- Compact: the call bar's small circles ---- */
+
+.call-btn--compact {
+    --call-btn-size: 2.375rem;
+    flex-shrink: 0;
+    animation: none;
+}
+
+.call-btn--compact .call-btn__circle {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.call-btn--compact.call-btn--danger .call-btn__circle,
+.call-btn--compact.call-btn--accept .call-btn__circle {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Narrow phones: the deck keeps every control on one line. */
+@media (max-width: 400px) {
+    .call-btn {
+        --call-btn-size: 3.625rem;
+    }
+
+    .call-btn--compact {
+        --call-btn-size: 2.375rem;
+    }
+}

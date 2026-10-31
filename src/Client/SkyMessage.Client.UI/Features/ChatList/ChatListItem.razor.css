@@ -1,0 +1,418 @@
+/* Row wrapper: the swipe actions live behind the row content; app.js sets --row-x / --row-w and [data-swipe] /
+   [data-full] while a row is moved or open (attachRowSwipe). */
+.chat-row-wrap {
+    --action-w: 4.75rem;
+    position: relative;
+    touch-action: pan-y;
+}
+
+/* Airy rows on the sky: no separators, no backdrop; a rounded tint on hover and press. */
+.chat-row-wrap ::deep .chat-row {
+    position: relative;
+    z-index: 1;
+    gap: 14px;
+    min-height: 4.75rem;
+    padding: 9px 12px;
+    border-radius: 22px;
+    background-color: transparent;
+    transition: background-color var(--sm-dur-fast) ease, box-shadow var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+@media (hover: hover) {
+    .chat-row-wrap ::deep .chat-row.sm-list-item--clickable:hover {
+        background-color: var(--sm-hover);
+    }
+}
+
+.chat-row-wrap ::deep .chat-row.sm-list-item--clickable:active {
+    background-color: var(--sm-press);
+}
+
+/* Wide list panel: the open chat is softly tinted. */
+.chat-row-wrap ::deep .chat-row.sm-list-item--selected,
+.chat-row-wrap ::deep .chat-row.sm-list-item--selected:hover {
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 22%, transparent);
+}
+
+/* Being swiped: the row lifts into a frosted card that follows the finger exactly (no transform transition; a
+   released row glides by app.js transitioning --row-x). */
+.chat-row-wrap[data-swipe] ::deep .chat-row {
+    background-color: var(--sm-glass-strong);
+    box-shadow: var(--sm-shadow-1);
+    transform: translate3d(var(--row-x, 0px), 0, 0);
+    transition: background-color var(--sm-dur-fast) ease, box-shadow var(--sm-dur) ease;
+}
+
+html[data-compact="true"] .chat-row-wrap ::deep .chat-row {
+    gap: 12px;
+    min-height: 3.875rem;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+/* ---- Avatar: a thin accent ring while there is something unread ---- */
+
+.chat-row__avatar {
+    position: relative;
+    display: inline-flex;
+}
+
+.chat-row__avatar--ring::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    background: var(--sm-accent);
+    /* A squircle ring: the outer shape minus a slightly smaller one. */
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+    mask-composite: exclude;
+    animation: chat-ring-in var(--sm-dur-slow) var(--sm-spring) backwards;
+}
+
+.chat-row__avatar--quiet::before {
+    background: var(--sm-text-3);
+    opacity: 0.5;
+}
+
+/* ---- Text ---- */
+
+.chat-row__top,
+.chat-row__bottom {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* Name and time share a baseline; icons center on the line. */
+.chat-row__top {
+    align-items: baseline;
+}
+
+.chat-row__top ::deep .sm-icon {
+    align-self: center;
+}
+
+.chat-row__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.008em;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-row__spacer {
+    flex: 1 1 auto;
+}
+
+.chat-row__top ::deep .chat-row__muted {
+    color: var(--sm-text-3);
+}
+
+/* A live call: a small mint disc. */
+.chat-row__call {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 50%;
+    background: var(--sm-success);
+    color: #FFFFFF;
+}
+
+.chat-row__top ::deep .chat-row__status {
+    margin-right: -2px;
+    color: var(--sm-text-3);
+}
+
+.chat-row__top ::deep .chat-row__status--read {
+    color: var(--sm-accent);
+}
+
+.chat-row__time {
+    flex-shrink: 0;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--sm-text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.chat-row__time--unread {
+    color: var(--sm-accent);
+    font-weight: 700;
+}
+
+.chat-row__bottom {
+    align-items: center;
+    margin-top: 3px;
+}
+
+/* Two lines, reserved even when the text is short, so rows keep one height. */
+.chat-row__preview {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 2.64em;
+    font-size: 0.9375rem;
+    line-height: 1.32;
+    color: var(--sm-text-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+html[data-compact="true"] .chat-row__preview {
+    min-height: 0;
+    -webkit-line-clamp: 1;
+}
+
+.chat-row__sender {
+    color: var(--sm-text);
+    font-weight: 500;
+}
+
+/* "Draft" as a small warm tag. */
+.chat-row__draft {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--sm-gold);
+    color: #4A1A06;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    line-height: 1.45;
+    vertical-align: 1px;
+}
+
+.chat-row__preview--typing {
+    display: flex;
+    align-items: flex-start;
+}
+
+.chat-row__typing {
+    min-width: 0;
+    color: var(--sm-accent);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* "Anna is typing" + three hopping dots (a looping indicator). */
+.chat-row__dots {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 3px;
+    flex-shrink: 0;
+    height: 1.32em;
+    margin-left: 5px;
+    padding-bottom: 0.34em;
+}
+
+.chat-row__dots i {
+    width: 4.5px;
+    height: 4.5px;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    animation: row-typing 1.2s ease-in-out infinite;
+}
+
+.chat-row__dots i:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.chat-row__dots i:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
+@keyframes row-typing {
+    0%, 60%, 100% { opacity: 0.35; transform: none; }
+    30% { opacity: 1; transform: translateY(-3px); }
+}
+
+.chat-row__badges {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.chat-row__badges:empty {
+    display: none;
+}
+
+.chat-row__badges ::deep .chat-row__pin {
+    color: var(--sm-text-3);
+    transform: rotate(35deg);
+}
+
+/* ---- Swipe actions ---- */
+
+/* A side's buttons are slabs reaching past the row edge; each one starts at its share of the revealed width (--k),
+   the later (outer) ones on top. The outermost is the primary action and covers everything past the full point.
+   Each shows a colored squircle chip with its label; a full swipe fills the primary slab with its color. */
+.chat-row__actions {
+    position: absolute;
+    inset: 0;
+    display: none;
+    overflow: hidden;
+    border-radius: 22px;
+}
+
+.chat-row-wrap[data-swipe="start"] .chat-row__actions--start,
+.chat-row-wrap[data-swipe="end"] .chat-row__actions--end {
+    display: block;
+}
+
+.chat-row__action {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    transform: translate3d(calc(var(--row-x, 0px) * var(--k, 1)), 0, 0);
+}
+
+.chat-row__actions--end .chat-row__action {
+    left: 100%;
+    justify-content: flex-start;
+}
+
+.chat-row__actions--start .chat-row__action {
+    right: 100%;
+    justify-content: flex-end;
+}
+
+/* Past the full point the primary action's color fills the revealed space. */
+.chat-row__action--primary::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    left: 6px;
+    right: 6px;
+    border-radius: 20px;
+    background: var(--action-bg);
+    opacity: 0;
+    transition: opacity var(--sm-dur-fast) ease;
+}
+
+.chat-row-wrap[data-full] .chat-row__action--primary::before {
+    opacity: 1;
+}
+
+.chat-row__action-body {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    flex-shrink: 0;
+    width: var(--action-w);
+    padding: 0 4px;
+}
+
+.chat-row__action-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 36%;
+    background: var(--action-bg);
+    color: var(--action-fg, #FFFFFF);
+    transition: transform var(--sm-dur) var(--sm-spring), box-shadow var(--sm-dur) ease;
+}
+
+/* Chips come out of the edge when the side is revealed (the inner one first). */
+.chat-row-wrap[data-swipe] .chat-row__action-chip {
+    animation: sm-pop 360ms var(--sm-spring) backwards;
+}
+
+.chat-row-wrap[data-swipe] .chat-row__action--primary .chat-row__action-chip {
+    animation-delay: 50ms;
+}
+
+.chat-row__action-label {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.15;
+    color: var(--sm-text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color var(--sm-dur-fast) ease;
+}
+
+.chat-row__action:active .chat-row__action-chip {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+}
+
+.chat-row-wrap[data-full] .chat-row__action--primary {
+    transform: translate3d(var(--row-x, 0px), 0, 0);
+}
+
+.chat-row-wrap[data-full] .chat-row__action--primary .chat-row__action-chip {
+    transform: scale(1.08);
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.55);
+}
+
+.chat-row-wrap[data-full] .chat-row__action--primary .chat-row__action-label {
+    color: var(--action-fg, #FFFFFF);
+}
+
+.chat-row-wrap[data-full-anim] .chat-row__action--primary {
+    transition: transform var(--sm-dur-fast) var(--sm-ease-out);
+}
+
+/* The actions' colors (flat, from the theme tokens): violet read, sunlit pin, orchid mute, night-indigo archive. */
+.chat-row__action--read {
+    --action-bg: var(--sm-accent);
+}
+
+.chat-row__action--pin {
+    --action-bg: var(--sm-gold);
+    --action-fg: #4A1A06;
+}
+
+.chat-row__action--mute {
+    --action-bg: color-mix(in srgb, var(--sm-accent-2) 70%, var(--sm-warm));
+}
+
+.chat-row__action--archive {
+    --action-bg: color-mix(in srgb, var(--sm-accent) 45%, var(--sm-text));
+}
+
+html[data-theme="dark"] .chat-row__action--archive {
+    --action-bg: color-mix(in srgb, var(--sm-accent) 55%, var(--sm-bg));
+}
+
+@keyframes chat-ring-in {
+    from { opacity: 0; transform: scale(0.86); }
+    to { opacity: 1; transform: none; }
+}
+
+

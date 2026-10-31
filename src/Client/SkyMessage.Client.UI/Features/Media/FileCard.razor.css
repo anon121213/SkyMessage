@@ -1,0 +1,256 @@
+/* A file: a squircle tile in its kind's gradient (--file-a → --file-b) holding the icon and the extension, the name,
+   size / duration and the bubble's time. The tile's squircle is a masked layer behind the button, so the button keeps
+   its focus ring. Downloads and uploads show a gradient progress ring on a softly tinted tile. Audio files play from
+   the tile (player.js drives --p / data-state). */
+
+.file {
+    --p: 0;
+    --file-a: #A797FF;
+    --file-b: var(--sm-accent);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 13rem;
+    max-width: 22rem;
+}
+
+.file--tone-pdf {
+    --file-a: #FF9AAE;
+    --file-b: #E2334D;
+}
+
+.file--tone-doc {
+    --file-a: #7CCBFF;
+    --file-b: #3A6EF0;
+}
+
+.file--tone-sheet {
+    --file-a: #A3E37A;
+    --file-b: #1F9E62;
+}
+
+.file--tone-slides {
+    --file-a: #FFC77F;
+    --file-b: #F0703B;
+}
+
+.file--tone-archive {
+    --file-a: #FFE08A;
+    --file-b: #D98A0B;
+}
+
+.file--tone-image {
+    --file-a: #FFA3CD;
+    --file-b: #DB4597;
+}
+
+.file--tone-video {
+    --file-a: #DDA8FF;
+    --file-b: #9446DA;
+}
+
+.file--tone-app {
+    --file-a: #5FE3C7;
+    --file-b: #12968C;
+}
+
+.file--tone-audio,
+.file--tone-default {
+    --file-a: var(--sm-accent-2);
+    --file-b: var(--sm-accent);
+}
+
+.file__icon {
+    position: relative;
+    isolation: isolate;
+    flex-shrink: 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 32%;
+    color: #FFFFFF;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.file__icon::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background: linear-gradient(145deg, var(--file-a), var(--file-b));
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+/* On my own (accent) bubbles an accent tile would vanish: it turns into a plain tile in the bubble's ink with the icon
+   in the bubble's colour. */
+.msg--out .file--tone-default .file__icon:not(.file__icon--busy),
+.msg--out .file--tone-audio .file__icon:not(.file__icon--busy) {
+    color: var(--sm-bubble-out);
+}
+
+.msg--out .file--tone-default .file__icon:not(.file__icon--busy)::before,
+.msg--out .file--tone-audio .file__icon:not(.file__icon--busy)::before {
+    background: var(--sm-bubble-out-text, #FFFFFF);
+}
+
+.file__icon:active:not(:disabled) {
+    transform: scale(0.9);
+    transition-duration: 90ms;
+}
+
+.file__icon:disabled {
+    cursor: default;
+}
+
+/* Busy: a softly tinted tile under a gradient progress ring. */
+.file__icon--busy {
+    color: var(--file-b);
+}
+
+.file__icon--busy::before {
+    background: color-mix(in srgb, var(--file-b) 15%, transparent);
+}
+
+.file__icon--busy ::deep .sm-progress-ring__bar {
+    stroke: url(#sm-chat-grad) currentColor;
+}
+
+.msg--out .file__icon--busy {
+    color: var(--sm-bubble-out-text, #FFFFFF);
+}
+
+.msg--out .file__icon--busy::before {
+    background: color-mix(in srgb, var(--sm-bubble-out-text, #FFFFFF) 18%, transparent);
+}
+
+.msg--out .file__icon--busy ::deep .sm-progress-ring__bar {
+    stroke: url(#sm-chat-grad-light) #FFFFFF;
+}
+
+.file__ext {
+    max-width: 2.625rem;
+    overflow: hidden;
+    font-family: var(--sm-font-display);
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+/* Audio: play and pause turn into one another on the tile. */
+.file ::deep .file__play,
+.file ::deep .file__pause {
+    position: absolute;
+    transition: opacity var(--sm-dur-fast) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+.file ::deep .file__play {
+    margin-left: 2px;
+}
+
+.file ::deep .file__pause {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.4);
+}
+
+.file[data-state="playing"] ::deep .file__play {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.4);
+}
+
+.file[data-state="playing"] ::deep .file__pause {
+    opacity: 1;
+    transform: none;
+}
+
+.file__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.file--interactive .file__body {
+    cursor: pointer;
+}
+
+.file__name {
+    overflow: hidden;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file__track {
+    position: relative;
+    height: 4px;
+    margin: 5px 0 3px;
+    border-radius: 2px;
+    background: color-mix(in srgb, currentColor 20%, transparent);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.file__track::before {
+    content: "";
+    position: absolute;
+    inset: -8px 0;
+}
+
+.file__track-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: calc(var(--p, 0) * 100%);
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--file-a), var(--file-b));
+}
+
+.msg--out .file__track-fill {
+    background: var(--sm-bubble-out-text, #FFFFFF);
+}
+
+.file__meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 1.125rem;
+    font-size: 0.75rem;
+    color: var(--msg-meta, var(--sm-text-3));
+    white-space: nowrap;
+}
+
+.file__pos {
+    display: none;
+}
+
+.file[data-state] .file__dur {
+    display: none;
+}
+
+.file[data-state] .file__pos {
+    display: inline;
+}
+
+.file__error {
+    color: var(--sm-danger);
+}
+
+.msg--out .file__error {
+    color: #FFD3DC;
+}
+
+.file__spacer {
+    flex: 1 1 auto;
+}

@@ -1,0 +1,115 @@
+name: skymessage
+
+# SkyMessage on a SHARED VPS. Isolated from the other projects on the host: its own network (fixed subnet below),
+# volumes and PostgreSQL, CPU/memory caps, and nothing on the host's :80/:443 (another project's Caddy owns them,
+# behind a Cloudflare-only origin firewall). Published: Caddy HTTPS on 8443 (tcp+udp) and LiveKit media on
+# 7881/tcp + 7882/udp; the API, PostgreSQL and LiveKit signaling stay on the internal network.
+# Secrets live in .env (created once by init-env.sh); the Cloudflare DNS token in cloudflare.env.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    command: ["postgres", "-c", "shared_buffers=96MB", "-c", "max_connections=40"]
+    environment:
+      POSTGRES_DB: skymessage
+      POSTGRES_USER: skymessage
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run init-env.sh first}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skymessage -d skymessage"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    mem_limit: 512m
+    cpus: 0.75
+    restart: unless-stopped
+    logging: *logging
+
+  livekit:
+    image: livekit/livekit-server:v1.13.10
+    # --node-ip: the public IP that call media is advertised on.
+    command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:?}"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+    mem_limit: 512m
+    cpus: 1.0
+    restart: unless-stopped
+    logging: *logging
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: skymessage-api:prod
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=skymessage;Username=skymessage;Password=${POSTGRES_PASSWORD:?}"
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?}
+      Storage__MasterKey: ${STORAGE_MASTER_KEY:?}
+      LiveKit__ApiKey: ${LIVEKIT_API_KEY:?}
+      LiveKit__ApiSecret: ${LIVEKIT_API_SECRET:?}
+      LiveKit__InternalUrl: "http://livekit:7880"
+      LiveKit__PublicUrl: "/livekit"
+      Server__PublicBaseUrl: ${PUBLIC_BASE_URL:?}
+      Server__RegistrationMode: ${REGISTRATION_MODE:-InviteCode}
+      Server__RegistrationCode: ${REGISTRATION_CODE:-}
+      # Caddy's X-Forwarded-For/Proto are trusted only from this project's own network.
+      Server__TrustedProxyNetworks__0: "172.30.80.0/24"
+      # One FFmpeg job at a time: the VPS has 2 cores shared with another project.
+      MediaProcessing__MaxConcurrency: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    mem_limit: 1g
+    cpus: 1.0
+    restart: unless-stopped
+    logging: *logging
+
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    image: skymessage-caddy:prod
+    env_file:
+      - path: cloudflare.env
+        required: false
+    environment:
+      SKY_DOMAIN: ${SKY_DOMAIN:?}
+    ports:
+      - "8443:8443"
+      - "8443:8443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    mem_limit: 128m
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}

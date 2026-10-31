@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SkyMessage.Contracts</RootNamespace>
+    <!--
+      Not IsTrimmable: the DTOs are (de)serialized by reflection (System.Text.Json without a source-generated
+      context), so trimming them removes the parameterless constructors and every API response fails to parse in
+      trimmed builds (Android Release, the published web client).
+    -->
+  </PropertyGroup>
+
+</Project>

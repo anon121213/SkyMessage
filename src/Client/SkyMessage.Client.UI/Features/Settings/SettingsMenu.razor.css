@@ -1,0 +1,134 @@
+/* ---------- Hero: my profile ---------- */
+
+.settings-hero-wrap {
+    margin: 4px 0 24px;
+}
+
+.settings-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: 28px 18px 18px;
+    border: 0;
+    border-radius: var(--sm-radius-2xl);
+    font: inherit;
+    text-align: center;
+    color: var(--sm-text);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 280ms var(--sm-spring), box-shadow var(--sm-dur) ease;
+}
+
+/* Press: the card dips a little and springs back. */
+.settings-hero:active {
+    transform: scale(0.975);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.settings-hero.is-selected {
+    box-shadow: inset 0 0 0 2px var(--sm-accent), var(--sm-shadow-1);
+}
+
+/* The avatar in a thin accent ring: a squircle outline (the outer shape minus a slightly smaller one), the card
+   showing through the gap. */
+.settings-hero__avatar {
+    position: relative;
+    display: flex;
+    margin: 6px 0 16px;
+}
+
+.settings-hero__ring {
+    position: absolute;
+    inset: -7px;
+    background: var(--sm-accent);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+}
+
+.settings-hero__avatar ::deep .sm-avatar {
+    position: relative;
+}
+
+.settings-hero__name {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 1.375rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-hero__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 2px 8px;
+    margin-top: 4px;
+    font-size: 0.9375rem;
+    color: var(--sm-text-2);
+}
+
+.settings-hero__handle {
+    color: var(--sm-accent);
+    font-weight: 600;
+}
+
+.settings-hero__dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--sm-text-3);
+}
+
+/* "Edit profile ›": a small accent capsule inviting a tap. */
+.settings-hero__edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 2.125rem;
+    margin-top: 14px;
+    padding: 0 10px 0 14px;
+    border-radius: 999px;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+.settings-hero__edit ::deep .settings-hero__chevron {
+    transition: transform var(--sm-dur) var(--sm-ease);
+}
+
+.settings-hero:active .settings-hero__edit ::deep .settings-hero__chevron {
+    transform: translateX(3px);
+}
+
+@media (hover: hover) {
+    .settings-hero:hover .settings-hero__edit {
+        background: color-mix(in srgb, var(--sm-accent) 18%, transparent);
+    }
+}
+
+/* ---------- Footer ---------- */
+
+.settings-version {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 6px 0 18px;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--sm-text-3);
+}

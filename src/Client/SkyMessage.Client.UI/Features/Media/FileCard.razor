@@ -1,0 +1,163 @@
+@* A file attachment: icon (or play button for audio), name, size, download progress through IMediaDownloadService.
+   Tap downloads and opens it (the browser downloads it); a tap during the download cancels it. Also renders files that
+   are still being sent. The icon sits on a squircle tile tinted by the kind of file (PDF rose, documents blue,
+   sheets green, slides orange, archives gold, pictures pink, videos orchid, anything else the accent). *@
+@inherits UiComponentBase
+@inject IMediaDownloadService Downloads
+@inject IMediaUrlBuilder MediaUrls
+@inject FormatService Format
+@inject ToastService Toasts
+
+<div class="file @ToneClass @(IsAudio ? "file--audio" : null) @(Interactive ? "file--interactive" : null) @Class"
+     data-voice="@(IsAudio && Playable ? Media!.Id.ToString() : null)" data-src="@(IsAudio && Playable ? MediaUrls.ContentUrl(Media!) : null)"
+     data-duration="@(IsAudio ? Media?.DurationMs ?? 0 : null)">
+    @if (Pending)
+    {
+        <div class="file__icon file__icon--busy">
+            <ProgressRing Value="Progress" Size="44" Indeterminate="@(Progress <= 0.01)" OnCancel="OnCancel" CancelLabel="@L["chat.pending.cancel"]" />
+        </div>
+    }
+    else if (IsAudio && Playable)
+    {
+        <button type="button" class="file__icon file__icon--play" data-voice-play aria-label="@L["media.voice.play"]" title="@L["media.voice.play"]">
+            <Icon Name="@IconNames.Play" Size="22" Class="file__play" />
+            <Icon Name="@IconNames.Pause" Size="22" Class="file__pause" />
+        </button>
+    }
+    else if (State.Phase == MediaDownloadPhase.Downloading)
+    {
+        <div class="file__icon file__icon--busy">
+            <ProgressRing Value="State.Progress" Size="44" Indeterminate="@(State.Progress <= 0.01)" OnCancel="CancelDownload" CancelLabel="@L["media.file.cancelDownload"]" />
+        </div>
+    }
+    else
+    {
+        <button type="button" class="file__icon" aria-label="@ActionLabel" title="@ActionLabel" disabled="@(!Interactive || !Playable)" @onclick="OpenAsync" @onclick:stopPropagation="true">
+            <Icon Name="@(State.Phase == MediaDownloadPhase.Downloaded ? FileIconName : IconNames.ArrowDownToLine)" Size="22" />
+            @if (Extension.Length > 0)
+            {
+                <span class="file__ext">@Extension</span>
+            }
+        </button>
+    }
+    <div class="file__body" @onclick="BodyClickAsync">
+        <div class="file__name" title="@Name" dir="auto">@Name</div>
+        @if (IsAudio && Playable)
+        {
+            <div class="file__track" data-voice-scrub aria-hidden="true"><span class="file__track-fill"></span></div>
+        }
+        <div class="file__meta">
+            <span class="sm-nums file__size">@SizeText</span>
+            @if (IsAudio && Media?.DurationMs is > 0)
+            {
+                <span class="file__sep">·</span>
+                <span class="sm-nums"><span class="file__dur">@Format.DurationMs(Media.DurationMs)</span><span class="file__pos" data-voice-pos></span></span>
+            }
+            @if (State.Phase == MediaDownloadPhase.Failed)
+            {
+                <span class="file__sep">·</span>
+                <span class="file__error">@L["media.file.failed"]</span>
+            }
+            <span class="file__spacer"></span>
+            @Trailing
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public MediaDto? Media { get; set; }
+    [Parameter] public LocalAttachmentPreview? Local { get; set; }
+    [Parameter] public bool Pending { get; set; }
+    [Parameter] public double Progress { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    /// <summary>False in selection mode: taps belong to the row.</summary>
+    [Parameter] public bool Interactive { get; set; } = true;
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private bool Playable => !Pending && Media is { Status: MediaStatus.Ready };
+
+    private bool IsAudio => (Media?.Kind ?? Local?.Kind) == MediaKind.Audio
+                            || (Media?.ContentType ?? "").StartsWith("audio/", StringComparison.OrdinalIgnoreCase);
+
+    private string Name => Media is not null ? MediaFacts.DisplayName(Media) : Local?.FileName ?? L["message.preview.file"];
+
+    private string Extension => MediaFacts.Extension(Name);
+
+    private string FileIconName => MediaFacts.FileIcon(Name, Media?.ContentType);
+
+    /// <summary>Colour family of the tile (FileCard.razor.css).</summary>
+    private string ToneClass
+    {
+        get
+        {
+            if (IsAudio) return "file--tone-audio";
+            var type = (Media?.ContentType ?? "").ToLowerInvariant();
+            if (type.StartsWith("image/", StringComparison.Ordinal)) return "file--tone-image";
+            if (type.StartsWith("video/", StringComparison.Ordinal)) return "file--tone-video";
+            return Extension.ToLowerInvariant() switch
+            {
+                "pdf" => "file--tone-pdf",
+                "doc" or "docx" or "odt" or "rtf" or "txt" or "md" or "pages" or "epub" => "file--tone-doc",
+                "xls" or "xlsx" or "ods" or "csv" or "numbers" => "file--tone-sheet",
+                "ppt" or "pptx" or "odp" or "key" => "file--tone-slides",
+                "zip" or "rar" or "7z" or "tar" or "gz" or "tgz" or "bz2" or "xz" => "file--tone-archive",
+                "jpg" or "jpeg" or "png" or "gif" or "webp" or "heic" or "heif" or "bmp" or "tiff" or "svg" => "file--tone-image",
+                "mp4" or "mov" or "mkv" or "avi" or "webm" or "m4v" or "3gp" => "file--tone-video",
+                "apk" or "exe" or "msi" or "dmg" or "ipa" => "file--tone-app",
+                _ => "file--tone-default",
+            };
+        }
+    }
+
+    private long Size => Media?.SizeBytes ?? Local?.Size ?? 0;
+
+    private MediaDownloadState State => Media is null ? new MediaDownloadState(MediaDownloadPhase.NotDownloaded) : Downloads.GetState(Media.Id);
+
+    private string ActionLabel => State.Phase == MediaDownloadPhase.Downloaded ? L["media.file.open"] : L["media.file.download"];
+
+    private string SizeText
+    {
+        get
+        {
+            if (Pending && Size > 0) return $"{Format.FileSize((long)(Size * Math.Clamp(Progress, 0, 1)))} / {Format.FileSize(Size)}";
+            if (State.Phase == MediaDownloadPhase.Downloading && Size > 0)
+                return $"{Format.FileSize((long)(Size * Math.Clamp(State.Progress, 0, 1)))} / {Format.FileSize(Size)}";
+            return Size > 0 ? Format.FileSize(Size) : "";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Downloads.StateChanged += h, h => Downloads.StateChanged -= h, id => id == Media?.Id);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    private Task BodyClickAsync() => Interactive && !IsAudio ? OpenAsync() : Task.CompletedTask;
+
+    private async Task OpenAsync()
+    {
+        if (!Interactive || Media is not { Status: MediaStatus.Ready } media) return;
+        if (State.Phase == MediaDownloadPhase.Downloading)
+        {
+            CancelDownload();
+            return;
+        }
+        try
+        {
+            await Downloads.OpenAsync(media);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private void CancelDownload()
+    {
+        if (Media is not null) Downloads.Cancel(Media.Id);
+    }
+}

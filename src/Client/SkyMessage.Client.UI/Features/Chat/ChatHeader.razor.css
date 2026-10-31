@@ -1,0 +1,224 @@
+/* The chat header: a frosted-glass capsule floating over the chat sky (ChatPage positions it); the back button is a
+   glass bead set into the capsule (no second blur). */
+
+.chead {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 3.5rem;
+    padding: 8px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    /* The online dot is ringed in the capsule's own color. */
+    --sm-dot-ring: var(--sm-glass-solid);
+}
+
+
+html[data-fx="lite"] .chead {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* Coming back after selection or search (ChatPage): settles from a touch smaller. */
+.chead--return {
+    animation: chead-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+@keyframes chead-in {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.chead ::deep .chead__back {
+    background: color-mix(in srgb, var(--sm-surface) 62%, transparent);
+    box-shadow: var(--sm-edge);
+    color: var(--sm-text);
+}
+
+@media (hover: hover) {
+    .chead ::deep .chead__back:hover:not(:disabled) {
+        background: var(--sm-surface);
+    }
+}
+
+/* ---------- Avatar, name, status ---------- */
+
+.chead__title {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+    height: 2.5rem;
+    padding: 0 6px 0 6px;
+    border-radius: 999px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.chead--no-back .chead__title {
+    padding-left: 0;
+}
+
+.chead__title:active {
+    transform: scale(0.98);
+    transition-duration: 90ms;
+}
+
+.chead__avatar {
+    position: relative;
+    flex-shrink: 0;
+    display: inline-flex;
+}
+
+.chead__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+}
+
+.chead__name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.22;
+}
+
+.chead__name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chead__name ::deep .chead__muted {
+    flex-shrink: 0;
+    color: var(--sm-text-3);
+}
+
+.chead__status {
+    overflow: hidden;
+    color: var(--sm-text-2);
+    font-size: 0.8125rem;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chead__status ::deep .sm-presence {
+    font-size: inherit;
+}
+
+.chead__status--typing {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--sm-accent);
+    font-weight: 500;
+}
+
+.chead__status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* A status line that replaces another (typing starts or stops) rises in. */
+.chead__status--in {
+    animation: chead-status-in var(--sm-dur) var(--sm-ease-out);
+}
+
+@keyframes chead-status-in {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* Three dots in a wave, shading from the accent to its partner hue (looping indicator: still with reduced motion). */
+.chead__dots {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 3px;
+    height: 0.75rem;
+}
+
+.chead__dots i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    animation: chead-dot 1.2s ease-in-out infinite;
+}
+
+.chead__dots i:nth-child(2) {
+    background: color-mix(in srgb, var(--sm-accent) 50%, var(--sm-accent-2));
+    animation-delay: 0.16s;
+}
+
+.chead__dots i:nth-child(3) {
+    background: var(--sm-accent-2);
+    animation-delay: 0.32s;
+}
+
+@keyframes chead-dot {
+    0%, 55%, 100% {
+        opacity: 0.4;
+        transform: translateY(0) scale(0.8);
+    }
+
+    25% {
+        opacity: 1;
+        transform: translateY(-3.5px) scale(1);
+    }
+}
+
+/* ---------- Actions ---------- */
+
+.chead__actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.chead__actions ::deep .sm-icon-btn {
+    color: var(--sm-text-2);
+}
+
+.chead__actions ::deep .chead__call {
+    color: var(--sm-accent);
+}
+
+/* The online dot: a plain mint dot ringed in the capsule's colour (the kit's dot also glows). */
+.chead__avatar ::deep .sm-avatar__dot {
+    box-shadow: 0 0 0 2.5px var(--sm-dot-ring);
+}

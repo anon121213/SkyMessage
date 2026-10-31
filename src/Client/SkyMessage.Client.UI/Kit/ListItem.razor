@@ -1,0 +1,141 @@
+@implements IAsyncDisposable
+@inject AppJs Js
+@inject HapticFeedback Haptics
+
+@if (Href is not null && !Disabled)
+{
+    <a @ref="_element" href="@Href" class="@CssClass" title="@Tooltip" @onclick="Click" @attributes="Attributes">@Content</a>
+}
+else
+{
+    <div @ref="_element" class="@CssClass" title="@Tooltip" role="@(Clickable ? "button" : null)" tabindex="@(Clickable ? 0 : null)"
+         aria-disabled="@(Disabled ? "true" : null)" aria-selected="@(Selected ? "true" : null)"
+         @onclick="Click" @onkeydown="OnKeyDown" @attributes="Attributes">@Content</div>
+}
+
+@code {
+    private ElementReference _element;
+    private ContextMenuBinding? _menu;
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    /// <summary>Rich first line (replaces <see cref="Title"/>).</summary>
+    [Parameter] public RenderFragment? TitleContent { get; set; }
+    /// <summary>Rich second line (replaces <see cref="Subtitle"/>).</summary>
+    [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    /// <summary>Replaces the whole body (title/subtitle area).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Leading icon name (rendered as a colored tile when <see cref="IconColor"/> is set, plain otherwise).</summary>
+    [Parameter] public string? Icon { get; set; }
+    /// <summary>CSS color of the icon tile ("#2F7FEC", "var(--sm-accent)").</summary>
+    [Parameter] public string? IconColor { get; set; }
+    /// <summary>Custom leading content (avatar, checkbox).</summary>
+    [Parameter] public RenderFragment? Leading { get; set; }
+    /// <summary>Custom trailing content (switch, badge, button).</summary>
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    /// <summary>Short value text on the right ("Russian", "On").</summary>
+    [Parameter] public string? Meta { get; set; }
+    [Parameter] public bool Chevron { get; set; }
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public bool Danger { get; set; }
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Compact { get; set; }
+    /// <summary>Wrap long titles/subtitles instead of truncating.</summary>
+    [Parameter] public bool Multiline { get; set; }
+    [Parameter] public string? Tooltip { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    /// <summary>Right-click / long-press; receives the viewport position for a ContextMenu.</summary>
+    [Parameter] public EventCallback<MenuPosition> OnContextMenu { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+
+    private bool Clickable => !Disabled && (OnClick.HasDelegate || Href is not null);
+
+    private string CssClass =>
+        $"sm-list-item {(Clickable ? "sm-list-item--clickable" : null)} {(Danger ? "sm-list-item--danger" : null)} {(Selected ? "sm-list-item--selected" : null)} " +
+        $"{(Disabled ? "sm-list-item--disabled" : null)} {(Compact ? "sm-list-item--compact" : null)} {(Multiline ? "sm-list-item--multiline" : null)} " +
+        $"{(OnContextMenu.HasDelegate ? "sm-no-select" : null)} {Class}";
+
+    private RenderFragment Content => __builder =>
+    {
+        if (Leading is not null)
+        {
+            <div class="sm-list-item__leading">@Leading</div>
+        }
+        else if (Icon is not null)
+        {
+            <div class="sm-list-item__leading">
+                <span class="sm-list-item__icon @(IconColor is null ? "sm-list-item__icon--plain" : null)" style="@(IconColor is null ? null : $"--icon-bg:{IconColor}")">
+                    <Icon Name="@Icon" />
+                </span>
+            </div>
+        }
+        <div class="sm-list-item__body">
+            @if (ChildContent is not null)
+            {
+                @ChildContent
+            }
+            else
+            {
+                @if (TitleContent is not null)
+                {
+                    @TitleContent
+                }
+                else if (Title is not null)
+                {
+                    <div class="sm-list-item__title">@Title</div>
+                }
+                @if (SubtitleContent is not null)
+                {
+                    @SubtitleContent
+                }
+                else if (!string.IsNullOrEmpty(Subtitle))
+                {
+                    <div class="sm-list-item__subtitle">@Subtitle</div>
+                }
+            }
+        </div>
+        @if (Meta is not null || Trailing is not null || Chevron)
+        {
+            <div class="sm-list-item__trailing">
+                @if (Meta is not null)
+                {
+                    <span class="sm-list-item__meta">@Meta</span>
+                }
+                @Trailing
+                @if (Chevron)
+                {
+                    <Icon Name="@IconNames.ChevronRight" Class="sm-list-item__chevron" Size="18" />
+                }
+            </div>
+        }
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (OnContextMenu.HasDelegate && _menu is null)
+        {
+            _menu = new ContextMenuBinding(position => InvokeAsync(() => OnContextMenu.InvokeAsync(position)), Haptics);
+            await _menu.AttachAsync(Js, _element);
+        }
+    }
+
+    private async Task Click(MouseEventArgs e)
+    {
+        if (!Clickable) return;
+        await OnClick.InvokeAsync(e);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (!Clickable || Href is not null) return;
+        if (e.Key is "Enter" or " ") await OnClick.InvokeAsync(new MouseEventArgs());
+        else if (e.Key == "ContextMenu" && OnContextMenu.HasDelegate) await OnContextMenu.InvokeAsync(new MenuPosition(0, 0));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_menu is not null) await _menu.DisposeAsync();
+    }
+}

@@ -1,0 +1,169 @@
+@* Choose the server address (for the family's own server) with a connection test; the result shows as a mint or rose
+   chip that pops in. *@
+@inject IServerEndpointService Endpoints
+@inject ISettingsService Settings
+@inject ToastService Toasts
+
+<form class="server-picker" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+    <div class="server-picker__intro">
+        <span class="sm-list-item__icon server-picker__art" style="--icon-bg:@SettingsTones.Violet" aria-hidden="true">
+            <Icon Name="@IconNames.Server" />
+        </span>
+        <p class="sm-dialog__message">@L["auth.server.hint"]</p>
+    </div>
+    <TextField Value="@_url" ValueChanged="OnUrlChanged" Label="@L["auth.server.address"]" Placeholder="https://chat.example.com" Type="url" InputMode="url"
+               Autocomplete="off" Autocapitalize="off" Autofocus="true" Icon="@IconNames.Globe" Error="@_error" />
+
+    <div class="server-picker__test">
+        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.PlugZap" Loading="_testing" OnClick="TestAsync">@L["auth.server.test"]</Button>
+        @if (_tested is { } info)
+        {
+            <span class="server-picker__result server-picker__result--ok"><Icon Name="@IconNames.CircleCheck" Size="16" /> @L.Format("auth.server.found", info.Name)</span>
+        }
+        else if (_testFailed)
+        {
+            <span class="server-picker__result server-picker__result--bad"><Icon Name="@IconNames.CircleX" Size="16" /> @L["auth.server.notFound"]</span>
+        }
+    </div>
+    @if (_tested is { } details)
+    {
+        <p class="server-picker__reg">
+            <Icon Name="@(details.RegistrationMode == RegistrationMode.Open ? IconNames.UserRoundPlus : details.RegistrationMode == RegistrationMode.InviteCode ? IconNames.Ticket : IconNames.Lock)" Size="16" />
+            <span>@RegistrationText(details.RegistrationMode)</span>
+        </p>
+    }
+
+    <DialogActions>
+        @if (!string.IsNullOrEmpty(Settings.Current.Connection.CustomServerUrl))
+        {
+            <Button Variant="ButtonVariant.Ghost" OnClick="ResetAsync">@L["auth.server.reset"]</Button>
+        }
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Type="submit" Loading="_saving" Disabled="@string.IsNullOrWhiteSpace(_url)">@L["common.save"]</Button>
+    </DialogActions>
+</form>
+
+@code {
+    private string _url = "";
+    private string? _error;
+    private bool _testing;
+    private bool _saving;
+    private bool _testFailed;
+    private ServerInfoDto? _tested;
+    private Uri? _unreachableConfirmed;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    protected override void OnInitialized() => _url = Settings.Current.Connection.CustomServerUrl ?? Endpoints.BaseUri.ToString();
+
+    /// <summary>"chat.example.com" → "https://chat.example.com/"; null when it is not a usable address.</summary>
+    public static Uri? Normalize(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        var text = input.Trim();
+        if (!text.Contains("://", StringComparison.Ordinal)) text = "https://" + text;
+        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || string.IsNullOrEmpty(uri.Host)) return null;
+        var builder = new UriBuilder(uri) { Query = "", Fragment = "" };
+        if (!builder.Path.EndsWith('/')) builder.Path += "/";
+        return builder.Uri;
+    }
+
+    private string RegistrationText(RegistrationMode mode) => mode switch
+    {
+        RegistrationMode.Open => L["auth.server.regOpen"],
+        RegistrationMode.InviteCode => L["auth.server.regInvite"],
+        _ => L["auth.server.regClosed"],
+    };
+
+    private async Task<ServerInfoDto?> TestAsync()
+    {
+        _error = null;
+        _tested = null;
+        _testFailed = false;
+        var uri = Normalize(_url);
+        if (uri is null)
+        {
+            _error = L["auth.server.invalid"];
+            return null;
+        }
+        _testing = true;
+        StateHasChanged();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            _tested = await Endpoints.TestAsync(uri, cancellationToken: cts.Token);
+        }
+        catch (Exception)
+        {
+            _tested = null;
+        }
+        finally
+        {
+            _testing = false;
+        }
+        _testFailed = _tested is null;
+        return _tested;
+    }
+
+    private void OnUrlChanged(string value)
+    {
+        _url = value;
+        _tested = null;
+        _testFailed = false;
+        _error = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        var uri = Normalize(_url);
+        if (uri is null)
+        {
+            _error = L["auth.server.invalid"];
+            return;
+        }
+        var info = _tested ?? await TestAsync();
+        if (info is null && _unreachableConfirmed != uri)
+        {
+            // An address that does not answer right now may still be right (server restarting): a second
+            // press on Save uses it anyway.
+            _unreachableConfirmed = uri;
+            _error = L["auth.server.notFoundSave"];
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await Endpoints.SetCustomServerAsync(uri.ToString());
+            Toasts.Success(L["auth.server.saved"]);
+            Dialog.Close(uri.ToString());
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _saving = true;
+        try
+        {
+            await Endpoints.SetCustomServerAsync(null);
+            Toasts.Success(L["auth.server.resetDone"]);
+            Dialog.Close(null);
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

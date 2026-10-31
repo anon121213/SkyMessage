@@ -1,0 +1,112 @@
+@* "Forward to…": pick one or more chats (Saved Messages first, then the chat list incl. archived; chats I cannot
+   write to are disabled). Closes with the chosen chat ids (IReadOnlyList<Guid>) or null. *@
+@inherits UiComponentBase
+@inject IChatListStore ChatList
+@inject LayoutService Layout
+@inject ILogger<ForwardDialog> Logger
+
+<div class="fwd">
+    <div class="fwd__search">
+        <SearchBox Value="@_query" ValueChanged="v => _query = v ?? string.Empty" DebounceMs="0" Autofocus="@(!Layout.IsTouch)" Placeholder="@L["chat.forward.search"]" />
+    </div>
+    <div class="fwd__list">
+        @{
+            var chats = Filtered;
+        }
+        @if (chats.Count == 0)
+        {
+            <EmptyState Icon="@IconNames.SearchX" Title="@L["chat.forward.nothing"]" />
+        }
+        @foreach (var chat in chats)
+        {
+            var item = chat;
+            var selected = _selected.Contains(item.Id);
+            var allowed = item.CanSendMessages();
+            <ListItem @key="item.Id" Selected="selected" Disabled="@(!allowed)" OnClick="() => Toggle(item)" Class="fwd__item">
+                <Leading><ChatAvatar Chat="item" Size="42" /></Leading>
+                <ChildContent>
+                    <div class="sm-list-item__title">@TitleOf(item)</div>
+                    @if (!allowed)
+                    {
+                        <div class="sm-list-item__subtitle">@L["chat.forward.readOnly"]</div>
+                    }
+                    else if (item.Type == ChatType.Group)
+                    {
+                        <div class="sm-list-item__subtitle">@L.Plural("plural.members", item.MemberCount)</div>
+                    }
+                </ChildContent>
+                <Trailing>
+                    @if (allowed)
+                    {
+                        <span class="fwd__check @(selected ? "fwd__check--on" : null)" aria-hidden="true">
+                            @if (selected)
+                            {
+                                <Icon Name="@IconNames.Check" Size="14" StrokeWidth="3" />
+                            }
+                        </span>
+                    }
+                </Trailing>
+            </ListItem>
+        }
+    </div>
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Icon="@IconNames.Forward" Disabled="@(_selected.Count == 0)" OnClick="Done">
+            @(_selected.Count > 1 ? L.Plural("chat.forward.sendMany", _selected.Count) : L["chat.forward.send"])
+        </Button>
+    </DialogActions>
+</div>
+
+@code {
+    private string _query = "";
+    private readonly List<Guid> _selected = [];
+    private ChatSummaryDto? _saved;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    private IReadOnlyList<ChatSummaryDto> Filtered
+    {
+        get
+        {
+            var all = new List<ChatSummaryDto>();
+            if (_saved is not null) all.Add(_saved);
+            foreach (var chat in ChatList.Chats.Concat(ChatList.ArchivedChats))
+                if (all.All(c => c.Id != chat.Id)) all.Add(chat);
+            all = all.OrderByDescending(c => c.Type == ChatType.Saved).ToList();
+            var q = _query.Trim();
+            return q.Length == 0
+                ? all
+                : all.Where(c => TitleOf(c).Contains(q, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        _saved = ChatList.Chats.Concat(ChatList.ArchivedChats).FirstOrDefault(c => c.Type == ChatType.Saved);
+        if (_saved is null)
+        {
+            try
+            {
+                _saved = await ChatList.GetSavedMessagesAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Saved Messages not available for forwarding");
+            }
+        }
+    }
+
+    private string TitleOf(ChatSummaryDto chat) => chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat);
+
+    private void Toggle(ChatSummaryDto chat)
+    {
+        if (!chat.CanSendMessages()) return;
+        if (!_selected.Remove(chat.Id)) _selected.Add(chat.Id);
+    }
+
+    private void Done()
+    {
+        if (_selected.Count > 0) Dialog.Close(_selected.ToList());
+    }
+}

@@ -1,0 +1,38 @@
+.seg-slide ::deep .sm-segmented {
+    position: relative;
+    isolation: isolate;
+}
+
+/* The thumb: one surface behind the options (n options, 3px padding, 2px gaps) that slides to the selected one. */
+.seg-slide ::deep .sm-segmented::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc((100% - 6px - (var(--seg-count) - 1) * 2px) / var(--seg-count));
+    border-radius: 9px;
+    background: var(--sm-surface);
+    box-shadow: var(--sm-shadow-1);
+    transform: translateX(calc(var(--seg-index) * (100% + 2px)));
+    transition: transform var(--sm-dur) var(--sm-ease);
+}
+
+html[data-theme="dark"] .seg-slide ::deep .sm-segmented::before {
+    background: var(--sm-surface-3);
+}
+
+.seg-slide--none ::deep .sm-segmented::before {
+    opacity: 0;
+}
+
+/* The thumb is the selection: the active option itself stays transparent. */
+.seg-slide ::deep .sm-segmented__item--active {
+    background: transparent;
+    box-shadow: none;
+}
+
+.seg-slide.is-changed ::deep .sm-segmented__item--active .sm-icon {
+    animation: sm-bump 260ms var(--sm-ease);
+}

@@ -1,0 +1,253 @@
+@page "/register"
+@attribute [AnonymousPage]
+@* Create an account on a frosted card over the sky: name, username (checked live), password, invite code when the
+   server requires one. *@
+@using System.Text.RegularExpressions
+@implements IDisposable
+@inject IAuthService Auth
+@inject IServerEndpointService Endpoints
+@inject NavigationService Nav
+
+<div class="auth-page sm-stagger">
+    <AuthHeader Title="@L["auth.register.title"]" Subtitle="@L["auth.register.subtitle"]" BackTo="@NavigationService.WelcomePath" Compact="true" Intro="_intro" />
+
+    @if (_mode == RegistrationMode.Closed)
+    {
+        <div class="auth-closed sm-card">
+            <EmptyState Icon="@IconNames.Lock" Title="@L["auth.register.closedTitle"]" Text="@L["auth.register.closedText"]">
+                <Actions>
+                    <Button Icon="@IconNames.LogIn" OnClick="@(() => Nav.NavigateTo("/login", replace: true))">@L["auth.signIn"]</Button>
+                </Actions>
+            </EmptyState>
+        </div>
+        <div class="auth-server"><ServerStatus OnChecked="OnServerChecked" /></div>
+    }
+    else
+    {
+        <form class="auth-form sm-card" @onsubmit="RegisterAsync" @onsubmit:preventDefault="true">
+            <TextField @bind-Value="_displayName" Label="@L["auth.field.name"]" Placeholder="@L["auth.field.namePlaceholder"]" Icon="@IconNames.UserRound"
+                       Autocomplete="name" Autocapitalize="words" Autofocus="true" MaxLength="Limits.DisplayNameMaxLength" Hint="@L["auth.field.nameHint"]" />
+
+            <TextField Value="@_username" ValueChanged="OnUsernameChanged" Label="@L["auth.field.username"]" Prefix="@("@")" Placeholder="anna_petrova"
+                       Autocomplete="username" Autocapitalize="off" MaxLength="Limits.UsernameMaxLength + 1"
+                       Error="@UsernameError" Success="@UsernameSuccess" Hint="@L["auth.field.usernameHint"]">
+                <Trailing>
+                    @if (_usernameState == UsernameState.Checking)
+                    {
+                        <Spinner Size="18" />
+                    }
+                    else if (_usernameState == UsernameState.Free)
+                    {
+                        <Icon Name="@IconNames.CircleCheck" Size="20" Class="sm-success-text auth-check" />
+                    }
+                    else if (_usernameState is UsernameState.Taken or UsernameState.Reserved)
+                    {
+                        <Icon Name="@IconNames.CircleX" Size="20" Class="sm-danger-text auth-check" />
+                    }
+                </Trailing>
+            </TextField>
+
+            <TextField @bind-Value="_password" Type="password" Label="@L["auth.field.newPassword"]" Icon="@IconNames.KeyRound" Autocomplete="new-password"
+                       MaxLength="Limits.PasswordMaxLength" Hint="@L.Format("auth.field.passwordHint", Limits.PasswordMinLength)" Error="@PasswordError" />
+            <TextField @bind-Value="_confirm" Type="password" Label="@L["auth.field.confirmPassword"]" Icon="@IconNames.KeyRound" Autocomplete="new-password"
+                       MaxLength="Limits.PasswordMaxLength" Error="@ConfirmError" />
+
+            @if (_mode == RegistrationMode.InviteCode)
+            {
+                <TextField @bind-Value="_invite" Label="@L["auth.field.invite"]" Icon="@IconNames.Ticket" Autocomplete="off" Autocapitalize="off"
+                           Hint="@L["auth.field.inviteHint"]" MaxLength="128" Error="@_inviteError" />
+            }
+
+            @if (_error is not null)
+            {
+                <div @key="_attempt" class="auth-form__error" role="alert">
+                    <span class="auth-form__error-icon"><Icon Name="@IconNames.CircleAlert" Size="18" /></span>
+                    <span>@_error</span>
+                </div>
+            }
+
+            <Button Type="submit" Block="true" Size="ButtonSize.Large" Loading="_busy" Disabled="@(!CanSubmit)" Class="auth-form__submit">@L["auth.createAccount"]</Button>
+        </form>
+
+        <div class="auth-alt">
+            <span>@L["auth.register.haveAccount"]</span>
+            <Button Variant="ButtonVariant.Link" OnClick="@(() => Nav.NavigateTo("/login", replace: true))">@L["auth.signIn"]</Button>
+        </div>
+        <p class="auth-hint">
+            <Icon Name="@IconNames.ShieldCheck" Size="16" />
+            <span>@L["auth.register.privacy"]</span>
+        </p>
+        <div class="auth-server"><ServerStatus OnChecked="OnServerChecked" /></div>
+    }
+</div>
+
+@code {
+    private enum UsernameState
+    {
+        Empty,
+        Invalid,
+        Checking,
+        Free,
+        Taken,
+        /// <summary>Well-formed, but the server keeps it for itself ("admin", "support", "telegram…", "deleted…").</summary>
+        Reserved,
+        Unknown,
+    }
+
+    private readonly bool _intro = AuthIntro.TakeFirst();
+    private RegistrationMode? _mode;
+    private string _displayName = "";
+    private string _username = "";
+    private string _password = "";
+    private string _confirm = "";
+    private string _invite = "";
+    private string? _error;
+    private string? _inviteError;
+    private bool _busy;
+    private bool _submitted;
+    private int _attempt;
+    private UsernameState _usernameState = UsernameState.Empty;
+    private CancellationTokenSource? _check;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    private string? UsernameError => _usernameState switch
+    {
+        UsernameState.Invalid => L.Format("auth.username.invalid", Limits.UsernameMinLength),
+        UsernameState.Taken => L["auth.username.taken"],
+        UsernameState.Reserved => L["auth.username.reserved"],
+        _ => null,
+    };
+
+    private string? UsernameSuccess => _usernameState == UsernameState.Free ? L["auth.username.free"] : null;
+
+    private string? PasswordError => (_submitted || _password.Length > 0) && _password.Length is > 0 and < Limits.PasswordMinLength
+        ? L.Format("auth.field.passwordTooShort", Limits.PasswordMinLength)
+        : null;
+
+    private string? ConfirmError => _confirm.Length > 0 && _confirm != _password ? L["auth.field.passwordMismatch"] : null;
+
+    private bool CanSubmit =>
+        !_busy
+        && !string.IsNullOrWhiteSpace(_displayName)
+        && _usernameState is UsernameState.Free or UsernameState.Unknown
+        && _password.Length >= Limits.PasswordMinLength
+        && _confirm == _password
+        && (_mode != RegistrationMode.InviteCode || !string.IsNullOrWhiteSpace(_invite));
+
+    protected override void OnInitialized() => _mode = Endpoints.Info?.RegistrationMode;
+
+    private void OnServerChecked(ServerInfoDto? info)
+    {
+        if (info is not null) _mode = info.RegistrationMode;
+    }
+
+    private void OnUsernameChanged(string value)
+    {
+        _username = value.Trim().TrimStart('@');
+        _check?.Cancel();
+        if (_username.Length == 0)
+        {
+            _usernameState = UsernameState.Empty;
+            return;
+        }
+        if (!Regex.IsMatch(_username, Limits.UsernamePattern))
+        {
+            _usernameState = UsernameState.Invalid;
+            return;
+        }
+        _usernameState = UsernameState.Checking;
+        var cts = _check = new CancellationTokenSource();
+        _ = CheckAsync(_username, cts.Token);
+    }
+
+    /// <summary>
+    /// The server answered username_invalid: for a name that passes the format check it is a reserved one, and the
+    /// format hint would only confuse.
+    /// </summary>
+    private static UsernameState RefusedState(string username) =>
+        Regex.IsMatch(username, Limits.UsernamePattern) ? UsernameState.Reserved : UsernameState.Invalid;
+
+    private async Task CheckAsync(string username, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(450, ct);
+            var result = await Auth.CheckUsernameAsync(username, ct);
+            if (ct.IsCancellationRequested) return;
+            _usernameState = result.Available ? UsernameState.Free
+                : result.ErrorCode == ErrorCodes.UsernameInvalid ? RefusedState(username)
+                : UsernameState.Taken;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            // Offline / rate-limited: let the server decide on submit.
+            _usernameState = UsernameState.Unknown;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RegisterAsync()
+    {
+        _submitted = true;
+        if (!CanSubmit) return;
+        _busy = true;
+        _error = null;
+        _inviteError = null;
+        try
+        {
+            var result = await Auth.RegisterAsync(_username, _password, _displayName.Trim(),
+                _mode == RegistrationMode.InviteCode ? _invite.Trim() : null);
+            if (result.Success) return;
+            switch (result.ErrorCode)
+            {
+                case ErrorCodes.UsernameTaken:
+                    _usernameState = UsernameState.Taken;
+                    break;
+                case ErrorCodes.UsernameInvalid:
+                    _usernameState = RefusedState(_username);
+                    break;
+                case ErrorCodes.RegistrationClosed when _mode == RegistrationMode.InviteCode:
+                    _inviteError = L["auth.field.inviteWrong"];
+                    break;
+                case ErrorCodes.RegistrationClosed:
+                    // The server's mode was unknown or changed: ask it which one applies now.
+                    _mode = await DiscoverModeAsync() ?? RegistrationMode.Closed;
+                    if (_mode == RegistrationMode.InviteCode) _inviteError = L["auth.field.inviteNeeded"];
+                    break;
+                default:
+                    _attempt++;
+                    _error = L.Error(result.ErrorCode);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _attempt++;
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task<RegistrationMode?> DiscoverModeAsync()
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            return (await Endpoints.TestAsync(Endpoints.BaseUri, cancellationToken: cts.Token))?.RegistrationMode;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    public void Dispose() => _check?.Cancel();
+}

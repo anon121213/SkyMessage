@@ -1,0 +1,105 @@
+/* Reaction chips: glass capsules with a rim (emoji + count, or the reactors' squircle faces); mine is a flat gradient
+   chip. The host adapts them through --reaction-bg / --reaction-rim / --reaction-color / --reaction-mine-*
+   / --reaction-ring (MessageBubble.razor.css: white glass on outgoing bubbles). */
+
+.reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.reaction {
+    --ring: var(--reaction-ring, var(--sm-bubble-in));
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 1.875rem;
+    padding: 0 10px 0 7px;
+    border-radius: 999px;
+    background: var(--reaction-bg, color-mix(in srgb, var(--sm-accent) 10%, transparent));
+    box-shadow: inset 0 0 0 1px var(--reaction-rim, color-mix(in srgb, var(--sm-accent) 16%, transparent));
+    color: var(--reaction-color, var(--sm-accent));
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: transform var(--sm-dur) var(--sm-spring), filter var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .reaction:hover:not(:disabled) {
+        filter: brightness(1.05) saturate(1.1);
+    }
+}
+
+.reaction:active:not(:disabled) {
+    transform: scale(0.9);
+    transition-duration: 90ms;
+}
+
+.reaction:disabled {
+    cursor: default;
+}
+
+.reaction--mine {
+    --ring: var(--reaction-mine-ring, var(--sm-accent));
+    background: var(--reaction-mine-bg, var(--sm-grad));
+    color: var(--reaction-mine-color, var(--sm-on-accent));
+    box-shadow: var(--reaction-mine-shadow, none);
+}
+
+/* A chip that appears on a message already on screen pops in; a changed count bumps (two names restart it). */
+.reaction--pop {
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring);
+}
+
+.reaction--bump-a {
+    animation: sm-bump var(--sm-dur) var(--sm-ease-out);
+}
+
+.reaction--bump-b {
+    animation: reaction-bump var(--sm-dur) var(--sm-ease-out);
+}
+
+@keyframes reaction-bump {
+    0%, 100% {
+        transform: none;
+    }
+
+    40% {
+        transform: scale(1.18);
+    }
+}
+
+.reaction__emoji {
+    font-size: 1.0625rem;
+    line-height: 1;
+}
+
+.reaction__count {
+    letter-spacing: 0.01em;
+}
+
+.reaction__people {
+    display: inline-flex;
+    padding-left: 1px;
+}
+
+.reaction__people ::deep .reaction__avatar + .reaction__avatar {
+    margin-left: -6px;
+}
+
+/* Overlapping faces are parted by a squircle ring in the chip's colour (a shadow would be clipped by the mask). */
+.reaction__people ::deep .reaction__avatar {
+    isolation: isolate;
+}
+
+.reaction__people ::deep .reaction__avatar::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -1.5px;
+    background: var(--ring);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}

@@ -1,0 +1,82 @@
+@* Top bar of a screen, transparent over the sky (docs/DESIGN.md §7). When its screen scrolls (an ancestor gets
+   [data-scrolled] from app.js attachScrollState) a floating frosted capsule fades in behind it; Floating keeps the
+   capsule on. Large (root screens): a 30px display title that crossfades into a compact one inside the capsule.
+   Back is a frosted circle. *@
+@inject NavigationService Nav
+
+<header class="app-bar @(Large ? "app-bar--large" : null) @(Floating ? "app-bar--floating" : null) @(Transparent ? "app-bar--transparent" : null) @(GlassActions ? "app-bar--glass-actions" : null) @Class">
+    <span class="app-bar__glass" aria-hidden="true"></span>
+    @if (Leading is not null)
+    {
+        @Leading
+    }
+    else if (ShowBack)
+    {
+        @* data-shell-back: the phone shell's swipe back (and its animated back tap) runs this very button. *@
+        <IconButton Icon="@(UseClose ? IconNames.X : IconNames.ChevronLeft)" Label="@(UseClose ? L["common.close"] : L["nav.back"])" OnClick="BackAsync"
+                    Variant="IconButtonVariant.Glass" StrokeWidth="2.4" Class="app-bar__back" data-shell-back="" />
+    }
+    <div class="app-bar__title @(ShowBack || Leading is not null ? null : "app-bar__title--inset")" @onclick="TitleClick" role="@(OnTitleClick.HasDelegate ? "button" : null)">
+        @if (TitleContent is not null)
+        {
+            @TitleContent
+        }
+        else if (Large)
+        {
+            <h1 class="app-bar__large"><span class="app-bar__large-text">@Title</span></h1>
+            <div class="app-bar__compact" aria-hidden="true">@Title</div>
+        }
+        else
+        {
+            <h1 class="app-bar__heading">@Title</h1>
+            @if (!string.IsNullOrEmpty(Subtitle))
+            {
+                <div class="app-bar__subtitle">@Subtitle</div>
+            }
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="app-bar__actions">@Actions</div>
+    }
+</header>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public ShellContext? Shell { get; set; }
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? TitleContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    /// <summary>Replaces the back button.</summary>
+    [Parameter] public RenderFragment? Leading { get; set; }
+    /// <summary>Null = automatic (hidden on top-level screens and in the list column).</summary>
+    [Parameter] public bool? Back { get; set; }
+    /// <summary>Where Back goes when there is no in-app history (deep link, reload).</summary>
+    [Parameter] public string BackFallback { get; set; } = "/";
+    /// <summary>Custom back handler (e.g. leave a wizard step) instead of history back.</summary>
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public EventCallback OnTitleClick { get; set; }
+    /// <summary>Never shows the frosted capsule (the screen draws its own glass behind the bar).</summary>
+    [Parameter] public bool Transparent { get; set; }
+    /// <summary>The frosted capsule is always on (a bar floating over content that has no scroll state).</summary>
+    [Parameter] public bool Floating { get; set; }
+    /// <summary>Plain icon buttons among the actions become frosted circles (screens over the sky).</summary>
+    [Parameter] public bool GlassActions { get; set; }
+    /// <summary>Root screens: a large display title that turns compact when the screen scrolls.</summary>
+    [Parameter] public bool Large { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private bool ShowBack => Back ?? (Shell?.Pane != ShellPane.Sidebar && !NavigationService.IsTopLevel(Nav.CurrentPath));
+
+    private bool UseClose => Shell?.IsSidePane == true;
+
+    private async Task BackAsync()
+    {
+        if (OnBack.HasDelegate) await OnBack.InvokeAsync();
+        else await Nav.GoBackAsync(BackFallback);
+    }
+
+    private Task TitleClick() => OnTitleClick.HasDelegate ? OnTitleClick.InvokeAsync() : Task.CompletedTask;
+}

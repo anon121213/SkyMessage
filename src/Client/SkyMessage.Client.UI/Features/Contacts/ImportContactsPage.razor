@@ -1,0 +1,215 @@
+@page "/contacts/import"
+@* Find friends from the phone book: explain (our phone-book illustration), ask permission, show matches (@username +
+   avatar) as airy rows with round checks, import the confirmed ones with the main button floating at the bottom. *@
+@inherits UiComponentBase
+@inject IContactStore Contacts
+@inject IDeviceContactsService DeviceContacts
+@inject IPermissionService Permissions
+@inject IAuthService Auth
+@inject ILinkBuilder Links
+@inject ShareHelper Share
+@inject NavigationService Nav
+@inject ToastService Toasts
+
+<AppPage Title="@L["contacts.import.title"]" BackFallback="/contacts">
+    <ChildContent>
+        @switch (_stage)
+        {
+            case Stage.Intro:
+                <EmptyState Title="@L["contacts.import.introTitle"]" Text="@L["contacts.import.introText"]" Fill="true" Class="import__intro">
+                    <Art><SkyArt Kind="SkyArtKind.PhoneBook" Size="220" /></Art>
+                    <ChildContent>
+                        <p class="import__privacy"><Icon Name="@IconNames.ShieldCheck" Size="16" />@L["contacts.import.privacy"]</p>
+                    </ChildContent>
+                    <Actions>
+                        @if (DeviceContacts.IsSupported)
+                        {
+                            <Button Size="ButtonSize.Large" Icon="@IconNames.Search" OnClick="FindAsync">@L["contacts.import.find"]</Button>
+                        }
+                    </Actions>
+                </EmptyState>
+                @if (!DeviceContacts.IsSupported)
+                {
+                    <EmptyState Text="@L["contacts.import.unsupported"]">
+                        <Actions>
+                            <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.Share2" OnClick="InviteAsync">@L["contacts.invite.title"]</Button>
+                        </Actions>
+                    </EmptyState>
+                }
+                break;
+            case Stage.Searching:
+                <EmptyState Fill="true" Title="@L["contacts.import.searching"]">
+                    <Art>
+                        <span class="import__orb" aria-hidden="true">
+                            <Icon Name="@IconNames.BookUser" Size="34" StrokeWidth="1.8" />
+                            <Spinner Size="30" Class="import__spinner" />
+                        </span>
+                    </Art>
+                </EmptyState>
+                break;
+            case Stage.Denied:
+                <EmptyState Icon="@IconNames.ShieldAlert" Title="@L["contacts.import.deniedTitle"]" Text="@L["contacts.import.deniedText"]" Fill="true">
+                    <Actions>
+                        <Button Icon="@IconNames.Settings" OnClick="OpenSettingsAsync">@L["contacts.import.openSettings"]</Button>
+                        <Button Variant="ButtonVariant.Ghost" OnClick="FindAsync">@L["common.retry"]</Button>
+                    </Actions>
+                </EmptyState>
+                break;
+            case Stage.Failed:
+                <EmptyState Icon="@IconNames.CloudOff" Title="@L["contacts.import.failedTitle"]" Text="@_error" Fill="true">
+                    <Actions>
+                        <Button Icon="@IconNames.RefreshCw" OnClick="FindAsync">@L["common.retry"]</Button>
+                    </Actions>
+                </EmptyState>
+                break;
+            default:
+                @if (_matches.Count == 0)
+                {
+                    <EmptyState Icon="@IconNames.UserSearch" Title="@L["contacts.import.noneTitle"]" Text="@L["contacts.import.noneText"]" Fill="true">
+                        <Actions>
+                            <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.Share2" OnClick="InviteAsync">@L["contacts.invite.title"]</Button>
+                        </Actions>
+                    </EmptyState>
+                }
+                else
+                {
+                    <p class="import__summary">@L.Plural("contacts.import.found", _matches.Count)</p>
+                    <div class="import__rows">
+                    @foreach (var match in _matches)
+                    {
+                        var key = KeyOf(match);
+                        var selected = _selected.Contains(key);
+                        <ListItem @key="key" Class="import__row" OnClick="() => Toggle(match)" Disabled="match.AlreadyContact" Selected="selected">
+                            <Leading>
+                                <div class="import__lead">
+                                    <Checkbox Round="true" Checked="@(selected || match.AlreadyContact)" Disabled="match.AlreadyContact"
+                                              AriaLabel="@match.DeviceContactName" CheckedChanged="_ => Toggle(match)" />
+                                    <UserAvatar UserId="match.User.Id" Embedded="match.User" Size="44" />
+                                </div>
+                            </Leading>
+                            <ChildContent>
+                                <div class="sm-list-item__title">@match.DeviceContactName</div>
+                                <div class="sm-list-item__subtitle">
+                                    <span class="sm-accent-text">@match.User.Handle()</span>
+                                    @if (!string.Equals(match.User.DisplayName, match.DeviceContactName, StringComparison.CurrentCultureIgnoreCase))
+                                    {
+                                        <span> · @match.User.DisplayName</span>
+                                    }
+                                </div>
+                            </ChildContent>
+                            <Trailing>
+                                @if (match.AlreadyContact)
+                                {
+                                    <Badge Kind="BadgeKind.Label" Text="@L["contacts.inContacts"]" />
+                                }
+                            </Trailing>
+                        </ListItem>
+                    }
+                    </div>
+                }
+                break;
+        }
+    </ChildContent>
+    <Footer>
+        @if (_stage == Stage.Results && _matches.Any(m => !m.AlreadyContact))
+        {
+            <Button Block="true" Size="ButtonSize.Large" Loading="_importing" Disabled="@(_selected.Count == 0)" Icon="@IconNames.UserRoundPlus" OnClick="ImportAsync">
+                @L.Plural("contacts.import.add", _selected.Count)
+            </Button>
+        }
+    </Footer>
+</AppPage>
+
+@code {
+    private enum Stage
+    {
+        Intro,
+        Searching,
+        Denied,
+        Failed,
+        Results,
+    }
+
+    private Stage _stage = Stage.Intro;
+    private IReadOnlyList<PhoneBookMatch> _matches = [];
+    private readonly HashSet<string> _selected = [];
+    private string? _error;
+    private bool _importing;
+
+    private static string KeyOf(PhoneBookMatch match) => $"{match.User.Id:N}|{match.PhoneNumber}";
+
+    private async Task FindAsync()
+    {
+        _stage = Stage.Searching;
+        StateHasChanged();
+        try
+        {
+            var granted = await DeviceContacts.RequestPermissionAsync();
+            if (!granted)
+            {
+                _stage = Stage.Denied;
+                return;
+            }
+            var matches = await Contacts.FindDeviceContactsAsync();
+            // One row per person: a friend with two numbers is listed once.
+            _matches = matches.GroupBy(m => m.User.Id).Select(g => g.First())
+                .OrderBy(m => m.AlreadyContact).ThenBy(m => m.DeviceContactName, StringComparer.CurrentCultureIgnoreCase).ToList();
+            _selected.Clear();
+            foreach (var match in _matches.Where(m => !m.AlreadyContact)) _selected.Add(KeyOf(match));
+            _stage = Stage.Results;
+        }
+        catch (ApiException ex) when (ex.Code == ClientErrorCodes.PermissionDenied)
+        {
+            _stage = Stage.Denied;
+        }
+        catch (Exception ex)
+        {
+            var state = await Permissions.CheckAsync(AppPermission.Contacts);
+            if (state is PermissionState.Denied or PermissionState.Restricted)
+            {
+                _stage = Stage.Denied;
+            }
+            else
+            {
+                _error = L.Error(ex);
+                _stage = Stage.Failed;
+            }
+        }
+    }
+
+    private void Toggle(PhoneBookMatch match)
+    {
+        if (match.AlreadyContact) return;
+        var key = KeyOf(match);
+        if (!_selected.Remove(key)) _selected.Add(key);
+    }
+
+    private async Task ImportAsync()
+    {
+        var chosen = _matches.Where(m => !m.AlreadyContact && _selected.Contains(KeyOf(m))).ToList();
+        if (chosen.Count == 0) return;
+        _importing = true;
+        try
+        {
+            await Contacts.ImportAsync(chosen);
+            Toasts.Success(L.Plural("contacts.import.done", chosen.Count));
+            await Nav.GoBackAsync("/contacts");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private Task OpenSettingsAsync() => Permissions.OpenAppSettingsAsync();
+
+    private async Task InviteAsync()
+    {
+        if (Auth.Me is not { } me) return;
+        await Share.ShareAsync(L.Format("contacts.invite.text", Links.ProfileLink(me.Username)), L["contacts.invite.title"]);
+    }
+}

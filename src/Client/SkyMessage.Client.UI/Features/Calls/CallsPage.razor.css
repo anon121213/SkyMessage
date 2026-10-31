@@ -1,0 +1,288 @@
+/* Call history: an All / Missed filter with a sliding gradient pill, rows like the chat list (squircle faces with a
+   colored direction badge, names in the display font, missed in rose) on frosted day cards, our own empty-state art. */
+
+/* ---------- Filter: a lavender track, a gradient pill sliding under the active half (rose for Missed) ---------- */
+
+.calls-filter {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    width: min(100%, 22rem);
+    padding: 4px;
+    border-radius: 999px;
+    background: var(--sm-surface-2);
+    box-shadow: inset 0 0 0 1px var(--sm-border), inset 0 1px 2px rgba(30, 16, 90, 0.06);
+}
+
+.calls-filter__pill {
+    position: absolute;
+    z-index: 0;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    border-radius: 999px;
+    background: var(--sm-grad);
+    box-shadow: 0 2px 6px -2px rgba(30, 16, 90, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transition: transform 420ms var(--sm-spring-soft);
+}
+
+.calls-filter__pill::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--sm-grad-danger);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    opacity: 0;
+    transition: opacity var(--sm-dur) ease;
+}
+
+.calls-filter__pill.is-missed {
+    transform: translateX(100%);
+}
+
+.calls-filter__pill.is-missed::before {
+    opacity: 1;
+}
+
+.calls-filter__tab {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 2.375rem;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-family: var(--sm-font-display);
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--sm-text-2);
+    white-space: nowrap;
+    transition: color var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+.calls-filter__tab:active {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+}
+
+.calls-filter__tab.is-active {
+    color: var(--sm-on-accent);
+}
+
+@media (hover: hover) {
+    .calls-filter__tab:not(.is-active):hover {
+        color: var(--sm-text);
+    }
+}
+
+/* ---------- Rows ---------- */
+
+.calls-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.calls-item__avatar {
+    position: relative;
+    display: inline-flex;
+}
+
+/* Which way the call went: a small flat disc on the face's corner (mint in, violet out, rose missed). */
+.calls-item__dir {
+    position: absolute;
+    right: -5px;
+    bottom: -4px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: var(--sm-success);
+    box-shadow: 0 0 0 2.5px var(--sm-card-solid);
+}
+
+.calls-item__dir--out {
+    background: var(--sm-accent);
+}
+
+.calls-item__dir--missed {
+    background: var(--sm-danger);
+}
+
+.calls-item__title {
+    font-family: var(--sm-font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+}
+
+.calls-list ::deep .calls-item--missed .calls-item__title {
+    color: var(--sm-danger);
+}
+
+.calls-item__sub {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.calls-item__sub ::deep .calls-item__kind {
+    flex-shrink: 0;
+    color: var(--sm-text-3);
+}
+
+.calls-list ::deep .calls-item--missed .calls-item__sub {
+    color: color-mix(in srgb, var(--sm-danger) 72%, var(--sm-text-2));
+}
+
+/* A call still going on: a live mint dot and mint text. */
+.calls-list ::deep .calls-item--ongoing .calls-item__sub {
+    color: var(--sm-success);
+    font-weight: 600;
+}
+
+.calls-item__live {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sm-online);
+    animation: sm-pulse 1.8s ease-in-out infinite;
+}
+
+.calls-item__end {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.calls-item__time {
+    font-size: 0.8125rem;
+    color: var(--sm-text-3);
+}
+
+/* Call back: a softly tinted round button with a hairline rim (no backdrop blur on list rows). */
+.calls-item__end ::deep .calls-item__call:not(.sm-icon-btn--filled) {
+    color: var(--sm-accent);
+    background: var(--sm-accent-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 16%, transparent);
+}
+
+html[data-theme="dark"] .calls-item__end ::deep .calls-item__call:not(.sm-icon-btn--filled) {
+    color: color-mix(in srgb, var(--sm-accent) 70%, #FFFFFF);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 24%, transparent);
+}
+
+.calls-item__end ::deep .calls-item__call .sm-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.calls-more {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 16px;
+    min-height: 3rem;
+}
+
+/* ---------- Empty state art: a flat drawing — a ringing phone tile floating between two clouds, a small sun ---------- */
+
+.calls-art {
+    --cloud: #FFFFFF;
+    position: relative;
+    width: 13.75rem;
+    height: 10.625rem;
+    margin-bottom: 6px;
+}
+
+html[data-theme="dark"] .calls-art {
+    --cloud: #2A2E52;
+}
+
+.calls-art svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.calls-art__sun {
+    fill: var(--sm-gold);
+}
+
+.calls-art__cloud {
+    fill: var(--cloud);
+}
+
+.calls-art__cloud--back {
+    opacity: 0.9;
+    animation: calls-art-drift 10s ease-in-out infinite;
+}
+
+.calls-art__cloud--front {
+    animation: calls-art-drift 12s ease-in-out -4s infinite reverse;
+}
+
+@keyframes calls-art-drift {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    50% {
+        transform: translateX(5px);
+    }
+}
+
+.calls-art__float {
+    animation: sm-float 6s ease-in-out infinite;
+}
+
+.calls-art__tile {
+    fill: var(--sm-accent);
+}
+
+.calls-art__phone path {
+    fill: none;
+    stroke: #FFFFFF;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* The ringing: two arcs that come and go. */
+.calls-art__wave {
+    fill: none;
+    stroke: var(--sm-accent);
+    stroke-width: 4;
+    stroke-linecap: round;
+    animation: calls-art-wave 2.2s ease-in-out infinite;
+}
+
+.calls-art__wave--2 {
+    animation-delay: 0.25s;
+}
+
+@keyframes calls-art-wave {
+    0%,
+    100% {
+        opacity: 0.25;
+    }
+
+    35% {
+        opacity: 1;
+    }
+}
+
+html[data-fx="lite"] .calls-art * {
+    animation: none !important;
+}

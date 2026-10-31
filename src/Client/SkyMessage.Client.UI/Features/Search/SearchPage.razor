@@ -1,0 +1,460 @@
+@page "/search"
+@* Global search: chats, people (by name among contacts/chats, by @username everywhere) and messages; recent
+   results per account. A glass search capsule; results grouped on glass cards under overlines, the match in the
+   accent; our own flat illustrations for the hint and "nothing found". Each new result set rises in once (typing alone
+   does not replay it); the recent list comes back with its avatars popping in, and a removed entry slides away (✕, or
+   drag the row to the left: SearchPage.razor.js). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject ISkyApi Api
+@inject IUserStore Users
+@inject IChatListStore ChatList
+@inject IContactStore Contacts
+@inject IMessagePreviewFormatter Preview
+@inject FormatService Format
+@inject RecentSearches Recent
+@inject NavigationService Nav
+
+<AppPage @ref="_page" Title="@L["search.title"]" Background="PageBackground.Surface" BackFallback="/">
+    <Toolbar>
+        <div class="search__box">
+            <SearchBox @ref="_box" Value="@_query" ValueChanged="OnQueryChanged" OnSearch="SearchAsync" DebounceMs="350" Autofocus="true" Busy="_loading"
+                       Placeholder="@L["search.placeholder"]" />
+        </div>
+    </Toolbar>
+    <ChildContent>
+        @if (Query.Length == 0)
+        {
+            @if (_recent.Count > 0)
+            {
+                <div class="search__recent @(_cleared ? "is-entering" : null)">
+                    <div class="search__heading">
+                        <span class="search__overline"><Icon Name="@IconNames.History" Size="14" />@L["search.recent"]</span>
+                        <Button Variant="ButtonVariant.Link" Size="ButtonSize.Small" OnClick="ClearRecentAsync">@L["search.clearRecent"]</Button>
+                    </div>
+                    <div class="search__recent-list search__card sm-section__body">
+                        @foreach (var entry in _recent)
+                        {
+                            <ListItem @key="(entry.Kind, entry.Id)" Class="@(_leaving.Contains((entry.Kind, entry.Id)) ? "is-leaving" : null)" data-swipe-key="@SwipeKey(entry)"
+                                      OnClick="() => OpenRecentAsync(entry)">
+                                <Leading>@RecentAvatar(entry)</Leading>
+                                <ChildContent>
+                                    <div class="sm-list-item__title search__name">@RecentTitle(entry)</div>
+                                </ChildContent>
+                                <Trailing>
+                                    <IconButton Icon="@IconNames.X" Label="@L["common.remove"]" Size="32" StopPropagation="true" OnClick="() => RemoveRecentAsync(entry)" />
+                                </Trailing>
+                            </ListItem>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="search__state search__state--fill @(_cleared ? "is-entering" : null)">
+                    <EmptyState Title="@L["search.hintTitle"]" Text="@L["search.hintText"]" Fill="true" Art="HintArt" />
+                </div>
+            }
+        }
+        else if (Query.Length < Limits.SearchQueryMinLength)
+        {
+            <div class="search__state is-entering">
+                <EmptyState Text="@L["search.tooShort"]" Art="HintArt" />
+            </div>
+        }
+        else if (_error is not null)
+        {
+            <div class="search__state is-entering">
+                <EmptyState Icon="@IconNames.CloudOff" Title="@L["search.failed"]" Text="@_error">
+                    <Actions><Button Icon="@IconNames.RefreshCw" OnClick="() => SearchAsync(_query)">@L["common.retry"]</Button></Actions>
+                </EmptyState>
+            </div>
+        }
+        else if (_result is { } result)
+        {
+            var nothing = result.Chats.Count == 0 && PeopleResults.Count == 0 && result.Messages.Count == 0;
+            @* Keyed by result set: a new answer rises in once; re-renders while typing keep the element. *@
+            <div @key="_resultSet" class="search__results">
+                @if (nothing && !_loading)
+                {
+                    <EmptyState Title="@L["search.nothing"]" Text="@L["search.nothingHint"]" Art="NothingArt" />
+                }
+                @if (result.Chats.Count > 0)
+                {
+                    <div class="search__heading"><span class="search__overline"><Icon Name="@IconNames.MessagesSquare" Size="14" />@L["search.chats"]</span></div>
+                    <div class="search__card sm-section__body">
+                        @foreach (var chat in result.Chats)
+                        {
+                            <ListItem @key="chat.Id" OnClick="() => OpenChatAsync(chat)">
+                                <Leading><ChatAvatar Chat="chat" Size="44" /></Leading>
+                                <ChildContent>
+                                    <div class="sm-list-item__title search__name">@Highlight(ChatTitle(chat))</div>
+                                    <div class="sm-list-item__subtitle">@ChatSubtitle(chat)</div>
+                                </ChildContent>
+                            </ListItem>
+                        }
+                    </div>
+                }
+                @if (PeopleResults.Count > 0)
+                {
+                    <div class="search__heading"><span class="search__overline"><Icon Name="@IconNames.UsersRound" Size="14" />@L["search.people"]</span></div>
+                    <div class="search__card sm-section__body">
+                        @foreach (var user in PeopleResults)
+                        {
+                            <ListItem @key="user.Id" OnClick="() => OpenUserAsync(user)">
+                                <Leading><UserAvatar UserId="user.Id" Embedded="user" Size="44" ShowOnline="true" /></Leading>
+                                <ChildContent>
+                                    <div class="sm-list-item__title search__name">@Highlight(Users.Resolve(user).NameOf(L))</div>
+                                    <div class="sm-list-item__subtitle">
+                                        @Highlight(user.Handle())
+                                        @if (Contacts.IsContact(user.Id))
+                                        {
+                                            <span class="search__contact"> · @L["contacts.inContacts"]</span>
+                                        }
+                                    </div>
+                                </ChildContent>
+                            </ListItem>
+                        }
+                    </div>
+                }
+                @if (result.Messages.Count > 0)
+                {
+                    <div class="search__heading"><span class="search__overline"><Icon Name="@IconNames.MessageCircle" Size="14" />@L["search.messages"]</span></div>
+                    <div class="search__card sm-section__body">
+                        @foreach (var hit in result.Messages)
+                        {
+                            <ListItem @key="hit.Message.Id" OnClick="() => OpenMessage(hit)">
+                                <Leading>
+                                    <Avatar Url="@HitAvatar(hit)" Name="@HitTitle(hit)" Seed="hit.ChatId" Size="44"
+                                            Icon="@(hit.ChatType == ChatType.Saved ? IconNames.Bookmark : null)" Background="@(hit.ChatType == ChatType.Saved ? "var(--sm-accent)" : null)" />
+                                </Leading>
+                                <ChildContent>
+                                    <div class="search__hit-top">
+                                        <span class="sm-list-item__title search__name">@HitTitle(hit)</span>
+                                        <span class="search__hit-time">@Format.ChatListTime(hit.Message.CreatedAt)</span>
+                                    </div>
+                                    <div class="sm-list-item__subtitle search__snippet">
+                                        @if (hit.ChatType == ChatType.Group && hit.Message.SenderId is { } sender)
+                                        {
+                                            <span class="search__sender">@FormatService.FirstName(Users.NameOf(sender, L)): </span>
+                                        }
+                                        @Highlight(Preview.FormatPreview(hit.Message))
+                                    </div>
+                                </ChildContent>
+                            </ListItem>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else if (_loading)
+        {
+            <SkeletonList Rows="6" />
+        }
+    </ChildContent>
+</AppPage>
+
+@code {
+    private SearchBox? _box;
+    private string _query = "";
+    private bool _loading;
+    private string? _error;
+    private GlobalSearchResultDto? _result;
+    private IReadOnlyList<RecentSearchEntry> _recent = [];
+    private CancellationTokenSource? _search;
+    private int _resultSet;
+    // The query was cleared by the user (not the first render): the recent list / hint animates in.
+    private bool _cleared;
+    private readonly HashSet<(RecentSearchKind, Guid)> _leaving = [];
+
+    [Inject] private IMediaUrlBuilder MediaUrls { get; set; } = default!;
+    [Inject] private IAuthService Auth { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private HapticFeedback Haptics { get; set; } = default!;
+    [Inject] private ILogger<SearchPage> Logger { get; set; } = default!;
+
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/Features/Search/SearchPage.razor.js";
+    private AppPage? _page;
+    private IJSObjectReference? _module;
+    private JsHandle? _rowSwipe;
+    private DotNetObjectReference<SearchPage>? _ref;
+
+    [SupplyParameterFromQuery(Name = "q")] public string? InitialQuery { get; set; }
+
+    private string Query => _query.Trim();
+
+    /// <summary>People that are not already shown as a private chat above.</summary>
+    private IReadOnlyList<UserSummaryDto> PeopleResults
+    {
+        get
+        {
+            if (_result is null) return [];
+            var shown = _result.Chats.Where(c => c.Type == ChatType.Private && c.Peer is not null).Select(c => c.Peer!.Id).ToHashSet();
+            return _result.Users.Where(u => !shown.Contains(u.Id) && u.Id != Auth.UserId).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        OnDispose(() => _search?.Cancel());
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        _recent = await Recent.GetAsync();
+        if (!string.IsNullOrWhiteSpace(InitialQuery))
+        {
+            _query = InitialQuery.Trim();
+            await SearchAsync(_query);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _page is null) return;
+        try
+        {
+            // Drag-to-remove for recent rows: one delegated listener set on the page body.
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", ModulePath);
+            _ref = DotNetObjectReference.Create(this);
+            _rowSwipe = new JsHandle(await _module.InvokeAsync<IJSObjectReference>("attachRowSwipe", _page.Body, _ref));
+            // Left while the script was loading: release what was just created.
+            if (IsDisposed) await ReleaseRowSwipeAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or ObjectDisposedException)
+        {
+            // The gesture is a convenience; the ✕ buttons still work.
+            Logger.LogDebug(ex, "Recent search swipe unavailable");
+        }
+    }
+
+    private void OnQueryChanged(string value)
+    {
+        if (value.Trim().Length == 0 && Query.Length > 0) _cleared = true;
+        _query = value;
+        if (Query.Length < Limits.SearchQueryMinLength)
+        {
+            _search?.Cancel();
+            _result = null;
+            _error = null;
+            _loading = false;
+        }
+    }
+
+    private async Task SearchAsync(string text)
+    {
+        _search?.Cancel();
+        var q = text.Trim();
+        if (q.Length < Limits.SearchQueryMinLength)
+        {
+            _result = null;
+            _loading = false;
+            return;
+        }
+        var cts = _search = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.GlobalSearchAsync(q, cts.Token);
+            if (cts.IsCancellationRequested) return;
+            Users.Upsert(result.Users);
+            Users.Upsert(result.Chats.Where(c => c.Peer is not null).Select(c => c.Peer!));
+            _result = result;
+            _resultSet++;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    // ---- Text ----
+
+    private string ChatTitle(ChatSummaryDto chat) => chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat);
+
+    private string ChatSubtitle(ChatSummaryDto chat) => chat.Type switch
+    {
+        ChatType.Group => Format.Members(chat.MemberCount),
+        ChatType.Private when chat.Peer is { } peer => Users.Resolve(peer).Handle(),
+        _ => "",
+    };
+
+    private string HitTitle(MessageSearchHitDto hit) => hit.ChatType == ChatType.Saved
+        ? L["common.savedMessages"]
+        : ChatList.Get(hit.ChatId) is { } chat ? ChatList.TitleOf(chat) : hit.ChatTitle;
+
+    private string? HitAvatar(MessageSearchHitDto hit) =>
+        hit.ChatType == ChatType.Saved ? null : MediaUrls.AvatarUrl(ChatList.Get(hit.ChatId) is { } chat ? ChatList.AvatarOf(chat) : hit.ChatAvatarMediaId);
+
+    /// <summary>Marks the first occurrence of the query (text stays plain; only a &lt;mark&gt; wrapper is added).</summary>
+    private RenderFragment Highlight(string text) => __builder =>
+    {
+        var q = Query.TrimStart('@');
+        var index = q.Length == 0 ? -1 : text.IndexOf(q, StringComparison.CurrentCultureIgnoreCase);
+        if (index < 0 || index + q.Length > text.Length)
+        {
+            <text>@text</text>
+        }
+        else
+        {
+            <text>@text[..index]</text><mark class="search__mark">@text.Substring(index, q.Length)</mark><text>@text[(index + q.Length)..]</text>
+        }
+    };
+
+    // ---- Illustrations (our own, flat: a magnifier over a cloud; a cloud wondering where it went) ----
+
+    private static readonly RenderFragment HintArt = __builder =>
+    {
+        <div class="search-art" aria-hidden="true">
+            <svg viewBox="0 0 168 136" focusable="false">
+                <ellipse class="search-art__shadow" cx="84" cy="124" rx="52" ry="5" />
+                <g class="search-art__cloud">
+                    <circle cx="56" cy="92" r="22" />
+                    <circle cx="86" cy="80" r="30" />
+                    <circle cx="118" cy="96" r="18" />
+                    <rect x="32" y="90" width="104" height="26" rx="13" />
+                </g>
+                <g class="search-art__glass">
+                    <line class="search-art__handle" x1="111" y1="65" x2="136" y2="90" />
+                    <circle class="search-art__lens" cx="92" cy="46" r="26" />
+                </g>
+            </svg>
+        </div>
+    };
+
+    private static readonly RenderFragment NothingArt = __builder =>
+    {
+        <div class="search-art search-art--nothing" aria-hidden="true">
+            <svg viewBox="0 0 168 136" focusable="false">
+                <ellipse class="search-art__shadow" cx="84" cy="124" rx="56" ry="5" />
+                <g class="search-art__cloud">
+                    <circle cx="52" cy="88" r="24" />
+                    <circle cx="86" cy="72" r="34" />
+                    <circle cx="122" cy="92" r="20" />
+                    <rect x="28" y="86" width="114" height="30" rx="15" />
+                </g>
+                <circle cx="70" cy="86" r="3" class="search-art__eye" />
+                <circle cx="100" cy="86" r="3" class="search-art__eye" />
+                <path d="M78 100q7-5 14 0" fill="none" stroke-width="3" stroke-linecap="round" class="search-art__mouth" />
+                <g class="search-art__question">
+                    <circle cx="132" cy="34" r="19" class="search-art__bubble" />
+                    <text x="132" y="42" text-anchor="middle" class="search-art__q">?</text>
+                </g>
+            </svg>
+        </div>
+    };
+
+    // ---- Recent ----
+
+    private RenderFragment RecentAvatar(RecentSearchEntry entry) => __builder =>
+    {
+        if (entry.Kind == RecentSearchKind.User)
+        {
+            <UserAvatar UserId="entry.Id" Size="40" ShowOnline="true" />
+        }
+        else if (ChatList.Get(entry.Id) is { } chat)
+        {
+            <ChatAvatar Chat="chat" Size="40" />
+        }
+        else
+        {
+            <Avatar Name="@entry.Title" Seed="entry.Id" Size="40" />
+        }
+    };
+
+    private string RecentTitle(RecentSearchEntry entry) => entry.Kind switch
+    {
+        RecentSearchKind.User => Users.Get(entry.Id) is { } user ? user.NameOf(L) : entry.Title,
+        _ => ChatList.Get(entry.Id) is { } chat ? ChatTitle(chat) : entry.Title,
+    };
+
+    private async Task OpenRecentAsync(RecentSearchEntry entry)
+    {
+        await Recent.AddAsync(entry);
+        if (entry.Kind == RecentSearchKind.User) Nav.OpenUser(entry.Id);
+        else Nav.OpenChat(entry.Id);
+    }
+
+    private async Task RemoveRecentAsync(RecentSearchEntry entry)
+    {
+        // The row slides away first, then the list closes the gap.
+        var key = (entry.Kind, entry.Id);
+        if (!_leaving.Add(key)) return;
+        StateHasChanged();
+        await Task.Delay(160);
+        await Recent.RemoveAsync(entry);
+        _recent = await Recent.GetAsync();
+        _leaving.Remove(key);
+    }
+
+    private static string SwipeKey(RecentSearchEntry entry) => $"{(int)entry.Kind}:{entry.Id}";
+
+    /// <summary>The drag passed the point where letting go removes the row.</summary>
+    [JSInvokable]
+    public Task OnRowSwipeArmed() => InvokeAsync(Haptics.Selection);
+
+    /// <summary>A row was dragged off to the left (already animated out by the script).</summary>
+    [JSInvokable]
+    public Task OnRowSwiped(string key) => InvokeAsync(async () =>
+    {
+        if (IsDisposed || _recent.FirstOrDefault(e => SwipeKey(e) == key) is not { } entry) return;
+        await Recent.RemoveAsync(entry);
+        _recent = await Recent.GetAsync();
+        StateHasChanged();
+    });
+
+    private async Task ClearRecentAsync()
+    {
+        await Recent.ClearAsync();
+        _recent = [];
+    }
+
+    // ---- Open ----
+
+    private async Task OpenChatAsync(ChatSummaryDto chat)
+    {
+        await Recent.AddAsync(new RecentSearchEntry(RecentSearchKind.Chat, chat.Id, ChatTitle(chat)));
+        Nav.OpenChat(chat.Id);
+    }
+
+    private async Task OpenUserAsync(UserSummaryDto user)
+    {
+        await Recent.AddAsync(new RecentSearchEntry(RecentSearchKind.User, user.Id, user.NameOf(L)));
+        Nav.OpenUser(user.Id);
+    }
+
+    private void OpenMessage(MessageSearchHitDto hit) => Nav.OpenChat(hit.ChatId, hit.Message.Seq);
+
+    private async Task ReleaseRowSwipeAsync()
+    {
+        if (_rowSwipe is { } swipe)
+        {
+            _rowSwipe = null;
+            await swipe.DisposeAsync();
+        }
+        if (_module is { } module)
+        {
+            _module = null;
+            try
+            {
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+        _ref?.Dispose();
+        _ref = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await ReleaseRowSwipeAsync();
+        Dispose();
+    }
+}

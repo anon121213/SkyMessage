@@ -1,0 +1,17 @@
+@* Navigates (replacing the history entry) as soon as it is rendered. Used by the auth gate. *@
+@inject NavigationService Nav
+
+@code {
+    [Parameter, EditorRequired] public string Path { get; set; } = "/";
+    /// <summary>Remember the current address as a pending deep link (profile/invite/chat) before leaving.</summary>
+    [Parameter] public bool RememberCurrent { get; set; }
+    /// <summary>Right after a sign-in or sign-out: also drop the history behind (<see cref="NavigationService.StartOverAsync"/>).</summary>
+    [Parameter] public bool StartOver { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (RememberCurrent) Nav.RememberDeepLink(Nav.CurrentUrl);
+        if (StartOver) _ = Nav.StartOverAsync(Path);
+        else Nav.NavigateTo(Path, replace: true);
+    }
+}

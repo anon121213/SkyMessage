@@ -1,0 +1,148 @@
+.new-group {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 22px 16px 24px;
+}
+
+.new-group__top {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+/* The photo: a lavender squircle with the camera in the accent and a small accent "+" badge; the picked photo
+   fills it. */
+.new-group__photo {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 5rem;
+    height: 5rem;
+    color: var(--sm-accent);
+    transition: transform 260ms var(--sm-spring);
+}
+
+.new-group__photo::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--sm-grad-soft), var(--sm-card-solid);
+    box-shadow: inset 0 0 0 1.5px var(--sm-border);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.new-group__photo:active {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.new-group__photo img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.new-group__photo ::deep .sm-icon {
+    position: relative;
+    width: 1.875rem;
+    height: 1.875rem;
+}
+
+.new-group__photo-badge {
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.625rem;
+    height: 1.625rem;
+    border-radius: 50%;
+    color: var(--sm-on-accent);
+    background: var(--sm-accent);
+    box-shadow: 0 0 0 2.5px var(--sm-bg);
+}
+
+.new-group__photo-badge ::deep .sm-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+.new-group__photo.has-photo .new-group__photo-badge {
+    display: none;
+}
+
+/* Members as chips with squircle faces. */
+.new-group__members {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.new-group__count {
+    padding: 0 6px;
+}
+
+.new-group__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.new-group__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    height: 2.5rem;
+    padding: 0 14px 0 5px;
+    border-radius: 999px;
+    background: var(--sm-card);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) backwards;
+}
+
+html[data-fx="lite"] .new-group__chip {
+    background: var(--sm-card-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.new-group__chip:nth-child(2) { animation-delay: 40ms; }
+.new-group__chip:nth-child(3) { animation-delay: 80ms; }
+.new-group__chip:nth-child(4) { animation-delay: 120ms; }
+.new-group__chip:nth-child(n + 5) { animation-delay: 160ms; }
+
+.new-group__chip--me {
+    background: var(--sm-grad-soft), var(--sm-card);
+}
+
+.new-group__chip-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--sm-font-display);
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.new-group__chip ::deep .new-group__owner {
+    margin-right: -6px;
+    background: var(--sm-warning-soft);
+    color: var(--sm-warning);
+}

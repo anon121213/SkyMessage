@@ -1,0 +1,356 @@
+@* Appearance: theme (three little flat scenes: dawn with a sun and a drifting cloud, night with a crescent and star
+   dots, both split by a horizon line for "as the device"), accent (gradient pairs), the sky behind every screen (mini
+   skies), text size and bubble roundness, animations, compact list. A slice of a chat at the top shows the result live
+   (colors ease over, a new sky cross-fades in); sliders preview through ThemeService while dragging, with their own
+   small sample right above them. Picks animate (the ring grows in, the check pops) only once the user changed
+   something, not when the page opens. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject ISettingsService Settings
+@inject ThemeService Theme
+@inject DialogService Dialogs
+
+<SettingsScaffold Title="@L["settings.appearance.title"]">
+    @{
+        var a = Settings.Current.Appearance;
+        var accentKey = ThemeCatalog.NormalizeHex(a.CustomAccentHex) is null ? a.Accent : null;
+        var sky = Theme.Catalog.FindWallpaper(a.Wallpaper);
+        var skyColors = Theme.IsDark ? sky.Dark : sky.Light;
+    }
+    @* Paint servers and clips of the theme scenes (an always-rendered, zero-size svg). *@
+    <svg class="look-defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="look-day" x1="0" y1="0" x2="0.3" y2="1">
+                <stop offset="0" stop-color="#C9BBFF" />
+                <stop offset="0.55" stop-color="#F3DDF6" />
+                <stop offset="1" stop-color="#FFE6D2" />
+            </linearGradient>
+            <linearGradient id="look-night" x1="0" y1="0" x2="0.3" y2="1">
+                <stop offset="0" stop-color="#2B1F70" />
+                <stop offset="0.6" stop-color="#17113D" />
+                <stop offset="1" stop-color="#0C0920" />
+            </linearGradient>
+            <clipPath id="look-clip-day"><polygon points="0,0 120,0 0,90" /></clipPath>
+            <clipPath id="look-clip-night"><polygon points="120,0 120,90 0,90" /></clipPath>
+        </defs>
+    </svg>
+
+    <div class="look-preview" aria-hidden="true">
+        <div class="look-preview__sky" style="@($"background:{skyColors.PreviewCss};background-color:{skyColors.Base}")"></div>
+        @if (_fadeFrom is { } fade)
+        {
+            @* The previous sky on top, fading out: a cross-fade to the new one. *@
+            <div @key="_fadeKey" class="look-preview__fade" style="@($"background:{fade.Css};background-color:{fade.Base}")"></div>
+        }
+        <span class="look-preview__stars" style="@($"opacity:{Num(skyColors.Stars)}")"></span>
+        <div class="look-preview__head">
+            <span class="look-preview__avatar">@Initial(L["settings.appearance.preview.name"])</span>
+            <span class="look-preview__who">
+                <span class="look-preview__name">@L["settings.appearance.preview.name"]</span>
+                <span class="look-preview__status">@L["presence.online"]</span>
+            </span>
+        </div>
+        <div class="look-preview__chat">
+            <div class="look-bubble look-bubble--in">
+                @L["settings.appearance.preview.in"]
+                <span class="look-bubble__meta">09:41</span>
+            </div>
+            <div class="look-bubble look-bubble--out">
+                @L["settings.appearance.preview.out"]
+                <span class="look-bubble__meta">09:42 <Icon Name="@IconNames.CheckCheck" Size="14" /></span>
+            </div>
+        </div>
+    </div>
+
+    <Section Title="@L["settings.appearance.theme"]">
+        <div class="look-modes @(_touched ? "is-live" : null)" role="radiogroup" aria-label="@L["settings.appearance.theme"]">
+            @foreach (var mode in Modes)
+            {
+                var selected = mode.Value == a.Theme;
+                <button @key="mode.Value" type="button" role="radio" aria-checked="@(selected ? "true" : "false")"
+                        class="look-mode look-mode--@ModeClass(mode.Value) @(selected ? "is-selected" : null)" @onclick="() => PickThemeAsync(mode.Value)">
+                    <span class="look-mode__art" aria-hidden="true">
+                        @ModeScene(mode.Value)
+                        @if (selected)
+                        {
+                            <span class="look-mode__check"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                        }
+                    </span>
+                    <span class="look-mode__name">@mode.Label</span>
+                </button>
+            }
+        </div>
+    </Section>
+
+    <Section Title="@L["settings.appearance.accent"]">
+        <div class="look-accents @(_touched ? "is-live" : null)">
+            <div class="look-accents__grid">
+                @foreach (var accent in Theme.Accents)
+                {
+                    <ColorSwatch @key="accent.Key" Color="@accent.Gradient" RingColor="@accent.Hex" Label="@L[accent.NameKey]" Size="44"
+                                 Selected="@(accent.Key == accentKey)" OnClick="() => PickAccentAsync(accent.Key)" />
+                }
+                <ColorSwatch Custom="true" Color="@(accentKey is null ? CustomGradient(a.CustomAccentHex) : null)" RingColor="@(accentKey is null ? ThemeCatalog.NormalizeHex(a.CustomAccentHex) : null)"
+                             Size="44" Selected="@(accentKey is null)" Label="@L["theme.accent.custom"]" OnClick="PickCustomAccentAsync" />
+            </div>
+            <div class="look-accents__name">
+                <span class="look-accents__dot" style="@($"background:{CurrentAccentGradient(a, accentKey)}")"></span>
+                <span>@CurrentAccentName(accentKey)</span>
+            </div>
+        </div>
+    </Section>
+
+    <Section Title="@L["settings.appearance.wallpaper"]" Footer="@L["settings.appearance.wallpaperHint"]">
+        <div class="look-skies @(_touched ? "is-live" : null)" role="radiogroup" aria-label="@L["settings.appearance.wallpaper"]">
+            @foreach (var wallpaper in Theme.Wallpapers)
+            {
+                var selected = string.Equals(wallpaper.Key, a.Wallpaper, StringComparison.OrdinalIgnoreCase);
+                var colors = Theme.IsDark ? wallpaper.Dark : wallpaper.Light;
+                <button @key="wallpaper.Key" type="button" role="radio" aria-checked="@(selected ? "true" : "false")"
+                        class="look-sky @(selected ? "is-selected" : null)" @onclick="() => PickWallpaperAsync(wallpaper.Key)">
+                    <span class="look-sky__tile" aria-hidden="true">
+                        <span class="look-sky__paint" style="@($"background:{colors.PreviewCss};background-color:{colors.Base}")">
+                            @if (colors.Stars > 0)
+                            {
+                                <span class="look-sky__stars" style="@($"opacity:{Num(colors.Stars)}")"></span>
+                            }
+                            <span class="look-sky__bubble look-sky__bubble--in"></span>
+                            <span class="look-sky__bubble look-sky__bubble--out"></span>
+                        </span>
+                        @if (selected)
+                        {
+                            <span class="look-sky__check"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                        }
+                    </span>
+                    <span class="look-sky__name">@L[wallpaper.NameKey]</span>
+                </button>
+            }
+        </div>
+    </Section>
+
+    <Section Title="@L["settings.appearance.text"]">
+        @* Sliders own horizontal drags: no swipe-back from inside them. The sample follows them live. *@
+        <div class="look-text" data-no-swipe-back>
+            <div class="look-text__sample" aria-hidden="true">
+                <span class="look-mini look-mini--in">@L["settings.appearance.preview.in"]</span>
+                <span class="look-mini look-mini--out">@L["settings.appearance.preview.out"]</span>
+            </div>
+            <Slider Value="_font" ValueChanged="PreviewFontAsync" OnChangeEnd="SaveFontAsync" Min="85" Max="140" Step="5" ShowValue="true"
+                    Label="@L["settings.appearance.fontSize"]" Format="@(v => $"{v:0}%")" MinLabel="A" MaxLabel="A" Class="look-text__font" />
+            <Slider Value="_radius" ValueChanged="PreviewRadiusAsync" OnChangeEnd="SaveRadiusAsync" Min="4" Max="24" Step="2" ShowValue="true"
+                    Label="@L["settings.appearance.bubbleRadius"]" Format="@(v => $"{v:0}")" Class="look-text__radius" />
+        </div>
+    </Section>
+
+    <Section DividerInset="64px">
+        <SwitchItem Icon="@IconNames.CirclePlay" IconColor="@SettingsTones.Violet" Title="@L["settings.appearance.animations"]" Subtitle="@L["settings.appearance.animationsHint"]"
+                    Checked="a.Animations" CheckedChanged="v => SaveAsync(s => s.Appearance.Animations = v)" />
+        <SwitchItem Icon="@IconNames.List" IconColor="@SettingsTones.Sky" Title="@L["settings.appearance.compact"]" Subtitle="@L["settings.appearance.compactHint"]"
+                    Checked="a.CompactChatList" CheckedChanged="v => SaveAsync(s => s.Appearance.CompactChatList = v)" />
+    </Section>
+
+    <Section>
+        <ListItem Icon="@IconNames.RotateCcw" IconColor="@SettingsTones.Mauve" Title="@L["settings.appearance.reset"]" Multiline="true" OnClick="ResetAsync" />
+    </Section>
+</SettingsScaffold>
+
+@code {
+    private double _font;
+    private double _radius;
+    private bool _dragging;
+    private bool _touched;
+    private (string Css, string Base)? _fadeFrom;
+    private int _fadeKey;
+
+    private IReadOnlyList<ChoiceOption<ThemeMode>> Modes =>
+    [
+        new(ThemeMode.System, L["theme.mode.system"]),
+        new(ThemeMode.Light, L["theme.mode.light"]),
+        new(ThemeMode.Dark, L["theme.mode.dark"]),
+    ];
+
+    private static string ModeClass(ThemeMode mode) => mode switch
+    {
+        ThemeMode.Light => "light",
+        ThemeMode.Dark => "dark",
+        _ => "system",
+    };
+
+    private static string Num(double value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Initial(string name) => string.IsNullOrEmpty(name) ? "" : name[..1];
+
+    private string CustomGradient(string? hex) => ThemeCatalog.NormalizeHex(hex) is { } h
+        ? $"linear-gradient(135deg, {h} 0%, {Theme.Catalog.SecondHexOf(h)} 100%)"
+        : "";
+
+    private string CurrentAccentGradient(AppearanceSettings a, string? accentKey) =>
+        accentKey is null ? CustomGradient(a.CustomAccentHex) : (Theme.Catalog.FindAccent(accentKey) ?? Theme.Catalog.DefaultAccent).Gradient;
+
+    private string CurrentAccentName(string? accentKey) =>
+        accentKey is null ? L["theme.accent.custom"] : L[(Theme.Catalog.FindAccent(accentKey) ?? Theme.Catalog.DefaultAccent).NameKey];
+
+    /// <summary>A tiny flat sky for each theme mode: dawn with a sun and a cloud, night with a crescent and a few star dots,
+    /// or both split by a thin horizon line.</summary>
+    private RenderFragment ModeScene(ThemeMode mode) => __builder =>
+    {
+        var both = mode == ThemeMode.System;
+        <svg class="look-mode__scene" viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice" focusable="false">
+            @if (mode != ThemeMode.Dark)
+            {
+                <g clip-path="@(both ? "url(#look-clip-day)" : null)">
+                    <rect width="120" height="90" fill="url(#look-day)" />
+                    <circle class="look-mode__sun" cx="@(both ? 32 : 82)" cy="@(both ? 26 : 30)" r="11" />
+                    <g class="look-mode__cloud">
+                        <circle cx="@(both ? 22 : 36)" cy="62" r="9" />
+                        <circle cx="@(both ? 33 : 47)" cy="57" r="12" />
+                        <circle cx="@(both ? 44 : 58)" cy="63" r="8" />
+                        <rect x="@(both ? 13 : 27)" y="61" width="40" height="11" rx="5.5" />
+                    </g>
+                </g>
+            }
+            @if (mode != ThemeMode.Light)
+            {
+                <g clip-path="@(both ? "url(#look-clip-night)" : null)">
+                    <rect width="120" height="90" fill="url(#look-night)" />
+                    <circle class="look-mode__star" cx="@(both ? 70 : 24)" cy="@(both ? 70 : 22)" r="1.3" />
+                    <circle class="look-mode__star look-mode__star--2" cx="@(both ? 98 : 42)" cy="@(both ? 80 : 54)" r="1" />
+                    <circle class="look-mode__star look-mode__star--3" cx="@(both ? 108 : 100)" cy="@(both ? 44 : 66)" r="1.2" />
+                    <circle class="look-mode__star look-mode__star--2" cx="@(both ? 62 : 18)" cy="@(both ? 84 : 72)" r="0.9" />
+                    <path class="look-mode__moon" d="@MoonPath(both ? 88 : 78, both ? 60 : 36)" />
+                </g>
+            }
+            @if (both)
+            {
+                <line class="look-mode__horizon" x1="120" y1="0" x2="0" y2="90" />
+            }
+        </svg>
+    };
+
+    /// <summary>A crescent of radius 11 around (cx, cy).</summary>
+    private static string MoonPath(double cx, double cy) =>
+        $"M{Num(cx + 3)} {Num(cy - 11)}a11 11 0 1 0 8 19.5A9 9 0 0 1 {Num(cx + 3)} {Num(cy - 11)}Z";
+
+    protected override void OnInitialized()
+    {
+        ReadSliders();
+        Settings.Changed += OnSettingsChanged;
+        OnDispose(() => Settings.Changed -= OnSettingsChanged);
+        RenderOn(h => Theme.Changed += h, h => Theme.Changed -= h);
+    }
+
+    private void OnSettingsChanged() => _ = InvokeAsync(() =>
+    {
+        if (!_dragging) ReadSliders();
+        StateHasChanged();
+    });
+
+    private void ReadSliders()
+    {
+        var a = Settings.Current.Appearance;
+        _font = Math.Clamp(a.FontScalePercent, 85, 140);
+        _radius = Math.Clamp(a.BubbleRadius, 4, 24);
+    }
+
+    private Task SaveAsync(Action<AppSettings> change) => Settings.UpdateAsync(change);
+
+    private Task PickThemeAsync(ThemeMode mode)
+    {
+        if (mode == Settings.Current.Appearance.Theme) return Task.CompletedTask;
+        _touched = true;
+        return SaveAsync(s => s.Appearance.Theme = mode);
+    }
+
+    private Task PickAccentAsync(string key)
+    {
+        _touched = true;
+        return SaveAsync(s =>
+        {
+            s.Appearance.Accent = key;
+            s.Appearance.CustomAccentHex = null;
+        });
+    }
+
+    private async Task PickWallpaperAsync(string key)
+    {
+        var current = Settings.Current.Appearance.Wallpaper;
+        if (string.Equals(current, key, StringComparison.OrdinalIgnoreCase)) return;
+        _touched = true;
+        var old = Theme.Catalog.FindWallpaper(current);
+        _fadeFrom = Theme.IsDark ? (old.DarkCss, old.DarkBase) : (old.LightCss, old.LightBase);
+        _fadeKey++;
+        // Paint the old sky on top first, then switch: the new one shows through as the layer fades.
+        StateHasChanged();
+        await Task.Yield();
+        await SaveAsync(s => s.Appearance.Wallpaper = key);
+    }
+
+    private Task PreviewFontAsync(double value)
+    {
+        _dragging = true;
+        _font = value;
+        return PreviewAsync();
+    }
+
+    private Task PreviewRadiusAsync(double value)
+    {
+        _dragging = true;
+        _radius = value;
+        return PreviewAsync();
+    }
+
+    private Task PreviewAsync()
+    {
+        var copy = Settings.Current.Clone().Appearance;
+        copy.FontScalePercent = (int)Math.Round(_font);
+        copy.BubbleRadius = (int)Math.Round(_radius);
+        return Theme.PreviewAsync(copy);
+    }
+
+    private async Task SaveFontAsync(double value)
+    {
+        _font = value;
+        await Settings.UpdateAsync(s => s.Appearance.FontScalePercent = (int)Math.Round(value));
+        await EndDragAsync();
+    }
+
+    private async Task SaveRadiusAsync(double value)
+    {
+        _radius = value;
+        await Settings.UpdateAsync(s => s.Appearance.BubbleRadius = (int)Math.Round(value));
+        await EndDragAsync();
+    }
+
+    private async Task EndDragAsync()
+    {
+        _dragging = false;
+        await Theme.EndPreviewAsync();
+    }
+
+    private async Task PickCustomAccentAsync()
+    {
+        var current = ThemeCatalog.NormalizeHex(Settings.Current.Appearance.CustomAccentHex) ?? Theme.AccentHex;
+        var result = await Dialogs.ShowAsync<CustomAccentDialog>(L["settings.appearance.customTitle"], new Dictionary<string, object?>
+        {
+            [nameof(CustomAccentDialog.Initial)] = current,
+        }, new DialogOptions { Presentation = OverlayPresentation.Auto });
+        if (result is string hex && ThemeCatalog.NormalizeHex(hex) is { } normalized)
+        {
+            _touched = true;
+            await Settings.UpdateAsync(s => s.Appearance.CustomAccentHex = normalized);
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["settings.appearance.resetTitle"], L["settings.appearance.resetText"], L["settings.appearance.resetConfirm"])) return;
+        await Settings.UpdateAsync(s => s.Appearance = new AppearanceSettings());
+        ReadSliders();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Theme.IsPreviewing) await Theme.EndPreviewAsync();
+        Dispose();
+    }
+}

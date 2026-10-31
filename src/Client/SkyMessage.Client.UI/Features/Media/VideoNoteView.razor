@@ -1,0 +1,101 @@
+@* Round video message. Plays muted and looped while visible (player.js, when autoplay is allowed); a tap restarts it
+   with sound: the circle grows a little and a gradient progress ring runs around it. At rest a thin plain frame
+   holds it. Also renders pending (uploading) notes. *@
+@inherits UiComponentBase
+@inject IMediaUrlBuilder MediaUrls
+@inject IMediaDownloadService Downloads
+@inject FormatService Format
+@inject IAccountLocalStore LocalStore
+@inject IAuthService Auth
+
+<div class="vnote @(Unplayed ? "vnote--new" : null) @Class" style="--vnote-size:@Rem"
+     data-vnote="@(Playable ? Media!.Id.ToString() : null)" data-unplayed="@(Unplayed ? "" : null)"
+     role="@(Playable ? "button" : null)" aria-label="@(Playable ? L["media.videoNote.play"] : null)">
+    <div class="vnote__circle">
+        @if (MiniUrl is { } mini)
+        {
+            <img class="vnote__mini" src="@mini" alt="" aria-hidden="true" draggable="false" />
+        }
+        @if (PosterUrl is { } poster)
+        {
+            <img class="vnote__poster" src="@poster" alt="" draggable="false" loading="lazy" decoding="async" />
+        }
+        @if (Playable)
+        {
+            <video class="vnote__video" data-src="@Url" data-autoplay="@(AutoplayAllowed ? "" : null)" muted playsinline loop preload="none"
+                   poster="@PosterUrl" disablepictureinpicture disableremoteplayback></video>
+        }
+        @if (Pending)
+        {
+            <div class="vnote__pending">
+                <ProgressRing Value="Progress" Size="52" Indeterminate="@(Progress <= 0.01)" OnCancel="OnCancel" CancelLabel="@L["chat.pending.cancel"]" />
+            </div>
+        }
+        else if (Playable)
+        {
+            <span class="vnote__play" aria-hidden="true"><Icon Name="@IconNames.Play" Size="26" /></span>
+        }
+    </div>
+    @* While it plays with sound: a gradient progress ring (accent → partner hue) around the circle. *@
+    <svg class="vnote__ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="@_gradId" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" style="stop-color:var(--sm-accent)" />
+                <stop offset="1" style="stop-color:var(--sm-accent-2)" />
+            </linearGradient>
+        </defs>
+        <circle class="vnote__track" cx="50" cy="50" r="48.5" />
+        <circle class="vnote__progress" cx="50" cy="50" r="48.5" pathLength="100" stroke="url(#@(_gradId))" />
+    </svg>
+    <span class="vnote__badge sm-nums">
+        <Icon Name="@IconNames.VolumeX" Size="12" Class="vnote__muted" />
+        <span>@Format.DurationMs(DurationMs)</span>
+        @if (Unplayed)
+        {
+            <span class="vnote__dot"></span>
+        }
+    </span>
+</div>
+
+@code {
+    private PlayedMediaStore? _played;
+    /// <summary>Document-unique id of this note's ring gradient.</summary>
+    private readonly string _gradId = "vn" + Guid.NewGuid().ToString("N")[..12];
+
+    [Parameter] public MediaDto? Media { get; set; }
+    [Parameter] public LocalAttachmentPreview? Local { get; set; }
+    /// <summary>Incoming note: show the "new" mark until played.</summary>
+    [Parameter] public bool TrackPlayed { get; set; }
+    /// <summary>Muted autoplay while visible (settings, auto-download policy and the chat being on screen).</summary>
+    [Parameter] public bool Autoplay { get; set; }
+    /// <summary>Diameter in px at 100% font scale.</summary>
+    [Parameter] public double Size { get; set; } = 220;
+    [Parameter] public bool Pending { get; set; }
+    [Parameter] public double Progress { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private bool Playable => !Pending && Media is { Status: MediaStatus.Ready };
+
+    // Autoplay downloads the whole note: only where the auto-download policy would fetch it anyway (a tap still plays).
+    private bool AutoplayAllowed => Autoplay && Playable && Downloads.ShouldAutoDownload(Media!);
+
+    private string? Url => Media is null ? null : MediaUrls.ContentUrl(Media);
+
+    private string? PosterUrl => Media is { HasThumbnail: true } m ? MediaUrls.ThumbnailUrl(m.Id) : Local?.PreviewUrl;
+
+    private string? MiniUrl => Media is null ? null : MediaUrls.MiniThumbnailDataUrl(Media);
+
+    private int DurationMs => Media?.DurationMs ?? Local?.DurationMs ?? 0;
+
+    private bool Unplayed => TrackPlayed && Playable && _played is not null && _played.IsUnplayed(Media!.Id);
+
+    private string Rem => (Size / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "rem";
+
+    protected override void OnInitialized()
+    {
+        _played = PlayedMediaStore.For(LocalStore, Auth);
+        RenderOn<Guid>(h => _played.Changed += h, h => _played.Changed -= h, id => id == Guid.Empty || id == Media?.Id);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+}

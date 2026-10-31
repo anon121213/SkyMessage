@@ -1,0 +1,37 @@
+@* Wraps content and reports right-click / touch long-press with the pointer position (open a ContextMenu there). *@
+@implements IAsyncDisposable
+@inject AppJs Js
+@inject HapticFeedback Haptics
+
+<div @ref="_element" class="@(AllowTextSelection ? null : "sm-no-select") @Class" @attributes="Attributes">@ChildContent</div>
+
+@code {
+    private ElementReference _element;
+    private ContextMenuBinding? _binding;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<MenuPosition> OnContextMenu { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>Keep text selectable (by default long-press must not start a selection).</summary>
+    [Parameter] public bool AllowTextSelection { get; set; }
+    [Parameter] public int LongPressMs { get; set; } = 450;
+    [Parameter] public string? Class { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _binding = new ContextMenuBinding(position => InvokeAsync(async () =>
+            {
+                if (!Disabled) await OnContextMenu.InvokeAsync(position);
+            }), Haptics);
+            await _binding.AttachAsync(Js, _element, LongPressMs);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_binding is not null) await _binding.DisposeAsync();
+    }
+}

@@ -1,0 +1,96 @@
+.join {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 28px 16px 32px;
+}
+
+.join--loading {
+    align-items: center;
+    gap: 10px;
+    padding-top: 48px;
+}
+
+/* The invite card: everything centered on frosted glass. */
+.join__card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 34px 22px 22px;
+    border-radius: var(--sm-radius-2xl);
+    text-align: center;
+}
+
+.join__face {
+    position: relative;
+    display: flex;
+    margin-bottom: 20px;
+}
+
+/* A thin accent ring: a squircle outline (outer shape minus a slightly smaller one). */
+.join__ring {
+    position: absolute;
+    inset: -8px;
+    background: var(--sm-accent);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+}
+
+.join__face ::deep .sm-avatar {
+    position: relative;
+}
+
+.join__invited {
+    color: var(--sm-accent);
+}
+
+.join__title {
+    max-width: 100%;
+    margin-top: 6px;
+    font-family: var(--sm-font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+}
+
+.join__members {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    color: var(--sm-text-2);
+}
+
+.join__members ::deep .sm-icon {
+    color: var(--sm-accent);
+}
+
+.join__description {
+    margin: 14px 0 0;
+    padding: 12px 16px;
+    border-radius: 18px;
+    background: var(--sm-surface-2);
+    line-height: 1.5;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.join__already {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    color: var(--sm-success);
+    font-weight: 600;
+}
+
+.join__card ::deep .sm-btn {
+    margin-top: 20px;
+}

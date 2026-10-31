@@ -1,0 +1,5 @@
+/* The full emoji picker as a reaction chooser: it sits on the dialog's glass with a little air around it. */
+
+.rpick {
+    padding: 0 6px 6px;
+}

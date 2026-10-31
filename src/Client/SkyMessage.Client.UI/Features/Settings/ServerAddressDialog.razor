@@ -1,0 +1,156 @@
+@* DialogService content: change the server address from settings (signed in). Tests the address first and warns
+   when it is a different SkyMessage server — switching to it signs out of this one (IServerEndpointService). *@
+@inject IServerEndpointService Endpoints
+@inject ISettingsService Settings
+@inject ToastService Toasts
+
+<form class="sm-col sm-gap-m" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+    <p class="sm-dialog__message">@L["settings.server.hint"]</p>
+    <TextField Value="@_url" ValueChanged="OnUrlChanged" Label="@L["settings.connection.address"]" Placeholder="https://chat.example.com" Type="url" InputMode="url"
+               Autocomplete="off" Autocapitalize="off" Autofocus="true" Error="@_error" />
+    <div class="sm-row sm-row--wrap sm-gap-s">
+        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.PlugZap" Loading="_testing" OnClick="TestAsync">@L["settings.server.test"]</Button>
+        @if (_tested is { } info)
+        {
+            <span class="sm-caption sm-success-text">@L.Format("settings.server.found", info.Name)</span>
+        }
+        else if (_testFailed)
+        {
+            <span class="sm-caption sm-danger-text">@L["settings.server.notFound"]</span>
+        }
+    </div>
+    @if (IsOtherServer)
+    {
+        <div class="server-warning">
+            <Icon Name="@IconNames.TriangleAlert" Size="20" />
+            <span>@L["settings.server.otherServer"]</span>
+        </div>
+    }
+    <DialogActions>
+        @if (!string.IsNullOrEmpty(Settings.Current.Connection.CustomServerUrl))
+        {
+            <Button Variant="ButtonVariant.Ghost" Disabled="_saving" OnClick="ResetAsync">@L["settings.server.reset"]</Button>
+        }
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Type="submit" Variant="@(IsOtherServer ? ButtonVariant.Danger : ButtonVariant.Primary)" Loading="_saving" Disabled="@string.IsNullOrWhiteSpace(_url)">
+            @(IsOtherServer ? L["settings.server.switch"] : L["common.save"])
+        </Button>
+    </DialogActions>
+</form>
+
+@code {
+    private string _url = "";
+    private string? _error;
+    private bool _testing;
+    private bool _testFailed;
+    private bool _saving;
+    private ServerInfoDto? _tested;
+    private Uri? _confirmedUnreachable;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    // Against the remembered deployment (what SetCustomServerAsync signs out over): Info is null exactly when the
+    // current server is unreachable, the usual reason to change the address.
+    private bool IsOtherServer => _tested is { } info && (Endpoints.KnownInstanceId ?? Endpoints.Info?.InstanceId) is { } current && info.InstanceId != current;
+
+    protected override void OnInitialized() => _url = Settings.Current.Connection.CustomServerUrl ?? Endpoints.BaseUri.ToString();
+
+    private void OnUrlChanged(string value)
+    {
+        _url = value;
+        _tested = null;
+        _testFailed = false;
+        _error = null;
+    }
+
+    private async Task<ServerInfoDto?> TestAsync()
+    {
+        _error = null;
+        _tested = null;
+        _testFailed = false;
+        var uri = SkyMessage.Client.UI.Features.Auth.ServerPickerDialog.Normalize(_url);
+        if (uri is null)
+        {
+            _error = L["settings.connection.invalidAddress"];
+            return null;
+        }
+        _testing = true;
+        StateHasChanged();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            _tested = await Endpoints.TestAsync(uri, cancellationToken: cts.Token);
+        }
+        catch (Exception)
+        {
+            _tested = null;
+        }
+        finally
+        {
+            _testing = false;
+        }
+        _testFailed = _tested is null;
+        return _tested;
+    }
+
+    private async Task SaveAsync()
+    {
+        var uri = SkyMessage.Client.UI.Features.Auth.ServerPickerDialog.Normalize(_url);
+        if (uri is null)
+        {
+            _error = L["settings.connection.invalidAddress"];
+            return;
+        }
+        if (string.Equals(uri.ToString(), Endpoints.BaseUri.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            Dialog.Close(null);
+            return;
+        }
+        var wasTested = _tested is not null;
+        var info = _tested ?? await TestAsync();
+        if (info is null && _confirmedUnreachable != uri)
+        {
+            // It may be right but down at the moment: a second press keeps it anyway.
+            _confirmedUnreachable = uri;
+            _error = L["settings.server.notFoundSave"];
+            return;
+        }
+        // A different deployment discovered just now: show the warning before switching.
+        if (!wasTested && IsOtherServer) return;
+        _saving = true;
+        try
+        {
+            await Endpoints.SetCustomServerAsync(uri.ToString());
+            Toasts.Success(L["settings.server.saved"]);
+            Dialog.Close(uri.ToString());
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _saving = true;
+        try
+        {
+            await Endpoints.SetCustomServerAsync(null);
+            Toasts.Success(L["settings.server.resetDone"]);
+            Dialog.Close(null);
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

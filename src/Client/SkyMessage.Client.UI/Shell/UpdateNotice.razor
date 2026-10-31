@@ -1,0 +1,33 @@
+@* "Please update the app" card when the server requires a newer client (ServerInfoDto.MinClientVersion): glass with a
+   flat warm disc, dropping in at the top. Dismissible for this session; shown again on the next start while the app stays
+   outdated. *@
+@inherits UiComponentBase
+@inject IServerEndpointService Endpoints
+@inject IPlatformInfo Platform
+
+@if (!_dismissed && AppVersionCheck.IsOutdated(Platform.AppVersion, Endpoints.Info?.MinClientVersion))
+{
+    <div class="update-card sm-glass sm-glass--strong @(_leaving ? "update-card--leaving" : null)" role="status">
+        <span class="update-card__disc" aria-hidden="true"><Icon Name="@IconNames.CloudDownload" Size="22" StrokeWidth="2.2" /></span>
+        <span class="update-card__text">@L["app.updateRequired"]</span>
+        <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="32" Class="update-card__close" OnClick="DismissAsync" />
+    </div>
+}
+
+@code {
+    private const int LeaveMs = 200;
+    private bool _dismissed;
+    private bool _leaving;
+
+    protected override void OnInitialized() => RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+
+    private async Task DismissAsync()
+    {
+        if (_leaving) return;
+        _leaving = true;
+        StateHasChanged();
+        await Task.Delay(LeaveMs);
+        _dismissed = true;
+        _leaving = false;
+    }
+}

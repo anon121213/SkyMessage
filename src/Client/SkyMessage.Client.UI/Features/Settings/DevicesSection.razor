@@ -1,0 +1,525 @@
+@* Calls & devices: microphone (choice, live level, record-and-play test), audio processing, camera (choice, preview,
+   mirror), output (speaker choice + test tone where the browser supports setSinkId; on phones the default route for
+   calls through IAudioRouteService), call video quality. Nothing is captured until the user presses a test button. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject ISettingsService Settings
+@inject IPermissionService Permissions
+@inject IAudioRouteService AudioRoutes
+@inject IPlatformInfo Platform
+@inject IJSRuntime JS
+@inject ToastService Toasts
+@inject ILogger<DevicesSection> Logger
+
+<SettingsScaffold Title="@L["settings.devices.title"]">
+    @{
+        var d = Settings.Current.Devices;
+    }
+    @if (_caps is null)
+    {
+        <SkeletonList Rows="5" Avatar="false" />
+    }
+    else if (!_caps.Media)
+    {
+        <EmptyState Icon="@IconNames.MicOff" Title="@L["settings.devices.unavailable"]"
+                    Text="@(_caps.SecureContext ? L["settings.devices.unavailableText"] : L["settings.devices.insecure"])" />
+    }
+    else
+    {
+        @if (_list.AudioPermission is "denied" || _list.VideoPermission is "denied")
+        {
+            <div class="dev-alert sm-card">
+                <span class="sm-list-item__icon dev-alert__tile" style="--icon-bg:@SettingsTones.Rose"><Icon Name="@IconNames.ShieldAlert" /></span>
+                <div class="dev-alert__text">
+                    <div class="sm-strong">@L["settings.devices.denied"]</div>
+                    <div class="sm-caption">@(Platform.IsNativeApp ? L["settings.devices.deniedText"] : L["settings.devices.deniedTextWeb"])</div>
+                </div>
+                @if (Platform.IsNativeApp)
+                {
+                    <Button Size="ButtonSize.Small" Variant="ButtonVariant.Tonal" OnClick="Permissions.OpenAppSettingsAsync">@L["settings.openSystemSettings"]</Button>
+                }
+            </div>
+        }
+        else if (_list.AudioPermission is not "granted")
+        {
+            <div class="dev-alert sm-card">
+                <span class="sm-list-item__icon dev-alert__tile" style="--icon-bg:@SettingsTones.Peach"><Icon Name="@IconNames.Mic" /></span>
+                <div class="dev-alert__text">
+                    <div class="sm-strong">@L["settings.devices.access"]</div>
+                    <div class="sm-caption">@L["settings.devices.accessText"]</div>
+                </div>
+                <Button Size="ButtonSize.Small" Loading="_requesting" OnClick="RequestAccessAsync">@L["settings.devices.allow"]</Button>
+            </div>
+        }
+
+        <Section Title="@L["settings.devices.microphone"]">
+            <div class="sm-p-m sm-col sm-gap-m">
+                @if (_list.AudioInputs.Count > 1 || d.MicrophoneId is not null)
+                {
+                    <Select TValue="string" Options="@(Options(_list.AudioInputs, L["settings.devices.microphoneN"]))" Value="@(d.MicrophoneId ?? "")"
+                            ValueChanged="SetMicrophoneAsync" Label="@L["settings.devices.microphone"]" />
+                }
+                <div class="dev-meter @(_micLive ? "is-live" : null)" @ref="_meter" role="meter" aria-label="@L["settings.devices.level"]">
+                    <div class="dev-meter__fill"></div>
+                </div>
+                <div class="sm-row sm-row--wrap sm-gap-s">
+                    <Button Variant="@(_micLive ? ButtonVariant.Secondary : ButtonVariant.Tonal)" Size="ButtonSize.Small" Icon="@(_micLive ? IconNames.MicOff : IconNames.Mic)"
+                            Loading="_micStarting" OnClick="ToggleMicTestAsync">
+                        @(_micLive ? L["settings.devices.micStop"] : L["settings.devices.micTest"])
+                    </Button>
+                    @if (_caps.Recorder)
+                    {
+                        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.CircleDot" Disabled="@(!_micLive || _recording)" OnClick="RecordAsync">
+                            @(_recording ? L["settings.devices.recording"] : L["settings.devices.record"])
+                        </Button>
+                        @if (_hasRecording)
+                        {
+                            <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@(_playing ? IconNames.Square : IconNames.Play)" Disabled="_recording"
+                                    OnClick="TogglePlaybackAsync">
+                                @(_playing ? L["settings.devices.stopPlayback"] : L["settings.devices.play"])
+                            </Button>
+                        }
+                    }
+                </div>
+                <div class="sm-caption">@(_micError is null ? L["settings.devices.micHint"] : MediaError(_micError))</div>
+            </div>
+        </Section>
+
+        <Section Title="@L["settings.devices.processing"]" Footer="@L["settings.devices.processingHint"]" DividerInset="64px">
+            <SwitchItem Icon="@IconNames.AudioLines" IconColor="@SettingsTones.Sky" Title="@L["settings.devices.echo"]" Checked="d.EchoCancellation"
+                        CheckedChanged="v => SetProcessingAsync(s => s.Devices.EchoCancellation = v)" />
+            <SwitchItem Icon="@IconNames.AudioWaveform" IconColor="@SettingsTones.Violet" Title="@L["settings.devices.noise"]" Checked="d.NoiseSuppression"
+                        CheckedChanged="v => SetProcessingAsync(s => s.Devices.NoiseSuppression = v)" />
+            <SwitchItem Icon="@IconNames.Gauge" IconColor="@SettingsTones.Lagoon" Title="@L["settings.devices.gain"]" Checked="d.AutoGainControl"
+                        CheckedChanged="v => SetProcessingAsync(s => s.Devices.AutoGainControl = v)" />
+        </Section>
+
+        @if (_list.VideoPermission is not "none" || _list.VideoInputs.Count > 0)
+        {
+            <Section Title="@L["settings.devices.camera"]" DividerInset="64px">
+                <div class="sm-p-m sm-col sm-gap-m">
+                    @if (_list.VideoInputs.Count > 1 || d.CameraId is not null)
+                    {
+                        <Select TValue="string" Options="@(Options(_list.VideoInputs, L["settings.devices.cameraN"]))" Value="@(d.CameraId ?? "")"
+                                ValueChanged="SetCameraAsync" Label="@L["settings.devices.camera"]" />
+                    }
+                    <div class="dev-camera">
+                        <video @ref="_video" class="dev-camera__video @(MirrorPreview ? "is-mirrored" : null) @(_cameraOn ? null : "sm-hidden")"
+                               muted autoplay playsinline></video>
+                        @if (!_cameraOn)
+                        {
+                            <div class="dev-camera__idle">
+                                <span class="dev-camera__orb"><Icon Name="@IconNames.Camera" Size="26" /></span>
+                                <span>@(_cameraError is null ? L["settings.devices.cameraIdle"] : MediaError(_cameraError))</span>
+                            </div>
+                        }
+                    </div>
+                    <div class="sm-row">
+                        <Button Variant="@(_cameraOn ? ButtonVariant.Secondary : ButtonVariant.Tonal)" Size="ButtonSize.Small"
+                                Icon="@(_cameraOn ? IconNames.VideoOff : IconNames.Video)" Loading="_cameraStarting" OnClick="ToggleCameraAsync">
+                            @(_cameraOn ? L["settings.devices.cameraStop"] : L["settings.devices.cameraTest"])
+                        </Button>
+                    </div>
+                </div>
+                <SwitchItem Icon="@IconNames.FlipHorizontal2" IconColor="@SettingsTones.Orchid" Title="@L["settings.devices.mirror"]" Subtitle="@L["settings.devices.mirrorHint"]"
+                            Checked="d.MirrorFrontCamera" CheckedChanged="v => Settings.UpdateAsync(s => s.Devices.MirrorFrontCamera = v)" />
+            </Section>
+        }
+
+        @if (_caps.SpeakerSelection && _list.AudioOutputs.Count > 0)
+        {
+            <Section Title="@L["settings.devices.speaker"]">
+                <div class="sm-p-m sm-col sm-gap-m">
+                    <Select TValue="string" Options="@(Options(_list.AudioOutputs, L["settings.devices.speakerN"]))" Value="@(d.SpeakerId ?? "")"
+                            ValueChanged="SetSpeakerAsync" Label="@L["settings.devices.speaker"]" />
+                    <div class="sm-row">
+                        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.Volume2" Loading="_toneTesting" OnClick="PlayToneAsync">
+                            @L["settings.devices.speakerTest"]
+                        </Button>
+                    </div>
+                </div>
+            </Section>
+        }
+        else if (AudioRoutes.IsSupported)
+        {
+            <Section Title="@L["settings.devices.route"]" Footer="@L["settings.devices.routeHint"]">
+                <ChoiceList TValue="AudioRouteKind?" Options="RouteOptions" Value="d.PreferredAudioRoute" ValueChanged="SetRouteAsync" />
+            </Section>
+            @if (_routes.Count > 0)
+            {
+                <Section Title="@L["settings.devices.outputsNow"]" DividerInset="64px">
+                    @foreach (var route in _routes)
+                    {
+                        <ListItem @key="@(route.Id ?? route.Kind.ToString())" Icon="@SkyMessage.Client.UI.Features.Calls.CallUi.RouteIcon(route.Kind)"
+                                  IconColor="@SettingsTones.Peach" Title="@SkyMessage.Client.UI.Features.Calls.CallUi.RouteName(L, route)"
+                                  Meta="@(route.IsActive ? L["settings.devices.active"] : null)" />
+                    }
+                </Section>
+            }
+            <Section>
+                <ListItem Icon="@IconNames.Volume2" IconColor="@SettingsTones.Mint" Title="@L["settings.devices.speakerTest"]" Disabled="_toneTesting" OnClick="PlayToneAsync" />
+            </Section>
+        }
+        else
+        {
+            <Section Title="@L["settings.devices.speaker"]" Footer="@L["settings.devices.speakerSystem"]">
+                <ListItem Icon="@IconNames.Volume2" IconColor="@SettingsTones.Mint" Title="@L["settings.devices.speakerTest"]" Disabled="_toneTesting" OnClick="PlayToneAsync" />
+            </Section>
+        }
+
+        <Section Title="@L["settings.devices.quality"]" Footer="@L["settings.devices.qualityHint"]">
+            <ChoiceList TValue="VideoQuality" Options="Qualities" Value="d.CallVideoQuality" ValueChanged="v => Settings.UpdateAsync(s => s.Devices.CallVideoQuality = v)" />
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private MediaDevicesJs? _devices;
+    private MediaCapabilities? _caps;
+    private MediaDeviceList _list = MediaDeviceList.Empty;
+    private DotNetObjectReference<DevicesSection>? _self;
+    private IJSObjectReference? _watch;
+    private IJSObjectReference? _micTest;
+    private IJSObjectReference? _camera;
+    private ElementReference _meter;
+    private ElementReference _video;
+    private IReadOnlyList<AudioRoute> _routes = [];
+    private bool _requesting;
+    private bool _micStarting;
+    private bool _micLive;
+    private bool _recording;
+    private bool _hasRecording;
+    private bool _playing;
+    private string? _micError;
+    private bool _cameraOn;
+    private bool _cameraStarting;
+    private string? _cameraFacing;
+    private string? _cameraError;
+    private bool _toneTesting;
+
+    private bool MirrorPreview =>
+        Settings.Current.Devices.MirrorFrontCamera && !string.Equals(_cameraFacing, "environment", StringComparison.OrdinalIgnoreCase);
+
+    private IReadOnlyList<ChoiceOption<VideoQuality>> Qualities =>
+    [
+        new(VideoQuality.Auto, L["settings.devices.quality.auto"]) { Description = L["settings.devices.quality.autoHint"] },
+        new(VideoQuality.Low, L["settings.devices.quality.low"]) { Description = L["settings.devices.quality.lowHint"] },
+        new(VideoQuality.Medium, L["settings.devices.quality.medium"]) { Description = L["settings.devices.quality.mediumHint"] },
+        new(VideoQuality.High, L["settings.devices.quality.high"]) { Description = L["settings.devices.quality.highHint"] },
+    ];
+
+    private IReadOnlyList<ChoiceOption<AudioRouteKind?>> RouteOptions =>
+    [
+        new(null, L["settings.devices.route.auto"]) { Description = L["settings.devices.route.autoHint"] },
+        new(AudioRouteKind.Earpiece, L["calls.route.earpiece"]),
+        new(AudioRouteKind.Speaker, L["calls.route.speaker"]),
+        new(AudioRouteKind.Bluetooth, L["calls.route.bluetooth"]) { Description = L["settings.devices.route.whenConnected"] },
+        new(AudioRouteKind.Wired, L["calls.route.wired"]) { Description = L["settings.devices.route.whenConnected"] },
+    ];
+
+    private IReadOnlyList<ChoiceOption<string>> Options(IReadOnlyList<MediaDeviceItem> devices, string fallback)
+    {
+        var options = new List<ChoiceOption<string>> { new("", L["settings.devices.systemDefault"]) };
+        for (var i = 0; i < devices.Count; i++)
+        {
+            var device = devices[i];
+            options.Add(new(device.Id, string.IsNullOrWhiteSpace(device.Label) ? $"{fallback} {i + 1}" : device.Label));
+        }
+        return options;
+    }
+
+    private string MediaError(string code) => code switch
+    {
+        "denied" or "insecure" => L.Error(ClientErrorCodes.PermissionDenied),
+        "none" => L["settings.devices.error.none"],
+        "busy" => L["settings.devices.error.busy"],
+        _ => L["settings.devices.error.failed"],
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        if (AudioRoutes.IsSupported)
+        {
+            AudioRoutes.RoutesChanged += OnRoutesChanged;
+            OnDispose(() => AudioRoutes.RoutesChanged -= OnRoutesChanged);
+        }
+        _devices = new MediaDevicesJs(JS, Logger);
+        _self = DotNetObjectReference.Create(this);
+        _caps = await _devices.GetCapabilitiesAsync();
+        if (!_caps.Media) return;
+        await ReloadAsync(false, false);
+        _watch = await _devices.WatchAsync(_self, nameof(OnDevicesChanged));
+        await LoadRoutesAsync();
+    }
+
+    [JSInvokable]
+    public Task OnDevicesChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync(false, false);
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public Task OnMicTestState(string state, string? detail) => InvokeAsync(() =>
+    {
+        switch (state)
+        {
+            case "live":
+                _micLive = true;
+                break;
+            case "stopped":
+                _micLive = false;
+                _recording = false;
+                break;
+            case "recording":
+                _recording = true;
+                break;
+            case "recorded":
+                _recording = false;
+                _hasRecording = true;
+                break;
+            case "recordEmpty":
+                _recording = false;
+                break;
+            case "playing":
+                _playing = true;
+                break;
+            case "played":
+                _playing = false;
+                break;
+        }
+        StateHasChanged();
+    });
+
+    private async Task ReloadAsync(bool requestAudio, bool requestVideo)
+    {
+        if (_devices is null) return;
+        _list = await _devices.ListAsync(requestAudio, requestVideo);
+    }
+
+    private void OnRoutesChanged() => _ = InvokeAsync(async () =>
+    {
+        await LoadRoutesAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadRoutesAsync()
+    {
+        if (!AudioRoutes.IsSupported) return;
+        try
+        {
+            _routes = await AudioRoutes.GetRoutesAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Audio routes unavailable");
+        }
+    }
+
+    private async Task<bool> EnsureNativePermissionAsync(AppPermission permission)
+    {
+        // Browsers ask inside getUserMedia; the apps need the OS permission before the WebView may capture.
+        if (!Platform.IsNativeApp) return true;
+        var state = await Permissions.RequestAsync(permission);
+        return state is not (PermissionState.Denied or PermissionState.Restricted);
+    }
+
+    private async Task RequestAccessAsync()
+    {
+        _requesting = true;
+        try
+        {
+            var mic = await Permissions.RequestAsync(AppPermission.Microphone);
+            var wantVideo = _list.VideoInputs.Count > 0;
+            if (wantVideo && Platform.IsNativeApp) await Permissions.RequestAsync(AppPermission.Camera);
+            await ReloadAsync(mic is not (PermissionState.Denied or PermissionState.Restricted), wantVideo);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _requesting = false;
+        }
+    }
+
+    // ---- microphone ----
+
+    private object MicOptions()
+    {
+        var d = Settings.Current.Devices;
+        return new
+        {
+            deviceId = d.MicrophoneId,
+            echoCancellation = d.EchoCancellation,
+            noiseSuppression = d.NoiseSuppression,
+            autoGainControl = d.AutoGainControl,
+        };
+    }
+
+    private async Task ToggleMicTestAsync()
+    {
+        if (_micLive)
+        {
+            await _devices!.CallVoidAsync(_micTest, "stop");
+            return;
+        }
+        await StartMicTestAsync();
+    }
+
+    private async Task StartMicTestAsync()
+    {
+        if (_devices is null || _self is null) return;
+        _micStarting = true;
+        _micError = null;
+        try
+        {
+            if (!await EnsureNativePermissionAsync(AppPermission.Microphone))
+            {
+                _micError = "denied";
+                return;
+            }
+            _micTest ??= await _devices.CreateMicTestAsync(_self, _meter);
+            var result = await _devices.CallAsync<MediaResult>(_micTest, "start", MicOptions());
+            if (result is not { Ok: true })
+            {
+                _micError = result?.Error ?? "failed";
+                return;
+            }
+            // Access was just granted: labels are visible now.
+            if (_list.AudioPermission is not "granted") await ReloadAsync(false, false);
+        }
+        finally
+        {
+            _micStarting = false;
+        }
+    }
+
+    private async Task RestartMicTestIfLiveAsync()
+    {
+        if (!_micLive) return;
+        await StartMicTestAsync();
+    }
+
+    private async Task RecordAsync()
+    {
+        var result = await _devices!.CallAsync<MediaResult>(_micTest, "record", 5000);
+        if (result is not { Ok: true }) Toasts.Show(L["settings.devices.error.record"], ToastKind.Error);
+    }
+
+    private async Task TogglePlaybackAsync()
+    {
+        if (_playing)
+        {
+            await _devices!.CallVoidAsync(_micTest, "stopPlayback");
+            return;
+        }
+        var sink = _caps?.SpeakerSelection == true ? Settings.Current.Devices.SpeakerId : null;
+        var result = await _devices!.CallAsync<MediaResult>(_micTest, "play", sink);
+        if (result is not { Ok: true }) Toasts.Show(L["settings.devices.error.playback"], ToastKind.Error);
+    }
+
+    private async Task SetMicrophoneAsync(string id)
+    {
+        await Settings.UpdateAsync(s => s.Devices.MicrophoneId = string.IsNullOrEmpty(id) ? null : id);
+        await RestartMicTestIfLiveAsync();
+    }
+
+    private async Task SetProcessingAsync(Action<AppSettings> change)
+    {
+        await Settings.UpdateAsync(change);
+        await RestartMicTestIfLiveAsync();
+    }
+
+    // ---- camera ----
+
+    private async Task ToggleCameraAsync()
+    {
+        if (_cameraOn)
+        {
+            await _devices!.CallVoidAsync(_camera, "stop");
+            _cameraOn = false;
+            return;
+        }
+        await StartCameraAsync();
+    }
+
+    private async Task StartCameraAsync()
+    {
+        if (_devices is null) return;
+        _cameraStarting = true;
+        _cameraError = null;
+        try
+        {
+            if (!await EnsureNativePermissionAsync(AppPermission.Camera))
+            {
+                _cameraError = "denied";
+                return;
+            }
+            _camera ??= await _devices.CreateCameraPreviewAsync(_video);
+            var d = Settings.Current.Devices;
+            var result = await _devices.CallAsync<MediaResult>(_camera, "start", d.CameraId, d.CallVideoQuality.ToString().ToLowerInvariant(), "user");
+            if (result is not { Ok: true })
+            {
+                _cameraError = result?.Error ?? "failed";
+                _cameraOn = false;
+                return;
+            }
+            _cameraOn = true;
+            _cameraFacing = result.Facing;
+            if (_list.VideoPermission is not "granted") await ReloadAsync(false, false);
+        }
+        finally
+        {
+            _cameraStarting = false;
+        }
+    }
+
+    private async Task SetCameraAsync(string id)
+    {
+        await Settings.UpdateAsync(s => s.Devices.CameraId = string.IsNullOrEmpty(id) ? null : id);
+        if (_cameraOn) await StartCameraAsync();
+    }
+
+    // ---- output ----
+
+    private async Task SetSpeakerAsync(string id)
+    {
+        await Settings.UpdateAsync(s => s.Devices.SpeakerId = string.IsNullOrEmpty(id) ? null : id);
+        await PlayToneAsync();
+    }
+
+    private Task SetRouteAsync(AudioRouteKind? route) => Settings.UpdateAsync(s => s.Devices.PreferredAudioRoute = route);
+
+    private async Task PlayToneAsync()
+    {
+        if (_devices is null || _toneTesting) return;
+        _toneTesting = true;
+        StateHasChanged();
+        try
+        {
+            var sink = _caps?.SpeakerSelection == true ? Settings.Current.Devices.SpeakerId : null;
+            var result = await _devices.PlayTestToneAsync(sink);
+            if (!result.Ok) Toasts.Show(L["settings.devices.error.playback"], ToastKind.Error);
+        }
+        finally
+        {
+            _toneTesting = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_devices is not null)
+        {
+            await _devices.ReleaseAsync(_micTest);
+            await _devices.ReleaseAsync(_camera);
+            await _devices.ReleaseAsync(_watch);
+            await _devices.DisposeAsync();
+        }
+        _self?.Dispose();
+        Dispose();
+    }
+}

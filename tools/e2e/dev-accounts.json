@@ -1,0 +1,15 @@
+{
+  "_note": "Local development accounts for manual testing against http://localhost:8080 (Development DB only). Never use on a real server.",
+  "accounts": [
+    {
+      "username": "artur_dev",
+      "displayName": "Artur",
+      "password": "dev-XjPqXYcB39Fe0I"
+    },
+    {
+      "username": "mama_dev",
+      "displayName": "Мама",
+      "password": "dev-W697msAq72xyoN"
+    }
+  ]
+}

@@ -1,0 +1,280 @@
+@* Contacts (phone base screen on the sky / wide list panel): a large title with the gradient "add" orb, a frosted
+   search capsule, a glass card of quick actions (add, phone book, invite) and airy rows (online first) that rise in
+   once. The header stays at the top and turns into floating glass when the list scrolls (app.js attachScrollState). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IContactStore Contacts
+@inject IUserStore Users
+@inject IChatListStore ChatList
+@inject IAuthService Auth
+@inject IDeviceContactsService DeviceContacts
+@inject ILinkBuilder Links
+@inject ICallService Calls
+@inject IServerEndpointService Endpoints
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ShareHelper Share
+@inject AppJs Js
+
+<div @ref="_root" class="contacts @(Shell?.IsWide == true ? "contacts--panel" : null)">
+    <div @ref="_scroll" class="contacts__scroll sm-scroll">
+        <div class="contacts__head">
+            <AppBar Title="@L["contacts.title"]" Large="true" GlassActions="true">
+                <Actions>
+                    <IconButton Icon="@IconNames.UserRoundPlus" Label="@L["contacts.add"]" Variant="IconButtonVariant.Filled" StrokeWidth="2.3" OnClick="AddAsync" />
+                </Actions>
+            </AppBar>
+        </div>
+        <div class="contacts__search">
+            <SearchBox @bind-Value="_filter" DebounceMs="0" Placeholder="@L["contacts.search"]" />
+        </div>
+
+        @if (Filter.Length == 0)
+        {
+            <div class="contacts__actions">
+                <ListItem Icon="@IconNames.UserRoundPlus" IconColor="var(--sm-accent)" Title="@L["contacts.add"]" Chevron="true" OnClick="AddAsync" />
+                @if (DeviceContacts.IsSupported)
+                {
+                    <ListItem Icon="@IconNames.BookUser" IconColor="var(--sm-success)" Title="@L["contacts.import.entry"]" Chevron="true" OnClick="@(() => Nav.NavigateTo("/contacts/import"))" />
+                }
+                <ListItem Icon="@IconNames.Share2" IconColor="var(--sm-warm)" Title="@L["contacts.invite.title"]" Subtitle="@L["contacts.invite.subtitle"]" Chevron="true" OnClick="InviteAsync" />
+            </div>
+        }
+
+        @if (Items.Count == 0)
+        {
+            @if (!Contacts.IsLoaded)
+            {
+                <SkeletonList Rows="6" AvatarSize="3rem" Class="contacts__skeleton" />
+            }
+            else if (Filter.Length > 0)
+            {
+                <EmptyState Icon="@IconNames.UserSearch" Title="@L["contacts.filter.empty"]" Text="@L["contacts.filter.hint"]">
+                    <Actions>
+                        <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.Search" OnClick="SearchEverywhere">@L.Format("contacts.filter.searchAll", Filter)</Button>
+                    </Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Title="@L["contacts.empty.title"]" Text="@L["contacts.empty.text"]" Class="contacts__empty">
+                    <Art><SkyArt Kind="SkyArtKind.Contacts" Size="210" /></Art>
+                </EmptyState>
+            }
+        }
+        else
+        {
+            <div class="contacts__heading">
+                <span class="contacts__count">@L.Plural("plural.contacts", Items.Count)</span>
+                @if (OnlineCount > 0)
+                {
+                    <span class="contacts__online"><i aria-hidden="true"></i>@L.Format("contacts.onlineNow", OnlineCount)</span>
+                }
+            </div>
+            <div class="contacts__rows @(_entering ? "contacts__rows--enter" : null)">
+                @foreach (var user in Items)
+                {
+                    <ListItem @key="user.Id" Class="contact-row" OnClick="() => Open(user)" OnContextMenu="position => OpenMenuAsync(user, position)" Selected="@(IsSelected(user))">
+                        <Leading><UserAvatar UserId="user.Id" Embedded="user" Size="48" ShowOnline="true" /></Leading>
+                        <ChildContent>
+                            <div class="sm-list-item__title contact-row__name">@user.NameOf(L)</div>
+                            <div class="sm-list-item__subtitle"><PresenceText UserId="user.Id" Embedded="user" /></div>
+                        </ChildContent>
+                    </ListItem>
+                }
+            </div>
+            @if (Filter.Length > 0)
+            {
+                <ListItem Icon="@IconNames.Search" IconColor="var(--sm-accent)" Class="contacts__everywhere" Title="@L.Format("contacts.filter.searchAll", Filter)" OnClick="SearchEverywhere" />
+            }
+        }
+    </div>
+
+    <ContextMenu @ref="_menu" Title="@_menuUser?.NameOf(L)">
+        @if (_menuUser is { } user)
+        {
+            <MenuItem Icon="@IconNames.MessageCircle" Label="@L["profile.action.message"]" OnClick="() => MessageAsync(user)" />
+            @if (CallsEnabled)
+            {
+                <MenuItem Icon="@IconNames.Phone" Label="@L["profile.action.call"]" OnClick="() => CallAsync(user, false)" />
+                <MenuItem Icon="@IconNames.Video" Label="@L["profile.action.video"]" OnClick="() => CallAsync(user, true)" />
+            }
+            <MenuItem Icon="@IconNames.UserPen" Label="@L["profile.contact.rename"]" OnClick="() => RenameAsync(user)" />
+            <MenuDivider />
+            <MenuItem Icon="@IconNames.UserMinus" Label="@L["profile.contact.remove"]" Danger="true" OnClick="() => RemoveAsync(user)" />
+        }
+    </ContextMenu>
+</div>
+
+@code {
+    private const int EnterMs = 1200;
+    private string _filter = "";
+    private ContextMenu? _menu;
+    private UserSummaryDto? _menuUser;
+    private ElementReference _root;
+    private ElementReference _scroll;
+    private JsHandle? _scrollState;
+    private bool _attaching;
+    // The rows rise in once when the screen first shows them.
+    private bool _entering = true;
+    private bool _enterTimer;
+
+    [CascadingParameter] public ShellContext? Shell { get; set; }
+
+    private string Filter => _filter.Trim().TrimStart('@');
+
+    private bool CallsEnabled => Endpoints.Info?.CallsEnabled ?? true;
+
+    /// <summary>Online first, then the store's alphabetical order.</summary>
+    private IReadOnlyList<UserSummaryDto> Items
+    {
+        get
+        {
+            var q = Filter;
+            return Contacts.Contacts
+                .Select(c => Users.Resolve(c.User))
+                .Where(u => q.Length == 0
+                            || u.NameOf(L).Contains(q, StringComparison.CurrentCultureIgnoreCase)
+                            || u.Username.StartsWith(q, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(u => u.IsOnline())
+                .ToList();
+        }
+    }
+
+    private int OnlineCount => Items.Count(u => u.IsOnline());
+
+    private bool IsSelected(UserSummaryDto user) =>
+        Shell?.IsWide == true && Nav.CurrentPath.Equals($"/user/{user.Id}", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => Contacts.IsContact(id));
+        RenderOn(h => Nav.Changed += h, h => Nav.Changed -= h);
+        try
+        {
+            await Contacts.LoadAsync();
+        }
+        catch (Exception)
+        {
+            // Offline: keep showing the cached list.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_entering && !_enterTimer && Items.Count > 0)
+        {
+            _enterTimer = true;
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Delay(EnterMs);
+                if (IsDisposed) return;
+                _entering = false;
+                StateHasChanged();
+            });
+        }
+        if (_scrollState is not null || _attaching || IsDisposed) return;
+        _attaching = true;
+        try
+        {
+            _scrollState = await Js.AttachAsync("attachScrollState", _scroll, _root, "data-scrolled", 6);
+            if (IsDisposed) await _scrollState.DisposeAsync();
+        }
+        finally
+        {
+            _attaching = false;
+        }
+    }
+
+    private void Open(UserSummaryDto user) => Nav.OpenUser(user.Id);
+
+    private void SearchEverywhere() => Nav.NavigateTo($"/search?q={Uri.EscapeDataString(Filter)}");
+
+    private async Task OpenMenuAsync(UserSummaryDto user, MenuPosition position)
+    {
+        _menuUser = user;
+        if (_menu is not null) await _menu.OpenAsync(position);
+    }
+
+    private Task AddAsync() => Dialogs.ShowAsync<AddContactDialog>(L["contacts.add"]);
+
+    private async Task InviteAsync()
+    {
+        if (Auth.Me is not { } me) return;
+        var link = Links.ProfileLink(me.Username);
+        await Share.ShareAsync(L.Format("contacts.invite.text", link), L["contacts.invite.title"]);
+    }
+
+    private async Task MessageAsync(UserSummaryDto user)
+    {
+        try
+        {
+            var chat = await ChatList.OpenPrivateChatAsync(user.Id);
+            Nav.OpenChat(chat.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CallAsync(UserSummaryDto user, bool video)
+    {
+        try
+        {
+            var chat = await ChatList.OpenPrivateChatAsync(user.Id);
+            await Calls.StartAsync(chat.Id, video);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task RenameAsync(UserSummaryDto user)
+    {
+        var name = await Dialogs.PromptAsync(new PromptOptions
+        {
+            Title = L["profile.contact.rename"],
+            Message = L["profile.contact.renameHint"],
+            Label = L["profile.contact.nameLabel"],
+            InitialValue = user.ContactName ?? user.DisplayName,
+            MaxLength = Limits.ContactNameMaxLength,
+            AllowEmpty = true,
+        });
+        if (name is null) return;
+        try
+        {
+            await Contacts.RenameAsync(user.Id, string.IsNullOrWhiteSpace(name) ? null : name);
+            Toasts.Success(L["profile.contact.renamed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task RemoveAsync(UserSummaryDto user)
+    {
+        var ok = await Dialogs.ConfirmAsync(L.Format("profile.contact.removeTitle", user.NameOf(L)), L["profile.contact.removeText"],
+            L["profile.contact.remove"], danger: true);
+        if (!ok) return;
+        try
+        {
+            await Contacts.RemoveAsync(user.Id);
+            Toasts.Success(L["profile.contact.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_scrollState is not null) await _scrollState.DisposeAsync();
+    }
+}

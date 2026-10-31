@@ -1,0 +1,21 @@
+# SkyMessage edge on the shared VPS: HTTPS on :8443 for {$SKY_DOMAIN}, a DNS-only (grey) record straight to this
+# server, so users in Russia never depend on Cloudflare's proxy. The host's :80/:443 belong to another project, so
+# certificates come from Let's Encrypt over the Cloudflare DNS challenge (CF_API_TOKEN from cloudflare.env).
+{
+	auto_https disable_redirects
+}
+
+{$SKY_DOMAIN}:8443 {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1 1.0.0.1
+	}
+
+	# No `encode`: compressing SignalR's server-sent events would buffer them; static web assets are precompressed.
+	reverse_proxy api:8080
+
+	log {
+		output stdout
+		format json
+	}
+}

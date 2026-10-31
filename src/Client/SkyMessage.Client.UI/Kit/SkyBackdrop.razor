@@ -1,0 +1,35 @@
+@* The living sky behind SkyMessage's screens (docs/DESIGN.md): the theme's base gradient, three slowly drifting soft
+   lights, soft clouds by day, twinkling stars and a rare shooting star by night. Pure decoration:
+   transform/opacity animations only, paused under [inert] (covered screens), still in data-fx="lite" and with reduced
+   motion. Place it as the first child of a positioned container (or Fixed for the whole viewport). *@
+<div class="sm-sky @VariantClass @(Fixed ? "sm-sky--fixed" : null) @(Still ? "sm-sky--still" : null) @(Plain ? "sm-sky--plain" : null) @Class"
+     aria-hidden="true">
+    <div class="sm-sky__orb sm-sky__orb--1"></div>
+    <div class="sm-sky__orb sm-sky__orb--2"></div>
+    <div class="sm-sky__orb sm-sky__orb--3"></div>
+    <div class="sm-sky__cloud sm-sky__cloud--1"></div>
+    <div class="sm-sky__cloud sm-sky__cloud--2"></div>
+    <div class="sm-sky__stars"></div>
+    @if (Comet)
+    {
+        <span class="sm-sky__comet"></span>
+    }
+</div>
+
+@code {
+    /// <summary>App: the theme sky (--sm-sky, --sm-orb-*). Chat: the chat wallpaper (--sm-chat-wallpaper, --sm-chat-orb-*).</summary>
+    [Parameter] public SkyVariant Variant { get; set; } = SkyVariant.App;
+    /// <summary>position: fixed (covers the viewport) instead of absolute (covers the positioned parent).</summary>
+    [Parameter] public bool Fixed { get; set; }
+    /// <summary>No ambient motion (pages that sit on top of others, previews).</summary>
+    [Parameter] public bool Still { get; set; }
+    /// <summary>Gradient only: no orbs or clouds (the "plain" wallpaper).</summary>
+    [Parameter] public bool Plain { get; set; }
+    /// <summary>Obsolete: sparkles were removed from the design; the parameter is ignored.</summary>
+    [Parameter] public bool Sparkles { get; set; }
+    /// <summary>The occasional shooting star (dark theme only); off unless a screen asks for it.</summary>
+    [Parameter] public bool Comet { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string? VariantClass => Variant == SkyVariant.Chat ? "sm-sky--chat" : null;
+}

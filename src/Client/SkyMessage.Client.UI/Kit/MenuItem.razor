@@ -1,0 +1,35 @@
+@* An item of a ContextMenu (closes the menu first, then runs OnClick). Also usable standalone in sheets. *@
+<button type="button" role="menuitem" class="sm-menu-item @(Danger ? "sm-menu-item--danger" : null) @Class" disabled="@Disabled" @onclick="ClickAsync">
+    @if (Icon is not null)
+    {
+        <Icon Name="@Icon" />
+    }
+    <span class="sm-menu-item__label">@(Label)@ChildContent</span>
+    @if (Hint is not null)
+    {
+        <span class="sm-menu-item__hint">@Hint</span>
+    }
+</button>
+
+@code {
+    [CascadingParameter] public ContextMenu? Menu { get; set; }
+
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Right-aligned hint (shortcut, current value).</summary>
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public bool Danger { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>Keep the menu open after the click (toggles).</summary>
+    [Parameter] public bool KeepOpen { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private async Task ClickAsync()
+    {
+        if (Disabled) return;
+        if (Menu is not null && !KeepOpen) await Menu.CloseAsync();
+        await OnClick.InvokeAsync();
+    }
+}

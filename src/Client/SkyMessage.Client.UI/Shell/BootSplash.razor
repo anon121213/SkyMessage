@@ -1,0 +1,17 @@
+@* Shown until settings and the session are restored (no network wait): the sky with the animated logo and the wordmark,
+   continuing the Android splash (same night color and picture). *@
+<div class="boot-splash" aria-busy="true">
+    <SkyBackdrop />
+    <div class="boot-splash__mark">
+        <Logo Size="104" Animated="true" />
+    </div>
+    <div class="boot-splash__word">SkyMessage</div>
+    @if (ShowSpinner)
+    {
+        <Spinner Size="26" Class="boot-splash__spinner" />
+    }
+</div>
+
+@code {
+    [Parameter] public bool ShowSpinner { get; set; }
+}

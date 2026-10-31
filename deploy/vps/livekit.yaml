@@ -1,0 +1,18 @@
+# LiveKit SFU (production on the shared VPS). Signaling (7880) stays on the internal network and is reverse-proxied
+# by the API at /livekit; call media goes straight to this host on 7881/tcp and 7882/udp (--node-ip = public IP).
+# Keys come from LIVEKIT_KEYS (.env); webhooks are signed with the key named below (LIVEKIT_API_KEY in .env).
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+webhook:
+  api_key: skymessage
+  urls:
+    - http://api:8080/api/livekit/webhook
+# A room nobody (re)joins closes after these and LiveKit sends room_finished, which ends the call in the API.
+room:
+  empty_timeout: 30
+  departure_timeout: 20
+logging:
+  level: info

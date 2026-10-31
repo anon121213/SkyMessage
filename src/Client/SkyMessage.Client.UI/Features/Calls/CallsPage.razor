@@ -1,0 +1,486 @@
+@page "/calls"
+@* Call history: newest first, grouped by day on frosted cards; an All / Missed filter whose gradient pill slides (and
+   turns rose for Missed); squircle faces with a direction badge; call back from each row; paging on scroll; our own flat
+   "phone among the clouds" drawing when there is nothing to show. On wide screens the list column is hidden for
+   this area, so the page gets the full width (centered column). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject ICallService Calls
+@inject IAuthService Auth
+@inject IRealtimeService Realtime
+@inject IUserStore Users
+@inject IChatListStore ChatList
+@inject IMediaUrlBuilder MediaUrls
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject FormatService Format
+@inject LayoutService Layout
+@inject AppJs Js
+@inject ILogger<CallsPage> Logger
+
+<AppPage Title="@L["nav.calls"]" LargeTitle="@Layout.IsPhone" Padded="true">
+    <Actions>
+        <IconButton Icon="@IconNames.PhoneCall" Label="@L["calls.history.newCall"]" OnClick="NewCallAsync" />
+    </Actions>
+    <Toolbar>
+        <div class="calls-filter" role="tablist">
+            <span class="calls-filter__pill @(_missedOnly ? "is-missed" : null)" aria-hidden="true"></span>
+            <button type="button" role="tab" aria-selected="@(_missedOnly ? "false" : "true")" class="calls-filter__tab @(_missedOnly ? null : "is-active")"
+                    @onclick="() => SetFilter(false)">
+                <Icon Name="@IconNames.Phone" Size="16" StrokeWidth="2.2" />
+                <span>@L["calls.history.all"]</span>
+            </button>
+            <button type="button" role="tab" aria-selected="@(_missedOnly ? "true" : "false")" class="calls-filter__tab @(_missedOnly ? "is-active" : null)"
+                    @onclick="() => SetFilter(true)">
+                <Icon Name="@IconNames.PhoneMissed" Size="16" StrokeWidth="2.2" />
+                <span>@L["calls.history.missed"]</span>
+            </button>
+        </div>
+    </Toolbar>
+    <ChildContent>
+        @if (!_loaded)
+        {
+            @if (_error is not null)
+            {
+                <EmptyState Icon="@IconNames.CloudOff" Title="@L["calls.history.errorTitle"]" Text="@L.Error(_error)" Fill="true">
+                    <Actions><Button Variant="ButtonVariant.Tonal" Icon="@IconNames.RefreshCw" OnClick="ReloadAsync">@L["common.retry"]</Button></Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <SkeletonList Rows="8" />
+            }
+        }
+        else if (VisibleItems.Count == 0 && !_hasMore)
+        {
+            <EmptyState Title="@(_missedOnly ? L["calls.history.noMissed"] : L["calls.history.empty"])"
+                        Text="@(_missedOnly ? null : L["calls.history.emptyText"])" Fill="true">
+                <Art>@EmptyArt</Art>
+                <Actions>
+                    @if (!_missedOnly)
+                    {
+                        <Button Icon="@IconNames.PhoneCall" OnClick="NewCallAsync">@L["calls.history.newCall"]</Button>
+                    }
+                </Actions>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="calls-list sm-stagger">
+                @foreach (var day in VisibleItems.GroupBy(i => i.Call.CreatedAt.ToLocalTime().Date))
+                {
+                    <Section @key="day.Key" Title="@Format.DateChip(day.First().Call.CreatedAt)">
+                        @foreach (var item in day)
+                        {
+                            @Row(item)
+                        }
+                    </Section>
+                }
+            </div>
+            @if (_hasMore)
+            {
+                <div @ref="_sentinel" class="calls-more">
+                    @if (_loadingMore)
+                    {
+                        <Spinner Size="22" />
+                    }
+                    else
+                    {
+                        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="LoadMoreAsync">@L["calls.history.more"]</Button>
+                    }
+                </div>
+            }
+        }
+    </ChildContent>
+</AppPage>
+
+<ContextMenu @ref="_menu" Title="@(_menuItem is null ? null : TitleOf(_menuItem))">
+    @if (_menuItem is { } item)
+    {
+        <MenuItem Icon="@IconNames.MessageCircle" Label="@L["calls.history.openChat"]" OnClick="() => OpenChat(item)" />
+        @if (item.Peer is { } peer)
+        {
+            <MenuItem Icon="@IconNames.User" Label="@L["calls.history.profile"]" OnClick="() => Nav.OpenUser(peer.Id)" />
+        }
+        <MenuDivider />
+        <MenuItem Icon="@IconNames.Phone" Label="@L["calls.history.audioCall"]" OnClick="() => CallAsync(item, false)" />
+        <MenuItem Icon="@IconNames.Video" Label="@L["calls.history.videoCall"]" OnClick="() => CallAsync(item, true)" />
+    }
+</ContextMenu>
+
+@code {
+    private const int PageSize = 50;
+
+    private readonly List<CallHistoryItemDto> _items = [];
+    private bool _loaded;
+    private bool _hasMore;
+    private bool _loadingMore;
+    private string? _error;
+    private bool _missedOnly;
+    private ContextMenu? _menu;
+    private CallHistoryItemDto? _menuItem;
+    private ElementReference _sentinel;
+    private string? _watchedSentinel;
+    private JsHandle? _sentinelWatch;
+    private DotNetObjectReference<CallsPage>? _self;
+    private CancellationTokenSource _lifetime = new();
+    private Timer? _refreshTimer;
+    private int _generation;
+
+    private IReadOnlyList<CallHistoryItemDto> VisibleItems
+    {
+        get
+        {
+            if (!_missedOnly || Auth.UserId is not { } me) return _items;
+            return _items.Where(i => CallUi.IsMissed(i, me)).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        RenderOn(h => Layout.Changed += h, h => Layout.Changed -= h);
+        Realtime.CallUpdated += OnCallEvent;
+        Realtime.IncomingCall += OnCallEvent;
+        Realtime.Resynced += OnResynced;
+        OnDispose(() =>
+        {
+            Realtime.CallUpdated -= OnCallEvent;
+            Realtime.IncomingCall -= OnCallEvent;
+            Realtime.Resynced -= OnResynced;
+        });
+        await ReloadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Auto-load the next page when the end of the list scrolls into view.
+        var sentinel = _loaded && _hasMore ? _sentinel.Id : null;
+        if (sentinel == _watchedSentinel) return;
+        if (_sentinelWatch is not null)
+        {
+            await _sentinelWatch.DisposeAsync();
+            _sentinelWatch = null;
+        }
+        _watchedSentinel = sentinel;
+        if (sentinel is null) return;
+        _self ??= DotNetObjectReference.Create(this);
+        _sentinelWatch = await Js.ObserveVisibilityAsync(_sentinel, _self, nameof(OnSentinelVisible), "320px", 0);
+    }
+
+    [JSInvokable]
+    public Task OnSentinelVisible(bool visible, double ratio) => visible ? InvokeAsync(LoadMoreAsync) : Task.CompletedTask;
+
+    private RenderFragment Row(CallHistoryItemDto item) => __builder =>
+    {
+        var me = Auth.UserId ?? Guid.Empty;
+        var missed = CallUi.IsMissed(item, me);
+        var ongoing = item.Call.Status is CallStatus.Ringing or CallStatus.Active;
+        var direction = missed ? "missed" : item.IsOutgoing ? "out" : "in";
+        <ListItem @key="item.Call.Id" OnClick="() => OpenChat(item)" OnContextMenu="pos => OpenMenuAsync(item, pos)"
+                  Class="@($"calls-item calls-item--{direction} {(ongoing ? "calls-item--ongoing" : null)}")">
+            <Leading>
+                <span class="calls-item__avatar">
+                    @AvatarOf(item)
+                    <span class="calls-item__dir calls-item__dir--@direction"><Icon Name="@DirectionIcon(item, missed)" Size="11" StrokeWidth="2.8" /></span>
+                </span>
+            </Leading>
+            <ChildContent>
+                <div class="sm-list-item__title calls-item__title">@TitleOf(item)</div>
+                <div class="sm-list-item__subtitle calls-item__sub">
+                    @if (ongoing)
+                    {
+                        <span class="calls-item__live" aria-hidden="true"></span>
+                    }
+                    else if (item.Call.IsVideo)
+                    {
+                        <Icon Name="@IconNames.Video" Size="15" Class="calls-item__kind" Title="@L["calls.history.video"]" />
+                    }
+                    <span class="sm-truncate">@Describe(item, missed, ongoing)</span>
+                </div>
+            </ChildContent>
+            <Trailing>
+                <span class="calls-item__end">
+                    <span class="calls-item__time sm-nums">@Format.Time(item.Call.CreatedAt)</span>
+                    <IconButton Icon="@(item.Call.IsVideo ? IconNames.Video : IconNames.Phone)" Label="@(ongoing && item.ChatType == ChatType.Group ? L["calls.banner.join"] : L["calls.history.callBack"])"
+                                Variant="@(ongoing ? IconButtonVariant.Filled : IconButtonVariant.Plain)" StopPropagation="true" Class="calls-item__call"
+                                Disabled="@(CallUi.IsLive(Calls.Current))" OnClick="() => CallAsync(item, item.Call.IsVideo)" />
+                </span>
+            </Trailing>
+        </ListItem>
+    };
+
+    /// <summary>The empty list: a flat drawing of a phone tile floating among two clouds, ringing, under a small sun.</summary>
+    private static RenderFragment EmptyArt => __builder =>
+    {
+        <div class="calls-art" aria-hidden="true">
+            <svg viewBox="0 0 220 170" focusable="false">
+                <circle class="calls-art__sun" cx="186" cy="26" r="11" />
+                <g class="calls-art__cloud calls-art__cloud--back">
+                    <circle cx="50" cy="124" r="17" />
+                    <circle cx="73" cy="111" r="25" />
+                    <circle cx="98" cy="122" r="17" />
+                    <rect x="36" y="121" width="78" height="22" rx="11" />
+                </g>
+                <g class="calls-art__float">
+                    <path d="M50 0C88.6 0 100 11.4 100 50S88.6 100 50 100 0 88.6 0 50 11.4 0 50 0Z" transform="translate(72 40) scale(0.76)" class="calls-art__tile" />
+                    <g transform="translate(92 60) scale(1.5)" class="calls-art__phone">
+                        <path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384" />
+                    </g>
+                    <path class="calls-art__wave calls-art__wave--1" d="M156 54a15 15 0 0 1 9 15" />
+                    <path class="calls-art__wave calls-art__wave--2" d="M161 42a28 28 0 0 1 16 26" />
+                </g>
+                <g class="calls-art__cloud calls-art__cloud--front">
+                    <circle cx="137" cy="140" r="15" />
+                    <circle cx="160" cy="128" r="22" />
+                    <circle cx="183" cy="139" r="14" />
+                    <rect x="124" y="137" width="72" height="19" rx="9.5" />
+                </g>
+            </svg>
+        </div>
+    };
+
+    private RenderFragment AvatarOf(CallHistoryItemDto item) => __builder =>
+    {
+        if (item.Peer is { } peer)
+        {
+            <UserAvatar UserId="peer.Id" Embedded="peer" Size="52" />
+        }
+        else if (ChatList.Get(item.Call.ChatId) is { } chat)
+        {
+            <ChatAvatar Chat="chat" Size="52" ShowOnline="false" />
+        }
+        else
+        {
+            <Avatar Url="@MediaUrls.AvatarUrl(item.ChatAvatarMediaId)" Name="@item.ChatTitle" Seed="item.Call.ChatId" Size="52" />
+        }
+    };
+
+    private string TitleOf(CallHistoryItemDto item)
+    {
+        if (item.Peer is { } peer) return Users.NameOf(peer.Id, L, peer);
+        if (ChatList.Get(item.Call.ChatId) is { } chat) return ChatList.TitleOf(chat);
+        return string.IsNullOrWhiteSpace(item.ChatTitle) ? L["calls.unknownChat"] : item.ChatTitle;
+    }
+
+    private static string DirectionIcon(CallHistoryItemDto item, bool missed) =>
+        missed ? IconNames.PhoneMissed : item.IsOutgoing ? IconNames.PhoneOutgoing : IconNames.PhoneIncoming;
+
+    private string Describe(CallHistoryItemDto item, bool missed, bool ongoing)
+    {
+        if (ongoing) return item.ChatType == ChatType.Group ? L["calls.history.groupOngoing"] : L["calls.history.ongoing"];
+        string text;
+        if (missed) text = L["calls.history.missedCall"];
+        else if (item.IsOutgoing)
+        {
+            text = item.Call.Status switch
+            {
+                CallStatus.Busy => L["calls.history.busy"],
+                CallStatus.Declined when item.ChatType != ChatType.Group => L["calls.history.declinedByPeer"],
+                CallStatus.Missed when item.ChatType != ChatType.Group => L["calls.history.noAnswer"],
+                CallStatus.Cancelled => L["calls.history.cancelled"],
+                CallStatus.Failed => L["calls.history.failed"],
+                _ => L["calls.history.outgoing"],
+            };
+        }
+        else
+        {
+            text = item.Call.Status switch
+            {
+                CallStatus.Declined when item.ChatType != ChatType.Group => L["calls.history.declined"],
+                CallStatus.Failed => L["calls.history.failed"],
+                _ => L["calls.history.incoming"],
+            };
+        }
+        if (item.ChatType == ChatType.Group)
+        {
+            var people = item.Call.Participants.Count(p => p.Status is CallParticipantStatus.Joined or CallParticipantStatus.Left);
+            if (people > 1) text += " · " + L.Plural("calls.participants", people);
+        }
+        if (item.DurationSeconds > 0) text += " · " + Format.DurationWords(item.DurationSeconds);
+        return text;
+    }
+
+    // ---- loading ----
+
+    private async Task ReloadAsync()
+    {
+        var generation = ++_generation;
+        _error = null;
+        try
+        {
+            var page = await Calls.GetHistoryAsync(null, _lifetime.Token);
+            if (generation != _generation) return;
+            _items.Clear();
+            _items.AddRange(page);
+            _hasMore = page.Count >= PageSize;
+            _loaded = true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            if (generation != _generation) return;
+            Logger.LogDebug(ex, "Call history not loaded");
+            _error = ex is ApiException api ? api.Code : ClientErrorCodes.Network;
+            if (_items.Count > 0)
+            {
+                _loaded = true;
+                Toasts.Error(ex);
+            }
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Merges the newest page into what is shown (keeps older pages already loaded).</summary>
+    private async Task RefreshNewestAsync()
+    {
+        if (!_loaded || _items.Count == 0)
+        {
+            await ReloadAsync();
+            return;
+        }
+        try
+        {
+            var page = await Calls.GetHistoryAsync(null, _lifetime.Token);
+            var byId = page.ToDictionary(i => i.Call.Id);
+            for (var i = 0; i < _items.Count; i++)
+            {
+                if (byId.Remove(_items[i].Call.Id, out var fresh)) _items[i] = fresh;
+            }
+            if (byId.Count > 0)
+            {
+                _items.InsertRange(0, page.Where(i => byId.ContainsKey(i.Call.Id)));
+                _items.Sort((a, b) => b.Call.CreatedAt.CompareTo(a.Call.CreatedAt));
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogDebug(ex, "Call history refresh failed");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_loadingMore || !_hasMore || _items.Count == 0) return;
+        _loadingMore = true;
+        StateHasChanged();
+        try
+        {
+            var before = _items[^1].Call.CreatedAt;
+            var page = await Calls.GetHistoryAsync(before, _lifetime.Token);
+            var known = _items.Select(i => i.Call.Id).ToHashSet();
+            _items.AddRange(page.Where(i => known.Add(i.Call.Id)));
+            _hasMore = page.Count >= PageSize;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _loadingMore = false;
+        }
+        StateHasChanged();
+    }
+
+    private void OnCallEvent(CallDto call)
+    {
+        // Debounced: a call produces several updates in a row.
+        _refreshTimer?.Dispose();
+        _refreshTimer = new Timer(_ => _ = InvokeAsync(RefreshNewestAsync), null, TimeSpan.FromMilliseconds(900), Timeout.InfiniteTimeSpan);
+    }
+
+    private void OnResynced() => _ = InvokeAsync(RefreshNewestAsync);
+
+    private void SetFilter(bool missedOnly)
+    {
+        _missedOnly = missedOnly;
+        StateHasChanged();
+    }
+
+    // ---- actions ----
+
+    private void OpenChat(CallHistoryItemDto item) => Nav.OpenChat(item.Call.ChatId);
+
+    private async Task OpenMenuAsync(CallHistoryItemDto item, MenuPosition position)
+    {
+        _menuItem = item;
+        StateHasChanged();
+        if (_menu is not null) await _menu.OpenAsync(position);
+    }
+
+    private async Task CallAsync(CallHistoryItemDto item, bool video)
+    {
+        try
+        {
+            if (item.ChatType == ChatType.Group)
+            {
+                var chat = ChatList.Get(item.Call.ChatId) ?? await ChatList.GetOrFetchAsync(item.Call.ChatId);
+                if (chat?.ActiveCallId is { } active)
+                {
+                    await Calls.JoinAsync(active, video);
+                    return;
+                }
+            }
+            else if (item.Peer is { } peer && ChatList.Get(item.Call.ChatId) is null)
+            {
+                // The private chat may be hidden on my side: opening it makes it visible again.
+                var opened = await ChatList.OpenPrivateChatAsync(peer.Id);
+                await Calls.StartAsync(opened.Id, video);
+                return;
+            }
+            await Calls.StartAsync(item.Call.ChatId, video);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task NewCallAsync()
+    {
+        var picked = await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.Contacts.UserPickerDialog>(L["calls.history.newCall"], new Dictionary<string, object?>
+        {
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.Multiple)] = false,
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Flush = true });
+        if (picked is not UserSummaryDto user) return;
+        var kind = await Dialogs.ChooseAsync(Users.NameOf(user.Id, L, user), new[]
+        {
+            new ChoiceOption<bool>(false, L["calls.history.audioCall"]) { Icon = IconNames.Phone },
+            new ChoiceOption<bool>(true, L["calls.history.videoCall"]) { Icon = IconNames.Video },
+        });
+        if (kind is null) return;
+        try
+        {
+            var chat = await ChatList.OpenPrivateChatAsync(user.Id);
+            await Calls.StartAsync(chat.Id, kind.Value);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _lifetime.Cancel();
+        _refreshTimer?.Dispose();
+        if (_sentinelWatch is not null) await _sentinelWatch.DisposeAsync();
+        _self?.Dispose();
+        _lifetime.Dispose();
+        Dispose();
+    }
+}

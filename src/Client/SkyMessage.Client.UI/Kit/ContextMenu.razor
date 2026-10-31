@@ -1,0 +1,169 @@
+@* Context menu: popover at a point on wide screens, bottom sheet on phones. Items are <MenuItem> children. Closing
+   plays a short exit before the markup goes away. *@
+@implements IAsyncDisposable
+@inject NavigationService Nav
+@inject LayoutService Layout
+@inject AppJs Js
+
+@if (_open || _leaving)
+{
+    <CascadingValue Value="this" IsFixed="true">
+        @if (_sheet)
+        {
+            <div class="sm-overlay sm-overlay--sheet @(_leaving ? "sm-overlay--leaving" : null)">
+                <div class="sm-overlay__scrim" @onclick="CloseAsync"></div>
+                <div @ref="_panel" class="sm-dialog @Class" role="menu" aria-label="@Title">
+                    <div class="sm-sheet__handle" aria-hidden="true"></div>
+                    @if (Title is not null)
+                    {
+                        <div class="sm-dialog__header"><h2 class="sm-dialog__title">@Title</h2></div>
+                    }
+                    @if (Header is not null)
+                    {
+                        <div class="sm-menu__header sm-px-m">@Header</div>
+                    }
+                    <div class="sm-col sm-gap-0 sm-scroll" style="padding-bottom:8px">@ChildContent</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="sm-menu-layer @(_leaving ? "sm-menu-layer--leaving" : null)" @onclick="CloseAsync" @oncontextmenu="CloseAsync" @oncontextmenu:preventDefault="true">
+                <div @ref="_panel" class="sm-menu @Class" role="menu" aria-label="@Title" @onclick:stopPropagation="true" @oncontextmenu:stopPropagation="true"
+                     style="left:@Px(_x);top:@Px(_y)">
+                    @if (Header is not null)
+                    {
+                        <div class="sm-menu__header">@Header</div>
+                    }
+                    @ChildContent
+                </div>
+            </div>
+        }
+    </CascadingValue>
+}
+
+@code {
+    private ElementReference _panel;
+    private OverlayHandle? _overlay;
+    private JsHandle? _swipe;
+    private DotNetObjectReference<ContextMenu>? _self;
+    private bool _open;
+    private bool _leaving;
+    private bool _sheet;
+    private int _leaveVersion;
+    private bool _positionPending;
+    private double _x;
+    private double _y;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Content above the items (e.g. a reactions row).</summary>
+    [Parameter] public RenderFragment? Header { get; set; }
+    /// <summary>Sheet title on phones / accessible name.</summary>
+    [Parameter] public string? Title { get; set; }
+    /// <summary>Show as a bottom sheet on phones (default). False keeps the popover everywhere.</summary>
+    [Parameter] public bool PreferSheet { get; set; } = true;
+    [Parameter] public EventCallback OnClosed { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    public bool IsOpen => _open;
+
+    private bool AsSheet => PreferSheet && Layout.IsPhone;
+
+    public Task OpenAsync(MenuPosition position) => OpenAsync(position.X, position.Y);
+
+    public async Task OpenAsync(double x, double y)
+    {
+        _x = x;
+        _y = y;
+        if (_open)
+        {
+            _positionPending = true;
+            StateHasChanged();
+            return;
+        }
+        _open = true;
+        _leaving = false;
+        _leaveVersion++;
+        _sheet = AsSheet;
+        _positionPending = true;
+        StateHasChanged();
+        _overlay = await Nav.OpenOverlayAsync(DismissedByBackAsync);
+        if (!_open) await _overlay.CloseAsync();
+    }
+
+    public async Task CloseAsync()
+    {
+        if (!_open) return;
+        _open = false;
+        StartLeaving();
+        await DetachAsync();
+        var overlay = _overlay;
+        _overlay = null;
+        StateHasChanged();
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+        await OnClosed.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public Task OnSwipedDown() => InvokeAsync(CloseAsync);
+
+    private Task DismissedByBackAsync() => InvokeAsync(async () =>
+    {
+        _overlay = null;
+        if (!_open) return;
+        _open = false;
+        StartLeaving();
+        await DetachAsync();
+        StateHasChanged();
+        await OnClosed.InvokeAsync();
+    });
+
+    // Keeps the markup for the exit animation (app.css); reopening cancels it.
+    private void StartLeaving()
+    {
+        _leaving = true;
+        var version = ++_leaveVersion;
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(Dialog.LeaveMs);
+            if (version != _leaveVersion || !_leaving) return;
+            _leaving = false;
+            StateHasChanged();
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_open || !_positionPending) return;
+        _positionPending = false;
+        if (_sheet)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            if (_swipe is null) _swipe = await Js.AttachSwipeAsync(_panel, _self, nameof(OnSwipedDown), "down", 90);
+        }
+        else
+        {
+            await Js.PositionPopoverAsync(_panel, _x, _y);
+        }
+        await Js.FocusFirstAsync(_panel);
+    }
+
+    private async Task DetachAsync()
+    {
+        if (_swipe is not null)
+        {
+            await _swipe.DisposeAsync();
+            _swipe = null;
+        }
+    }
+
+    private static string Px(double value) => value.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "px";
+
+    public async ValueTask DisposeAsync()
+    {
+        _leaveVersion++;
+        await DetachAsync();
+        if (_overlay is { IsOpen: true } overlay) await overlay.CloseAsync();
+        _self?.Dispose();
+    }
+}

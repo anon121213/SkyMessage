@@ -1,0 +1,153 @@
+@* Pinned messages of the chat (IMessageStore.GetPinned, newest first). Shows one at a time; a tap jumps to it and moves
+   on to the next older pin (the text slides down from above, like scrolling up). Members who may pin can unpin from
+   here. A bar that appears while the chat is open slides in; one that is there when the chat opens does not. *@
+@inherits UiComponentBase
+@inject IMessageStore Messages
+@inject IMediaUrlBuilder MediaUrls
+@inject MessagePreviewFormatter Preview
+@inject DialogService Dialogs
+@inject ToastService Toasts
+
+@if (Prepare() is { } message)
+{
+    <div class="pinbar @_barMotion" role="button" tabindex="0" title="@L["chat.pinned.open"]" @onclick="OpenAsync" @onkeydown="OnKeyDown">
+        <div class="pinbar__marks" aria-hidden="true">
+            @for (var i = 0; i < MarkCount; i++)
+            {
+                <span class="pinbar__mark @(i == MarkIndex ? "pinbar__mark--on" : null)"></span>
+            }
+        </div>
+        <div @key="message.Id" class="pinbar__content @_contentMotion">
+            @if (ThumbOf(message) is { } thumb)
+            {
+                <img class="pinbar__thumb" src="@thumb" alt="" draggable="false" />
+            }
+            <div class="pinbar__body">
+                <div class="pinbar__title">@Title</div>
+                <div class="pinbar__text" dir="auto">@Preview.FormatPreview(message)</div>
+            </div>
+        </div>
+        @if (CanUnpin)
+        {
+            <IconButton Icon="@IconNames.PinOff" Label="@L["chat.pinned.unpin"]" StopPropagation="true" OnClick="() => UnpinAsync(message)" />
+        }
+        else
+        {
+            <span class="pinbar__icon" aria-hidden="true"><Icon Name="@IconNames.Pin" Size="18" /></span>
+        }
+    </div>
+}
+
+@code {
+    private const int MaxMarks = 4;
+    private int _index;
+    // Motion: the pin shown at the last render, whether the next change came from a tap (older pin), and the classes
+    // kept on the bar / the keyed content until the next change (so re-renders never replay them).
+    private Guid? _shownId;
+    private bool _older;
+    private bool _rendered;
+    private string? _barMotion;
+    private string? _contentMotion;
+
+    [Parameter, EditorRequired] public Guid ChatId { get; set; }
+    [Parameter] public bool CanUnpin { get; set; }
+    [Parameter] public EventCallback<MessageDto> OnOpen { get; set; }
+
+    private IReadOnlyList<MessageDto> Pinned => Messages.GetPinned(ChatId);
+
+    private MessageDto? Current
+    {
+        get
+        {
+            var pinned = Pinned;
+            if (pinned.Count == 0) return null;
+            if (_index >= pinned.Count) _index = 0;
+            return pinned[_index];
+        }
+    }
+
+    private int MarkCount => Math.Min(Pinned.Count, MaxMarks);
+
+    /// <summary>Marks run oldest (top) to newest (bottom), like the messages themselves.</summary>
+    private int MarkIndex
+    {
+        get
+        {
+            var count = Pinned.Count;
+            if (count <= 1) return 0;
+            var fromOldest = count - 1 - _index;
+            return count <= MaxMarks ? fromOldest : (int)Math.Round(fromOldest * (MaxMarks - 1) / (double)(count - 1));
+        }
+    }
+
+    private string Title => Pinned.Count > 1
+        ? L.Format("chat.pinned.numbered", Pinned.Count - _index, Pinned.Count)
+        : L["chat.pinned.title"];
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Messages.ChatChanged += h, h => Messages.ChatChanged -= h, id => id == ChatId);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _rendered = true;
+    }
+
+    /// <summary>The pin to show, noting what changed since the last render: the bar appearing, or another pin.</summary>
+    private MessageDto? Prepare()
+    {
+        var message = Current;
+        var id = message?.Id;
+        if (id == _shownId) return message;
+        if (_rendered && id is not null)
+        {
+            if (_shownId is null)
+            {
+                _barMotion = "pinbar--enter";
+                _contentMotion = null;
+            }
+            else
+            {
+                _contentMotion = _older ? "pinbar__content--older" : "pinbar__content--newer";
+            }
+        }
+        _shownId = id;
+        _older = false;
+        return message;
+    }
+
+    private string? ThumbOf(MessageDto message)
+    {
+        var media = message.Attachments.FirstOrDefault(a => a.Kind is MediaKind.Photo or MediaKind.Video or MediaKind.VideoNote);
+        if (media is null) return null;
+        return media.HasThumbnail ? MediaUrls.ThumbnailUrl(media.Id) : MediaUrls.MiniThumbnailDataUrl(media);
+    }
+
+    private async Task OpenAsync()
+    {
+        if (Current is not { } message) return;
+        var count = Pinned.Count;
+        _index = count > 0 ? (_index + 1) % count : 0;
+        // Wrapping around to the newest pin reads as going down again.
+        _older = _index != 0;
+        await OnOpen.InvokeAsync(message);
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs e) => e.Key is "Enter" or " " ? OpenAsync() : Task.CompletedTask;
+
+    private async Task UnpinAsync(MessageDto message)
+    {
+        var ok = await Dialogs.ConfirmAsync(L["chat.pinned.unpinTitle"], L["chat.pinned.unpinText"], L["chat.pinned.unpin"]);
+        if (!ok) return;
+        try
+        {
+            await Messages.SetPinnedAsync(ChatId, message.Id, false);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

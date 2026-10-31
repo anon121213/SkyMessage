@@ -1,0 +1,36 @@
+@typeparam TValue
+@inject HapticFeedback Haptics
+
+<div class="sm-tabs @(Variant == TabsVariant.Pill ? "sm-tabs--pill" : null) @Class" role="tablist">
+    @foreach (var item in Items)
+    {
+        var active = EqualityComparer<TValue>.Default.Equals(item.Value, Active!);
+        <button type="button" role="tab" aria-selected="@(active ? "true" : "false")" class="sm-tab @(active ? "sm-tab--active" : null)"
+                disabled="@item.Disabled" @onclick="() => SelectAsync(item)">
+            @if (item.Icon is not null)
+            {
+                <Icon Name="@item.Icon" Size="18" />
+            }
+            <span>@item.Label</span>
+            @if (item.Badge is > 0)
+            {
+                <Badge Count="item.Badge.Value" Muted="!active" />
+            }
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<TValue>> Items { get; set; } = [];
+    [Parameter] public TValue? Active { get; set; }
+    [Parameter] public EventCallback<TValue> ActiveChanged { get; set; }
+    [Parameter] public TabsVariant Variant { get; set; } = TabsVariant.Underline;
+    [Parameter] public string? Class { get; set; }
+
+    private async Task SelectAsync(ChoiceOption<TValue> item)
+    {
+        if (item.Disabled || EqualityComparer<TValue>.Default.Equals(item.Value, Active!)) return;
+        Haptics.Selection();
+        await ActiveChanged.InvokeAsync(item.Value);
+    }
+}

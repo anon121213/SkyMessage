@@ -1,0 +1,47 @@
+.reaction-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* The favourites: squircle drops; the current one sits in an accent ring. */
+.reaction-pick__quick {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 14px 8px;
+}
+
+.reaction-pick__item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.875rem;
+    height: 2.875rem;
+    padding: 0;
+    border: 0;
+    border-radius: 34%;
+    font-size: 1.5rem;
+    line-height: 1;
+    background: var(--sm-surface-2);
+    cursor: pointer;
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .reaction-pick__item:hover {
+        transform: scale(1.1);
+    }
+}
+
+.reaction-pick__item:active {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+}
+
+.reaction-pick__item.is-selected {
+    background: var(--sm-accent-soft);
+    box-shadow: 0 0 0 2px var(--sm-accent);
+}

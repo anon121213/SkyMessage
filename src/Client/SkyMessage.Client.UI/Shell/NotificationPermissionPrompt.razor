@@ -1,0 +1,119 @@
+@* Asks once per device for permission to show notifications (Android 13+, iOS, macOS and browsers need it, or
+   background messages and incoming calls stay silent). Native apps show the system dialog shortly after the
+   signed-in shell appears; browsers only allow it from a tap, so they get a glass card dropping in at the top with a
+   bell, the button and a dismiss. *@
+@inherits UiComponentBase
+@inject ILocalNotificationService LocalNotifications
+@inject IPermissionService Permissions
+@inject IPlatformInfo Platform
+@inject IPreferencesStore Preferences
+@inject ISettingsService Settings
+@inject ILogger<NotificationPermissionPrompt> Logger
+
+@if (_showStrip)
+{
+    <div class="notify-card sm-glass sm-glass--strong @(_leaving ? "notify-card--leaving" : null)" role="status">
+        <span class="notify-card__disc" aria-hidden="true">
+            <Icon Name="@IconNames.BellRing" Size="22" StrokeWidth="2.2" />
+        </span>
+        <div class="notify-card__body">
+            <div class="notify-card__title">@L["app.notifications.title"]</div>
+            <div class="notify-card__text">@L["app.notifications.prompt"]</div>
+            <div class="notify-card__actions">
+                <Button Size="ButtonSize.Small" Icon="@IconNames.Bell" Loading="_busy" OnClick="EnableAsync">@L["app.notifications.enable"]</Button>
+            </div>
+        </div>
+        <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="32" Class="notify-card__close" OnClick="DismissAsync" />
+    </div>
+}
+
+@code {
+    /// <summary>Per-device flag in IPreferencesStore: the user has been asked (or dismissed the strip).</summary>
+    public const string PromptedKey = "ui.notifications.prompted.v1";
+
+    private const int LeaveMs = 200;
+    private bool _showStrip;
+    private bool _leaving;
+    private bool _busy;
+    private bool _checked;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _checked) return;
+        _checked = true;
+        try
+        {
+            // Let the chat list appear first; a system dialog over a blank screen feels alarming.
+            await Task.Delay(1500);
+            if (IsDisposed || !Settings.Current.Notifications.Enabled) return;
+            if (!string.IsNullOrEmpty(await Preferences.GetAsync(PromptedKey))) return;
+            var state = await Permissions.CheckAsync(AppPermission.Notifications);
+            if (state is PermissionState.Granted or PermissionState.Limited or PermissionState.NotApplicable or PermissionState.Restricted) return;
+            if (Platform.IsNativeApp)
+            {
+                // Android reports "denied" until the first request, so native apps simply ask once per device.
+                await MarkPromptedAsync();
+                await LocalNotifications.RequestPermissionAsync();
+                return;
+            }
+            if (state == PermissionState.Unknown && !IsDisposed)
+            {
+                _showStrip = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogDebug(ex, "Notification permission check failed");
+        }
+    }
+
+    private async Task EnableAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await MarkPromptedAsync();
+            await LocalNotifications.RequestPermissionAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Notification permission request failed");
+        }
+        finally
+        {
+            _busy = false;
+            await HideAsync();
+        }
+    }
+
+    private async Task DismissAsync()
+    {
+        await MarkPromptedAsync();
+        await HideAsync();
+    }
+
+    // Lifts the card away, then removes it.
+    private async Task HideAsync()
+    {
+        if (!_showStrip || _leaving) return;
+        _leaving = true;
+        StateHasChanged();
+        await Task.Delay(LeaveMs);
+        _showStrip = false;
+        _leaving = false;
+    }
+
+    private async Task MarkPromptedAsync()
+    {
+        try
+        {
+            await Preferences.SetAsync(PromptedKey, "1");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not remember the notification prompt");
+        }
+    }
+}

@@ -1,0 +1,128 @@
+/* A person in a group call: a flat night tile, the face, a name capsule, and an accent ring while they speak
+   (opacity only). */
+
+.call-tile {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    border-radius: 22px;
+    overflow: hidden;
+    background: linear-gradient(180deg, #1D2143 0%, #161935 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 16px 32px -20px rgba(0, 0, 0, 0.7);
+    /* The face and its light scale with the tile (container units), from a 3×3 grid to two big halves. */
+    container-type: size;
+    animation: call-tile-in 380ms var(--sm-spring-soft) backwards;
+}
+
+@keyframes call-tile-in {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.call-tile.has-video {
+    background: #05040F;
+}
+
+.call-tile__avatar {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.call-tile__face {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    filter: drop-shadow(0 10px 18px rgba(2, 3, 14, 0.45));
+}
+
+.call-tile__face ::deep .sm-avatar {
+    --size: clamp(3.25rem, 34cqmin, 7rem) !important;
+}
+
+.call-tile__slot {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.call-tile__slot.is-mirrored {
+    transform: scaleX(-1);
+}
+
+/* The speaking ring (and the faint rim of the loudest voice): above the video, fades in and out. */
+.call-tile__ring {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 2.5px var(--sm-accent);
+    opacity: 0;
+    transition: opacity 220ms ease;
+    pointer-events: none;
+}
+
+.call-tile.is-active .call-tile__ring {
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.3);
+    opacity: 1;
+}
+
+.call-tile.is-speaking .call-tile__ring {
+    box-shadow: inset 0 0 0 2.5px var(--sm-accent);
+    opacity: 1;
+    transition-duration: 120ms;
+}
+
+.call-tile__label {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: calc(100% - 16px);
+    height: 1.75rem;
+    padding: 0 11px 0 11px;
+    border-radius: 999px;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #FFFFFF;
+    background: rgba(8, 10, 26, 0.58);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.call-tile__muted {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-left: -6px;
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: var(--sm-danger);
+}
+
+.call-tile__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.call-tile__label ::deep .call-tile__weak {
+    flex-shrink: 0;
+    color: #F2C36B;
+}

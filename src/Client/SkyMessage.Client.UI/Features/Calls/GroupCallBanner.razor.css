@@ -1,0 +1,141 @@
+/* A floating glass pill under the chat header: a live mint disc with a thin ring opening out of it (accent while I am
+   in the call), who is in it, and the Join button. */
+
+.group-call {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    flex-shrink: 0;
+    min-height: 3.5rem;
+    margin: 6px 10px 2px;
+    padding: 7px 7px 7px 8px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    animation: group-call-in 460ms var(--sm-spring-soft);
+}
+
+html[data-fx="lite"] .group-call {
+    background: var(--sm-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+@keyframes group-call-in {
+    from {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* The live disc: flat mint, a thin ring opening out of it. */
+.group-call__icon {
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: var(--sm-success);
+}
+
+.group-call__icon::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px var(--sm-success);
+    opacity: 0;
+    animation: group-call-ring 2.6s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+
+@keyframes group-call-ring {
+    0% {
+        opacity: 0.7;
+        transform: scale(1);
+    }
+
+    80%,
+    100% {
+        opacity: 0;
+        transform: scale(1.5);
+    }
+}
+
+.group-call--mine .group-call__icon {
+    background: var(--sm-accent);
+}
+
+.group-call--mine .group-call__icon::before {
+    box-shadow: inset 0 0 0 1.5px var(--sm-accent);
+}
+
+/* A covered chat holds its ripple still. */
+[inert] .group-call__icon::before {
+    animation-play-state: paused;
+}
+
+.group-call__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.group-call__title {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.005em;
+    color: var(--sm-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.group-call__meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    color: var(--sm-text-2);
+    white-space: nowrap;
+}
+
+.group-call__faces {
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+/* Overlapping squircle faces, each cut out of the pill by a thin ring. */
+.group-call__faces ::deep .sm-avatar {
+    background: var(--sm-surface);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.group-call__faces ::deep .sm-avatar__face {
+    inset: 2px;
+}
+
+.group-call__faces ::deep .sm-avatar + .sm-avatar {
+    margin-left: -7px;
+}

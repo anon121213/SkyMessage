@@ -1,0 +1,27 @@
+@* A person's name, live from IUserStore (contact name first; placeholder while loading). *@
+@inherits UiComponentBase
+@inject IUserStore Users
+
+<span class="@Class" style="@(Colored ? $"color:{AvatarPalette.Color(UserId)}" : null)" dir="auto">@Name</span>
+
+@code {
+    [Parameter, EditorRequired] public Guid UserId { get; set; }
+    [Parameter] public UserSummaryDto? Embedded { get; set; }
+    /// <summary>Use the person's palette color (sender names in groups).</summary>
+    [Parameter] public bool Colored { get; set; }
+    /// <summary>First word only ("Anna Petrova" → "Anna").</summary>
+    [Parameter] public bool FirstNameOnly { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Name
+    {
+        get
+        {
+            var name = Users.NameOf(UserId, L, Embedded);
+            return FirstNameOnly ? FormatService.FirstName(name) : name;
+        }
+    }
+
+    protected override void OnInitialized() =>
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == UserId);
+}

@@ -1,0 +1,41 @@
+@* One person in a group call: a night tile with their squircle face until their video arrives (calls.js attaches a
+   <video> to the slot), a name capsule, the muted mark, a weak-connection mark and an accent ring while they speak.
+   The slot element has no Razor children on purpose. *@
+
+<div class="call-tile @(Speaking ? "is-speaking" : null) @(Active ? "is-active" : null) @(HasVideo ? "has-video" : null) @Class">
+    @if (!HasVideo)
+    {
+        <div class="call-tile__avatar">
+            <span class="call-tile__face">@AvatarContent</span>
+        </div>
+    }
+    <div class="call-tile__slot @(Mirror ? "is-mirrored" : null)" data-slot="@SlotKey"></div>
+    <div class="call-tile__label">
+        @if (Muted)
+        {
+            <span class="call-tile__muted"><Icon Name="@IconNames.MicOff" Size="13" StrokeWidth="2.4" Title="@MutedLabel" /></span>
+        }
+        <span class="call-tile__name">@Name</span>
+        @if (Quality is 0 or 1)
+        {
+            <Icon Name="@IconNames.SignalLow" Size="14" Class="call-tile__weak" Title="@WeakLabel" />
+        }
+    </div>
+    <span class="call-tile__ring" aria-hidden="true"></span>
+</div>
+
+@code {
+    /// <summary>calls.js slot key: "local-camera" or "cam:{userId:N}".</summary>
+    [Parameter, EditorRequired] public string SlotKey { get; set; } = "";
+    [Parameter] public RenderFragment? AvatarContent { get; set; }
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public bool HasVideo { get; set; }
+    [Parameter] public bool Muted { get; set; }
+    [Parameter] public bool Speaking { get; set; }
+    [Parameter] public bool Active { get; set; }
+    [Parameter] public bool Mirror { get; set; }
+    [Parameter] public int Quality { get; set; } = -1;
+    [Parameter] public string? MutedLabel { get; set; }
+    [Parameter] public string? WeakLabel { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

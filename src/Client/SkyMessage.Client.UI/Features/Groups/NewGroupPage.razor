@@ -1,0 +1,198 @@
+@page "/new-group"
+@* New group: 1) pick members, 2) name + optional photo/description (the chosen people as chips with squircle faces)
+   → create; people who could not be added (privacy, blocks) are offered an invite
+   link. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IChatListStore ChatList
+@inject IUserStore Users
+@inject AvatarUploader Avatars
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+
+<AppPage Title="@L["groups.new.title"]" Subtitle="@Subtitle" OnBack="BackAsync" Scroll="@(_step == 2)" Background="PageBackground.Surface">
+    <ChildContent>
+        @if (_step == 1)
+        {
+            <UserPicker Multiple="true" @bind-Selected="_members" />
+        }
+        else
+        {
+            <div class="new-group sm-stagger">
+                <div class="new-group__top">
+                    <button type="button" class="new-group__photo @(_photo?.PreviewUrl is null ? null : "has-photo")" aria-label="@L["groups.photo.choose"]" title="@L["groups.photo.choose"]" @onclick="PickPhotoAsync">
+                        @if (_photo?.PreviewUrl is { } preview)
+                        {
+                            <img src="@preview" alt="" />
+                        }
+                        else
+                        {
+                            <Icon Name="@IconNames.Camera" />
+                        }
+                        <span class="new-group__photo-badge" aria-hidden="true"><Icon Name="@IconNames.Plus" StrokeWidth="3" /></span>
+                    </button>
+                    <div class="sm-grow">
+                        <TextField @bind-Value="_title" Label="@L["groups.field.title"]" Placeholder="@L["groups.field.titlePlaceholder"]"
+                                   MaxLength="Limits.GroupTitleMaxLength" Autofocus="true" Autocapitalize="sentences" />
+                    </div>
+                </div>
+                <TextArea @bind-Value="_description" Label="@L["groups.field.description"]" Placeholder="@L["groups.field.descriptionPlaceholder"]"
+                          MaxLength="Limits.GroupDescriptionMaxLength" Rows="2" MaxRows="6" />
+                @* Who will be in the group: chips with squircle faces; I am the owner. *@
+                <div class="new-group__members">
+                    <div class="sm-overline new-group__count">@L.Plural("plural.members", _members.Count + 1)</div>
+                    <div class="new-group__chips">
+                        <span class="new-group__chip new-group__chip--me">
+                            @if (Auth.Me is { } me)
+                            {
+                                <Avatar Url="@MediaUrls.AvatarUrl(me.AvatarMediaId)" Name="@me.DisplayName" Seed="me.Id" Size="30" />
+                            }
+                            <span class="new-group__chip-name">@L["common.you"]</span>
+                            <Badge Kind="BadgeKind.Label" Text="@L["groups.role.owner"]" Class="new-group__owner" />
+                        </span>
+                        @foreach (var member in _members)
+                        {
+                            <span @key="member.Id" class="new-group__chip" title="@member.Handle()">
+                                <UserAvatar UserId="member.Id" Embedded="member" Size="30" />
+                                <span class="new-group__chip-name">@Users.Resolve(member).NameOf(L)</span>
+                            </span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        @if (_step == 1)
+        {
+            <Button Block="true" Size="ButtonSize.Large" IconEnd="@IconNames.ArrowRight" OnClick="NextAsync">
+                @(_members.Count == 0 ? L["groups.new.skip"] : L["common.next"])
+            </Button>
+        }
+        else
+        {
+            <Button Block="true" Size="ButtonSize.Large" Loading="_creating" Disabled="@string.IsNullOrWhiteSpace(_title)" Icon="@IconNames.Check" OnClick="CreateAsync">
+                @L["groups.new.create"]
+            </Button>
+        }
+    </Footer>
+</AppPage>
+
+@code {
+    private int _step = 1;
+    private IReadOnlyList<UserSummaryDto> _members = [];
+    private string _title = "";
+    private string _description = "";
+    private PickedPhoto? _photo;
+    private bool _creating;
+    private OverlayHandle? _stepOverlay;
+
+    [Inject] private IAuthService Auth { get; set; } = default!;
+    [Inject] private IMediaUrlBuilder MediaUrls { get; set; } = default!;
+
+    private string Subtitle => _step == 1
+        ? (_members.Count == 0 ? L["groups.new.pickMembers"] : L.Plural("groups.new.selected", _members.Count))
+        : L["groups.new.details"];
+
+    private async Task NextAsync()
+    {
+        _step = 2;
+        // Step 2 owns a history entry, so Back returns to the member list.
+        _stepOverlay = await Nav.OpenOverlayAsync(() =>
+        {
+            _stepOverlay = null;
+            _step = 1;
+            return RenderNowAsync();
+        });
+    }
+
+    private async Task BackAsync()
+    {
+        if (_step == 2 && _stepOverlay is { } overlay)
+        {
+            _stepOverlay = null;
+            _step = 1;
+            await overlay.CloseAsync();
+            return;
+        }
+        await Nav.GoBackAsync("/");
+    }
+
+    private async Task PickPhotoAsync()
+    {
+        try
+        {
+            if (await Avatars.PickAsync() is { } photo) _photo = photo;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_creating || string.IsNullOrWhiteSpace(_title)) return;
+        _creating = true;
+        try
+        {
+            Guid? avatarId = null;
+            if (_photo is { } photo)
+            {
+                try
+                {
+                    avatarId = (await Avatars.UploadAsync(photo)).Id;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // The group is still worth creating; the photo can be added later.
+                    Toasts.Show(L["groups.photo.failed"], ToastKind.Warning);
+                }
+            }
+            var result = await ChatList.CreateGroupAsync(new CreateGroupRequest
+            {
+                Title = _title.Trim(),
+                Description = string.IsNullOrWhiteSpace(_description) ? null : _description.Trim(),
+                MemberIds = _members.Select(m => m.Id).ToList(),
+                AvatarMediaId = avatarId,
+            });
+            if (result.Failed.Count > 0)
+            {
+                await Dialogs.ShowAsync<InviteFailuresDialog>(L["groups.failed.title"], new Dictionary<string, object?>
+                {
+                    [nameof(InviteFailuresDialog.ChatId)] = result.Chat.Id,
+                    [nameof(InviteFailuresDialog.Failed)] = result.Failed,
+                    [nameof(InviteFailuresDialog.GroupTitle)] = result.Chat.Title,
+                });
+            }
+            if (_stepOverlay is { } overlay)
+            {
+                // Closing through the handle keeps step 2 on screen while the chat opens (no flash of step 1).
+                _stepOverlay = null;
+                await overlay.CloseAsync();
+            }
+            await Nav.NavigateToAsync(DeepLinks.ChatPath(result.Chat.Id), replace: true);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _creating = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Removed on step 2 without navigating (the shell switched layouts): drop step 2's history entry, or the
+        // next Back would only pop that orphan entry.
+        if (_stepOverlay is { IsOpen: true } overlay)
+        {
+            _stepOverlay = null;
+            await overlay.CloseAsync();
+        }
+        Dispose();
+    }
+}

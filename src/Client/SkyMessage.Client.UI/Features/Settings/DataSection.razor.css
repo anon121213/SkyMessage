@@ -1,0 +1,6 @@
+/* Web: the browser keeps the files itself — said in a calm, smaller line next to a tile. */
+.data-browser ::deep .sm-list-item__title {
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    color: var(--sm-text-2);
+}

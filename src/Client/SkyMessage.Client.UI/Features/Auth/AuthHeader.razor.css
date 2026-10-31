@@ -1,0 +1,69 @@
+/* Back: a glass circle pinned to the top-left of the page (.auth-page is the positioned, full-height parent). */
+.auth-back {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    left: -4px;
+}
+
+.auth-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 4px 4px 24px;
+}
+
+.auth-head--compact {
+    padding-top: 36px;
+    padding-bottom: 20px;
+}
+
+.auth-head__logo {
+    display: flex;
+    margin: 18px 0 22px;
+}
+
+.auth-head--compact .auth-head__logo {
+    margin: 4px 0 16px;
+}
+
+/* ---------- Text: solid colors, the display font carries the brand ---------- */
+
+.auth-head__title {
+    font-family: var(--sm-font-display);
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--sm-text);
+}
+
+.auth-head__title--wordmark {
+    font-size: 2.375rem;
+    letter-spacing: -0.03em;
+}
+
+.auth-head__subtitle {
+    max-width: 340px;
+    margin-top: 10px;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--sm-text-2);
+    text-wrap: balance;
+}
+
+.auth-head--hero .auth-head__subtitle {
+    font-size: 1.0625rem;
+}
+
+/* ---------- Intro (first signed-out screen of the app run): the logo settles in ---------- */
+
+.auth-head--intro .auth-head__logo ::deep .auth-head__mark {
+    animation: auth-logo-in 520ms var(--sm-ease-out) both;
+}
+
+@keyframes auth-logo-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.92); }
+    to { opacity: 1; transform: none; }
+}

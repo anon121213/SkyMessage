@@ -1,0 +1,177 @@
+/* A frosted column (.sm-glass) floating over the sky, 12px from the window edges (the shell pads them). */
+.rail {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: var(--sm-rail-w);
+    min-height: 0;
+    padding: 14px 0 14px;
+    gap: 10px;
+    border-radius: var(--sm-radius-xl);
+    animation: rail-in var(--sm-dur-xslow) var(--sm-ease-out) backwards;
+}
+
+.rail__logo {
+    margin-bottom: 8px;
+}
+
+.rail__items {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1 1 auto;
+}
+
+/* One pill moved under the active area: items have a fixed height, so its offset is index × (height + gap). */
+.rail__pill {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 3.75rem;
+    height: 3.75rem;
+    margin-left: -1.875rem;
+    pointer-events: none;
+    transform: translate3d(0, calc(var(--i, 0) * (3.75rem + 6px)), 0);
+    transition: transform 460ms var(--sm-spring-soft);
+}
+
+.rail__pill::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 22px;
+    background: var(--sm-grad);
+}
+
+.rail__pill--a::before {
+    animation: rail-pill-a 460ms var(--sm-ease-out);
+}
+
+.rail__pill--b::before {
+    animation: rail-pill-b 460ms var(--sm-ease-out);
+}
+
+.rail__item {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 3.75rem;
+    height: 3.75rem;
+    padding: 0;
+    border-radius: 22px;
+    color: var(--sm-text-2);
+    transition: color var(--sm-dur) ease, background-color var(--sm-dur-fast) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+@media (hover: hover) {
+    .rail__item:not(.rail__item--active):hover {
+        color: var(--sm-text);
+        background: var(--sm-hover);
+    }
+}
+
+.rail__item:active {
+    transform: scale(0.92);
+    transition-duration: 90ms;
+}
+
+.rail__item--active {
+    color: var(--sm-on-accent);
+    transition-delay: 60ms;
+}
+
+.rail__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rail__icon--bounce {
+    animation: rail-bounce 520ms var(--sm-ease-out);
+}
+
+.rail__icon ::deep .sm-icon {
+    width: 1.375rem;
+    height: 1.375rem;
+}
+
+.rail__badge {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 0.375rem);
+    pointer-events: none;
+}
+
+.rail__badge ::deep .sm-badge {
+    box-shadow: 0 0 0 2px var(--sm-glass-solid);
+}
+
+.rail__item--active .rail__badge ::deep .sm-badge:not(.sm-badge--muted) {
+    background: #FFFFFF;
+    color: var(--sm-accent);
+    box-shadow: none;
+}
+
+.rail__label {
+    max-width: 3.5rem;
+    font-family: var(--sm-font-display);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* My avatar sits in a thin accent ring. */
+.rail__me {
+    position: relative;
+    margin-top: 8px;
+    padding: 3px;
+}
+
+.rail__me::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--sm-accent);
+    opacity: 0.55;
+    /* A squircle ring: the outer shape minus a slightly smaller one. */
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+    mask-composite: exclude;
+}
+
+@keyframes rail-in {
+    from { opacity: 0; transform: translate3d(-16px, 0, 0); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes rail-bounce {
+    0% { transform: none; }
+    32% { transform: translateY(-3px) scale(1.12); }
+    64% { transform: translateY(1px) scale(0.97); }
+    100% { transform: none; }
+}
+
+@keyframes rail-pill-a {
+    0% { transform: none; }
+    35% { transform: scaleY(1.08) scaleX(0.95); }
+    100% { transform: none; }
+}
+
+@keyframes rail-pill-b {
+    0% { transform: none; }
+    35% { transform: scaleY(1.08) scaleX(0.95); }
+    100% { transform: none; }
+}

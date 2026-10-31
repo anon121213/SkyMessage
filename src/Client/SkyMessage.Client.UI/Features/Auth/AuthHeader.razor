@@ -1,0 +1,36 @@
+@* Logo, title and subtitle of a signed-out screen, with an optional glass back button (pinned to the top of the page:
+   the page is .auth-page, see LoginPage.razor.css). The welcome screen (not Compact) gets the large logo and the
+   "SkyMessage" wordmark; sign in / new account a smaller logo and a plain title. With Intro (first signed-out screen of
+   the app run) the logo settles in gently. *@
+@inject NavigationService Nav
+
+@if (BackTo is not null)
+{
+    <div class="auth-back">
+        <IconButton Icon="@IconNames.ArrowLeft" Label="@L["nav.back"]" Variant="IconButtonVariant.Glass" OnClick="BackAsync" />
+    </div>
+}
+<header class="auth-head @(Compact ? "auth-head--compact" : "auth-head--hero") @(Intro ? "auth-head--intro" : null)">
+    <div class="auth-head__logo" aria-hidden="true">
+        <Logo Size="@(Compact ? 72 : 112)" Animated="true" Class="auth-head__mark" />
+    </div>
+    <h1 class="auth-head__title @(Compact ? null : "auth-head__title--wordmark")">@Title</h1>
+    @if (Subtitle is not null)
+    {
+        <p class="auth-head__subtitle">@Subtitle</p>
+    }
+</header>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    /// <summary>Fallback target of the back button (null hides it).</summary>
+    [Parameter] public string? BackTo { get; set; }
+    [Parameter] public bool Compact { get; set; }
+    /// <summary>Play the brand intro (<see cref="AuthIntro"/>: the first signed-out screen of an app run).</summary>
+    [Parameter] public bool Intro { get; set; }
+
+    private Task BackAsync() => Nav.GoBackAsync(BackTo ?? NavigationService.WelcomePath);
+}

@@ -1,0 +1,59 @@
+@switch (Kind)
+{
+    case BadgeKind.Dot:
+        <span class="sm-badge sm-badge--dot @(Muted ? "sm-badge--muted" : null) @(Pop ? "sm-badge--pop" : null) @Class" aria-hidden="true"></span>
+        break;
+    case BadgeKind.Mention:
+        <span class="sm-badge sm-badge--mention @(Muted ? "sm-badge--muted" : null) @(Pop ? "sm-badge--pop" : null) @Class" title="@Title"><Icon Name="@IconNames.AtSign" /></span>
+        break;
+    case BadgeKind.Label:
+        <span class="sm-badge sm-badge--label @Class" title="@Title">@Text@ChildContent</span>
+        break;
+    case BadgeKind.Outline:
+        <span class="sm-badge sm-badge--outline @Class" title="@Title">@Text@ChildContent</span>
+        break;
+    default:
+        if (Count > 0 || ShowZero)
+        {
+            @* A new key re-creates the element, which restarts its pop/bump animation. *@
+            <span @key="_animKey" class="sm-badge @(Muted ? "sm-badge--muted" : null) @(Danger ? "sm-badge--danger" : null) @AnimClass @Class" title="@Title">@FormatService.BadgeCount(Count, Max)</span>
+        }
+        break;
+}
+
+@code {
+    private int? _lastCount;
+    private int _animKey;
+    private bool _appeared;
+
+    [Parameter] public BadgeKind Kind { get; set; } = BadgeKind.Count;
+    [Parameter] public int Count { get; set; }
+    [Parameter] public int Max { get; set; } = 99;
+    [Parameter] public bool ShowZero { get; set; }
+    /// <summary>Grey (muted chats).</summary>
+    [Parameter] public bool Muted { get; set; }
+    [Parameter] public bool Danger { get; set; }
+    /// <summary>
+    /// Count badges: animate changes after the first render — pops in when the count appears, bumps when it changes.
+    /// Keep the badge rendered (it renders nothing at 0) so it can tell a new count from the initial one.
+    /// </summary>
+    [Parameter] public bool Animate { get; set; }
+    /// <summary>Pops in when rendered (dot and mention badges the caller just added).</summary>
+    [Parameter] public bool Pop { get; set; }
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string? AnimClass => _animKey == 0 ? null : _appeared ? "sm-badge--pop" : "sm-badge--bump";
+
+    protected override void OnParametersSet()
+    {
+        if (Animate && Kind == BadgeKind.Count && _lastCount is { } last && last != Count && (Count > 0 || ShowZero))
+        {
+            _appeared = last <= 0 && !ShowZero;
+            _animKey++;
+        }
+        _lastCount = Count;
+    }
+}

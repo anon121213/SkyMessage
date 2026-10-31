@@ -1,0 +1,201 @@
+@* Pick people: contacts (filtered locally) plus server search by @username. Single or multiple selection: airy rows
+   with squircle avatars and round gradient checks, the picked people as chips above the list. *@
+@inherits UiComponentBase
+@inject IContactStore Contacts
+@inject IUserStore Users
+@inject ISkyApi Api
+@inject IAuthService Auth
+@inject FormatService Format
+
+<div class="picker @Class">
+    <div class="picker__search">
+        <SearchBox @bind-Value="_query" OnSearch="SearchAsync" Autofocus="Autofocus" Busy="_searching" Placeholder="@L["contacts.picker.search"]" />
+    </div>
+    @if (Multiple && Selected.Count > 0)
+    {
+        <div class="picker__chips">
+            @foreach (var user in Selected)
+            {
+                <Chip @key="user.Id" Text="@Users.Resolve(user).NameOf(L)" RemoveLabel="@L["common.remove"]" OnRemove="() => ToggleAsync(user)">
+                    <Leading><UserAvatar UserId="user.Id" Embedded="user" Size="24" /></Leading>
+                </Chip>
+            }
+        </div>
+    }
+    <div class="picker__list sm-scroll">
+        @if (VisibleContacts.Count > 0)
+        {
+            <div class="picker__heading">@L["contacts.picker.contacts"]</div>
+            @foreach (var user in VisibleContacts)
+            {
+                @Row(user)
+            }
+        }
+        @if (_found.Count > 0)
+        {
+            <div class="picker__heading">@L["contacts.picker.global"]</div>
+            @foreach (var user in _found)
+            {
+                @Row(user)
+            }
+        }
+        @if (VisibleContacts.Count == 0 && _found.Count == 0)
+        {
+            @if (_searching)
+            {
+                <SkeletonList Rows="4" TwoLines="true" />
+            }
+            else if (Query.Length > 0)
+            {
+                <EmptyState Icon="@IconNames.UserSearch" Title="@L["contacts.picker.notFound"]" Text="@L["contacts.picker.notFoundHint"]" />
+            }
+            else if (!Contacts.IsLoaded)
+            {
+                <SkeletonList Rows="6" TwoLines="true" />
+            }
+            else
+            {
+                <EmptyState Icon="@IconNames.ContactRound" Title="@L["contacts.empty.title"]" Text="@L["contacts.picker.emptyHint"]" />
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private string _query = "";
+    private bool _searching;
+    private IReadOnlyList<UserSummaryDto> _found = [];
+    private CancellationTokenSource? _search;
+
+    /// <summary>Allow several people (checkboxes + chips).</summary>
+    [Parameter] public bool Multiple { get; set; }
+    [Parameter] public IReadOnlyList<UserSummaryDto> Selected { get; set; } = [];
+    [Parameter] public EventCallback<IReadOnlyList<UserSummaryDto>> SelectedChanged { get; set; }
+    /// <summary>Single mode: the person tapped.</summary>
+    [Parameter] public EventCallback<UserSummaryDto> OnPick { get; set; }
+    /// <summary>People shown as already added (group members), not selectable.</summary>
+    [Parameter] public IReadOnlySet<Guid>? Exclude { get; set; }
+    [Parameter] public string? ExcludedLabel { get; set; }
+    [Parameter] public bool Autofocus { get; set; } = true;
+    [Parameter] public string? Class { get; set; }
+
+    private string Query => _query.Trim().TrimStart('@');
+
+    private IReadOnlyList<UserSummaryDto> VisibleContacts
+    {
+        get
+        {
+            var me = Auth.UserId;
+            var q = Query;
+            return Contacts.Contacts
+                .Select(c => Users.Resolve(c.User))
+                .Where(u => u.Id != me && !u.IsDeleted)
+                .Where(u => q.Length == 0
+                            || u.NameOf(L).Contains(q, StringComparison.CurrentCultureIgnoreCase)
+                            || u.Username.StartsWith(q, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    private RenderFragment Row(UserSummaryDto user) => __builder =>
+    {
+        var excluded = Exclude?.Contains(user.Id) == true;
+        var selected = Selected.Any(s => s.Id == user.Id);
+        <ListItem @key="user.Id" Class="picker__row" OnClick="() => ToggleAsync(user)" Disabled="excluded" Selected="@(selected && Multiple)">
+            <Leading>
+                <div class="picker__lead">
+                    @if (Multiple)
+                    {
+                        <Checkbox Round="true" Checked="@(selected || excluded)" Disabled="excluded" AriaLabel="@user.NameOf(L)" CheckedChanged="_ => ToggleAsync(user)" />
+                    }
+                    <UserAvatar UserId="user.Id" Embedded="user" Size="44" ShowOnline="true" />
+                </div>
+            </Leading>
+            <ChildContent>
+                <div class="sm-list-item__title picker__name">@Users.Resolve(user).NameOf(L)</div>
+                <div class="sm-list-item__subtitle">
+                    @if (excluded)
+                    {
+                        @(ExcludedLabel ?? L["contacts.picker.alreadyAdded"])
+                    }
+                    else if (user.IsOnline())
+                    {
+                        <span class="sm-accent-text">@L["presence.online"]</span>
+                    }
+                    else
+                    {
+                        @user.Handle()
+                    }
+                </div>
+            </ChildContent>
+        </ListItem>
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        OnDispose(() => _search?.Cancel());
+        if (!Contacts.IsLoaded)
+        {
+            try
+            {
+                await Contacts.LoadAsync();
+            }
+            catch (Exception)
+            {
+                // Offline: the cached list (if any) is still shown.
+            }
+        }
+    }
+
+    private async Task SearchAsync(string text)
+    {
+        _search?.Cancel();
+        var q = text.Trim().TrimStart('@');
+        if (q.Length < Limits.SearchQueryMinLength)
+        {
+            _found = [];
+            _searching = false;
+            return;
+        }
+        var cts = _search = new CancellationTokenSource();
+        _searching = true;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.SearchUsersAsync(q, 30, cts.Token);
+            if (cts.IsCancellationRequested) return;
+            Users.Upsert(result);
+            var me = Auth.UserId;
+            var contactIds = Contacts.Contacts.Select(c => c.User.Id).ToHashSet();
+            _found = result.Where(u => u.Id != me && !u.IsDeleted && !contactIds.Contains(u.Id)).ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            _found = [];
+        }
+        finally
+        {
+            if (!cts.IsCancellationRequested) _searching = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task ToggleAsync(UserSummaryDto user)
+    {
+        if (Exclude?.Contains(user.Id) == true) return;
+        if (!Multiple)
+        {
+            await OnPick.InvokeAsync(user);
+            return;
+        }
+        var next = Selected.Any(s => s.Id == user.Id)
+            ? Selected.Where(s => s.Id != user.Id).ToList()
+            : [.. Selected, user];
+        await SelectedChanged.InvokeAsync(next);
+    }
+}

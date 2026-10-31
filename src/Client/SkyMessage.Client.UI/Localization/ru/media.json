@@ -1,0 +1,40 @@
+{
+  "media.title": "Медиа и файлы",
+  "media.tab.media": "Медиа",
+  "media.tab.files": "Файлы",
+  "media.tab.voice": "Голосовые",
+  "media.tab.links": "Ссылки",
+  "media.tab.videoNotes": "Кружки",
+
+  "media.empty.media": "Фото и видео пока нет",
+  "media.empty.files": "Файлов пока нет",
+  "media.empty.voice": "Голосовых пока нет",
+  "media.empty.links": "Ссылок пока нет",
+  "media.empty.videoNotes": "Видеосообщений пока нет",
+  "media.empty.text": "Всё, что отправите в этот чат, будет собрано здесь.",
+  "media.loadFailed": "Не получилось загрузить",
+
+  "media.menu.title": "Сообщение",
+  "media.showInChat": "Показать в чате",
+  "media.save": "Сохранить",
+  "media.saved": "Сохранено",
+  "media.playbackFailed": "Не удалось воспроизвести",
+
+  "media.viewer.title": "Просмотр медиа",
+  "media.viewer.position": "{0} из {1}",
+  "media.viewer.previous": "Предыдущее",
+  "media.viewer.next": "Следующее",
+  "media.viewer.play": "Смотреть",
+  "media.viewer.playPause": "Пуск или пауза",
+  "media.viewer.seek": "Позиция воспроизведения",
+
+  "media.voice.play": "Воспроизвести или пауза",
+  "media.voice.new": "Ещё не прослушано",
+  "media.voice.speed": "Скорость воспроизведения",
+  "media.videoNote.play": "Видеосообщение: нажмите, чтобы смотреть со звуком",
+
+  "media.file.download": "Скачать",
+  "media.file.open": "Открыть",
+  "media.file.cancelDownload": "Остановить загрузку",
+  "media.file.failed": "не загрузилось"
+}

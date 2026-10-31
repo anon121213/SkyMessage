@@ -1,0 +1,47 @@
+/* Several photos/videos as a mosaic of softly rounded tiles; the bubble's frame shows between them and its media
+   clip rounds the outer corners (MessageBubble.razor.css). */
+
+.album {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+}
+
+.album__row {
+    display: flex;
+    gap: 2px;
+    width: 100%;
+}
+
+.album__cell {
+    position: relative;
+    min-width: 0;
+    height: 100%;
+    border-radius: 6px;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.album__progress {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(12, 8, 30, 0.3);
+}
+
+/* One ring for the whole album (progress is per message): a dark glass disc makes it read as one control over the
+   tiles instead of something stuck on the seam between two photos, and keeps the ✕ visible on bright photos. */
+.album__progress ::deep .sm-progress-ring {
+    color: #FFFFFF;
+    border-radius: 50%;
+    background: rgba(14, 9, 36, 0.5);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.album__progress ::deep .sm-progress-ring__bar {
+    stroke: url(#sm-chat-grad-light) #FFFFFF;
+}

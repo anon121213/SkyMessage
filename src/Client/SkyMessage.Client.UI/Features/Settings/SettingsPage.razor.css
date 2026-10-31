@@ -1,0 +1,21 @@
+.settings-split {
+    display: grid;
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+}
+
+.settings-split__menu {
+    min-width: 0;
+    min-height: 0;
+    border-right: 1px solid var(--sm-divider);
+}
+
+.settings-split__menu-body {
+    padding: 12px 12px 24px;
+}
+
+.settings-split__detail {
+    min-width: 0;
+    min-height: 0;
+}

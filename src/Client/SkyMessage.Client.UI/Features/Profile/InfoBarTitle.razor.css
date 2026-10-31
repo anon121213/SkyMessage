@@ -1,0 +1,87 @@
+/* The page title and the compact peer share one cell and slide past each other (both move up when collapsing). */
+.info-title {
+    display: grid;
+    align-items: center;
+    min-width: 0;
+}
+
+.info-title > * {
+    grid-area: 1 / 1;
+    min-width: 0;
+}
+
+/* Same type as the app bar's own heading. */
+.info-title__page {
+    font-family: var(--sm-font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-ease-out);
+}
+
+/* Above the (transformed, so separately painted) page title, which would otherwise catch its taps. */
+.info-title__peer {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.info-title.is-collapsed .info-title__page {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+    transition-duration: var(--sm-dur-fast);
+    transition-timing-function: var(--sm-ease-in);
+}
+
+.info-title.is-collapsed .info-title__peer {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    transition-duration: var(--sm-dur);
+    transition-timing-function: var(--sm-ease-out);
+}
+
+.info-title__text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ::deep: the name and presence of a person are rendered by UserName / PresenceText. */
+.info-title__text ::deep .info-title__name {
+    min-width: 0;
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--sm-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.info-title__text ::deep .info-title__sub {
+    min-width: 0;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    color: var(--sm-text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.info-title__text ::deep .info-title__sub.sm-presence--online {
+    color: var(--sm-accent);
+}

@@ -1,0 +1,152 @@
+/* The dock: a frosted capsule (.sm-glass, solid in lite mode) floating 12px from the sides and the bottom inset. */
+.tab-bar {
+    position: absolute;
+    z-index: 5;
+    left: calc(12px + var(--sm-inset-left));
+    right: calc(12px + var(--sm-inset-right));
+    bottom: calc(12px + var(--sm-bottom-space));
+    max-width: 30rem;
+    margin: 0 auto;
+    display: flex;
+    /* Grows with large font sizes instead of clipping its labels. */
+    min-height: var(--sm-tabbar-h);
+    padding: 6px;
+    border-radius: 999px;
+    animation: tab-bar-in 560ms var(--sm-spring-soft) backwards;
+}
+
+/* The pill behind the active tab: one element for the whole dock, moved a tab's width at a time. */
+.tab-bar__pill {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 6px;
+    width: calc((100% - 12px) / 4);
+    pointer-events: none;
+    transform: translate3d(calc(var(--i, 0) * 100%), 0, 0);
+    transition: transform 460ms var(--sm-spring-soft);
+}
+
+.tab-bar__pill::before {
+    content: "";
+    position: absolute;
+    inset: 0 3px;
+    border-radius: 999px;
+    background: var(--sm-grad);
+}
+
+/* It stretches while it travels (two names so every change restarts it). */
+.tab-bar__pill--a::before {
+    animation: tab-pill-stretch-a 460ms var(--sm-ease-out);
+}
+
+.tab-bar__pill--b::before {
+    animation: tab-pill-stretch-b 460ms var(--sm-ease-out);
+}
+
+.tab-bar__item {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 5px 2px 4px;
+    border-radius: 999px;
+    color: var(--sm-text-2);
+    -webkit-user-select: none;
+    user-select: none;
+    transition: color var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+.tab-bar__item:active {
+    transform: scale(0.9);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .tab-bar__item:not(.tab-bar__item--active):hover {
+        color: var(--sm-text);
+    }
+}
+
+.tab-bar__item--active {
+    color: var(--sm-on-accent);
+    transition-delay: 60ms;
+}
+
+.tab-bar__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.625rem;
+    height: 1.625rem;
+}
+
+.tab-bar__icon ::deep .sm-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.tab-bar__icon--bounce {
+    animation: tab-bounce 520ms var(--sm-ease-out);
+}
+
+.tab-bar__label {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Over the icon's top-right corner, with a rim in the dock's color. */
+.tab-bar__badge {
+    position: absolute;
+    z-index: 2;
+    top: 1px;
+    left: calc(50% + 0.375rem);
+    pointer-events: none;
+}
+
+.tab-bar__badge ::deep .sm-badge {
+    box-shadow: 0 0 0 2px var(--sm-glass-solid);
+}
+
+/* On the pill the badge turns white so it never melts into the gradient. */
+.tab-bar__item--active .tab-bar__badge ::deep .sm-badge:not(.sm-badge--muted) {
+    background: #FFFFFF;
+    color: var(--sm-accent);
+    box-shadow: none;
+}
+
+@keyframes tab-bar-in {
+    from { opacity: 0; transform: translate3d(0, 28px, 0) scale(0.94); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes tab-bounce {
+    0% { transform: none; }
+    32% { transform: translateY(-3px) scale(1.12); }
+    64% { transform: translateY(1px) scale(0.97); }
+    100% { transform: none; }
+}
+
+@keyframes tab-pill-stretch-a {
+    0% { transform: none; }
+    35% { transform: scaleX(1.1) scaleY(0.94); }
+    100% { transform: none; }
+}
+
+@keyframes tab-pill-stretch-b {
+    0% { transform: none; }
+    35% { transform: scaleX(1.1) scaleY(0.94); }
+    100% { transform: none; }
+}

@@ -1,0 +1,30 @@
+@* A single-choice list (radio rows): theme, language, privacy levels... *@
+@typeparam TValue
+@inject HapticFeedback Haptics
+
+@foreach (var option in Options)
+{
+    var selected = EqualityComparer<TValue>.Default.Equals(option.Value, Value!);
+    <ListItem Title="@option.Label" Subtitle="@option.Description" Icon="@option.Icon" Disabled="option.Disabled" Danger="option.Danger"
+              Multiline="true" OnClick="() => SelectAsync(option)" aria-checked="@(selected ? "true" : "false")">
+        <Leading>
+            <span class="sm-check sm-radio" aria-hidden="true">
+                <input type="radio" tabindex="-1" checked="@selected" disabled="@option.Disabled" />
+                <span class="sm-check__box"><span class="sm-check__dot"></span></span>
+            </span>
+        </Leading>
+    </ListItem>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<TValue>> Options { get; set; } = [];
+    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+
+    private async Task SelectAsync(ChoiceOption<TValue> option)
+    {
+        if (option.Disabled) return;
+        Haptics.Selection();
+        await ValueChanged.InvokeAsync(option.Value);
+    }
+}

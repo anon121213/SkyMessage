@@ -1,0 +1,13 @@
+/* The current quick reaction in a small glass squircle. */
+.quick-reaction {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.375rem;
+    line-height: 1;
+    background: var(--sm-grad-soft), var(--sm-surface);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}

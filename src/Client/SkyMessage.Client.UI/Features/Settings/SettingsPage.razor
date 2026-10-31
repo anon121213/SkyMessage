@@ -1,0 +1,105 @@
+@page "/settings"
+@page "/settings/{Section}"
+@* Settings. Phones: /settings is the menu, /settings/{section} a full-screen page. Wide screens: the menu and the
+   open section side by side (/settings shows the profile). Section keys: Services/SettingsRoutes. *@
+@inherits UiComponentBase
+@inject LayoutService Layout
+@inject NavigationService Nav
+
+@{
+    var key = SettingsCatalog.Normalize(Section);
+}
+@if (Section is not null && key is null)
+{
+    <NotFoundView />
+}
+else if (Layout.IsWide)
+{
+    var active = key ?? SettingsRoutes.Profile;
+    <div class="settings-split">
+        <div class="settings-split__menu">
+            <AppPage Title="@L["nav.settings"]" Back="false">
+                <div class="settings-split__menu-body">
+                    <SettingsMenu ActiveKey="@SettingsCatalog.MenuKeyOf(active)" OnOpen="Open" />
+                </div>
+            </AppPage>
+        </div>
+        <div class="settings-split__detail">
+            <CascadingValue Value="@(new SettingsContext(active, InSplit: true))">
+                @SectionView(active)
+            </CascadingValue>
+        </div>
+    </div>
+}
+else if (key is null)
+{
+    <AppPage Title="@L["nav.settings"]" LargeTitle="true" Padded="true">
+        <SettingsMenu OnOpen="Open" />
+    </AppPage>
+}
+else
+{
+    <CascadingValue Value="@(new SettingsContext(key, InSplit: false))">
+        @SectionView(key)
+    </CascadingValue>
+}
+
+@code {
+    [Parameter] public string? Section { get; set; }
+
+    protected override void OnInitialized() => RenderOn(h => Layout.Changed += h, h => Layout.Changed -= h);
+
+    private RenderFragment SectionView(string key) => __builder =>
+    {
+        switch (key)
+        {
+            case SettingsRoutes.Profile:
+                <ProfileSection @key="key" />
+                break;
+            case SettingsRoutes.Phone:
+                <PhoneSection @key="key" />
+                break;
+            case SettingsRoutes.Privacy:
+                <PrivacySection @key="key" />
+                break;
+            case SettingsRoutes.Blocked:
+                <BlockedSection @key="key" />
+                break;
+            case SettingsRoutes.Sessions:
+                <SessionsSection @key="key" />
+                break;
+            case SettingsRoutes.Notifications:
+                <NotificationsSection @key="key" />
+                break;
+            case SettingsRoutes.Appearance:
+                <AppearanceSection @key="key" />
+                break;
+            case SettingsRoutes.Chats:
+                <ChatsSection @key="key" />
+                break;
+            case SettingsRoutes.Devices:
+                <DevicesSection @key="key" />
+                break;
+            case SettingsRoutes.Data:
+                <DataSection @key="key" />
+                break;
+            case SettingsRoutes.Language:
+                <LanguageSection @key="key" />
+                break;
+            case SettingsRoutes.Connection:
+                <ConnectionSection @key="key" />
+                break;
+            case SettingsRoutes.About:
+                <AboutSection @key="key" />
+                break;
+        }
+    };
+
+    /// <summary>Opens a section; on wide screens switching sections replaces the history entry (no deep back stack).</summary>
+    private void Open(string key)
+    {
+        var path = SettingsRoutes.PathOf(key);
+        var replace = Layout.IsWide && Nav.CurrentPath.StartsWith("/settings/", StringComparison.OrdinalIgnoreCase);
+        Nav.NavigateTo(path, replace);
+    }
+}

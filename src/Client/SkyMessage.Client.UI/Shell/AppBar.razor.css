@@ -1,0 +1,198 @@
+/* A screen's bar: transparent over the sky. Once its screen scrolls ([data-scrolled] on an ancestor, set by app.js
+   attachScrollState) a frosted capsule floats in behind it, 6px from the bar's edges (always on with --floating). */
+.app-bar {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    min-height: var(--sm-header-h);
+    padding: 0 12px;
+    color: var(--sm-text);
+}
+
+.app-bar__glass {
+    position: absolute;
+    inset: 6px 8px;
+    z-index: -1;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px) scale(0.97);
+    pointer-events: none;
+    /* Hidden (no blur to compute) once it has faded out. */
+    transition: opacity var(--sm-dur) var(--sm-ease), transform var(--sm-dur-slow) var(--sm-spring-soft), visibility 0s linear var(--sm-dur);
+}
+
+[data-scrolled] .app-bar__glass,
+.app-bar--floating .app-bar__glass {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+}
+
+.app-bar--transparent .app-bar__glass {
+    display: none;
+}
+
+html[data-fx="lite"] .app-bar__glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* ---- Buttons ---- */
+
+.app-bar ::deep .app-bar__back .sm-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-left: -2px;
+}
+
+/* Screens over the sky: plain action icons become frosted circles (the gradient orb stays as it is). */
+.app-bar--glass-actions .app-bar__actions ::deep .sm-icon-btn:not(.sm-icon-btn--filled):not(.sm-icon-btn--danger):not(.sm-icon-btn--on-media) {
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    color: var(--sm-text);
+}
+
+html[data-fx="lite"] .app-bar--glass-actions .app-bar__actions ::deep .sm-icon-btn:not(.sm-icon-btn--filled):not(.sm-icon-btn--danger):not(.sm-icon-btn--on-media) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* Inside the capsule the circles drop their own glass (one pane of frosting, not two). */
+[data-scrolled] .app-bar ::deep .sm-icon-btn--glass,
+.app-bar--floating ::deep .sm-icon-btn--glass,
+[data-scrolled] .app-bar--glass-actions .app-bar__actions ::deep .sm-icon-btn:not(.sm-icon-btn--filled):not(.sm-icon-btn--danger):not(.sm-icon-btn--on-media),
+.app-bar--floating.app-bar--glass-actions .app-bar__actions ::deep .sm-icon-btn:not(.sm-icon-btn--filled):not(.sm-icon-btn--danger):not(.sm-icon-btn--on-media) {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+}
+
+/* ---- Title ---- */
+
+.app-bar__title {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 6px;
+}
+
+/* Without a back button the title lines up with the list content below. */
+.app-bar__title--inset {
+    padding-left: 8px;
+}
+
+.app-bar__title[role="button"] {
+    cursor: pointer;
+}
+
+.app-bar__heading {
+    font-family: var(--sm-font-display);
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-bar__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sm-text-2);
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ---- Large title (root screens) ---- */
+
+.app-bar--large {
+    min-height: 4rem;
+    padding: 0 13px 0 20px;
+}
+
+.app-bar--large .app-bar__title {
+    align-self: stretch;
+    padding: 0;
+}
+
+.app-bar__large {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+    font-family: var(--sm-font-display);
+    font-size: 1.875rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    transform-origin: 0 50%;
+    transition: opacity var(--sm-dur) var(--sm-ease), transform var(--sm-dur-slow) var(--sm-ease-out);
+    animation: app-bar-title-in var(--sm-dur-xslow) var(--sm-ease-out) backwards;
+}
+
+.app-bar__large-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-bar__compact {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    font-family: var(--sm-font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateY(calc(-50% + 10px));
+    pointer-events: none;
+    transition: opacity var(--sm-dur) var(--sm-ease), transform var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+/* Scrolled: the big title drifts up and fades, the compact one rises into the capsule. */
+[data-scrolled] .app-bar--large .app-bar__large {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.86);
+}
+
+[data-scrolled] .app-bar--large .app-bar__compact {
+    opacity: 1;
+    transform: translateY(-50%);
+}
+
+@keyframes app-bar-title-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}

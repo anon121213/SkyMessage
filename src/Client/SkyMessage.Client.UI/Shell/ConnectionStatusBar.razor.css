@@ -1,0 +1,118 @@
+/* Floats centered just under the screen headers, above every layer (never pushes the content). */
+.conn-wrap {
+    position: absolute;
+    z-index: 30;
+    top: calc(var(--sm-inset-top) + 4.5rem);
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.conn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    max-width: calc(100vw - 32px);
+    min-height: 2.25rem;
+    padding: 5px 16px 5px 5px;
+    border-radius: 999px;
+    background: var(--sm-glass-strong);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-3);
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    pointer-events: auto;
+    animation: conn-in 460ms var(--sm-spring-soft) backwards;
+}
+
+html[data-fx="lite"] .conn-pill {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+.conn-pill--leaving {
+    pointer-events: none;
+    animation: conn-out 240ms var(--sm-ease-in) forwards;
+}
+
+/* The orb: a flat accent disc with a spinning arc (or the network glyph on a warm disc when offline). */
+.conn-pill__orb {
+    position: relative;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.625rem;
+    height: 1.625rem;
+    border-radius: 50%;
+    background: var(--sm-accent);
+    color: #FFFFFF;
+}
+
+.conn-pill--offline .conn-pill__orb {
+    background: var(--sm-gold);
+    color: #4A1A06;
+}
+
+.conn-pill__spin {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #FFFFFF;
+    animation: sm-spin 0.8s linear infinite;
+}
+
+.conn-pill__text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Three dots walking after the text. */
+.conn-pill__dots {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 0.75rem;
+    margin-left: -5px;
+    padding-bottom: 1px;
+}
+
+.conn-pill__dots i {
+    width: 3.5px;
+    height: 3.5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: conn-dot 1.3s ease-in-out infinite;
+}
+
+.conn-pill__dots i:nth-child(2) {
+    animation-delay: 0.18s;
+}
+
+.conn-pill__dots i:nth-child(3) {
+    animation-delay: 0.36s;
+}
+
+@keyframes conn-in {
+    from { opacity: 0; transform: translateY(-18px) scale(0.86); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes conn-out {
+    to { opacity: 0; transform: translateY(-12px) scale(0.9); }
+}
+
+@keyframes conn-dot {
+    0%, 60%, 100% { opacity: 0.3; transform: none; }
+    30% { opacity: 1; transform: translateY(-3px); }
+}

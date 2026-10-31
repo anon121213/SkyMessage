@@ -1,0 +1,6 @@
+.picker-dialog {
+    display: flex;
+    flex-direction: column;
+    height: min(70vh, 560px);
+    min-height: 0;
+}

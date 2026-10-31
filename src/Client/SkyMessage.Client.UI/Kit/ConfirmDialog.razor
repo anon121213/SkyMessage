@@ -1,0 +1,35 @@
+@* Content of DialogService.ConfirmAsync / AlertAsync. Result: ConfirmResult. *@
+@if (!string.IsNullOrEmpty(Options.Message))
+{
+    <p class="sm-dialog__message">@Options.Message</p>
+}
+@if (Options.CheckboxLabel is not null && !AlertOnly)
+{
+    <div class="sm-mt-m">
+        <Checkbox Label="@Options.CheckboxLabel" @bind-Checked="_checked" />
+    </div>
+}
+<DialogActions>
+    @if (!AlertOnly)
+    {
+        <Button Variant="ButtonVariant.Ghost" OnClick="Cancel">@(Options.CancelText ?? L["common.cancel"])</Button>
+    }
+    <Button Variant="@(Options.Danger ? ButtonVariant.Danger : ButtonVariant.Primary)" OnClick="Confirm" autofocus="@(Options.Danger ? null : "autofocus")">
+        @(Options.ConfirmText ?? (AlertOnly ? L["common.ok"] : L["common.yes"]))
+    </Button>
+</DialogActions>
+
+@code {
+    private bool _checked;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public ConfirmOptions Options { get; set; } = default!;
+    [Parameter] public bool AlertOnly { get; set; }
+
+    protected override void OnInitialized() => _checked = Options.CheckboxDefault;
+
+    private void Confirm() => Dialog.Close(new ConfirmResult(true, _checked));
+
+    private void Cancel() => Dialog.Close(new ConfirmResult(false, _checked));
+}

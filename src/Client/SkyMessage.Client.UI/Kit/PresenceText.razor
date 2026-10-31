@@ -1,0 +1,39 @@
+@* "online" / "last seen 5 minutes ago" for a user, live (store updates + a minute tick). *@
+@inherits UiComponentBase
+@inject IUserStore Users
+@inject FormatService Format
+
+<span class="sm-presence @(IsOnline ? "sm-presence--online" : null) @Class">@Text</span>
+
+@code {
+    private CancellationTokenSource? _tick;
+
+    [Parameter, EditorRequired] public Guid UserId { get; set; }
+    [Parameter] public UserSummaryDto? Embedded { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private UserSummaryDto? User => Users.Get(UserId) ?? Embedded;
+    private bool IsOnline => User?.IsOnline() == true;
+    private string Text => User is { } user ? Format.Presence(user) : "";
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == UserId);
+        _tick = new CancellationTokenSource();
+        var token = _tick.Token;
+        OnDispose(() => _tick.Cancel());
+        _ = TickAsync(token);
+    }
+
+    private async Task TickAsync(CancellationToken token)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(60));
+            while (await timer.WaitForNextTickAsync(token)) RequestRender();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+}

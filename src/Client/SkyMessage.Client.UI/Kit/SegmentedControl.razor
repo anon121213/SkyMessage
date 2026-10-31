@@ -1,0 +1,32 @@
+@typeparam TValue
+@inject HapticFeedback Haptics
+
+<div class="sm-segmented @Class" role="radiogroup" aria-label="@Label">
+    @foreach (var option in Options)
+    {
+        var active = EqualityComparer<TValue>.Default.Equals(option.Value, Value!);
+        <button type="button" role="radio" aria-checked="@(active ? "true" : "false")" class="sm-segmented__item @(active ? "sm-segmented__item--active" : null)"
+                disabled="@option.Disabled" title="@option.Description" @onclick="() => SelectAsync(option)">
+            @if (option.Icon is not null)
+            {
+                <Icon Name="@option.Icon" Size="18" />
+            }
+            <span class="sm-truncate">@option.Label</span>
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChoiceOption<TValue>> Options { get; set; } = [];
+    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private async Task SelectAsync(ChoiceOption<TValue> option)
+    {
+        if (option.Disabled || EqualityComparer<TValue>.Default.Equals(option.Value, Value!)) return;
+        Haptics.Selection();
+        await ValueChanged.InvokeAsync(option.Value);
+    }
+}

@@ -1,0 +1,32 @@
+@* Interface language: follow the device (Russian when the device language is Russian or unknown), Russian, English.
+   Changing it rebuilds the whole UI in the new language (Routes listens to ILocalizer.Changed). *@
+@inherits UiComponentBase
+@inject ISettingsService Settings
+
+<SettingsScaffold Title="@L["settings.language.title"]">
+    <Section Footer="@L["settings.language.hint"]">
+        <ChoiceList TValue="string" Options="Languages" Value="Current" ValueChanged="SetAsync" />
+    </Section>
+</SettingsScaffold>
+
+@code {
+    private string Current => Settings.Current.Language is "ru" or "en" ? Settings.Current.Language : "auto";
+
+    private IReadOnlyList<ChoiceOption<string>> Languages =>
+    [
+        new("auto", L["settings.language.auto"]) { Description = L["settings.language.autoHint"] },
+        // Native names on purpose: someone who cannot read the current language still finds theirs.
+        new("ru", RussianNative) { Description = Translated("settings.language.ru", RussianNative) },
+        new("en", EnglishNative) { Description = Translated("settings.language.en", EnglishNative) },
+    ];
+
+    private const string RussianNative = "Русский";
+    private const string EnglishNative = "English";
+
+    /// <summary>The language's name in the current UI language, unless it equals the native name.</summary>
+    private string? Translated(string key, string native) => string.Equals(L[key], native, StringComparison.Ordinal) ? null : L[key];
+
+    protected override void OnInitialized() => RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+
+    private Task SetAsync(string language) => Settings.UpdateAsync(s => s.Language = language);
+}

@@ -1,0 +1,43 @@
+.failed__intro {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+/* The link glyph on a pastel tile: an invite link will reach them instead. */
+.failed__art {
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+.failed__people {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 16px;
+    padding: 6px;
+    max-height: 40vh;
+    overflow-y: auto;
+    border-radius: 22px;
+    background: var(--sm-surface-2);
+}
+
+.failed__person {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 8px;
+}
+
+.failed__name {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    font-size: 0.9375rem;
+}
+
+.failed__reason {
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: var(--sm-danger);
+}

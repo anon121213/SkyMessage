@@ -1,0 +1,28 @@
+@* Loading placeholder. Use <SkeletonList> for list screens. *@
+<span class="sm-skeleton @ShapeClass @Class" style="@Style" aria-hidden="true"></span>
+
+@code {
+    [Parameter] public SkeletonShape Shape { get; set; } = SkeletonShape.Line;
+    /// <summary>CSS width (default 100% for lines, equals Height for circles).</summary>
+    [Parameter] public string? Width { get; set; }
+    /// <summary>CSS height (default 0.875rem for lines, 3rem for circles).</summary>
+    [Parameter] public string? Height { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string? ShapeClass => Shape switch
+    {
+        SkeletonShape.Circle => "sm-skeleton--circle",
+        SkeletonShape.Rect => "sm-skeleton--rect",
+        _ => null,
+    };
+
+    private string Style
+    {
+        get
+        {
+            var height = Height ?? (Shape == SkeletonShape.Circle ? "3rem" : Shape == SkeletonShape.Rect ? "6rem" : "0.875rem");
+            var width = Width ?? (Shape == SkeletonShape.Circle ? height : "100%");
+            return $"width:{width};height:{height}";
+        }
+    }
+}

@@ -1,0 +1,253 @@
+/* A readable column when the profile gets a whole wide pane (in the info column it simply fills it). */
+.profile {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 18px 0 24px;
+}
+
+.profile__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 40px 16px;
+}
+
+/* ---------- Hero ---------- */
+
+.profile__head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 0 16px;
+    text-align: center;
+}
+
+/* The portrait: a thin accent ring around the squircle (the page's sky shows through the gap). */
+.profile__portrait {
+    position: relative;
+    display: flex;
+    margin: 18px 0 14px;
+}
+
+.profile__ring {
+    position: absolute;
+    inset: -8px;
+    background: var(--sm-accent);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
+}
+
+.profile__portrait ::deep .profile__avatar {
+    position: relative;
+    --sm-dot-ring: var(--sm-bg);
+}
+
+.profile__name {
+    position: relative;
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 1.625rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+}
+
+/* One header height above the bottom of the name: HeaderTitleWatcher reports the name hidden once this mark leaves the
+   scroll area, i.e. when the name has passed under the floating header that overlays the top of the page. */
+.profile__title-mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--sm-header-h);
+    height: 1px;
+    pointer-events: none;
+}
+
+.profile__head ::deep .profile__presence,
+.profile__presence {
+    font-size: 0.9375rem;
+}
+
+.profile__presence--me {
+    color: var(--sm-accent);
+    font-weight: 600;
+}
+
+/* ---------- Actions: glass circles with labels ---------- */
+
+.profile__actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 0 12px;
+}
+
+.profile__action {
+    flex: 1 1 0;
+    max-width: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 0;
+    color: var(--sm-text-2);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.profile__action-orb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    color: var(--sm-accent);
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    transition: transform 280ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+html[data-fx="lite"] .profile__action-orb {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+html[data-fx="lite"] .profile__action:not(.profile__action--primary) .profile__action-orb {
+    background: var(--sm-glass-solid);
+}
+
+.profile__action-orb ::deep .sm-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.profile__action--primary .profile__action-orb {
+    color: var(--sm-on-accent);
+    background: var(--sm-accent);
+    box-shadow: var(--sm-shadow-1);
+}
+
+.profile__action-label {
+    max-width: 100%;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profile__action:active:not(:disabled) .profile__action-orb {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+@media (hover: hover) {
+    .profile__action:hover:not(:disabled) .profile__action-orb {
+        transform: translateY(-2px);
+    }
+
+    .profile__action:not(.profile__action--primary):hover:not(:disabled) .profile__action-orb {
+        background: var(--sm-glass-strong);
+    }
+}
+
+.profile__action:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* ---------- Notices ---------- */
+
+.profile__notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 16px;
+    padding: 12px 16px 12px 12px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--sm-warning) 14%, var(--sm-card-solid));
+    box-shadow: var(--sm-shadow-1);
+    font-size: 0.875rem;
+    line-height: 1.45;
+}
+
+.profile__notice ::deep .sm-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--sm-warning);
+}
+
+.profile__notice--danger {
+    background: color-mix(in srgb, var(--sm-danger) 12%, var(--sm-card-solid));
+}
+
+.profile__notice--danger ::deep .sm-icon {
+    color: var(--sm-danger);
+}
+
+.profile__sections {
+    padding: 0 12px;
+}
+
+/* Scrolling tucks the header under the app bar: the portrait shrinks and fades while it slides up a little slower
+   than the page, the name fades as it passes under the bar edge (the bar then shows the compact title). Each part
+   follows its own view timeline in the page's scroll area, so it fits any avatar and text size and runs on the
+   compositor. Without support (or with reduced motion) the header simply scrolls. */
+@supports (animation-timeline: view()) {
+    .profile__portrait {
+        animation: profile-avatar-out linear both;
+        animation-timeline: view(block);
+        animation-range: exit 0% exit 100%;
+    }
+
+    .profile__name,
+    .profile__head ::deep .profile__presence,
+    .profile__presence {
+        animation: profile-text-out linear both;
+        animation-timeline: view(block);
+        animation-range: exit 0% exit 100%;
+    }
+}
+
+@keyframes profile-avatar-out {
+    to { opacity: 0; transform: translateY(35%) scale(0.6); }
+}
+
+@keyframes profile-text-out {
+    to { opacity: 0; }
+}
+
+html[data-reduce-motion="true"] .profile__name,
+html[data-reduce-motion="true"] .profile__presence,
+html[data-reduce-motion="true"] .profile__head ::deep .profile__presence,
+html[data-reduce-motion="true"] .profile__portrait {
+    animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .profile__name,
+    .profile__presence,
+    .profile__head ::deep .profile__presence,
+    .profile__portrait {
+        animation: none !important;
+    }
+}

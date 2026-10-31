@@ -1,0 +1,15 @@
+@* Any emoji as a reaction (the full picker). Closes with the emoji string or null. *@
+@inject LayoutService Layout
+
+<div class="rpick">
+    <EmojiPicker OnPick="Pick" Height="@(Layout.IsPhone ? "22rem" : "24rem")" />
+</div>
+
+@code {
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    private void Pick(string emoji)
+    {
+        if (!string.IsNullOrWhiteSpace(emoji)) Dialog.Close(emoji);
+    }
+}

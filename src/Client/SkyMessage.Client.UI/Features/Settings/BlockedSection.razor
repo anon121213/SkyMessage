@@ -1,0 +1,119 @@
+@* People I blocked: unblock them, or block someone new from my contacts / search. *@
+@inherits UiComponentBase
+@inject IContactStore Contacts
+@inject IAuthService Auth
+@inject IUserStore Users
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject NavigationService Nav
+
+<SettingsScaffold Title="@L["settings.blocked.title"]">
+    <Actions>
+        <IconButton Icon="@IconNames.UserX" Label="@L["settings.blocked.add"]" OnClick="BlockSomeoneAsync" />
+    </Actions>
+    <ChildContent>
+        @if (!Contacts.IsLoaded && _loading)
+        {
+            <SkeletonList Rows="4" />
+        }
+        else if (Contacts.Blocked.Count == 0)
+        {
+            <EmptyState Icon="@IconNames.ShieldCheck" Title="@L["settings.blocked.none"]" Text="@L["settings.blocked.noneText"]">
+                <Actions>
+                    <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.UserX" OnClick="BlockSomeoneAsync">@L["settings.blocked.add"]</Button>
+                </Actions>
+            </EmptyState>
+        }
+        else
+        {
+            <Section Footer="@L["settings.blocked.hint"]" DividerInset="76px">
+                @foreach (var user in Contacts.Blocked)
+                {
+                    var shown = Users.Resolve(user.Id, user) ?? user;
+                    <ListItem @key="user.Id" OnClick="() => Nav.OpenUser(user.Id)">
+                        <Leading><UserAvatar UserId="user.Id" Embedded="user" Size="44" /></Leading>
+                        <ChildContent>
+                            <div class="sm-list-item__title">@shown.NameOf(L)</div>
+                            @if (!string.IsNullOrEmpty(shown.Handle()))
+                            {
+                                <div class="sm-list-item__subtitle">@shown.Handle()</div>
+                            }
+                        </ChildContent>
+                        <Trailing>
+                            <span @onclick:stopPropagation="true">
+                                <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Loading="@(_busy == user.Id)" OnClick="() => UnblockAsync(user)">
+                                    @L["settings.blocked.unblock"]
+                                </Button>
+                            </span>
+                        </Trailing>
+                    </ListItem>
+                }
+            </Section>
+        }
+    </ChildContent>
+</SettingsScaffold>
+
+@code {
+    private bool _loading = true;
+    private Guid? _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h);
+        try
+        {
+            await Contacts.LoadAsync(force: true);
+        }
+        catch (Exception ex)
+        {
+            if (!Contacts.IsLoaded) Toasts.Error(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task UnblockAsync(UserSummaryDto user)
+    {
+        _busy = user.Id;
+        try
+        {
+            await Contacts.UnblockAsync(user.Id);
+            Toasts.Success(L.Format("settings.blocked.unblocked", user.NameOf(L)));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = null;
+        }
+    }
+
+    private async Task BlockSomeoneAsync()
+    {
+        var exclude = Contacts.Blocked.Select(u => u.Id).ToHashSet();
+        if (Auth.UserId is { } me) exclude.Add(me);
+        var picked = await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.Contacts.UserPickerDialog>(L["settings.blocked.add"], new Dictionary<string, object?>
+        {
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.Multiple)] = false,
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.Exclude)] = (IReadOnlySet<Guid>)exclude,
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.ExcludedLabel)] = L["settings.blocked.already"],
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Flush = true });
+        if (picked is not UserSummaryDto user) return;
+        var name = Users.NameOf(user.Id, L, user);
+        if (!await Dialogs.ConfirmAsync(L.Format("settings.blocked.confirmTitle", name), L["settings.blocked.confirmText"], L["settings.blocked.block"], danger: true))
+            return;
+        try
+        {
+            await Contacts.BlockAsync(user.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

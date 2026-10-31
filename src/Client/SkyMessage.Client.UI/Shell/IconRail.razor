@@ -1,0 +1,70 @@
+@* Wide-screen navigation: a frosted column floating over the sky with the logo, the areas (badges) and my avatar. A
+   flat gradient pill glides behind the active area and the newly selected icon bounces (as in TabBar). *@
+@inherits UiComponentBase
+@inject NavigationService Nav
+@inject IChatListStore ChatList
+@inject IAuthService Auth
+@inject IMediaUrlBuilder MediaUrls
+
+<nav class="rail sm-glass" aria-label="@L["nav.main"]">
+    <div class="rail__logo" title="SkyMessage"><Logo Size="44" /></div>
+    <div class="rail__items">
+        <span class="rail__pill @PillMotion" style="--i:@Math.Max(0, Array.FindIndex(Items, i => i.Section == Nav.Section))" aria-hidden="true"></span>
+        @foreach (var item in Items)
+        {
+            var active = Nav.Section == item.Section;
+            <button type="button" class="rail__item @(active ? "rail__item--active" : null)" title="@L[item.LabelKey]" aria-label="@L[item.LabelKey]"
+                    aria-current="@(active ? "page" : null)" @onclick="() => Nav.GoToSection(item.Section)">
+                <span @key="@(active ? _bounceKey : 0)" class="rail__icon @(active && _bounceKey > 0 ? "rail__icon--bounce" : null)">
+                    <Icon Name="@item.Icon" StrokeWidth="@(active ? 2.3 : 2)" />
+                </span>
+                @if (item.Section == ShellSection.Chats)
+                {
+                    <span class="rail__badge"><Badge Count="ChatList.TotalUnread" Animate="true" /></span>
+                }
+                <span class="rail__label">@L[item.LabelKey]</span>
+            </button>
+        }
+    </div>
+    @if (Auth.Me is { } me)
+    {
+        <div class="rail__me">
+            <Avatar Url="@MediaUrls.AvatarUrl(me.AvatarMediaId)" Name="@me.DisplayName" Seed="me.Id" Size="40" Tooltip="@me.DisplayName"
+                    OnClick="() => Nav.GoToSection(ShellSection.Settings)" />
+        </div>
+    }
+</nav>
+
+@code {
+    private sealed record Item(ShellSection Section, string Icon, string LabelKey);
+
+    private static readonly Item[] Items =
+    [
+        new(ShellSection.Chats, IconNames.MessageCircle, "nav.chats"),
+        new(ShellSection.Contacts, IconNames.ContactRound, "nav.contacts"),
+        new(ShellSection.Calls, IconNames.Phone, "nav.calls"),
+        new(ShellSection.Settings, IconNames.Settings, "nav.settings"),
+    ];
+
+    private ShellSection? _shown;
+    private int _bounceKey;
+
+    private string? PillMotion => _bounceKey == 0 ? null : _bounceKey % 2 == 0 ? "rail__pill--a" : "rail__pill--b";
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        RenderOn(h => Nav.Changed += h, h => Nav.Changed -= h);
+        RenderOn(h => Auth.Changed += h, h => Auth.Changed -= h);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        _shown = Nav.Section;
+    }
+
+    // A change of area after the first render re-creates the active icon with the bounce class (restarts it).
+    protected override bool ShouldRender()
+    {
+        if (_shown != Nav.Section) _bounceKey++;
+        _shown = Nav.Section;
+        return true;
+    }
+}

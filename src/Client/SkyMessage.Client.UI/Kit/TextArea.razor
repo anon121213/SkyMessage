@@ -1,0 +1,94 @@
+@implements IAsyncDisposable
+@inject AppJs Js
+
+<div class="sm-field @(Error is not null ? "sm-field--error" : null) @(Disabled ? "sm-field--disabled" : null) @Class">
+    @if (Label is not null)
+    {
+        <label class="sm-field__label" for="@_id">@Label</label>
+    }
+    <div class="sm-field__box">
+        <textarea @ref="_area" id="@_id" class="sm-field__input" rows="@Rows" placeholder="@Placeholder" maxlength="@(MaxLength > 0 ? MaxLength : null)"
+                  disabled="@Disabled" readonly="@ReadOnly" spellcheck="@(Spellcheck ? "true" : "false")" dir="auto"
+                  aria-invalid="@(Error is not null ? "true" : null)" @bind:get="_text" @bind:set="OnInput" @bind:event="oninput"
+                  @onkeydown="OnKeyDown" @attributes="Attributes"></textarea>
+    </div>
+    @if (Error is not null || Hint is not null || (ShowCounter && MaxLength > 0))
+    {
+        <div class="sm-field__meta @(Error is not null ? "sm-field__meta--error" : null)" aria-live="polite">
+            <span>@(Error ?? Hint)</span>
+            @if (ShowCounter && MaxLength > 0)
+            {
+                <span class="sm-field__counter">@(_text?.Length ?? 0)/@MaxLength</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string _id = "t" + Guid.NewGuid().ToString("N")[..10];
+    private ElementReference _area;
+    private JsHandle? _grow;
+    private string? _renderedValue;
+    private bool _typed;
+    // Bound with @bind:get/set so delayed WebView events never write older text back over newer typing (see TextField).
+    private string? _text;
+    private string? _lastValue;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public int Rows { get; set; } = 3;
+    /// <summary>Auto-grow up to this many lines (0 = fixed height).</summary>
+    [Parameter] public int MaxRows { get; set; } = 8;
+    [Parameter] public int MaxLength { get; set; }
+    [Parameter] public bool ShowCounter { get; set; }
+    [Parameter] public bool Autofocus { get; set; }
+    [Parameter] public bool Spellcheck { get; set; } = true;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback<KeyboardEventArgs> OnKeyDownEvent { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+
+    public ValueTask FocusAsync() => Js.FocusAsync(_area);
+
+    public ElementReference Element => _area;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(Value, _lastValue, StringComparison.Ordinal)) _text = _lastValue = Value;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (MaxRows > 0) _grow = await Js.AutoGrowAsync(_area, MaxRows);
+            if (Autofocus) await Js.FocusAsync(_area);
+        }
+        else if (!_typed && _renderedValue != Value && _grow is not null)
+        {
+            // Value changed from outside (draft restored, cleared after send): re-measure.
+            await _grow.InvokeVoidAsync("refresh");
+        }
+        _renderedValue = Value;
+        _typed = false;
+    }
+
+    private Task OnInput(string? value)
+    {
+        _typed = true;
+        _text = _lastValue = value ?? "";
+        return ValueChanged.InvokeAsync(_text);
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs e) => OnKeyDownEvent.InvokeAsync(e);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_grow is not null) await _grow.DisposeAsync();
+    }
+}

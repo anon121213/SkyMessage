@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Simulator builds without an Apple signing setup: any entitlement (even the keychain group) makes the build
+  demand a provisioning profile, so none are requested here. SecureStorage then reports a Keychain error and
+  SecureStore falls back to preferences in DEBUG. With a team profile configured (CodesignKey/CodesignProvision)
+  the simulator uses Entitlements.plist like device builds.
+-->
+<dict>
+</dict>
+</plist>

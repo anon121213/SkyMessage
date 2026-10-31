@@ -1,0 +1,18 @@
+.server-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 18px;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--sm-text);
+    background: var(--sm-warning-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-warning) 22%, transparent);
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring);
+}
+
+.server-warning ::deep .sm-icon {
+    flex-shrink: 0;
+    color: var(--sm-warning);
+}

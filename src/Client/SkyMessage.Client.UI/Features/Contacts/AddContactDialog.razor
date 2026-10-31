@@ -1,0 +1,141 @@
+@* Add a contact by @username (live lookup) with an optional custom name. Result: the added user's id. The person
+   found pops up on a soft gradient card. *@
+@implements IDisposable
+@inject IUserStore Users
+@inject IContactStore Contacts
+@inject IAuthService Auth
+@inject ToastService Toasts
+
+<form @onsubmit="AddAsync" @onsubmit:preventDefault="true">
+    <p class="sm-dialog__message sm-mb-m">@L["contacts.addDialog.hint"]</p>
+    <TextField Value="@_username" ValueChanged="OnUsernameChanged" Label="@L["contacts.addDialog.username"]" Prefix="@("@")"
+               Placeholder="username" Autocomplete="off" Autocapitalize="off" Autofocus="true" MaxLength="Limits.UsernameMaxLength + 1"
+               Error="@_error" />
+
+    @if (_looking)
+    {
+        <div class="add-contact__looking sm-mt-m"><Spinner Size="20" /><span>@L["contacts.addDialog.looking"]</span></div>
+    }
+    else if (_found is { } profile)
+    {
+        <div class="add-contact__card sm-mt-m">
+            <span class="add-contact__avatar"><UserAvatar UserId="profile.User.Id" Embedded="profile.User" Size="52" ShowOnline="true" /></span>
+            <div class="sm-grow">
+                <div class="add-contact__name sm-truncate">@profile.User.NameOf(L)</div>
+                <div class="add-contact__handle sm-truncate">@profile.User.Handle()</div>
+            </div>
+            @if (Contacts.IsContact(profile.User.Id))
+            {
+                <Badge Kind="BadgeKind.Label" Text="@L["contacts.inContacts"]" />
+            }
+        </div>
+        @if (!Contacts.IsContact(profile.User.Id))
+        {
+            <div class="sm-mt-m">
+                <TextField @bind-Value="_customName" Label="@L["contacts.addDialog.name"]" Placeholder="@profile.User.DisplayName"
+                           MaxLength="Limits.ContactNameMaxLength" Hint="@L["contacts.addDialog.nameHint"]" />
+            </div>
+        }
+    }
+
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        @if (_found is { } p && Contacts.IsContact(p.User.Id))
+        {
+            <Button OnClick="() => Dialog.Close(p.User.Id)">@L["common.done"]</Button>
+        }
+        else
+        {
+            <Button Type="submit" Loading="_saving" Disabled="@(_found is null)" Icon="@IconNames.UserRoundPlus">@L["contacts.addDialog.add"]</Button>
+        }
+    </DialogActions>
+</form>
+
+@code {
+    private string _username = "";
+    private string _customName = "";
+    private string? _error;
+    private bool _looking;
+    private bool _saving;
+    private UserProfileDto? _found;
+    private CancellationTokenSource? _lookup;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    /// <summary>Prefill (e.g. from search).</summary>
+    [Parameter] public string? Username { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(Username)) OnUsernameChanged(Username);
+    }
+
+    private void OnUsernameChanged(string value)
+    {
+        _username = value.Trim().TrimStart('@');
+        _found = null;
+        _error = null;
+        _looking = false;
+        _lookup?.Cancel();
+        if (_username.Length < Limits.UsernameMinLength) return;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(_username, Limits.UsernamePattern))
+        {
+            _error = L["contacts.addDialog.invalid"];
+            return;
+        }
+        var cts = _lookup = new CancellationTokenSource();
+        _looking = true;
+        _ = LookupAsync(_username, cts.Token);
+    }
+
+    private async Task LookupAsync(string username, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(450, ct);
+            var profile = await Users.GetProfileByUsernameAsync(username, ct);
+            if (ct.IsCancellationRequested) return;
+            _found = profile is not null && profile.User.Id != Auth.UserId ? profile : null;
+            _error = profile is null ? L["contacts.addDialog.notFound"] : profile.User.Id == Auth.UserId ? L["contacts.addDialog.self"] : null;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (ApiException ex) when (ex.StatusCode == 404)
+        {
+            _found = null;
+            _error = L["contacts.addDialog.notFound"];
+        }
+        catch (Exception ex)
+        {
+            _found = null;
+            _error = L.Error(ex);
+        }
+        _looking = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AddAsync()
+    {
+        if (_found is not { } profile || _saving) return;
+        _saving = true;
+        try
+        {
+            await Contacts.AddAsync(profile.User.Id, string.IsNullOrWhiteSpace(_customName) ? null : _customName.Trim());
+            Toasts.Success(L.Format("contacts.added", profile.User.NameOf(L)));
+            Dialog.Close(profile.User.Id);
+        }
+        catch (Exception ex)
+        {
+            _error = L.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    public void Dispose() => _lookup?.Cancel();
+}

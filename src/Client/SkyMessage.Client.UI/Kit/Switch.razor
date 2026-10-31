@@ -1,0 +1,38 @@
+@inject HapticFeedback Haptics
+
+<label class="sm-switch @(Disabled ? "sm-switch--disabled" : null) @Class" @onclick:stopPropagation="true">
+    @* @bind:get/set (not checked= + @onchange): the renderer then records the state the tap left in the DOM and
+       puts the parent's value back when the parent keeps the old one (a mute sheet dismissed without a choice). *@
+    <input type="checkbox" role="switch" disabled="@Disabled" aria-label="@(Label ?? AriaLabel)" @bind:get="Checked" @bind:set="OnChangeAsync" />
+    <span class="sm-switch__track"><span class="sm-switch__thumb"></span></span>
+    @if (Label is not null || Description is not null)
+    {
+        <span class="sm-switch__text">
+            @if (Label is not null)
+            {
+                <span>@Label</span>
+            }
+            @if (Description is not null)
+            {
+                <span class="sm-caption">@Description</span>
+            }
+        </span>
+    }
+</label>
+
+@code {
+    [Parameter] public bool Checked { get; set; }
+    [Parameter] public EventCallback<bool> CheckedChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Description { get; set; }
+    /// <summary>Accessible name when there is no visible label (inside a list item).</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private Task OnChangeAsync(bool value)
+    {
+        Haptics.Selection();
+        return CheckedChanged.InvokeAsync(value);
+    }
+}

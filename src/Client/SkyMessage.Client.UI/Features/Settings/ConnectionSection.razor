@@ -1,0 +1,399 @@
+@* Connection: server and its status/transport, a connection test, the server address, fallback addresses, transport
+   fallback and (native apps only — IHttpHandlerFactory.SupportsProxy) an HTTP/SOCKS5 proxy with its own test. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IServerEndpointService Endpoints
+@inject IRealtimeService Realtime
+@inject INetworkStatusService Network
+@inject IHttpHandlerFactory Http
+@inject ISettingsService Settings
+@inject DialogService Dialogs
+@inject ToastService Toasts
+
+<SettingsScaffold Title="@L["settings.connection.title"]">
+    @{
+        var connection = Settings.Current.Connection;
+        var info = Endpoints.Info;
+    }
+    <Section Title="@L["settings.connection.status"]" DividerInset="64px">
+        <ListItem Icon="@IconNames.Server" IconColor="@SettingsTones.Violet" Title="@(info?.Name ?? Endpoints.BaseUri.Host)" Subtitle="@HostOf(Endpoints.BaseUri)"
+                  Meta="@(info is null ? null : L.Format("settings.connection.version", info.Version))" />
+        <ListItem Icon="@StateIcon" IconColor="@StateColor" Title="@StateText" Subtitle="@TransportText" />
+        <ListItem Icon="@(Network.IsConnected ? IconNames.Wifi : IconNames.WifiOff)" IconColor="@SettingsTones.Lagoon" Title="@NetworkText" />
+        <ListItem Icon="@IconNames.PlugZap" IconColor="@SettingsTones.Mint" Title="@L["settings.connection.test"]" Subtitle="@_testResult" Disabled="_testing" OnClick="TestAsync">
+            <Trailing>
+                @if (_testing)
+                {
+                    <Spinner Size="18" />
+                }
+            </Trailing>
+        </ListItem>
+    </Section>
+
+    <Section Title="@L["settings.connection.server"]" Footer="@L["settings.connection.serverHint"]" DividerInset="64px">
+        <ListItem Icon="@IconNames.Globe" IconColor="@SettingsTones.Sky" Title="@L["settings.connection.address"]" Subtitle="@Endpoints.BaseUri.ToString()"
+                  Meta="@(string.IsNullOrEmpty(connection.CustomServerUrl) ? L["settings.connection.default"] : null)" Chevron="true" Multiline="true"
+                  OnClick="ChangeServerAsync" />
+    </Section>
+
+    <Section Title="@L["settings.connection.fallbacks"]" Footer="@L["settings.connection.fallbacksHint"]" DividerInset="64px">
+        @foreach (var url in connection.ExtraServerUrls)
+        {
+            <ListItem @key="url" Icon="@IconNames.Link2" IconColor="@SettingsTones.Mauve" Title="@url" Multiline="true">
+                <Trailing>
+                    <IconButton Icon="@IconNames.X" Label="@L["common.remove"]" OnClick="() => RemoveFallbackAsync(url)" />
+                </Trailing>
+            </ListItem>
+        }
+        @foreach (var uri in ServerProvided)
+        {
+            <ListItem @key="uri.ToString()" Icon="@IconNames.ShieldCheck" IconColor="@SettingsTones.Mint" Title="@uri.ToString()" Subtitle="@L["settings.connection.fromServer"]"
+                      Multiline="true" />
+        }
+        <ListItem Icon="@IconNames.Plus" IconColor="@SettingsTones.Violet" Title="@L["settings.connection.addFallback"]" OnClick="AddFallbackAsync" />
+    </Section>
+
+    <Section Footer="@L["settings.connection.transportHint"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.Network" IconColor="@SettingsTones.Peach" Title="@L["settings.connection.transport"]" Checked="connection.AllowTransportFallback"
+                    CheckedChanged="v => Settings.UpdateAsync(s => s.Connection.AllowTransportFallback = v)" />
+    </Section>
+
+    @if (Http.SupportsProxy)
+    {
+        <Section Title="@L["settings.connection.proxy"]" Footer="@L["settings.connection.proxyNote"]">
+            <form class="sm-p-m sm-col sm-gap-m" @onsubmit="SaveProxyAsync" @onsubmit:preventDefault="true">
+                <SlidingSegmentedControl TValue="ProxyType" Options="ProxyTypes" Value="_proxyType" ValueChanged="OnProxyTypeChanged" Label="@L["settings.connection.proxy"]" />
+                @if (_proxyType != ProxyType.None)
+                {
+                    <div class="proxy-host">
+                        <TextField Value="@_proxyHost" ValueChanged="v => Edit(() => _proxyHost = v)" Label="@L["settings.connection.proxyHost"]" Placeholder="proxy.example.com"
+                                   Autocapitalize="off" Autocomplete="off" InputMode="url" Class="proxy-host__name" />
+                        <TextField Value="@_proxyPort" ValueChanged="v => Edit(() => _proxyPort = v)" Label="@L["settings.connection.proxyPort"]" Placeholder="1080"
+                                   InputMode="numeric" MaxLength="5" Class="proxy-host__port" />
+                    </div>
+                    <TextField Value="@_proxyUser" ValueChanged="v => Edit(() => _proxyUser = v)" Label="@L["settings.connection.proxyUser"]"
+                               Autocapitalize="off" Autocomplete="off" Hint="@L["settings.connection.optional"]" />
+                    <TextField Value="@_proxyPassword" ValueChanged="v => Edit(() => _proxyPassword = v)" Label="@L["settings.connection.proxyPassword"]" Type="password"
+                               Autocomplete="off" Hint="@L["settings.connection.optional"]" />
+                }
+                @if (_proxyError is not null)
+                {
+                    <div class="sm-caption sm-danger-text">@_proxyError</div>
+                }
+                else if (_proxyResult is not null)
+                {
+                    <div class="sm-caption @(_proxyOk ? "sm-success-text" : "sm-danger-text")">@_proxyResult</div>
+                }
+                <div class="sm-row sm-row--wrap sm-gap-s">
+                    <Button Variant="ButtonVariant.Tonal" Icon="@IconNames.PlugZap" Loading="_proxyTesting" Disabled="@(_proxyType == ProxyType.None)" OnClick="TestProxyAsync">
+                        @L["settings.connection.proxyTest"]
+                    </Button>
+                    <Button Type="submit" Loading="_proxySaving" Disabled="@(!_proxyDirty)">@L["common.save"]</Button>
+                </div>
+            </form>
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private bool _testing;
+    private string? _testResult;
+    private ProxyType _proxyType;
+    private string _proxyHost = "";
+    private string _proxyPort = "";
+    private string _proxyUser = "";
+    private string _proxyPassword = "";
+    private bool _proxyDirty;
+    private bool _proxyTesting;
+    private bool _proxySaving;
+    private bool _proxyOk;
+    private string? _proxyResult;
+    private string? _proxyError;
+    private readonly CancellationTokenSource _lifetime = new();
+
+    private IReadOnlyList<ChoiceOption<ProxyType>> ProxyTypes =>
+    [
+        new(ProxyType.None, L["settings.connection.proxyNone"]),
+        new(ProxyType.Http, "HTTP"),
+        new(ProxyType.Socks5, "SOCKS5"),
+    ];
+
+    /// <summary>Fallback addresses the server advertises or the app ships with (not editable here).</summary>
+    private IReadOnlyList<Uri> ServerProvided
+    {
+        get
+        {
+            var mine = Settings.Current.Connection.ExtraServerUrls
+                .Select(u => SkyMessage.Client.UI.Features.Auth.ServerPickerDialog.Normalize(u)?.ToString())
+                .Where(u => u is not null)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return Endpoints.Candidates
+                .Where(c => !Same(c, Endpoints.BaseUri) && !mine.Contains(c.ToString()))
+                .Distinct()
+                .ToList();
+        }
+    }
+
+    private string StateText => Realtime.State switch
+    {
+        ConnectionState.Connected => L["settings.connection.connected"],
+        ConnectionState.Connecting or ConnectionState.Reconnecting => L["settings.connection.connecting"],
+        _ => L["settings.connection.disconnected"],
+    };
+
+    private string StateIcon => Realtime.State switch
+    {
+        ConnectionState.Connected => IconNames.CircleCheck,
+        ConnectionState.Disconnected => IconNames.CloudOff,
+        _ => IconNames.RefreshCw,
+    };
+
+    private string StateColor => Realtime.State switch
+    {
+        ConnectionState.Connected => SettingsTones.Mint,
+        ConnectionState.Disconnected => SettingsTones.Rose,
+        _ => SettingsTones.Peach,
+    };
+
+    private string? TransportText => Realtime.State != ConnectionState.Connected ? null : Realtime.TransportName switch
+    {
+        "WebSockets" => L["settings.connection.transport.ws"],
+        "ServerSentEvents" => L["settings.connection.transport.sse"],
+        "LongPolling" => L["settings.connection.transport.polling"],
+        null or "" => null,
+        var other => other,
+    };
+
+    private string NetworkText
+    {
+        get
+        {
+            if (!Network.IsConnected) return L["settings.connection.network.none"];
+            var kind = Network.Kind switch
+            {
+                NetworkKind.Wifi => L["settings.connection.network.wifi"],
+                NetworkKind.Cellular => L["settings.connection.network.cellular"],
+                NetworkKind.Ethernet => L["settings.connection.network.ethernet"],
+                _ => L["settings.connection.network.other"],
+            };
+            return Network.IsMetered && Network.Kind != NetworkKind.Cellular ? $"{kind} · {L["settings.connection.network.metered"]}" : kind;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+        RenderOn(h => Realtime.StateChanged += h, h => Realtime.StateChanged -= h);
+        RenderOn(h => Network.Changed += h, h => Network.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        LoadProxy();
+    }
+
+    private static bool Same(Uri a, Uri b) => string.Equals(a.ToString().TrimEnd('/'), b.ToString().TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    private static string HostOf(Uri uri) => uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+
+    private async Task TestAsync()
+    {
+        _testing = true;
+        _testResult = null;
+        StateHasChanged();
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var info = await Endpoints.TestAsync(Endpoints.BaseUri, cancellationToken: timeout.Token);
+            watch.Stop();
+            _testResult = info is null
+                ? L["settings.connection.testFailed"]
+                : L.Format("settings.connection.testOk", (int)watch.Elapsed.TotalMilliseconds);
+            if (info is not null && Realtime.State == ConnectionState.Disconnected) Realtime.ReconnectNow();
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            _testResult = L["settings.connection.testFailed"];
+        }
+        finally
+        {
+            _testing = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task ChangeServerAsync()
+    {
+        await Dialogs.ShowAsync<ServerAddressDialog>(L["settings.connection.address"], options: new DialogOptions { Presentation = OverlayPresentation.Auto });
+    }
+
+    private async Task AddFallbackAsync()
+    {
+        var text = await Dialogs.PromptAsync(new PromptOptions
+        {
+            Title = L["settings.connection.addFallback"],
+            Message = L["settings.connection.addFallbackText"],
+            Label = L["settings.connection.address"],
+            Placeholder = "https://reserve.example.com",
+            InputType = "url",
+            MaxLength = 512,
+            ConfirmText = L["common.add"],
+            Validate = value => SkyMessage.Client.UI.Features.Auth.ServerPickerDialog.Normalize(value) is null ? L["settings.connection.invalidAddress"] : null,
+        });
+        if (SkyMessage.Client.UI.Features.Auth.ServerPickerDialog.Normalize(text) is not { } uri) return;
+        var url = uri.ToString();
+        if (Same(uri, Endpoints.BaseUri) || Settings.Current.Connection.ExtraServerUrls.Any(u => string.Equals(u.TrimEnd('/'), url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)))
+        {
+            Toasts.Info(L["settings.connection.alreadyAdded"]);
+            return;
+        }
+        await Settings.UpdateAsync(s => s.Connection.ExtraServerUrls.Add(url));
+        Toasts.Success(L["settings.connection.fallbackAdded"]);
+        // Tell the user right away when the address does not lead to this same server.
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            var info = await Endpoints.TestAsync(uri, cancellationToken: timeout.Token);
+            if (info is null) Toasts.Warning(L["settings.connection.fallbackUnreachable"]);
+            // The remembered deployment, which failover checks too (Info is null while the main address is blocked).
+            else if ((Endpoints.KnownInstanceId ?? Endpoints.Info?.InstanceId) is { } current && info.InstanceId != current)
+                Toasts.Warning(L["settings.connection.fallbackOther"]);
+        }
+        catch (Exception)
+        {
+            // A fallback may well be unreachable from here today; it is still worth keeping.
+        }
+    }
+
+    private Task RemoveFallbackAsync(string url) =>
+        Settings.UpdateAsync(s => s.Connection.ExtraServerUrls.RemoveAll(u => string.Equals(u, url, StringComparison.OrdinalIgnoreCase)));
+
+    // ---- proxy ----
+
+    private void LoadProxy()
+    {
+        var proxy = Settings.Current.Connection.Proxy;
+        _proxyType = proxy.Type;
+        _proxyHost = proxy.Host ?? "";
+        _proxyPort = proxy.Port > 0 ? proxy.Port.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+        _proxyUser = proxy.Username ?? "";
+        _proxyPassword = proxy.Password ?? "";
+        _proxyDirty = false;
+    }
+
+    private void OnProxyTypeChanged(ProxyType type)
+    {
+        _proxyType = type;
+        if (type == ProxyType.Http && string.IsNullOrEmpty(_proxyPort)) _proxyPort = "8080";
+        if (type == ProxyType.Socks5 && string.IsNullOrEmpty(_proxyPort)) _proxyPort = "1080";
+        _proxyDirty = true;
+        _proxyResult = null;
+        _proxyError = null;
+    }
+
+    private void Edit(Action change)
+    {
+        change();
+        _proxyDirty = true;
+        _proxyResult = null;
+        _proxyError = null;
+    }
+
+    /// <summary>The proxy being edited, or null (with <see cref="_proxyError"/> set) when it is incomplete.</summary>
+    private ProxySettings? BuildProxy()
+    {
+        if (_proxyType == ProxyType.None) return new ProxySettings();
+        var host = _proxyHost.Trim();
+        if (host.Contains("://", StringComparison.Ordinal)) host = host[(host.IndexOf("://", StringComparison.Ordinal) + 3)..].TrimEnd('/');
+        // "1.2.3.4:1080" or "[2001:db8::1]:1080" typed into the address field: move the port to its own field.
+        var colon = host.LastIndexOf(':');
+        if (colon > 0 && (host.IndexOf(':') == colon || (host[0] == '[' && host[colon - 1] == ']')))
+        {
+            _proxyPort = host[(colon + 1)..];
+            _proxyHost = host = host[..colon];
+        }
+        // Only a DNS name or an IP address: anything else cannot be turned into a proxy URI and would break every
+        // connection made through the proxy.
+        if (string.IsNullOrEmpty(host) || Uri.CheckHostName(host) == UriHostNameType.Unknown)
+        {
+            _proxyError = L["settings.connection.proxyHostInvalid"];
+            return null;
+        }
+        if (!int.TryParse(_proxyPort.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
+        {
+            _proxyError = L["settings.connection.proxyPortInvalid"];
+            return null;
+        }
+        return new ProxySettings
+        {
+            Type = _proxyType,
+            Host = host,
+            Port = port,
+            Username = string.IsNullOrWhiteSpace(_proxyUser) ? null : _proxyUser.Trim(),
+            Password = string.IsNullOrEmpty(_proxyPassword) ? null : _proxyPassword,
+        };
+    }
+
+    private async Task TestProxyAsync()
+    {
+        _proxyError = null;
+        if (BuildProxy() is not { } proxy) return;
+        _proxyTesting = true;
+        _proxyResult = null;
+        try
+        {
+            var candidate = Settings.Current.Clone().Connection;
+            candidate.Proxy = proxy;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(25));
+            var info = await Endpoints.TestAsync(Endpoints.BaseUri, candidate, timeout.Token);
+            _proxyOk = info is not null;
+            _proxyResult = _proxyOk ? L["settings.connection.proxyOk"] : L["settings.connection.proxyFailed"];
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            _proxyOk = false;
+            _proxyResult = L["settings.connection.proxyFailed"];
+        }
+        finally
+        {
+            _proxyTesting = false;
+        }
+    }
+
+    private async Task SaveProxyAsync()
+    {
+        _proxyError = null;
+        if (BuildProxy() is not { } proxy) return;
+        _proxySaving = true;
+        try
+        {
+            await Settings.UpdateAsync(s => s.Connection.Proxy = proxy);
+            LoadProxy();
+            Toasts.Success(proxy.Type == ProxyType.None ? L["settings.connection.proxyOff"] : L["settings.connection.proxySaved"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _proxySaving = false;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/artifacts/
+**/.vs/
+**/node_modules/
+.git/
+src/Client/SkyMessage.App/
+tests/
+docs/

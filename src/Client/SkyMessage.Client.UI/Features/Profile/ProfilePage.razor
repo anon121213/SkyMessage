@@ -1,0 +1,38 @@
+@page "/user/{UserId:guid}"
+@page "/u/{Username}"
+@* A person's profile by id or by username link. Once the large header has scrolled away the app bar shows the
+   person's avatar and name. *@
+@inject IAuthService Auth
+
+<AppPage @ref="_page" Title="@PageTitle" BackFallback="/contacts">
+    <TitleContent>
+        <InfoBarTitle Title="@PageTitle" Collapsed="_headerHidden" User="_user" OnClick="ScrollToTopAsync" />
+    </TitleContent>
+    <ChildContent>
+        <ProfileView UserId="UserIdOrNull" Username="@Username" OnLoaded="OnLoaded" OnHeaderHidden="hidden => _headerHidden = hidden" />
+    </ChildContent>
+</AppPage>
+
+@code {
+    private AppPage? _page;
+    private string? _title;
+    private UserSummaryDto? _user;
+    private bool _headerHidden;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter] public Guid UserId { get; set; }
+    [Parameter] public string? Username { get; set; }
+
+    private Guid? UserIdOrNull => UserId == Guid.Empty ? null : UserId;
+
+    private string PageTitle => _title ?? L["profile.title"];
+
+    private void OnLoaded(UserProfileDto profile)
+    {
+        _user = profile.User;
+        _title = profile.User.Id == Auth.UserId ? L["profile.myProfile"] : L["profile.title"];
+    }
+
+    private Task ScrollToTopAsync() => _page?.ScrollToTopAsync().AsTask() ?? Task.CompletedTask;
+}

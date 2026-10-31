@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/SkyMessage.Contracts/SkyMessage.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Server/">
+    <Project Path="src/Server/SkyMessage.Domain/SkyMessage.Domain.csproj" />
+    <Project Path="src/Server/SkyMessage.Application/SkyMessage.Application.csproj" />
+    <Project Path="src/Server/SkyMessage.Infrastructure/SkyMessage.Infrastructure.csproj" />
+    <Project Path="src/Server/SkyMessage.Api/SkyMessage.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Client/">
+    <Project Path="src/Client/SkyMessage.Client.Core/SkyMessage.Client.Core.csproj" />
+    <Project Path="src/Client/SkyMessage.Client.UI/SkyMessage.Client.UI.csproj" />
+    <Project Path="src/Client/SkyMessage.Web/SkyMessage.Web.csproj" />
+    <Project Path="src/Client/SkyMessage.App/SkyMessage.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SkyMessage.UnitTests/SkyMessage.UnitTests.csproj" />
+    <Project Path="tests/SkyMessage.Api.IntegrationTests/SkyMessage.Api.IntegrationTests.csproj" />
+    <Project Path="tests/SkyMessage.Client.Core.Tests/SkyMessage.Client.Core.Tests.csproj" />
+  </Folder>
+</Solution>

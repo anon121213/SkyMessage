@@ -1,0 +1,55 @@
+@inject HapticFeedback Haptics
+
+<button type="button" class="sm-icon-btn @VariantClass @(Active ? "sm-icon-btn--active" : null) @Class" style="@SizeStyle"
+        disabled="@Disabled" title="@Label" aria-label="@Label" aria-pressed="@(Toggle ? (Active ? "true" : "false") : null)"
+        @onclick="Click" @onclick:stopPropagation="StopPropagation" @attributes="Attributes">
+    <Icon Name="@Icon" StrokeWidth="StrokeWidth" />
+    @if (Badge is > 0)
+    {
+        <span class="sm-icon-btn__badge"><Badge Count="Badge.Value" /></span>
+    }
+    else if (Dot)
+    {
+        <span class="sm-icon-btn__badge"><Badge Kind="BadgeKind.Dot" /></span>
+    }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public string Icon { get; set; } = "";
+    /// <summary>Accessible label and tooltip (required for icon-only buttons).</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public IconButtonVariant Variant { get; set; } = IconButtonVariant.Plain;
+    /// <summary>Diameter in px at 100% font scale (default 40).</summary>
+    [Parameter] public double? Size { get; set; }
+    [Parameter] public double StrokeWidth { get; set; } = 2;
+    [Parameter] public bool Active { get; set; }
+    /// <summary>Announces <see cref="Active"/> as a pressed state.</summary>
+    [Parameter] public bool Toggle { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public int? Badge { get; set; }
+    [Parameter] public bool Dot { get; set; }
+    [Parameter] public bool Haptic { get; set; }
+    [Parameter] public bool StopPropagation { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+
+    private string? VariantClass => Variant switch
+    {
+        IconButtonVariant.Tonal => "sm-icon-btn--tonal",
+        IconButtonVariant.Filled => "sm-icon-btn--filled",
+        IconButtonVariant.Danger => "sm-icon-btn--danger",
+        IconButtonVariant.OnMedia => "sm-icon-btn--on-media",
+        IconButtonVariant.Glass => "sm-icon-btn--glass",
+        _ => null,
+    };
+
+    private string? SizeStyle => Size is { } px ? $"--size:{(px / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}rem" : null;
+
+    private async Task Click(MouseEventArgs e)
+    {
+        if (Disabled) return;
+        if (Haptic) Haptics.Tap();
+        await OnClick.InvokeAsync(e);
+    }
+}

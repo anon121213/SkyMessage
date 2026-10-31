@@ -1,0 +1,19 @@
+@page "/"
+@* Home route. Phones show the chat list as the shell's base screen (ChatListPanel), so this page renders only
+   the wide-screen placeholder for the content column: a quiet glass card over the sky with the logo. *@
+@inject LayoutService Layout
+
+@if (Layout.IsWide)
+{
+    <div class="chat-placeholder">
+        <div class="chat-placeholder__card sm-glass">
+            <div class="chat-placeholder__logo"><Logo Size="80" /></div>
+            <h2 class="chat-placeholder__title">@L["chatlist.placeholder.title"]</h2>
+            <p class="chat-placeholder__text">@L["chatlist.placeholder.text"]</p>
+        </div>
+    </div>
+}
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+}

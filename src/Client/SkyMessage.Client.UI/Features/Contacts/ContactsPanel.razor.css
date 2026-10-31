@@ -1,0 +1,181 @@
+/* Transparent over the sky (phone root) or the glass list panel (wide). */
+.contacts {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.contacts__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* Clear of the dock on phones (--sm-page-bottom, MainLayout). */
+    padding-bottom: var(--sm-page-bottom, calc(16px + var(--sm-bottom-space)));
+}
+
+.contacts__head {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    flex-shrink: 0;
+}
+
+/* A frosted capsule over the sky (the kit's focus ring still blooms around it). */
+.contacts__search {
+    flex-shrink: 0;
+    padding: 2px 16px 12px;
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) 60ms backwards;
+}
+
+.contacts__search ::deep .sm-search:not(:focus-within) {
+    background: var(--sm-card);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+}
+
+.contacts__search ::deep .sm-search .sm-icon {
+    color: var(--sm-accent);
+}
+
+/* Quick actions on one glass card with pastel squircle tiles. */
+.contacts__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex-shrink: 0;
+    margin: 0 12px 18px;
+    padding: 6px;
+    border-radius: var(--sm-radius-xl);
+    background: var(--sm-card);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) 110ms backwards;
+}
+
+html[data-fx="lite"] .contacts__actions {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-card-solid);
+}
+
+.contacts__actions ::deep .sm-list-item {
+    border-radius: 20px;
+}
+
+.contacts__actions ::deep .sm-list-item__title {
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+    font-size: 0.9375rem;
+}
+
+/* "12 contacts" overline with a little online counter on the right. */
+.contacts__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-shrink: 0;
+    padding: 0 20px 6px;
+}
+
+.contacts__count {
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--sm-text-3);
+}
+
+.contacts__online {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 8px;
+    border-radius: 999px;
+    background: var(--sm-success-soft);
+    color: var(--sm-success);
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.contacts__online i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sm-online);
+}
+
+/* ---- Rows: airy, no separators, a rounded press highlight ---- */
+
+.contacts__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 8px;
+}
+
+.contacts__rows ::deep .contact-row {
+    min-height: 4rem;
+    padding: 8px 12px;
+    border-radius: 22px;
+}
+
+.contacts__rows ::deep .contact-row.sm-list-item--selected,
+.contacts__rows ::deep .contact-row.sm-list-item--selected:hover {
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 22%, transparent);
+}
+
+.contacts__rows ::deep .contact-row__name {
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.008em;
+}
+
+/* The first rows rise in one after another when the screen appears. */
+.contacts__rows--enter ::deep .contact-row:nth-child(-n+12) {
+    animation: contacts-rise 500ms var(--sm-ease-out) backwards;
+}
+
+.contacts__rows--enter ::deep .contact-row:nth-child(2) { animation-delay: 40ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(3) { animation-delay: 80ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(4) { animation-delay: 120ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(5) { animation-delay: 160ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(6) { animation-delay: 200ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(7) { animation-delay: 240ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(8) { animation-delay: 280ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(9) { animation-delay: 320ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(10) { animation-delay: 360ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(11) { animation-delay: 400ms; }
+.contacts__rows--enter ::deep .contact-row:nth-child(12) { animation-delay: 440ms; }
+
+html[data-fx="lite"] .contacts__rows--enter ::deep .contact-row {
+    animation: none;
+}
+
+.contacts__scroll ::deep .contacts__everywhere {
+    width: auto;
+    margin: 4px 8px 0;
+    border-radius: 22px;
+    color: var(--sm-accent);
+}
+
+.contacts__scroll ::deep .contacts__skeleton {
+    padding: 0 8px;
+}
+
+.contacts__scroll ::deep .contacts__empty {
+    padding-top: 8px;
+}
+
+@keyframes contacts-rise {
+    from { opacity: 0; transform: translate3d(0, 16px, 0); }
+    to { opacity: 1; transform: none; }
+}

@@ -1,0 +1,115 @@
+@* Renders ToastService messages. Placed once in the shell. Toasts rise in, the others glide to make room
+   (app.js attachFlipList), a sideways swipe throws one away, and a toast that goes leaves with a short fade. *@
+@implements IAsyncDisposable
+@inject ToastService Toasts
+@inject AppJs Js
+
+<div @ref="_host" class="sm-toasts @(AboveTabBar ? "sm-toasts--above-tabbar" : null)" role="status" aria-live="polite">
+    @foreach (var entry in _entries)
+    {
+        var toast = entry.Toast;
+        <div @key="toast.Id" @ref="entry.Element" class="sm-toast sm-toast--@toast.Kind.ToString().ToLowerInvariant() @(entry.Leaving ? "sm-toast--leaving" : null)"
+             data-toast="@toast.Id">
+            <Icon Name="@toast.Icon" />
+            <span class="sm-toast__text">@toast.Text</span>
+            @if (toast.ActionText is not null)
+            {
+                <button type="button" class="sm-toast__action" @onclick="() => Toasts.InvokeActionAsync(toast)">@toast.ActionText</button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const int LeaveMs = 200;
+
+    private sealed class Entry(ToastMessage toast)
+    {
+        public ToastMessage Toast { get; } = toast;
+        public ElementReference Element;
+        public bool Leaving { get; set; }
+        public JsHandle? Swipe { get; set; }
+    }
+
+    private readonly List<Entry> _entries = [];
+    private ElementReference _host;
+    private DotNetObjectReference<ToastHost>? _self;
+    private JsHandle? _flip;
+    private bool _disposed;
+
+    /// <summary>Lift above the phone tab bar.</summary>
+    [Parameter] public bool AboveTabBar { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Toasts.Changed += OnChanged;
+        Sync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_disposed) return;
+        _self ??= DotNetObjectReference.Create(this);
+        if (firstRender) _flip = await Js.AttachAsync("attachFlipList", _host, "data-toast", new { enter = false, viewport = true });
+        foreach (var entry in _entries.ToArray())
+        {
+            if (entry.Swipe is not null || entry.Leaving) continue;
+            entry.Swipe = JsHandle.Empty;
+            entry.Swipe = await Js.AttachSwipeAsync(entry.Element, _self, nameof(OnSwiped), "x", 64, fling: true, arg: entry.Toast.Id.ToString());
+            if (_disposed || entry.Leaving) await entry.Swipe.DisposeAsync();
+        }
+    }
+
+    /// <summary>A toast was thrown sideways (it is already off screen).</summary>
+    [JSInvokable]
+    public Task OnSwiped(string id) => InvokeAsync(() =>
+    {
+        if (Guid.TryParse(id, out var toastId)) Toasts.Dismiss(toastId);
+    });
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed) return;
+        Sync();
+        StateHasChanged();
+    });
+
+    // New toasts are appended; dismissed ones stay (leaving) for their exit, then go.
+    private void Sync()
+    {
+        var items = Toasts.Items;
+        foreach (var entry in _entries)
+        {
+            if (entry.Leaving || items.Any(t => t.Id == entry.Toast.Id)) continue;
+            entry.Leaving = true;
+            _ = RemoveLaterAsync(entry);
+        }
+        foreach (var toast in items)
+        {
+            if (!_entries.Exists(e => e.Toast.Id == toast.Id)) _entries.Add(new Entry(toast));
+        }
+    }
+
+    private async Task RemoveLaterAsync(Entry entry)
+    {
+        if (entry.Swipe is { } swipe) await swipe.DisposeAsync();
+        await Task.Delay(LeaveMs);
+        await InvokeAsync(() =>
+        {
+            if (_disposed || !_entries.Remove(entry)) return;
+            StateHasChanged();
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        Toasts.Changed -= OnChanged;
+        foreach (var entry in _entries)
+        {
+            if (entry.Swipe is { } swipe) await swipe.DisposeAsync();
+        }
+        if (_flip is not null) await _flip.DisposeAsync();
+        _self?.Dispose();
+    }
+}

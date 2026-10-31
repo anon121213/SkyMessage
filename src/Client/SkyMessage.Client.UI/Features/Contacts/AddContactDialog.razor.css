@@ -1,0 +1,38 @@
+.add-contact__looking {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 6px;
+    font-size: 0.875rem;
+    color: var(--sm-text-2);
+    animation: sm-fade-in var(--sm-dur) ease;
+}
+
+/* The person found: a soft gradient card that pops in. */
+.add-contact__card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 22px;
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 18%, transparent);
+    animation: sm-dialog-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+.add-contact__avatar {
+    position: relative;
+    display: inline-flex;
+}
+
+.add-contact__name {
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.008em;
+}
+
+.add-contact__handle {
+    font-size: 0.875rem;
+    color: var(--sm-accent);
+}

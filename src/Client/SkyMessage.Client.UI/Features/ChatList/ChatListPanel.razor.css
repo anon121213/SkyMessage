@@ -1,0 +1,189 @@
+/* Transparent over the sky (phone root) or the glass list panel (wide). */
+.chatlist {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.chatlist__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* Clear of the dock on phones (--sm-page-bottom, MainLayout). */
+    padding-bottom: var(--sm-page-bottom, calc(16px + var(--sm-bottom-space)));
+}
+
+/* The header stays at the top of the scroller: the list passes under it (it turns into glass, AppBar). */
+.chatlist__head {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    flex-shrink: 0;
+}
+
+/* The gradient compose orb: its plus turns a quarter when pressed. */
+.chatlist__head ::deep .chatlist__compose .sm-icon {
+    transition: transform var(--sm-dur-slow) var(--sm-spring);
+}
+
+.chatlist__head ::deep .chatlist__compose:active .sm-icon {
+    transform: rotate(90deg) scale(0.92);
+}
+
+/* ---- Search capsule (opens the search screen) ---- */
+
+.chatlist__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    height: 2.875rem;
+    margin: 2px 16px 12px;
+    padding: 0 18px;
+    border-radius: 999px;
+    background: var(--sm-card);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    color: var(--sm-text-3);
+    font-size: 0.9375rem;
+    text-align: left;
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) 60ms backwards;
+}
+
+.chatlist__search ::deep .sm-icon {
+    color: var(--sm-accent);
+}
+
+.chatlist__search:active {
+    transform: scale(0.975);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .chatlist__search:hover {
+        background: var(--sm-glass-strong);
+    }
+}
+
+.chatlist__search-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- Archive folder: a soft card above the chats ---- */
+
+.chatlist__scroll ::deep .chatlist__archive {
+    flex-shrink: 0;
+    width: auto;
+    margin: 0 8px 6px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--sm-card) 72%, transparent);
+    box-shadow: var(--sm-edge);
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) 100ms backwards;
+}
+
+.chatlist__scroll ::deep .chatlist__archive .sm-list-item__title {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    font-size: 0.9375rem;
+}
+
+.chatlist__scroll ::deep .chatlist__archive .sm-list-item__icon {
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+/* ---- Rows ---- */
+
+/* Positioned: rows measure their place against it (app.js attachFlipList). */
+.chatlist__rows {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 8px;
+}
+
+/* The screen's first rows rise in one after another (the rest are below the fold and just appear). */
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(-n+12) {
+    animation: chatlist-rise 520ms var(--sm-ease-out) backwards;
+}
+
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(2) { animation-delay: 40ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(3) { animation-delay: 80ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(4) { animation-delay: 120ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(5) { animation-delay: 160ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(6) { animation-delay: 200ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(7) { animation-delay: 240ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(8) { animation-delay: 280ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(9) { animation-delay: 320ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(10) { animation-delay: 360ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(11) { animation-delay: 400ms; }
+.chatlist__rows--enter ::deep .chat-row-wrap:nth-child(12) { animation-delay: 440ms; }
+
+html[data-fx="lite"] .chatlist__rows--enter ::deep .chat-row-wrap {
+    animation: none;
+}
+
+.chatlist__scroll ::deep .chatlist__skeleton {
+    padding: 4px 8px 0;
+}
+
+.chatlist__scroll ::deep .chatlist__skeleton .sm-skeleton-row {
+    padding: 10px 12px;
+}
+
+.chatlist__hint {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+    margin: 14px 24px 0;
+    padding: 12px 16px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--sm-card) 55%, transparent);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--sm-text-2);
+    text-align: left;
+}
+
+.chatlist__hint ::deep .sm-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--sm-accent);
+}
+
+.chatlist__scroll ::deep .chatlist__empty {
+    padding-top: 12px;
+}
+
+@keyframes chatlist-rise {
+    from { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.985); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Update / notification-permission cards at the top of the list; empty (no gap) when neither is shown. */
+.chatlist__notices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 12px;
+}
+
+.chatlist__notices:not(:empty) {
+    margin: 2px 0 10px;
+}
+
+.chatlist__notices ::deep .notify-card,
+.chatlist__notices ::deep .update-card {
+    width: 100%;
+}

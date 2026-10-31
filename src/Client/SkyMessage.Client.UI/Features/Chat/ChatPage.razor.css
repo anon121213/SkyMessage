@@ -1,0 +1,330 @@
+/* The chat screen (docs/DESIGN.md §7 "Chat"): the chat sky, the message list over it at full height, and the floating
+   chrome above the list — the top stack (header capsule, call banner, pinned strip) and the composer. The list pads
+   itself by what the chrome covers (--chat-top-h / --chat-bottom-h, published by chat.js attachChrome). */
+
+.chat {
+    /* The status-bar inset this page keeps clear itself: 0 where the shell pads it (wide panes); the phone shell runs
+       the chat under the status bar and sets it to var(--sm-inset-top) on [data-chat-root]. */
+    --chat-inset-top: 0px;
+    /* Measured by chat.js attachChrome (inline style); these are first-frame estimates. */
+    --chat-stack-h: 3.5rem;
+    --chat-bottom-h: calc(64px + var(--sm-bottom-space));
+    /* What the floating header stack covers, from the top edge: its offset, the inset and its height. */
+    --chat-top-h: calc(8px + var(--chat-inset-top) + var(--chat-stack-h));
+    /* The reading column: header, messages and composer line up on wide screens. */
+    --chat-col: 60rem;
+    position: relative;
+    isolation: isolate;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sm-chat-bg);
+}
+
+.chat ::deep .chat__sky {
+    z-index: 0;
+}
+
+.chat__body {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat__body--empty {
+    justify-content: center;
+    padding: var(--chat-top-h) 0 var(--sm-bottom-space);
+}
+
+/* A little dawn mist at the screen edges: messages scrolling past the floating chrome dissolve into the sky instead of
+   being cut off at the edge (static gradients, cheap). */
+.chat__body::before,
+.chat__body::after {
+    content: "";
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+}
+
+.chat__body::before {
+    top: 0;
+    height: calc(var(--chat-inset-top) + 24px);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--sm-chat-bg) 92%, transparent), transparent);
+}
+
+.chat__body::after {
+    bottom: 0;
+    height: calc(var(--sm-bottom-space) + 16px);
+    background: linear-gradient(to top, var(--sm-chat-bg) 10%, transparent);
+}
+
+/* ---------- Floating chrome ---------- */
+
+.chat__top {
+    position: absolute;
+    z-index: 3;
+    top: calc(8px + var(--chat-inset-top));
+    left: 10px;
+    right: 10px;
+    max-width: calc(var(--chat-col) - 4px);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.chat__composer {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ---------- Drop hint: a dashed glass card between the chrome ---------- */
+
+.chat__drop {
+    position: absolute;
+    z-index: 6;
+    top: calc(var(--chat-top-h) + 8px);
+    bottom: calc(var(--chat-bottom-h) + 8px);
+    left: 12px;
+    right: 12px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    border: 2px dashed color-mix(in srgb, var(--sm-accent) 70%, transparent);
+    border-radius: var(--sm-radius-xl);
+    background: var(--sm-glass-strong);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-3);
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    pointer-events: none;
+}
+
+.chat[data-drop] .chat__drop {
+    display: flex;
+    animation: sm-pop-in var(--sm-dur) var(--sm-spring-soft);
+}
+
+.chat__drop-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.5rem;
+    height: 4.5rem;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+html[data-fx="lite"] .chat__drop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* ---------- Selection capsule (in the header's place) ---------- */
+
+.chat-select {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 3.5rem;
+    padding: 8px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    animation: chat-capsule-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+html[data-fx="lite"] .chat-select {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* The capsule swaps in place of the header: it settles from a touch smaller. */
+@keyframes chat-capsule-in {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.chat-select ::deep .chat-select__close {
+    background: color-mix(in srgb, var(--sm-surface) 62%, transparent);
+    box-shadow: var(--sm-edge);
+    color: var(--sm-text);
+}
+
+.chat-select__count {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    padding-left: 10px;
+    white-space: nowrap;
+}
+
+.chat-select__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.875rem;
+    height: 1.875rem;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--sm-grad);
+    color: var(--sm-on-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring);
+}
+
+.chat-select__label {
+    overflow: hidden;
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+}
+
+.chat-select__spacer {
+    flex: 1 1 auto;
+}
+
+/* ---------- Message menu: the reactions row on top of the menu ---------- */
+
+.msg-menu__reactions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 2px 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.msg-menu__reactions::-webkit-scrollbar {
+    display: none;
+}
+
+.msg-menu__emoji {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    font-size: 1.625rem;
+    line-height: 1;
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) backwards;
+}
+
+/* The quick reactions pop in one after another as the menu opens (≤ 320 ms in all). */
+.msg-menu__emoji:nth-child(2) {
+    animation-delay: 20ms;
+}
+
+.msg-menu__emoji:nth-child(3) {
+    animation-delay: 40ms;
+}
+
+.msg-menu__emoji:nth-child(4) {
+    animation-delay: 60ms;
+}
+
+.msg-menu__emoji:nth-child(5) {
+    animation-delay: 80ms;
+}
+
+.msg-menu__emoji:nth-child(6) {
+    animation-delay: 100ms;
+}
+
+.msg-menu__emoji:nth-child(7) {
+    animation-delay: 120ms;
+}
+
+@media (hover: hover) {
+    .msg-menu__emoji:hover {
+        background: var(--sm-accent-soft);
+        transform: scale(1.18) translateY(-2px);
+    }
+}
+
+.msg-menu__emoji:active {
+    transform: scale(0.88);
+    transition-duration: 90ms;
+}
+
+/* My current reaction sits in a soft tinted disc with an accent rim. */
+.msg-menu__emoji--mine {
+    background: var(--sm-accent-soft);
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sm-accent) 70%, transparent);
+}
+
+.msg-menu__more {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-left: 2px;
+    border-radius: 50%;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) 140ms backwards;
+}
+
+@media (hover: hover) {
+    .msg-menu__more:hover {
+        background: color-mix(in srgb, var(--sm-accent) 18%, transparent);
+    }
+}
+
+.msg-menu__more:active {
+    transform: scale(0.88);
+}
+
+/* Delete in the selection capsule: the kit's rose disc without its coloured halo. */
+.chat-select ::deep .sm-icon-btn--danger {
+    box-shadow: none;
+}
+
+/* The group call pill (Features/Calls) is one more capsule of the top stack: the stack spaces and aligns it like the
+   header and the pinned strip, and attachChrome counts it in --chat-stack-h, so the list's top padding includes it. */
+.chat__top ::deep .group-call {
+    margin: 0;
+}

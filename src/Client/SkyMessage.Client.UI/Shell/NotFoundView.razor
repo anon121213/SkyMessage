@@ -1,0 +1,17 @@
+@* Unknown address inside the app: the moon over a cloud and a dotted path that lost its way. *@
+@inject NavigationService Nav
+
+<AppPage Title="@L["notFound.title"]" Back="true">
+    <EmptyState Title="@L["notFound.title"]" Text="@L["notFound.text"]" Fill="true">
+        <Art><SkyArt Kind="SkyArtKind.NotFound" Size="220" /></Art>
+        <Actions>
+            <Button Icon="@IconNames.House" OnClick="Home">@L["notFound.home"]</Button>
+        </Actions>
+    </EmptyState>
+</AppPage>
+
+@code {
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    private void Home() => Nav.NavigateTo("/", replace: true);
+}

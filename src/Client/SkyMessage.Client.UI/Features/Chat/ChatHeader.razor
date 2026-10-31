@@ -1,0 +1,205 @@
+@* Chat header: a floating frosted capsule over the chat sky — back (phones), squircle avatar + name + status line
+   (typing / presence / members), call buttons, search (wide) and the chat menu (info, shared media, mute, clear history,
+   leave/delete). Tap on the avatar or the name opens the chat info. The back button carries data-shell-back: the phone
+   shell's swipe back (and its animated back tap) runs this very button (app.js attachSwipeBack). *@
+@inherits UiComponentBase
+@inject IChatListStore ChatList
+@inject ITypingStore Typing
+@inject IUserStore Users
+@inject ICallService Calls
+@inject IServerEndpointService Endpoints
+@inject NavigationService Nav
+@inject FormatService Format
+@inject ChatActions Actions
+@inject ToastService Toasts
+@inject LayoutService Layout
+
+<header class="chead @(Back ? null : "chead--no-back") @Class">
+    @if (Back)
+    {
+        <IconButton Icon="@IconNames.ArrowLeft" Label="@L["nav.back"]" Size="40" OnClick="BackAsync" Class="chead__back" data-shell-back="" />
+    }
+    <div class="chead__title" role="button" tabindex="0" title="@InfoLabel" @onclick="OpenInfo" @onkeydown="OnTitleKey">
+        <span class="chead__avatar">
+            @if (Chat is { } chat)
+            {
+                <ChatAvatar Chat="chat" Size="40" />
+            }
+            else
+            {
+                <Skeleton Shape="SkeletonShape.Circle" Width="2.5rem" Height="2.5rem" />
+            }
+        </span>
+        <div class="chead__text">
+            <div class="chead__name">
+                <span class="chead__name-text">@Title</span>
+                @if (Chat is { } c && c.IsMuted(DateTimeOffset.UtcNow))
+                {
+                    <Icon Name="@IconNames.BellOff" Size="14" Class="chead__muted" Title="@L["chatlist.muted"]" />
+                }
+            </div>
+            @if (TypingText is { } typing)
+            {
+                <div class="chead__status chead__status--typing @StatusMotion("typing")"><span class="chead__dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="chead__status-text">@typing</span></div>
+            }
+            else if (Chat is { Type: ChatType.Private, Peer: { } peer })
+            {
+                <div class="chead__status @StatusMotion("presence")"><PresenceText UserId="peer.Id" Embedded="peer" /></div>
+            }
+            else if (Chat is { Type: ChatType.Group } group)
+            {
+                <div class="chead__status @StatusMotion("members")">@Format.Members(group.MemberCount)</div>
+            }
+        </div>
+    </div>
+    <div class="chead__actions">
+        @if (CanCall)
+        {
+            @if (Chat?.Type == ChatType.Group)
+            {
+                @if (Chat.ActiveCallId is null)
+                {
+                    <IconButton Icon="@IconNames.PhoneCall" Label="@L["chat.call.group"]" Size="40" OnClick="() => CallAsync(false)" Class="chead__call" />
+                }
+            }
+            else
+            {
+                <IconButton Icon="@IconNames.Phone" Label="@L["chat.call.audio"]" Size="40" OnClick="() => CallAsync(false)" Class="chead__call" />
+                @if (!Layout.IsPhone)
+                {
+                    <IconButton Icon="@IconNames.Video" Label="@L["chat.call.video"]" Size="40" OnClick="() => CallAsync(true)" Class="chead__call" />
+                }
+            }
+        }
+        @if (!Layout.IsPhone)
+        {
+            <IconButton Icon="@IconNames.Search" Label="@L["chat.search.title"]" Size="40" OnClick="() => OnSearch.InvokeAsync()" />
+        }
+        <IconButton Icon="@IconNames.EllipsisVertical" Label="@L["common.more"]" Size="40" OnClick="OpenMenuAsync" />
+    </div>
+</header>
+
+<ContextMenu @ref="_menu" Title="@Title">
+    @if (Chat is { } chat)
+    {
+        <MenuItem Icon="@IconNames.Info" Label="@InfoLabel" OnClick="OpenInfo" />
+        @if (Layout.IsPhone)
+        {
+            <MenuItem Icon="@IconNames.Search" Label="@L["chat.search.title"]" OnClick="() => OnSearch.InvokeAsync()" />
+            @if (CanCall && chat.Type == ChatType.Private)
+            {
+                <MenuItem Icon="@IconNames.Video" Label="@L["chat.call.video"]" OnClick="() => CallAsync(true)" />
+            }
+        }
+        <MenuItem Icon="@IconNames.Images" Label="@L["chat.menu.media"]" OnClick="OpenMedia" />
+        <MenuItem Icon="@IconNames.ListChecks" Label="@L["chat.menu.select"]" OnClick="() => OnSelect.InvokeAsync()" />
+        @if (chat.Type != ChatType.Saved)
+        {
+            <MenuItem Icon="@(chat.IsMuted(DateTimeOffset.UtcNow) ? IconNames.Bell : IconNames.BellOff)"
+                      Label="@(chat.IsMuted(DateTimeOffset.UtcNow) ? L["chatlist.menu.unmute"] : L["chatlist.menu.mute"])" OnClick="() => Actions.ToggleMuteAsync(chat)" />
+        }
+        <MenuItem Icon="@IconNames.Eraser" Label="@L["chat.menu.clear"]" OnClick="() => Actions.ClearHistoryAsync(chat)" />
+        @if (chat.Type != ChatType.Saved)
+        {
+            <MenuDivider />
+            <MenuItem Icon="@(chat.Type == ChatType.Group && chat.MyRole != ChatRole.Owner ? IconNames.DoorOpen : IconNames.Trash2)" Danger="true"
+                      Label="@(chat.Type == ChatType.Group ? (chat.MyRole == ChatRole.Owner ? L["chat.menu.leaveOrDelete"] : L["chat.menu.leave"]) : L["chat.menu.delete"])"
+                      OnClick="() => Actions.DeleteAsync(chat)" />
+        }
+    }
+</ContextMenu>
+
+@code {
+    private ContextMenu? _menu;
+    // The status line shown at the last render; a line that replaces another one (typing starts or stops) fades in.
+    private string? _statusKind;
+    private bool _statusSwapped;
+
+    [Parameter] public ChatSummaryDto? Chat { get; set; }
+    [Parameter] public Guid ChatId { get; set; }
+    /// <summary>Show the back button (phones).</summary>
+    [Parameter] public bool Back { get; set; } = true;
+    [Parameter] public EventCallback OnSearch { get; set; }
+    [Parameter] public EventCallback OnSelect { get; set; }
+    /// <summary>Extra classes on the capsule ("chead--return": it comes back after selection or search and eases in).</summary>
+    [Parameter] public string? Class { get; set; }
+
+    private string Title => Chat is { } chat ? Actions.TitleOf(chat) : L["common.loading"];
+
+    private string InfoLabel => Chat?.Type switch
+    {
+        ChatType.Group => L["chat.menu.groupInfo"],
+        ChatType.Private => L["chat.menu.profile"],
+        _ => L["chat.menu.info"],
+    };
+
+    private string? TypingText => Chat is { } chat ? Format.Typing(Typing.Get(chat.Id), withNames: chat.Type == ChatType.Group) : null;
+
+    private bool CanCall
+    {
+        get
+        {
+            if (Chat is not { } chat || chat.Type == ChatType.Saved) return false;
+            if (Endpoints.Info?.CallsEnabled == false) return false;
+            if (chat.Type == ChatType.Private)
+            {
+                if (chat.IsBlocked || chat.Peer is not { } peer) return false;
+                return !(Users.Get(peer.Id) ?? peer).IsDeleted;
+            }
+            return true;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn<Guid>(h => Typing.Changed += h, h => Typing.Changed -= h, id => id == ChatId);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == Chat?.Peer?.Id);
+        RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+    }
+
+    /// <summary>
+    /// Called while rendering the status line of <paramref name="kind"/>: the class stays on that line until another
+    /// one replaces it (each kind is its own element, so re-renders never replay the fade).
+    /// </summary>
+    private string? StatusMotion(string kind)
+    {
+        if (_statusKind != kind)
+        {
+            _statusSwapped = _statusKind is not null;
+            _statusKind = kind;
+        }
+        return _statusSwapped ? "chat-header__status--in" : null;
+    }
+
+    private void OpenInfo() => Nav.OpenChatInfo(ChatId);
+
+    private void OnTitleKey(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ") OpenInfo();
+    }
+
+    /// <summary>History back like every page's back arrow (NavigationService closes overlays first).</summary>
+    private Task BackAsync() => Nav.GoBackAsync("/");
+
+    private void OpenMedia() => Nav.NavigateTo($"/chat/{ChatId}/media");
+
+    private async Task OpenMenuAsync(MouseEventArgs e)
+    {
+        if (_menu is null) return;
+        var x = e.ClientX > 0 ? e.ClientX : Layout.Width - 16;
+        var y = e.ClientY > 0 ? e.ClientY : 56;
+        await _menu.OpenAsync(x, y);
+    }
+
+    private async Task CallAsync(bool video)
+    {
+        try
+        {
+            await Calls.StartAsync(ChatId, video);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

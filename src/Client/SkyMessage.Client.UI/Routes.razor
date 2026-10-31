@@ -1,0 +1,190 @@
+@* Root component hosted by SkyMessage.App (BlazorWebView) and SkyMessage.Web (WebAssembly): starts Core once,
+   applies theme/layout, gates pages by sign-in state and catches unexpected errors. *@
+@implements IAsyncDisposable
+@inject IClientBootstrapper Bootstrapper
+@inject IAuthService Auth
+@inject ILocalizer L
+@inject ThemeService Theme
+@inject LayoutService Layout
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject AppJs Js
+@inject UiDispatcher Dispatcher
+@inject ILogger<Routes> Logger
+
+<ErrorBoundary @ref="_boundary">
+    <ChildContent>
+        @if (!_ready)
+        {
+            <BootSplash ShowSpinner="_slow" />
+        }
+        else
+        {
+            <Router @key="_epoch" AppAssembly="typeof(Routes).Assembly">
+                <Found Context="routeData">
+                    @{
+                        var anonymous = IsAnonymous(routeData.PageType);
+                    }
+                    @if (Auth.State != AuthState.SignedIn && !anonymous)
+                    {
+                        <RedirectTo Path="@NavigationService.WelcomePath" RememberCurrent="@(!_signedOutHere)" StartOver="_startOver" />
+                    }
+                    else if (Auth.State == AuthState.SignedIn && anonymous)
+                    {
+                        <RedirectTo Path="@(_postSignInTarget ?? "/")" StartOver="_startOver" />
+                    }
+                    else
+                    {
+                        <RouteView RouteData="routeData" DefaultLayout="@(anonymous ? typeof(AuthLayout) : typeof(MainLayout))" />
+                    }
+                </Found>
+                <NotFound>
+                    @if (Auth.State == AuthState.SignedIn)
+                    {
+                        <LayoutView Layout="typeof(MainLayout)"><NotFoundView /></LayoutView>
+                    }
+                    else
+                    {
+                        <RedirectTo Path="@NavigationService.WelcomePath" StartOver="_startOver" />
+                    }
+                </NotFound>
+            </Router>
+        }
+    </ChildContent>
+    <ErrorContent Context="error">
+        <CrashScreen Exception="error" OnRetry="Recover" />
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private ErrorBoundary? _boundary;
+    private bool _ready;
+    private bool _slow;
+    private int _epoch;
+    private AuthState _lastState = AuthState.Initializing;
+    private string? _postSignInTarget;
+    private string? _language;
+    private bool _signedOutHere;
+    // Set for the render right after a sign-in or sign-out: its redirect also drops the other session's history
+    // (otherwise Back walks through pages that only redirect again). Cleared once that render is done.
+    private bool _startOver;
+
+    private static bool IsAnonymous(Type pageType) => Attribute.IsDefined(pageType, typeof(AnonymousPageAttribute));
+
+    protected override void OnInitialized()
+    {
+        Dispatcher.Attach(work => InvokeAsync(work));
+        Auth.Changed += OnAuthChanged;
+        L.Changed += OnLanguageChanged;
+        Nav.Changed += OnNavigated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            _startOver = false;
+            return;
+        }
+        _ = ShowSpinnerWhenSlowAsync();
+        try
+        {
+            await Task.WhenAll(StartCoreAsync(), Js.InitAsync().AsTask(), Layout.InitializeAsync());
+            await Theme.InitializeAsync();
+            _language = L.Language;
+            await Js.SetLanguageAsync(_language);
+            await Nav.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "UI startup failed");
+        }
+        if (Auth.State == AuthState.Initializing)
+        {
+            // Core failed before restoring the session: restore it directly so the app never hangs on the splash
+            // (an unrestored session renders as signed out).
+            try
+            {
+                await Auth.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Session restore failed");
+            }
+        }
+        _lastState = Auth.State;
+        if (_lastState == AuthState.SignedIn) _postSignInTarget = null;
+        _ready = true;
+        StateHasChanged();
+    }
+
+    private async Task StartCoreAsync()
+    {
+        try
+        {
+            await Bootstrapper.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            // Core reports problems through its services; the UI still starts (signed out or offline).
+            Logger.LogError(ex, "Client start failed");
+        }
+    }
+
+    private async Task ShowSpinnerWhenSlowAsync()
+    {
+        await Task.Delay(1200);
+        if (_ready) return;
+        _slow = true;
+        StateHasChanged();
+    }
+
+    private void OnAuthChanged() => _ = InvokeAsync(async () =>
+    {
+        var state = Auth.State;
+        if (state != _lastState)
+        {
+            var previous = _lastState;
+            _lastState = state;
+            if (state == AuthState.SignedIn && previous != AuthState.SignedIn)
+            {
+                _signedOutHere = false;
+                _postSignInTarget = Nav.TakePostSignInTarget();
+            }
+            if (state == AuthState.SignedOut)
+            {
+                // The page left behind by a sign-out is not a link to reopen after the next sign-in.
+                _signedOutHere = previous == AuthState.SignedIn;
+                await Dialogs.CloseAllAsync();
+            }
+            if ((state == AuthState.SignedIn) != (previous == AuthState.SignedIn)) _startOver = true;
+        }
+        StateHasChanged();
+    });
+
+    /// <summary>The post-sign-in target is used once: as soon as a signed-in page is shown it is forgotten.</summary>
+    private void OnNavigated()
+    {
+        if (_postSignInTarget is not null && Auth.State == AuthState.SignedIn && !NavigationService.IsAnonymousPath(Nav.CurrentPath))
+            _postSignInTarget = null;
+    }
+
+    private void OnLanguageChanged() => _ = InvokeAsync(async () =>
+    {
+        if (L.Language == _language) return;
+        _language = L.Language;
+        await Js.SetLanguageAsync(_language);
+        _epoch++;
+        StateHasChanged();
+    });
+
+    private void Recover() => _boundary?.Recover();
+
+    public ValueTask DisposeAsync()
+    {
+        Auth.Changed -= OnAuthChanged;
+        L.Changed -= OnLanguageChanged;
+        Nav.Changed -= OnNavigated;
+        return ValueTask.CompletedTask;
+    }
+}

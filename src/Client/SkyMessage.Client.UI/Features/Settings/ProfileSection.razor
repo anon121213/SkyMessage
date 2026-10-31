@@ -1,0 +1,334 @@
+@* Edit my profile: photo (upload/remove), name, username with a live availability check (free / taken icons pop in),
+   bio; my shareable link. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IAuthService Auth
+@inject ISkyApi Api
+@inject AvatarUploader Avatars
+@inject IMediaUrlBuilder MediaUrls
+@inject ILinkBuilder Links
+@inject ShareHelper Share
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject NavigationService Nav
+@inject ILogger<ProfileSection> Logger
+
+<SettingsScaffold Title="@L["settings.profile.title"]">
+    <Footer>
+        <Button Block="true" Size="ButtonSize.Large" Loading="_saving" Disabled="@(!CanSave)" OnClick="SaveAsync">@L["common.save"]</Button>
+    </Footer>
+    <ChildContent>
+        @if (Auth.Me is { } me)
+        {
+            <div class="profile-photo">
+                <div class="profile-photo__frame">
+                    <span class="profile-photo__ring" aria-hidden="true"></span>
+                    <Avatar Url="@(_previewUrl ?? MediaUrls.AvatarUrl(me.AvatarMediaId))" Name="@(string.IsNullOrWhiteSpace(_name) ? me.DisplayName : _name)" Seed="me.Id" Size="120" />
+                    @if (_uploading)
+                    {
+                        <div class="profile-photo__progress">
+                            <ProgressRing Value="_progress" Size="120" Indeterminate="@(_progress <= 0)" OnCancel="CancelUpload" CancelLabel="@L["common.cancel"]" />
+                        </div>
+                    }
+                </div>
+                <div class="sm-row sm-row--wrap sm-gap-s profile-photo__actions">
+                    <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.Camera" Disabled="_uploading" OnClick="ChangePhotoAsync">
+                        @(me.AvatarMediaId is null ? L["settings.profile.photo.add"] : L["settings.profile.photo.change"])
+                    </Button>
+                    @if (me.AvatarMediaId is not null && !_uploading)
+                    {
+                        <Button Variant="ButtonVariant.DangerGhost" Size="ButtonSize.Small" Icon="@IconNames.Trash2" OnClick="RemovePhotoAsync">@L["settings.profile.photo.remove"]</Button>
+                    }
+                </div>
+            </div>
+
+            <Section>
+                <div class="profile-form sm-p-m sm-col sm-gap-m">
+                    <TextField Value="@_name" ValueChanged="OnNameChanged" Label="@L["settings.profile.name"]" MaxLength="Limits.DisplayNameMaxLength" ShowCounter="true"
+                               Error="@_nameError" Autocomplete="name" />
+                    <TextField Value="@_username" ValueChanged="OnUsernameChanged" Label="@L["settings.profile.username"]" Prefix="@("@")"
+                               MaxLength="Limits.UsernameMaxLength" Autocomplete="off" Autocapitalize="off" Spellcheck="false"
+                               Error="@_usernameError" Success="@_usernameOk" Hint="@(_usernameError is null && _usernameOk is null ? L["settings.profile.usernameHint"] : null)">
+                        <Trailing>
+                            @if (_checking)
+                            {
+                                <Spinner Size="18" />
+                            }
+                            else if (_usernameOk is not null)
+                            {
+                                <Icon Name="@IconNames.CircleCheck" Size="20" Class="sm-success-text profile-form__check" />
+                            }
+                            else if (_usernameRefused)
+                            {
+                                <Icon Name="@IconNames.CircleX" Size="20" Class="sm-danger-text profile-form__check" />
+                            }
+                        </Trailing>
+                    </TextField>
+                    <TextArea Value="@_bio" ValueChanged="OnBioChanged" Label="@L["settings.profile.bio"]" Placeholder="@L["settings.profile.bioPlaceholder"]"
+                              Rows="2" MaxRows="6" MaxLength="Limits.BioMaxLength" ShowCounter="true" />
+                </div>
+            </Section>
+
+            <Section Title="@L["settings.profile.link"]" Footer="@L["settings.profile.linkHint"]">
+                <ListItem Icon="@IconNames.Link" IconColor="@SettingsTones.Violet" Title="@Links.ProfileLink(me.Username)" Multiline="true" OnClick="CopyLinkAsync">
+                    <Trailing>
+                        <IconButton Icon="@IconNames.Share2" Label="@L["common.share"]" StopPropagation="true" OnClick="ShareLinkAsync" />
+                    </Trailing>
+                </ListItem>
+                <ListItem Icon="@IconNames.Smartphone" IconColor="@SettingsTones.Mint" Title="@L["settings.phone.title"]"
+                          Meta="@(string.IsNullOrEmpty(me.PhoneNumber) ? L["settings.phone.none.short"] : PhoneFormat.Display(me.PhoneNumber))"
+                          Chevron="true" OnClick="OpenPhone" />
+            </Section>
+        }
+    </ChildContent>
+</SettingsScaffold>
+
+@code {
+    private static readonly System.Text.RegularExpressions.Regex UsernameRegex = new(Limits.UsernamePattern);
+
+    private string _name = "";
+    private string _username = "";
+    private string _bio = "";
+    private bool _dirty;
+    private string? _nameError;
+    private string? _usernameError;
+    private string? _usernameOk;
+    private bool _checking;
+    // The server said no (taken or reserved), as opposed to a format error while typing.
+    private bool _usernameRefused;
+    private bool _usernameValid = true;
+    private bool _saving;
+    private bool _uploading;
+    private double _progress;
+    private string? _previewUrl;
+    private CancellationTokenSource? _checkCts;
+    private CancellationTokenSource? _uploadCts;
+
+    private bool CanSave
+    {
+        get
+        {
+            if (Auth.Me is not { } me || _saving || _checking || !_usernameValid) return false;
+            if (string.IsNullOrWhiteSpace(_name)) return false;
+            return _name.Trim() != me.DisplayName
+                   || !string.Equals(_username.Trim().TrimStart('@'), me.Username, StringComparison.Ordinal)
+                   || (_bio ?? "").Trim() != (me.Bio ?? "");
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        LoadFromMe();
+        Auth.Changed += OnAuthChanged;
+        OnDispose(() => Auth.Changed -= OnAuthChanged);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    private void OnAuthChanged() => _ = InvokeAsync(() =>
+    {
+        // Another device (or this one) changed the profile: show it unless the user is editing.
+        if (!_dirty) LoadFromMe();
+        StateHasChanged();
+    });
+
+    private void LoadFromMe()
+    {
+        if (Auth.Me is not { } me) return;
+        _name = me.DisplayName;
+        _username = me.Username;
+        _bio = me.Bio ?? "";
+        _usernameError = null;
+        _usernameOk = null;
+        _usernameRefused = false;
+        _usernameValid = true;
+    }
+
+    private void OnNameChanged(string value)
+    {
+        _name = value;
+        _dirty = true;
+        _nameError = string.IsNullOrWhiteSpace(value) ? L["settings.profile.nameRequired"] : null;
+    }
+
+    private void OnBioChanged(string value)
+    {
+        _bio = value;
+        _dirty = true;
+    }
+
+    private void OnUsernameChanged(string value)
+    {
+        _username = value;
+        _dirty = true;
+        _usernameOk = null;
+        _usernameError = null;
+        _usernameRefused = false;
+        _checkCts?.Cancel();
+        var candidate = value.Trim().TrimStart('@');
+        if (Auth.Me is { } me && string.Equals(candidate, me.Username, StringComparison.Ordinal))
+        {
+            _usernameValid = true;
+            _checking = false;
+            return;
+        }
+        if (!UsernameRegex.IsMatch(candidate))
+        {
+            _usernameValid = false;
+            _checking = false;
+            _usernameError = L.Error(ErrorCodes.UsernameInvalid);
+            return;
+        }
+        _usernameValid = false;
+        _checking = true;
+        var cts = _checkCts = new CancellationTokenSource();
+        _ = CheckUsernameAsync(candidate, cts.Token);
+    }
+
+    /// <summary>username_invalid for a well-formed name means a reserved one: the format rules would not explain it.</summary>
+    private string UsernameRefusedText(string? code, string candidate) =>
+        code == ErrorCodes.UsernameInvalid && UsernameRegex.IsMatch(candidate) ? L["auth.username.reserved"] : L.Error(code);
+
+    private async Task CheckUsernameAsync(string candidate, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(450, ct);
+            var result = await Auth.CheckUsernameAsync(candidate, ct);
+            if (ct.IsCancellationRequested) return;
+            _usernameValid = result.Available;
+            _usernameRefused = !result.Available;
+            _usernameOk = result.Available ? L["settings.profile.usernameFree"] : null;
+            _usernameError = result.Available ? null : UsernameRefusedText(result.ErrorCode ?? ErrorCodes.UsernameTaken, candidate);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            // Offline: let the server decide on save.
+            Logger.LogDebug(ex, "Username check failed");
+            _usernameValid = true;
+        }
+        _checking = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Auth.Me is not { } me || !CanSave) return;
+        var name = _name.Trim();
+        var username = _username.Trim().TrimStart('@');
+        var bio = (_bio ?? "").Trim();
+        var request = new UpdateProfileRequest
+        {
+            DisplayName = name != me.DisplayName ? name : null,
+            Username = !string.Equals(username, me.Username, StringComparison.Ordinal) ? username : null,
+            Bio = bio != (me.Bio ?? "") ? bio : null,
+        };
+        _saving = true;
+        try
+        {
+            var updated = await Api.UpdateProfileAsync(request);
+            Auth.UpdateMe(updated);
+            _dirty = false;
+            LoadFromMe();
+            Toasts.Success(L["settings.profile.saved"]);
+        }
+        catch (ApiException ex) when (ex.Code is ErrorCodes.UsernameTaken or ErrorCodes.UsernameInvalid)
+        {
+            _usernameError = UsernameRefusedText(ex.Code, username);
+            _usernameRefused = true;
+            _usernameValid = false;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ChangePhotoAsync()
+    {
+        PickedPhoto? photo;
+        try
+        {
+            photo = await Avatars.PickAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return;
+        }
+        if (photo is null) return;
+        _previewUrl = photo.PreviewUrl;
+        _uploading = true;
+        _progress = 0;
+        var cts = _uploadCts = new CancellationTokenSource();
+        StateHasChanged();
+        try
+        {
+            var progress = new Progress<double>(p =>
+            {
+                _progress = p;
+                RequestRender();
+            });
+            var media = await Avatars.UploadAsync(photo, progress, cts.Token);
+            var updated = await Api.SetAvatarAsync(media.Id, cts.Token);
+            Auth.UpdateMe(updated);
+            Toasts.Success(L["settings.profile.photo.saved"]);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _uploading = false;
+            _previewUrl = null;
+            _uploadCts = null;
+        }
+    }
+
+    private void CancelUpload() => _uploadCts?.Cancel();
+
+    private async Task RemovePhotoAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["settings.profile.photo.removeConfirm"], null, L["settings.profile.photo.remove"], danger: true)) return;
+        try
+        {
+            var updated = await Api.RemoveAvatarAsync();
+            Auth.UpdateMe(updated);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task CopyLinkAsync()
+    {
+        if (Auth.Me is { } me) await Share.CopyAsync(Links.ProfileLink(me.Username), L["common.linkCopied"]);
+    }
+
+    private async Task ShareLinkAsync()
+    {
+        if (Auth.Me is { } me) await Share.ShareAsync(Links.ProfileLink(me.Username), me.DisplayName);
+    }
+
+    private void OpenPhone() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Phone));
+
+    public ValueTask DisposeAsync()
+    {
+        _checkCts?.Cancel();
+        _uploadCts?.Cancel();
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

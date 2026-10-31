@@ -1,0 +1,54 @@
+@* QR code as a PNG data URL (QRCoder PngByteQRCode, rendered locally — nothing leaves the device). *@
+@using QRCoder
+
+@if (_dataUrl is not null)
+{
+    <div class="sm-qr @Class" style="@($"--size:{Rem}")">
+        <img src="@_dataUrl" alt="@(Alt ?? L["kit.qr.alt"])" draggable="false" />
+    </div>
+}
+
+@code {
+    private string? _dataUrl;
+    private string? _renderedKey;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    /// <summary>Displayed size in px at 100% font scale.</summary>
+    [Parameter] public double Size { get; set; } = 220;
+    /// <summary>Module color (hex without alpha).</summary>
+    [Parameter] public string Dark { get; set; } = "#111219";
+    [Parameter] public string Light { get; set; } = "#FFFFFF";
+    [Parameter] public string? Alt { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Rem => (Size / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "rem";
+
+    protected override void OnParametersSet()
+    {
+        var key = $"{Text}|{Dark}|{Light}";
+        if (key == _renderedKey) return;
+        _renderedKey = key;
+        _dataUrl = string.IsNullOrEmpty(Text) ? null : Render(Text, Dark, Light);
+    }
+
+    private static string Render(string text, string dark, string light)
+    {
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.Q);
+        var png = new PngByteQRCode(data).GetGraphic(10, Rgb(dark), Rgb(light), drawQuietZones: true);
+        return "data:image/png;base64," + Convert.ToBase64String(png);
+    }
+
+    private static byte[] Rgb(string hex)
+    {
+        var value = Services.ThemeCatalog.NormalizeHex(hex) ?? "#000000";
+        return
+        [
+            Convert.ToByte(value.Substring(1, 2), 16),
+            Convert.ToByte(value.Substring(3, 2), 16),
+            Convert.ToByte(value.Substring(5, 2), 16),
+        ];
+    }
+}

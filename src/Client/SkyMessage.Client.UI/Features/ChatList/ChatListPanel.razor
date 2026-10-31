@@ -1,0 +1,389 @@
+@* The chat list (phone home screen on the sky / wide list panel): a large title with the gradient compose button, a
+   search capsule, the archive folder and airy rows without separators that rise in once when the screen appears.
+   The header is pinned at the top of the scroller and turns into floating glass once the list scrolls
+   (js/app.js attachScrollState); rows swipe to reveal actions (attachRowSwipe) and glide when the order changes
+   (attachFlipList). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IChatListStore ChatList
+@inject IAuthService Auth
+@inject NavigationService Nav
+@inject ChatActions Actions
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ISettingsService Settings
+@inject HapticFeedback Haptics
+@inject AppJs Js
+
+<div @ref="_root" class="chatlist @(Shell?.IsWide == true ? "chatlist--panel" : null)">
+    <div @ref="_scroll" class="chatlist__scroll sm-scroll">
+        <div class="chatlist__head">
+            <AppBar Title="@(_archive ? L["chatlist.archive.title"] : L["chatlist.title"])" Large="!_archive" Back="_archive" OnBack="CloseArchiveAsync"
+                    GlassActions="true">
+                <Actions>
+                    @if (_archive)
+                    {
+                        <IconButton Icon="@IconNames.Search" Label="@L["common.search"]" OnClick="OpenSearch" />
+                    }
+                    else
+                    {
+                        <IconButton Icon="@IconNames.Plus" Label="@L["chatlist.compose"]" Variant="IconButtonVariant.Filled" StrokeWidth="2.6"
+                                    Class="chatlist__compose" OnClick="OpenComposeAsync" />
+                    }
+                </Actions>
+            </AppBar>
+        </div>
+
+        @if (!_archive)
+        {
+            <button type="button" class="chatlist__search" @onclick="OpenSearch">
+                <Icon Name="@IconNames.Search" Size="18" StrokeWidth="2.2" />
+                <span class="chatlist__search-text">@L["search.placeholder"]</span>
+            </button>
+            @* App-level notices sit in the list (they scroll away) instead of floating over headers. *@
+            <div class="chatlist__notices">
+                <UpdateNotice />
+                <NotificationPermissionPrompt />
+            </div>
+        }
+
+        @if (!_archive && ChatList.ArchivedChats.Count > 0)
+        {
+            <ListItem Class="chatlist__archive" Icon="@IconNames.Archive" IconColor="var(--sm-accent-2)" Title="@L["chatlist.archive.title"]"
+                      Subtitle="@ArchiveSubtitle" OnClick="OpenArchiveAsync" Chevron="true">
+                <Trailing>
+                    @if (ArchivedUnread > 0)
+                    {
+                        <Badge Count="ArchivedUnread" Muted="true" />
+                    }
+                </Trailing>
+            </ListItem>
+        }
+
+        @if (Items.Count == 0)
+        {
+            @if (!ChatList.IsLoaded && ChatList.IsLoading)
+            {
+                <SkeletonList Rows="9" AvatarSize="3.375rem" Class="chatlist__skeleton" />
+            }
+            else if (_archive)
+            {
+                <EmptyState Icon="@IconNames.Archive" Title="@L["chatlist.archive.emptyTitle"]" Text="@L["chatlist.archive.emptyText"]" Fill="true" />
+            }
+            else if (ChatList.IsLoaded || !ChatList.IsLoading)
+            {
+                <EmptyState Title="@L["chatlist.empty.title"]" Text="@L["chatlist.empty.text"]" Fill="true" Class="chatlist__empty">
+                    <Art><SkyArt Kind="SkyArtKind.Chats" Size="230" /></Art>
+                    <Actions>
+                        <Button Icon="@IconNames.UserSearch" OnClick="OpenSearch">@L["chatlist.empty.find"]</Button>
+                        <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.Users" OnClick="NewGroup">@L["chatlist.newGroup"]</Button>
+                    </Actions>
+                </EmptyState>
+            }
+        }
+        else
+        {
+            <div @ref="_rows" class="chatlist__rows @(_entering ? "chatlist__rows--enter" : null)" role="list">
+                @foreach (var chat in Items)
+                {
+                    <ChatListItem @key="chat.Id" Chat="chat" Selected="@(chat.Id == SelectedChatId)" SwipeActions="@_armed.Contains(chat.Id)"
+                                  OnOpen="Open" OnMenu="OpenMenuAsync" OnAction="RunActionAsync" />
+                }
+            </div>
+            @if (_archive)
+            {
+                <p class="chatlist__hint"><Icon Name="@IconNames.BellOff" Size="14" />@L["chatlist.archive.hint"]</p>
+            }
+        }
+    </div>
+
+    <ContextMenu @ref="_menu" Title="@(_menuChat is null ? null : Actions.TitleOf(_menuChat))">
+        @if (_menuChat is { } chat)
+        {
+            var muted = chat.IsMuted(DateTimeOffset.UtcNow);
+            @if (chat.UnreadCount > 0 || chat.UnreadMentionCount > 0)
+            {
+                <MenuItem Icon="@IconNames.CheckCheck" Label="@L["chatlist.menu.markRead"]" OnClick="() => Actions.MarkReadAsync(chat)" />
+            }
+            @if (!chat.IsArchived)
+            {
+                <MenuItem Icon="@(chat.IsPinned ? IconNames.PinOff : IconNames.Pin)" Label="@(chat.IsPinned ? L["chatlist.menu.unpin"] : L["chatlist.menu.pin"])"
+                          OnClick="() => Actions.TogglePinAsync(chat)" />
+            }
+            <MenuItem Icon="@(muted ? IconNames.Bell : IconNames.BellOff)" Label="@(muted ? L["chatlist.menu.unmute"] : L["chatlist.menu.mute"])"
+                      OnClick="() => Actions.ToggleMuteAsync(chat)" />
+            <MenuItem Icon="@(chat.IsArchived ? IconNames.ArchiveRestore : IconNames.Archive)"
+                      Label="@(chat.IsArchived ? L["chatlist.menu.unarchive"] : L["chatlist.menu.archive"])" OnClick="() => Actions.ToggleArchiveAsync(chat)" />
+            <MenuItem Icon="@IconNames.Info" Label="@L["chatlist.menu.info"]" OnClick="() => Nav.OpenChatInfo(chat.Id)" />
+            <MenuDivider />
+            @if (chat.Type == ChatType.Group)
+            {
+                <MenuItem Icon="@IconNames.DoorOpen" Label="@L["chatlist.menu.leave"]" Danger="true" OnClick="() => Actions.DeleteAsync(chat)" />
+            }
+            else if (chat.Type == ChatType.Saved)
+            {
+                <MenuItem Icon="@IconNames.Eraser" Label="@L["chatlist.menu.clear"]" Danger="true" OnClick="() => Actions.ClearHistoryAsync(chat)" />
+            }
+            else
+            {
+                <MenuItem Icon="@IconNames.Trash2" Label="@L["chatlist.menu.delete"]" Danger="true" OnClick="() => Actions.DeleteAsync(chat)" />
+            }
+        }
+    </ContextMenu>
+
+    <ContextMenu @ref="_compose" Title="@L["chatlist.compose"]">
+        <MenuItem Icon="@IconNames.MessageCirclePlus" Label="@L["chatlist.newChat"]" OnClick="NewChatAsync" />
+        <MenuItem Icon="@IconNames.Users" Label="@L["chatlist.newGroup"]" OnClick="NewGroup" />
+        <MenuItem Icon="@IconNames.Bookmark" Label="@L["common.savedMessages"]" OnClick="OpenSavedAsync" />
+        <MenuDivider />
+        <MenuItem Icon="@IconNames.UserRoundPlus" Label="@L["contacts.add"]" OnClick="AddContactAsync" />
+    </ContextMenu>
+</div>
+
+@code {
+    private ContextMenu? _menu;
+    private ContextMenu? _compose;
+    private ChatSummaryDto? _menuChat;
+    private bool _archive;
+    private OverlayHandle? _archiveOverlay;
+    private ElementReference _root;
+    private ElementReference _scroll;
+    private ElementReference _rows;
+    private string? _rowsId;
+    private DotNetObjectReference<ChatListPanel>? _self;
+    private JsHandle? _swipe;
+    private JsHandle? _flip;
+    private JsHandle? _scrollState;
+    private bool _attaching;
+    // The rows rise in once when the screen first shows them (cleared after the animation; later changes glide).
+    private const int EnterMs = 1300;
+    private bool _entering = true;
+    private bool _enterTimer;
+    // Rows whose swipe buttons are rendered (asked for by app.js the first time a row moves).
+    private readonly HashSet<Guid> _armed = [];
+
+    [CascadingParameter] public ShellContext? Shell { get; set; }
+
+    private IReadOnlyList<ChatSummaryDto> Items => _archive ? ChatList.ArchivedChats : ChatList.Chats;
+
+    private Guid? SelectedChatId => Shell?.IsWide == true ? NavigationService.ChatIdOf(Nav.CurrentPath) : null;
+
+    private int ArchivedUnread => ChatList.ArchivedChats.Count(c => c.UnreadCount > 0 && !c.IsMuted(DateTimeOffset.UtcNow));
+
+    private string ArchiveSubtitle
+    {
+        get
+        {
+            var titles = ChatList.ArchivedChats.Take(3).Select(Actions.TitleOf);
+            return string.Join(", ", titles);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        RenderOn(h => Nav.Changed += h, h => Nav.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ChatList.IsLoaded && !ChatList.IsLoading)
+        {
+            try
+            {
+                await ChatList.LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_attaching || IsDisposed) return;
+        _attaching = true;
+        try
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            if (_swipe is null)
+            {
+                _swipe = await Js.AttachAsync("attachRowSwipe", _scroll, _scroll, _self);
+                _scrollState = await Js.AttachAsync("attachScrollState", _scroll, _root, "data-scrolled", 6);
+            }
+            if (_entering && !_enterTimer && Items.Count > 0) EndEnterLater();
+            // The rows container comes and goes with the list being empty: follow the current one.
+            var rowsId = Items.Count > 0 ? _rows.Id : null;
+            if (rowsId != _rowsId)
+            {
+                if (_flip is not null) await _flip.DisposeAsync();
+                _flip = rowsId is null ? null : await Js.AttachAsync("attachFlipList", _rows, "data-swipe-row");
+                _rowsId = rowsId;
+            }
+        }
+        finally
+        {
+            _attaching = false;
+        }
+    }
+
+    private void EndEnterLater()
+    {
+        _enterTimer = true;
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(EnterMs);
+            if (IsDisposed) return;
+            _entering = false;
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>A row started moving: render its swipe buttons.</summary>
+    [JSInvokable]
+    public Task OnRowSwipeArm(string key) => InvokeAsync(() =>
+    {
+        if (Guid.TryParse(key, out var id) && _armed.Add(id)) StateHasChanged();
+    });
+
+    /// <summary>A row crossed its full-swipe point.</summary>
+    [JSInvokable]
+    public Task OnRowSwipeThreshold() => InvokeAsync(Haptics.Tap);
+
+    /// <summary>Full swipe: runs the side's primary action.</summary>
+    [JSInvokable]
+    public Task OnRowAction(string key, string action) => InvokeAsync(async () =>
+    {
+        if (!Guid.TryParse(key, out var id) || Items.FirstOrDefault(c => c.Id == id) is not { } chat) return;
+        await RunActionAsync((chat, action));
+    });
+
+    private async Task RunActionAsync((ChatSummaryDto Chat, string Action) request)
+    {
+        var chat = request.Chat;
+        switch (request.Action)
+        {
+            case "pin":
+                await Actions.TogglePinAsync(chat);
+                break;
+            case "read":
+                await Actions.MarkReadAsync(chat);
+                break;
+            case "mute":
+                await Actions.ToggleMuteAsync(chat);
+                break;
+            case "archive":
+                await Actions.ToggleArchiveAsync(chat);
+                break;
+        }
+    }
+
+    private void Open(ChatSummaryDto chat) => Nav.OpenChat(chat.Id);
+
+    private async Task OpenMenuAsync((ChatSummaryDto Chat, MenuPosition Position) request)
+    {
+        _menuChat = request.Chat;
+        if (_menu is not null) await _menu.OpenAsync(request.Position);
+    }
+
+    private void OpenSearch() => Nav.NavigateTo("/search");
+
+    private void NewGroup() => Nav.NavigateTo("/new-group");
+
+    private async Task OpenComposeAsync(MouseEventArgs e)
+    {
+        if (_compose is null) return;
+        var x = e.ClientX > 0 ? e.ClientX : 64;
+        var y = e.ClientY > 0 ? e.ClientY : 64;
+        await _compose.OpenAsync(x, y);
+    }
+
+    private async Task NewChatAsync()
+    {
+        var picked = await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.Contacts.UserPickerDialog>(L["chatlist.newChat"], new Dictionary<string, object?>
+        {
+            [nameof(SkyMessage.Client.UI.Features.Contacts.UserPickerDialog.Multiple)] = false,
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Sheet, Flush = true });
+        if (picked is not UserSummaryDto user) return;
+        try
+        {
+            var chat = await ChatList.OpenPrivateChatAsync(user.Id);
+            Nav.OpenChat(chat.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task OpenSavedAsync()
+    {
+        try
+        {
+            var saved = await ChatList.GetSavedMessagesAsync();
+            Nav.OpenChat(saved.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task AddContactAsync()
+    {
+        await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.Contacts.AddContactDialog>(L["contacts.add"],
+            options: new DialogOptions { Size = DialogSize.Small });
+    }
+
+    // Switching between the main list and the archive replaces the rows: no glide, no row left open.
+    private async Task SwitchListsAsync()
+    {
+        if (_flip is not null) await _flip.InvokeVoidAsync("suppress");
+        if (_swipe is not null) await _swipe.InvokeVoidAsync("closeAll");
+    }
+
+    private async Task OpenArchiveAsync()
+    {
+        if (_archive) return;
+        await SwitchListsAsync();
+        _archive = true;
+        var overlay = await Nav.OpenOverlayAsync(() => InvokeAsync(async () =>
+        {
+            _archiveOverlay = null;
+            if (IsDisposed) return;
+            await SwitchListsAsync();
+            _archive = false;
+            StateHasChanged();
+        }));
+        // Closed again while its history entry was still on the way (it waits for an overlay closing just before it).
+        if (_archive && _archiveOverlay is null) _archiveOverlay = overlay;
+        else await overlay.CloseAsync();
+    }
+
+    private async Task CloseArchiveAsync()
+    {
+        await SwitchListsAsync();
+        _archive = false;
+        var overlay = _archiveOverlay;
+        _archiveOverlay = null;
+        if (overlay is not null) await overlay.CloseAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Removed with the archive open (the shell switched layouts): drop its history entry, or the next Back would
+        // only pop that orphan entry.
+        if (_archiveOverlay is { IsOpen: true } overlay)
+        {
+            _archiveOverlay = null;
+            await overlay.CloseAsync();
+        }
+        Dispose();
+        if (_swipe is not null) await _swipe.DisposeAsync();
+        if (_flip is not null) await _flip.DisposeAsync();
+        if (_scrollState is not null) await _scrollState.DisposeAsync();
+        _self?.Dispose();
+    }
+}

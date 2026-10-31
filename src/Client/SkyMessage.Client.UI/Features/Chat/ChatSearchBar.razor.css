@@ -1,0 +1,96 @@
+/* In-chat search: a frosted capsule in the header's place (ChatPage), the field a lavender pill set into it. */
+
+.csearch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 3.5rem;
+    padding: 8px;
+    border-radius: 999px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    animation: csearch-in var(--sm-dur-slow) var(--sm-spring-soft);
+}
+
+html[data-fx="lite"] .csearch {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* Swaps in for the header: settles from a touch smaller. */
+@keyframes csearch-in {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.csearch ::deep .csearch__close {
+    background: color-mix(in srgb, var(--sm-surface) 62%, transparent);
+    box-shadow: var(--sm-edge);
+    color: var(--sm-text);
+}
+
+.csearch ::deep .csearch__box {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* min-width: 0 — otherwise the input's intrinsic width keeps the field from shrinking and it runs under the
+   counter and arrows (kit request: the same on .sm-search itself). */
+.csearch ::deep .sm-search {
+    min-width: 0;
+    height: 2.5rem;
+    padding: 0 4px 0 14px;
+    background: color-mix(in srgb, var(--sm-surface) 58%, transparent);
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+}
+
+.csearch ::deep .sm-search:focus-within {
+    background: var(--sm-surface);
+    box-shadow: inset 0 0 0 1.5px var(--sm-accent);
+}
+
+.csearch__nav {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-shrink: 0;
+}
+
+.csearch__nav ::deep .sm-icon-btn {
+    color: var(--sm-accent);
+}
+
+.csearch__nav ::deep .sm-icon-btn:disabled {
+    color: var(--sm-text-3);
+}
+
+.csearch__live {
+    display: inline-flex;
+}
+
+.csearch__count {
+    padding: 0 6px 0 4px;
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    animation: sm-pop-in var(--sm-dur) var(--sm-ease-out);
+}
+
+.csearch__count--none {
+    color: var(--sm-text-3);
+    font-weight: 600;
+}
