@@ -1,18 +1,31 @@
-// SkyMessage tones, synthesized with WebAudio from sine partials and envelopes (our own sounds — no samples,
-// no third-party audio). The recipes match tools/tones/render-tones.cs, which renders the same tones to WAV
-// files for OS notification channels.
+// SkyMessage sounds through WebAudio. The packs (wood, bells, piano) are our own synthesis from first principles —
+// no samples, no third-party audio — rendered by tools/tones to ../sounds/<pack>/<key>.ogg (the same files Android's
+// notification channels use). The user's own sounds come in as bytes (setCustom). Every file is fetched and decoded
+// once, then played from memory; a ringtone or the ringback file is exactly one cycle and loops without a seam.
 //
-// API: play(key) · playOnce(key) · startLoop(key) · stop() · unlock()
-//   message tones: chime, pop, glass · ringtones: classic, soft, bright · call progress: ringback, busy, end
+// API: play(key, pack) · playOnce(key, pack, limit) · startLoop(key, pack) · stop() · unlock()
+//      preload(keys, pack) · setCustom(slot, id, bytes) → seconds | null · hasCustom(slot, id) · clearCustom(slot)
+//      measure(bytes) → seconds | null (decodes without keeping anything)
+//   pack keys: message tones chime, pop, glass · ringtones classic, soft, bright · call progress ringback, busy, end
+//   the user's own sounds: "custom:message", "custom:ringtone" · pack: "wood" (default), "bells", "piano"
+
+const SOUNDS = new URL('../sounds/', import.meta.url);
+const DEFAULT_PACK = 'wood';
+// The packs sit at about -11 LUFS with peaks under -1.5 dBTP; in-app sounds play a little under that.
+const MASTER = 0.8;
+// The user's own files can be mastered far louder than our tones: their loudest 200 ms is brought down to about
+// this RMS level (dBFS), never up.
+const CUSTOM_TARGET_DB = -14;
 
 let ctx = null;
 let master = null;
-let loop = null;   // { key, gain, timer }
-let once = null;   // gain node of the last one-shot preview (stopped by stop())
-
-const CYCLES = { classic: 3.0, soft: 3.0, bright: 3.0, ringback: 4.0 };
-// Rough per-tone normalization so every tone peaks at a similar loudness (the WAV renderer normalizes exactly).
-const LEVEL = { chime: 0.48, pop: 0.78, glass: 0.62, classic: 0.85, soft: 0.95, bright: 0.62, ringback: 1.0, busy: 1.0, end: 0.9 };
+let manifest = null;           // Promise<{ rate, packs: { [pack]: { [key]: { samples, loop?, hash } } } } | null>
+const buffers = new Map();     // "pack/key" -> Promise<AudioBuffer | null>
+const custom = new Map();      // slot -> { id, buffer, gain }
+let loop = null;               // { source, gain } of the playing loop
+let loopId = null;             // what startLoop() was asked for last (also while it loads)
+let once = null;               // gain node of the last one-shot that replaces others (previews, busy, call ended)
+let generation = 0;            // bumped by stop(): a loop or preview still loading when it changes never starts
 
 function ensure() {
   if (!ctx) {
@@ -24,7 +37,7 @@ function ensure() {
       return null;
     }
     master = ctx.createGain();
-    master.gain.value = 0.7;
+    master.gain.value = MASTER;
     master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') ctx.resume().catch(() => { });
@@ -37,152 +50,148 @@ function ensure() {
 
 export function unlock() { ensure(); }
 
-// ---- Primitives (times in seconds relative to `t0`) -------------------------------------------------------
+// ---- Loading ------------------------------------------------------------------------------------------------------
 
-function partial(out, t0, start, freq, decay, amp, attack = 0.003) {
-  const c = out.context;
-  const at = t0 + start;
-  const osc = c.createOscillator();
-  const g = c.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(freq, at);
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(amp, at + attack);
-  g.gain.setTargetAtTime(0, at + attack, decay);
-  osc.connect(g);
-  g.connect(out);
-  osc.start(at);
-  osc.stop(at + attack + decay * 7);
+function loadManifest() {
+  if (!manifest) {
+    manifest = fetch(new URL('sounds.json', SOUNDS))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((m) => {
+        if (!m) manifest = null;   // try again next time (an offline web client)
+        return m;
+      });
+  }
+  return manifest;
 }
 
-function bell(out, t0, start, freq, decay, amp) {
-  partial(out, t0, start, freq, decay, amp * 0.60);
-  partial(out, t0, start, freq * 2.0, decay * 0.55, amp * 0.22);
-  partial(out, t0, start, freq * 2.76, decay * 0.35, amp * 0.12);
-  partial(out, t0, start, freq * 5.40, decay * 0.18, amp * 0.06);
-}
-
-function mallet(out, t0, start, freq, decay, amp) {
-  partial(out, t0, start, freq, decay * 0.5, amp * 0.70, 0.006);
-  partial(out, t0, start, freq * 4.0, decay * 0.12, amp * 0.12, 0.003);
-  partial(out, t0, start, freq * 10.0, decay * 0.04, amp * 0.03, 0.002);
-}
-
-function tone(out, t0, start, duration, freq, amp, attack, release, harmonics) {
-  const c = out.context;
-  const at = t0 + start;
-  const g = c.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(amp, at + attack);
-  g.gain.setValueAtTime(amp, at + Math.max(attack, duration - release));
-  g.gain.linearRampToValueAtTime(0, at + duration);
-  g.connect(out);
-  harmonics.forEach((h, i) => {
-    if (!h) return;
-    const osc = c.createOscillator();
-    const hg = c.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq * (i + 1), at);
-    hg.gain.value = h;
-    osc.connect(hg);
-    hg.connect(g);
-    osc.start(at);
-    osc.stop(at + duration + 0.02);
+function decode(arrayBuffer) {
+  // Older WebKit has only the callback form.
+  return new Promise((resolve, reject) => {
+    const p = ctx.decodeAudioData(arrayBuffer, resolve, reject);
+    if (p && p.then) p.then(resolve, reject);
   });
 }
 
-function sweep(out, t0, start, duration, fromHz, toHz, amp) {
-  const c = out.context;
-  const at = t0 + start;
-  const osc = c.createOscillator();
-  const g = c.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(fromHz, at);
-  osc.frequency.exponentialRampToValueAtTime(toHz, at + duration);
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(amp, at + 0.003);
-  g.gain.setTargetAtTime(0, at + 0.003, duration * 0.6);
-  osc.connect(g);
-  g.connect(out);
-  osc.start(at);
-  osc.stop(at + duration * 2.2);
+function entryOf(m, pack, key) {
+  return m && m.packs && m.packs[pack] ? m.packs[pack][key] || null : null;
 }
 
-// ---- Recipes ------------------------------------------------------------------------------------------------
-
-const RECIPES = {
-  // Two soft bell strikes a fifth apart.
-  chime(out, t) {
-    bell(out, t, 0.00, 1046.5, 0.55, 0.9);
-    bell(out, t, 0.13, 1568.0, 0.70, 0.75);
-    return 0.95;
-  },
-  // A short rising bubble blip followed by a quieter echo.
-  pop(out, t) {
-    sweep(out, t, 0.000, 0.070, 420, 980, 0.9);
-    sweep(out, t, 0.105, 0.060, 620, 1240, 0.45);
-    return 0.32;
-  },
-  // A high, slightly detuned crystal ting with an airy tail.
-  glass(out, t) {
-    partial(out, t, 0.0, 2093.0, 0.90, 0.55);
-    partial(out, t, 0.0, 2097.5, 0.85, 0.30);
-    partial(out, t, 0.0, 2093.0 * 2.76, 0.30, 0.18);
-    partial(out, t, 0.0, 2093.0 * 5.40, 0.12, 0.08);
-    partial(out, t, 0.09, 3136.0, 0.55, 0.22);
-    return 1.1;
-  },
-  // Alternating two-tone trill: ring 1.4 s, then a pause (one 3 s cycle).
-  classic(out, t) {
-    for (let i = 0; i < 14; i++) {
-      const f = i % 2 === 0 ? 932.3 : 740.0;
-      tone(out, t, i * 0.1, 0.095, f, 0.55, 0.004, 0.02, [1.0, 0.35, 0.12]);
-    }
-    return 3.0;
-  },
-  // Warm mallet arpeggio, unhurried.
-  soft(out, t) {
-    const notes = [523.25, 659.25, 783.99, 659.25, 587.33, 783.99];
-    notes.forEach((f, i) => mallet(out, t, i * 0.22, f, 0.9, 0.65));
-    return 3.0;
-  },
-  // Brighter, upbeat rising figure with a sparkle on top.
-  bright(out, t) {
-    const notes = [783.99, 987.77, 1174.66, 1567.98, 1174.66, 1567.98];
-    const times = [0.0, 0.14, 0.28, 0.42, 0.70, 0.84];
-    notes.forEach((f, i) => bell(out, t, times[i], f, 0.45, 0.7));
-    return 3.0;
-  },
-  // 425 Hz, 1 s on / 3 s off.
-  ringback(out, t) {
-    tone(out, t, 0.0, 1.0, 425.0, 0.6, 0.02, 0.03, [1.0]);
-    return 4.0;
-  },
-  // 425 Hz, 0.35 s on / 0.35 s off, four times.
-  busy(out, t) {
-    for (let i = 0; i < 4; i++) tone(out, t, i * 0.7, 0.35, 425.0, 0.6, 0.01, 0.02, [1.0]);
-    return 2.8;
-  },
-  // Two descending soft notes: "call ended".
-  end(out, t) {
-    mallet(out, t, 0.00, 783.99, 0.45, 0.8);
-    mallet(out, t, 0.18, 587.33, 0.60, 0.8);
-    return 0.85;
+// Promise<AudioBuffer | null>; failures are not kept, so a later call tries again.
+function load(pack, key) {
+  const id = `${pack}/${key}`;
+  let pending = buffers.get(id);
+  if (!pending) {
+    pending = loadManifest().then(async (m) => {
+      const entry = entryOf(m, pack, key);
+      if (!entry) return null;
+      // The hash versions the URL: the file names stay fixed, so caches must not serve an older sound.
+      const response = await fetch(new URL(`${pack}/${key}.ogg?v=${entry.hash || ''}`, SOUNDS));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return decode(await response.arrayBuffer());
+    }).catch((e) => {
+      buffers.delete(id);
+      console.warn('[sounds] cannot load', id, e);
+      return null;
+    });
+    buffers.set(id, pending);
   }
-};
-
-function render(key, gainNode, at) {
-  const recipe = RECIPES[key];
-  if (!recipe) return 0;
-  const level = ctx.createGain();
-  level.gain.value = LEVEL[key] || 0.8;
-  level.connect(gainNode);
-  return recipe(level, at);
+  return pending;
 }
 
-function freshGain() {
+function packOf(pack) {
+  return typeof pack === 'string' && /^[a-z]+$/.test(pack) ? pack : DEFAULT_PACK;
+}
+
+// { buffer, gain, loopEnd } for a key, or null.
+async function resolve(key, pack) {
+  if (typeof key !== 'string') return null;
+  if (key.startsWith('custom:')) {
+    const item = custom.get(key.substring(7));
+    return item ? { buffer: item.buffer, gain: item.gain, loopEnd: item.buffer.duration } : null;
+  }
+  const p = packOf(pack);
+  const [m, buffer] = await Promise.all([loadManifest(), load(p, key)]);
+  if (!buffer) return null;
+  const entry = entryOf(m, p, key);
+  // A loop file is exactly one cycle; the manifest has its length, in case a decoder pads the end.
+  const cycle = entry && entry.loop ? entry.samples / m.rate : buffer.duration;
+  return { buffer, gain: 1, loopEnd: Math.min(cycle, buffer.duration) };
+}
+
+// Fetches and decodes sounds ahead of their first use (the selected message tone and ringtone).
+export function preload(keys, pack) {
+  if (!ensure()) return;
+  (keys || []).forEach((key) => { if (typeof key === 'string' && !key.startsWith('custom:')) load(packOf(pack), key); });
+}
+
+// ---- The user's own sounds -------------------------------------------------------------------------------------------
+
+// RMS level (dBFS) of the loudest 200 ms, all channels mixed.
+function loudestDb(buffer) {
+  const n = buffer.length;
+  const channels = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  const w = Math.max(1, Math.min(n, Math.round(buffer.sampleRate * 0.2)));
+  const power = (i) => {
+    let s = 0;
+    for (const data of channels) s += data[i];
+    s /= channels.length;
+    return s * s;
+  };
+  let sum = 0;
+  let best = 0;
+  for (let i = 0; i < n; i++) {
+    sum += power(i);
+    if (i >= w) sum -= power(i - w);
+    if (i >= w - 1 && sum > best) best = sum;
+  }
+  return 10 * Math.log10(Math.max(best / w, 1e-12));
+}
+
+async function decodeBytes(bytes) {
+  if (!ensure() || !bytes || !bytes.byteLength) return null;
+  try {
+    // decodeAudioData takes (and detaches) an ArrayBuffer of its own.
+    const buffer = await decode(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    return buffer && buffer.duration > 0 ? buffer : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function measure(bytes) {
+  const buffer = await decodeBytes(bytes);
+  return buffer ? buffer.duration : null;
+}
+
+// Keeps the user's sound for a slot ("message" | "ringtone"); returns its length in seconds, or null when it cannot
+// be decoded (the slot is then empty, and the caller plays the pack's sound instead).
+export async function setCustom(slot, id, bytes) {
+  const buffer = await decodeBytes(bytes);
+  if (!buffer) {
+    custom.delete(slot);
+    return null;
+  }
+  const gain = Math.min(1, Math.pow(10, (CUSTOM_TARGET_DB - loudestDb(buffer)) / 20));
+  custom.set(slot, { id, buffer, gain: Math.max(gain, 0.1) });
+  return buffer.duration;
+}
+
+export function hasCustom(slot, id) {
+  const item = custom.get(slot);
+  return !!item && item.id === id;
+}
+
+export function clearCustom(slot) {
+  custom.delete(slot);
+}
+
+// ---- Playback ------------------------------------------------------------------------------------------------------
+
+function freshGain(level) {
   const g = ctx.createGain();
-  g.gain.value = 1;
+  g.gain.value = level;
   g.connect(master);
   return g;
 }
@@ -198,45 +207,85 @@ function silence(g) {
   } catch (e) { /* context closed */ }
 }
 
-// One message tone (overlapping calls are fine; they are short).
-export function play(key) {
-  if (!ensure()) return 0;
-  return render(key, master, ctx.currentTime + 0.01);
+function startSource(sound, out, looping) {
+  const source = ctx.createBufferSource();
+  source.buffer = sound.buffer;
+  if (looping) {
+    source.loop = true;
+    source.loopStart = 0;
+    source.loopEnd = sound.loopEnd;
+  }
+  source.connect(out);
+  source.start(ctx.currentTime + 0.01);
+  return source;
 }
 
-// One-shot that replaces any loop or previous preview (busy, call ended, settings previews).
-export function playOnce(key) {
-  if (!ensure()) return 0;
-  stop();
-  once = freshGain();
-  return render(key, once, ctx.currentTime + 0.02);
+// The calls below return at once and load in the background (a slow fetch never holds back a later stop()); stop()
+// cancels a loop or preview that is still loading.
+
+// Whether the context runs (a browser keeps it suspended until the page has had a user gesture; the app's WebView
+// does not need one).
+function running() {
+  if (ctx.state === 'running') return Promise.resolve(true);
+  return Promise.race([
+    ctx.resume().then(() => ctx.state === 'running', () => false),
+    new Promise((done) => setTimeout(() => done(false), 300)),
+  ]);
 }
 
-// Loops a ringtone or the ringback until stop().
-export function startLoop(key) {
-  if (!ensure() || !RECIPES[key]) return;
-  if (loop && loop.key === key) return;
+// One message tone (overlapping calls are fine; they are short). Dropped while audio cannot start yet: a tone that
+// came out on the first tap, long after its message, would only confuse.
+export function play(key, pack) {
+  if (!ensure()) return;
+  Promise.all([resolve(key, pack), running()]).then(([sound, ok]) => {
+    if (!sound || !ok) return;
+    const out = freshGain(sound.gain);
+    const source = startSource(sound, out, false);
+    source.onended = () => { try { out.disconnect(); } catch (e) { /* gone */ } };
+  });
+}
+
+// One-shot that replaces any loop or previous preview (busy, call ended, settings previews: a ringtone plays one cycle).
+// `limit` (seconds) fades a long file out early: a preview of the user's own ringtone need not run for a minute.
+export function playOnce(key, pack, limit) {
+  if (!ensure()) return;
   stop();
-  const gain = freshGain();
-  const cycle = CYCLES[key] || 3.0;
-  let next = ctx.currentTime + 0.05;
-  const state = { key, gain, timer: 0 };
-  const schedule = () => {
-    // Keep ~1.5 cycles scheduled ahead so timer throttling in background tabs does not create gaps.
-    while (next < ctx.currentTime + cycle * 1.5) {
-      render(key, gain, next);
-      next += cycle;
+  const started = generation;
+  resolve(key, pack).then((sound) => {
+    if (!sound || started !== generation) return;
+    const out = freshGain(sound.gain);
+    once = out;
+    const source = startSource(sound, out, false);
+    if (limit > 0 && sound.buffer.duration > limit) {
+      const end = ctx.currentTime + 0.01 + limit;
+      out.gain.setValueAtTime(sound.gain, end - 0.6);
+      out.gain.linearRampToValueAtTime(0, end);
+      source.stop(end + 0.05);
     }
-  };
-  schedule();
-  state.timer = setInterval(schedule, 500);
-  loop = state;
+  });
+}
+
+// Loops a ringtone or the ringback until stop(); asking again for the loop that already plays changes nothing.
+export function startLoop(key, pack) {
+  if (!ensure() || typeof key !== 'string') return;
+  const id = key.startsWith('custom:') ? `${key}/${(custom.get(key.substring(7)) || {}).id}` : `${packOf(pack)}/${key}`;
+  if (loopId === id) return;
+  stop();
+  loopId = id;
+  const started = generation;
+  resolve(key, pack).then((sound) => {
+    if (!sound || started !== generation) return;
+    const gain = freshGain(sound.gain);
+    loop = { gain, source: startSource(sound, gain, true) };
+  });
 }
 
 export function stop() {
+  generation++;
+  loopId = null;
   if (loop) {
-    clearInterval(loop.timer);
     silence(loop.gain);
+    try { loop.source.stop(ctx.currentTime + 0.05); } catch (e) { /* not started */ }
     loop = null;
   }
   if (once) {
