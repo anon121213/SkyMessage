@@ -73,6 +73,7 @@ public static class ClientCoreSetup
         services.AddSingleton<IMediaDownloadService, MediaDownloadService>();
         services.AddSingleton<ILinkBuilder, LinkBuilder>();
         services.AddSingleton<INotificationCoordinator, NotificationCoordinator>();
+        services.AddSingleton<IAudioFocusCoordinator, AudioFocusCoordinator>();
         services.AddSingleton<IClientBootstrapper, ClientBootstrapper>();
 
         // Stores

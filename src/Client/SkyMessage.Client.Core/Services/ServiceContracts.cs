@@ -317,3 +317,17 @@ public interface INotificationCoordinator
 {
     event Action<InAppNotification>? InAppNotificationRaised;
 }
+
+/// <summary>
+/// Pauses music and videos in other apps (<see cref="Platform.IAudioFocusService"/>) while a call rings or runs and
+/// while a voice or video note is recorded, when <see cref="DeviceSettings.PauseOtherAudio"/> is on; gives the audio
+/// back as soon as none of that is going on. Calls are followed through <see cref="Stores.ICallService"/>; the
+/// composer reports its recordings.
+/// </summary>
+public interface IAudioFocusCoordinator
+{
+    /// <summary>False where other apps cannot be paused (browsers, Apple): the setting is hidden there.</summary>
+    bool IsSupported { get; }
+    /// <summary>A voice or video note is being recorded until the returned handle is disposed (disposing twice is fine).</summary>
+    IDisposable HoldForRecording();
+}

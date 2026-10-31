@@ -42,14 +42,15 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         IDraftStore drafts,
         ICallService calls,
         INotificationCoordinator notificationCoordinator,
+        IAudioFocusCoordinator audioFocus,
         IMediaUrlBuilder mediaUrls,
         IMediaDownloadService downloads,
         ILocalNotificationService notifications,
         IBackgroundConnectionService background,
         ILogger<ClientBootstrapper> logger)
     {
-        // messages, users, typing, drafts, calls, coordinator, urls, downloads: constructed for their subscriptions.
-        _ = (messages, users, typing, drafts, calls, notificationCoordinator, mediaUrls, downloads);
+        // messages, users, typing, drafts, calls, coordinators, urls, downloads: constructed for their subscriptions.
+        _ = (messages, users, typing, drafts, calls, notificationCoordinator, audioFocus, mediaUrls, downloads);
         _settings = settings;
         _auth = auth;
         _endpoints = endpoints;

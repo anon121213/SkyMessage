@@ -68,6 +68,8 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
         _preferredKind = kind;
         _preferredId = null;
         Apply();
+        // Android 11 and older report speakerphone/SCO switches to nobody: tell the call (proximity lock) and the UI.
+        RaiseChanged();
         return Task.CompletedTask;
     }
 
@@ -76,7 +78,30 @@ public sealed class AndroidAudioRouteService : IAudioRouteService
         _preferredId = routeId;
         _preferredKind = KindOfRouteId(routeId);
         Apply();
+        RaiseChanged();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Where call audio plays right now (null when unknown). Android 12+: the communication device, which defaults to
+    /// the earpiece on phones; older versions: the speakerphone/SCO switches, else a wired headset, else the earpiece.
+    /// </summary>
+    internal AudioRouteKind? CurrentKind
+    {
+        get
+        {
+            try
+            {
+                if (_audio is null) return null;
+                if (OperatingSystem.IsAndroidVersionAtLeast(31)) return _audio.CommunicationDevice is { } device ? KindOf(device.Type) : null;
+                return LegacyRoutes().FirstOrDefault(r => r.IsActive)?.Kind;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Reading the audio route failed");
+                return null;
+            }
+        }
     }
 
     /// <summary>

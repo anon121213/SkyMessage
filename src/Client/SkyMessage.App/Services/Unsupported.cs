@@ -44,6 +44,19 @@ public sealed class UnsupportedAudioRouteService : IAudioRouteService
     }
 }
 
+/// <summary>
+/// Apple: the call's audio session (play-and-record, not mixable) already interrupts other audio, and there is no
+/// focus to ask for around recordings; the "pause music" setting is hidden.
+/// </summary>
+public sealed class UnsupportedAudioFocusService : IAudioFocusService
+{
+    public bool IsSupported => false;
+
+    public void SetFocus(AudioFocusKind kind)
+    {
+    }
+}
+
 public sealed class UnsupportedHapticsService : IHapticsService
 {
     public bool IsSupported => false;

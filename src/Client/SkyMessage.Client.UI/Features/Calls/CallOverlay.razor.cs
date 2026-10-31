@@ -138,7 +138,13 @@ public partial class CallOverlay : IAsyncDisposable
 
     private bool _hasSeveralCameras;
 
-    private bool CanScreenShare => !Platform.IsMobile && _caps?.ScreenShare == true && _engineConnected;
+    /// <summary>
+    /// Desktop browsers show their screen (getDisplayMedia). Phones do not: the Android WebView has no screen capture,
+    /// and sharing from the app would need native capture published outside the WebView's media engine.
+    /// </summary>
+    private bool OffersScreenShare => !Platform.IsMobile && _caps?.ScreenShare == true;
+
+    private bool CanScreenShare => OffersScreenShare && _engineConnected;
 
     private bool HasAudioMenu => AudioRoutes.IsSupported || _caps?.Enumerate == true;
 

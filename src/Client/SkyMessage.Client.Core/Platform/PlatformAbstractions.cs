@@ -268,6 +268,34 @@ public interface ICallPlatformService
     event Action<CallCommand>? CommandRequested;
 }
 
+/// <summary>Why other apps' audio should pause right now (see <see cref="IAudioFocusService"/>).</summary>
+public enum AudioFocusKind
+{
+    /// <summary>Nothing of ours is playing or recording: other apps may play.</summary>
+    None,
+    /// <summary>An incoming call rings.</summary>
+    Ringtone,
+    /// <summary>A call is being set up, in progress or showing its end.</summary>
+    Call,
+    /// <summary>A voice message or a round video note is being recorded.</summary>
+    Recording,
+}
+
+/// <summary>
+/// Android: transient audio focus, so music and videos in other apps pause while a call rings or runs and while a
+/// voice or video note is recorded, and resume when focus is given back. Other hosts: <see cref="IsSupported"/> =
+/// false (the setting is hidden). Core decides when (<c>AudioFocusPolicy</c>). Implementations never throw.
+/// </summary>
+public interface IAudioFocusService
+{
+    bool IsSupported { get; }
+    /// <summary>
+    /// Holds focus for <paramref name="kind"/>; <see cref="AudioFocusKind.None"/> gives it back. Switching from one
+    /// kind to another never lets other apps resume in between.
+    /// </summary>
+    void SetFocus(AudioFocusKind kind);
+}
+
 public interface IShareService
 {
     Task ShareTextAsync(string text, string? title = null);

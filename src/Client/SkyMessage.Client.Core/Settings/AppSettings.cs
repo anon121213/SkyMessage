@@ -103,6 +103,11 @@ public sealed class DeviceSettings
     public VideoQuality CallVideoQuality { get; set; } = VideoQuality.Auto;
     /// <summary>Phones: default output for voice calls.</summary>
     public AudioRouteKind? PreferredAudioRoute { get; set; }
+    /// <summary>
+    /// Android: music and videos in other apps pause while a call rings or runs and while a voice or video note is
+    /// recorded, and play on afterwards (IAudioFocusService).
+    /// </summary>
+    public bool PauseOtherAudio { get; set; } = true;
 }
 
 public enum MediaQuality

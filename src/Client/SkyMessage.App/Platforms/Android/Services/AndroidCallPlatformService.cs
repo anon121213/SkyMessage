@@ -17,9 +17,10 @@ namespace SkyMessage.App.Droid;
 
 /// <summary>
 /// Keeps calls alive: a foreground service whose type is derived from granted permissions (microphone; camera
-/// only for video while in the foreground, as Android 14+ requires), a partial wake lock (plus a proximity lock
-/// for audio calls) and an ongoing-call notification with Mute and Hang up. When the call ends the audio routing
-/// it requested is released, so later media playback is not stuck on the earpiece or a headset.
+/// only for video while in the foreground, as Android 14+ requires), a partial wake lock, a proximity lock while the
+/// call is held to the ear (<see cref="WantsProximityLock"/>) and an ongoing-call notification with Mute and Hang up.
+/// When the call ends the audio routing it requested is released, so later media playback is not stuck on the
+/// earpiece or a headset.
 /// </summary>
 public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLifecycle lifecycle, NativeStrings strings,
     ILogger<AndroidCallPlatformService> logger) : ICallPlatformService
@@ -29,7 +30,9 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     private readonly object _gate = new();
     private Action<CallCommand>? _handlers;
     private ICallService? _callService;
+    private AndroidAudioRouteService? _routes;
     private bool? _notifiedMuted;
+    private bool? _seenCameraOn;
 
     internal CallDto? Call { get; private set; }
 
@@ -57,7 +60,9 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
             IsVideo = video;
             CameraOn = video;
             StartedAt = DateTimeOffset.UtcNow;
+            _seenCameraOn = null;
             HookCallService();
+            HookRoutes();
             return Task.FromResult(StartService());
         }
         catch (Exception ex)
@@ -74,6 +79,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
             if (Call is null) return Task.FromResult(false);
             CameraOn = cameraOn;
             if (cameraOn) IsVideo = true;
+            UpdateProximity();
             if (!lifecycle.IsForeground) return Task.FromResult(false);
             return Task.FromResult(StartService());
         }
@@ -90,6 +96,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
         {
             Call = null;
             _notifiedMuted = null;
+            _seenCameraOn = null;
             var context = Android.App.Application.Context;
             // A start that has not reached startForeground() yet must not be stopped from outside (Android kills
             // the app for that); the service sees Call == null and stops itself right after entering foreground.
@@ -140,6 +147,38 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     }
 
     internal bool IsMuted => _callService?.Current?.IsMicMuted ?? false;
+
+    /// <summary>
+    /// Whether the proximity screen-off lock belongs to the call right now (<see cref="CallAudioPolicy"/>): audio on the
+    /// earpiece and my camera off. The audio route is read from the system, so the speaker button, a headset plugged
+    /// in or the WebView picking another device all count.
+    /// </summary>
+    internal bool WantsProximityLock
+    {
+        get
+        {
+            if (Call is null) return false;
+            var cameraOn = _callService?.Current?.IsCameraOn ?? CameraOn;
+            return CallAudioPolicy.HoldsProximityLock(_routes?.CurrentKind, cameraOn);
+        }
+    }
+
+    /// <summary>Re-checks the proximity lock (route or camera changed); the service applies it on the main thread.</summary>
+    internal void UpdateProximity()
+    {
+        if (Call is null && !CallForegroundService.IsForeground) return;
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            try
+            {
+                CallForegroundService.ApplyProximity(WantsProximityLock);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Updating the proximity lock failed");
+            }
+        });
+    }
 
     /// <summary>The user swiped the app away mid-call: the WebView (media) is gone, so end the call cleanly.</summary>
     internal void OnTaskRemoved()
@@ -223,6 +262,14 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
         }
     }
 
+    /// <summary>Route changes (the in-call speaker button, headsets coming and going) move the proximity lock.</summary>
+    private void HookRoutes()
+    {
+        if (_routes is not null) return;
+        _routes = services.GetService<IAudioRouteService>() as AndroidAudioRouteService;
+        if (_routes is not null) _routes.RoutesChanged += UpdateProximity;
+    }
+
     private void HookCallService()
     {
         if (_callService is not null) return;
@@ -232,6 +279,12 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
         {
             var current = _callService.Current;
             if (Call is null || current is null) return;
+            // The camera turned on or off (also in background, where OnCallMediaChangedAsync is not called).
+            if (current.IsCameraOn != _seenCameraOn)
+            {
+                _seenCameraOn = current.IsCameraOn;
+                UpdateProximity();
+            }
             if (current.IsMicMuted == _notifiedMuted) return;
             MainThread.BeginInvokeOnMainThread(() =>
             {
@@ -255,11 +308,15 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
 public sealed class CallForegroundService : Service
 {
     private static volatile bool _isForeground;
+    private static CallForegroundService? _running;
     private PowerManager.WakeLock? _cpuLock;
     private PowerManager.WakeLock? _proximityLock;
 
     /// <summary>True between a successful startForeground() and the service's destruction.</summary>
     internal static bool IsForeground => _isForeground;
+
+    /// <summary>Takes or lets go of the proximity lock of the running call service (main thread).</summary>
+    internal static void ApplyProximity(bool hold) => _running?.SetProximity(hold);
 
     public override IBinder? OnBind(Intent? intent) => null;
 
@@ -283,6 +340,7 @@ public sealed class CallForegroundService : Service
                 StartForeground(AppIntents.OngoingCallNotificationId, notification);
             }
             _isForeground = true;
+            _running = this;
         }
         catch (Exception)
         {
@@ -295,7 +353,8 @@ public sealed class CallForegroundService : Service
             StopNow();
             return StartCommandResult.NotSticky;
         }
-        AcquireLocks(audioOnly: !platform.CameraOn);
+        AcquireCpuLock();
+        SetProximity(platform.WantsProximityLock);
         return StartCommandResult.NotSticky;
     }
 
@@ -308,8 +367,9 @@ public sealed class CallForegroundService : Service
     public override void OnDestroy()
     {
         _isForeground = false;
+        if (ReferenceEquals(_running, this)) _running = null;
         Release(ref _cpuLock);
-        Release(ref _proximityLock);
+        ReleaseProximity();
         base.OnDestroy();
     }
 
@@ -338,31 +398,61 @@ public sealed class CallForegroundService : Service
         StopSelf();
     }
 
-    private void AcquireLocks(bool audioOnly)
+    private void AcquireCpuLock()
     {
-        if (GetSystemService(PowerService) is not PowerManager power) return;
+        if (_cpuLock is not null || GetSystemService(PowerService) is not PowerManager power) return;
         try
         {
-            if (_cpuLock is null)
-            {
-                _cpuLock = power.NewWakeLock(WakeLockFlags.Partial, "SkyMessage:call");
-                _cpuLock?.SetReferenceCounted(false);
-                _cpuLock?.Acquire(4 * 60 * 60 * 1000L);
-            }
-            if (audioOnly && _proximityLock is null && power.IsWakeLockLevelSupported((int)WakeLockFlags.ProximityScreenOff))
-            {
-                _proximityLock = power.NewWakeLock(WakeLockFlags.ProximityScreenOff, "SkyMessage:proximity");
-                _proximityLock?.SetReferenceCounted(false);
-                _proximityLock?.Acquire(4 * 60 * 60 * 1000L);
-            }
-            else if (!audioOnly)
-            {
-                Release(ref _proximityLock);
-            }
+            _cpuLock = power.NewWakeLock(WakeLockFlags.Partial, "SkyMessage:call");
+            _cpuLock?.SetReferenceCounted(false);
+            _cpuLock?.Acquire(4 * 60 * 60 * 1000L);
         }
         catch (Exception)
         {
             // Wake locks are best effort.
+        }
+    }
+
+    /// <summary>
+    /// The proximity lock turns the screen off while something is near the sensor (the phone at the ear). Only a call
+    /// held to the ear has it (AndroidCallPlatformService.WantsProximityLock): on the speaker, a headset or with the
+    /// camera on, the screen stays on.
+    /// </summary>
+    private void SetProximity(bool hold)
+    {
+        if (!hold)
+        {
+            ReleaseProximity();
+            return;
+        }
+        if (_proximityLock is not null || GetSystemService(PowerService) is not PowerManager power) return;
+        try
+        {
+            if (!power.IsWakeLockLevelSupported((int)WakeLockFlags.ProximityScreenOff)) return;
+            _proximityLock = power.NewWakeLock(WakeLockFlags.ProximityScreenOff, "SkyMessage:proximity");
+            _proximityLock?.SetReferenceCounted(false);
+            _proximityLock?.Acquire(4 * 60 * 60 * 1000L);
+        }
+        catch (Exception)
+        {
+            // Wake locks are best effort.
+        }
+    }
+
+    /// <summary>
+    /// Lets go of the proximity lock. A screen that is dark because the phone is at the ear stays dark until it is taken
+    /// away, so switching to a headset (or the call ending) never lights it up against a cheek or in a pocket.
+    /// </summary>
+    private void ReleaseProximity()
+    {
+        var wakeLock = _proximityLock;
+        _proximityLock = null;
+        try
+        {
+            if (wakeLock?.IsHeld == true) wakeLock.Release(WakeLockFlags.ReleaseFlagWaitForNoProximity);
+        }
+        catch (Exception)
+        {
         }
     }
 

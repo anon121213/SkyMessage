@@ -4,11 +4,12 @@
 // inside `root` ([data-rec-time] timer, [data-rec-wave] canvas, [data-rec-preview] canvas, [data-rec-ring] progress,
 // [data-rec-slide] bar / overlay, [data-rec-lock] lock hint); the gesture state is mirrored on `root` for the CSS
 // (data-rec="pressing|starting|recording|locked|stopping", --slide and --lift 0..1 for the finger) and the voice level
-// on [data-rec-halo] (--level 0..1). .NET hears OnRecordTap(), OnRecordState(state, mode, info) and
-// OnRecordDone(result | null, reason) with the blob kept in chat.js's registry (streamed to .NET on demand). When a
-// recording ends, the bar or overlay leaves the way it went (sent, binned, too short) on a copy from composer-fx.js,
-// since .NET removes the real one at once. The live wave is painted with the composer's colors: a gradient from the
-// canvas's --wave-a (older bars, left) to --wave-b (newest, right), falling back to its CSS color.
+// on [data-rec-halo] (--level 0..1). .NET hears OnRecordTap(), OnRecordStarting() (a hold turns into a recording,
+// before the devices open), OnRecordState(state, mode, info) and OnRecordDone(result | null, reason) with the blob
+// kept in chat.js's registry (streamed to .NET on demand). When a recording ends, the bar or overlay leaves the way
+// it went (sent, binned, too short) on a copy from composer-fx.js, since .NET removes the real one at once. The live
+// wave is painted with the composer's colors: a gradient from the canvas's --wave-a (older bars, left) to --wave-b
+// (newest, right), falling back to its CSS color.
 import { keepBlob } from './chat.js';
 import { pause as pausePlayback } from './player.js';
 import { reduceMotion } from './app.js';
@@ -204,6 +205,9 @@ export function attach(button, root, ref, options) {
     }
     setState('starting');
     abortReason = null;
+    // Before the devices open, so music in other apps has stopped by the time the recording starts (the phone apps
+    // pause it; OnRecordDone or OnRecordState('idle') always follows).
+    safeInvoke(ref, 'OnRecordStarting');
     // A voice message or round note playing now would end up in the recording (and talk over the user).
     pausePlayback();
     const recordingMode = mode;

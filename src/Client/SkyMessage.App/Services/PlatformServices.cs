@@ -43,6 +43,7 @@ public static class PlatformServices
         services.AddSingleton<IDeviceContactsService, AndroidDeviceContactsService>();
         services.AddSingleton<ILocalNotificationService, AndroidNotificationService>();
         services.AddSingleton<IAudioRouteService, AndroidAudioRouteService>();
+        services.AddSingleton<IAudioFocusService, AndroidAudioFocusService>();
         services.AddSingleton<ICallPlatformService, AndroidCallPlatformService>();
         services.AddSingleton<IBackgroundConnectionService, AndroidBackgroundConnectionService>();
         services.AddSingleton<IFileSaveService, AndroidFileSaveService>();
@@ -56,6 +57,7 @@ public static class PlatformServices
         services.AddSingleton<IDeviceContactsService, AppleDeviceContactsService>();
         services.AddSingleton<ILocalNotificationService, AppleNotificationService>();
         services.AddSingleton<ICallPlatformService, AppleCallPlatformService>();
+        services.AddSingleton<IAudioFocusService, UnsupportedAudioFocusService>();
         services.AddSingleton<IBackgroundConnectionService, UnsupportedBackgroundConnectionService>();
         services.AddSingleton<IFileSaveService, AppleFileSaveService>();
 #if IOS

@@ -740,6 +740,46 @@ html[data-fx="lite"] .call-sky *::after {
     width: 150px;
 }
 
+/* Centered while the tiles fit, scrollable from the first one when they do not (auto margins, not justify-content). */
+.call-share__strip ::deep .call-tile:first-child {
+    margin-left: auto;
+}
+
+.call-share__strip ::deep .call-tile:last-child {
+    margin-right: auto;
+}
+
+/* Wide stages (desktop, a phone turned sideways): the people stand beside the screen, so it keeps the full height. */
+@media (orientation: landscape) {
+    .call-share {
+        flex-direction: row;
+    }
+
+    .call-share__strip {
+        flex-direction: column;
+        width: clamp(132px, 17vw, 236px);
+        height: auto;
+        overflow-x: hidden;
+        overflow-y: auto;
+        touch-action: pan-y;
+    }
+
+    .call-share__strip ::deep .call-tile {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+    }
+
+    .call-share__strip ::deep .call-tile:first-child {
+        margin-left: 0;
+        margin-top: auto;
+    }
+
+    .call-share__strip ::deep .call-tile:last-child {
+        margin-right: 0;
+        margin-bottom: auto;
+    }
+}
+
 /* ---- Top bar ---- */
 
 .call-top {
@@ -817,6 +857,12 @@ html[data-fx="lite"] .call-sky *::after {
     width: 6px;
     height: 6px;
     margin-right: 6px;
+}
+
+.call-top__status ::deep .call-top__weak {
+    flex-shrink: 0;
+    margin-left: 6px;
+    color: #F2C36B;
 }
 
 /* Pull-down hint on touch screens. */
@@ -1014,6 +1060,44 @@ html[data-fx="lite"] .call-sky *::after {
 /* Over a video the deck darkens for contrast (still no blur: the picture moves). */
 .call-screen--video .call-deck {
     background: rgba(8, 10, 26, 0.56);
+}
+
+/* Extras after the deck (showing the screen, desktop): a small capsule of the same glass. On narrow windows it comes
+   next to the deck or on its own line; on wide ones the deck stays centered and the capsule sits right after it. */
+.call-controls--extra {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+}
+
+.call-deck--extra {
+    flex: none;
+    width: auto;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.call-deck--extra ::deep .call-btn {
+    flex: none;
+    width: 5.5rem;
+}
+
+@media (min-width: 768px) {
+    .call-controls--extra {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .call-controls--extra .call-deck {
+        grid-column: 2;
+        width: min(470px, calc(100vw - 280px));
+    }
+
+    .call-controls--extra .call-deck--extra {
+        grid-column: 3;
+        justify-self: start;
+        width: auto;
+    }
 }
 
 /* Ringing: decline and answer far apart, big; "Audio only" in between for video calls. */
