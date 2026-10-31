@@ -32,6 +32,21 @@
                 <data android:scheme="skymessage" />
             </intent-filter>
         </activity>
+
+        <!--
+          Shares the user's own notification sounds (files/sounds/ only, res/xml/sound_paths.xml) with the system,
+          which plays a channel's sound in its own process; NotificationChannels grants it read access per file.
+          The authority is NotificationChannels.SoundAuthority.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.skymessage.messenger.sounds"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/sound_paths" />
+        </provider>
     </application>
 
     <uses-permission android:name="android.permission.INTERNET" />

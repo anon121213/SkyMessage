@@ -1,6 +1,7 @@
-@* Notifications & sounds: system permission, message/call toggles, in-app sounds, tone pickers with previews, and
-   (Android) keeping the connection alive in background + the battery exemption. iPhones and browsers get a hint
-   about when messages and calls can arrive until push notifications exist. *@
+@* Notifications & sounds: system permission, message/call toggles, the sound pack (wood, bells, piano), tone pickers
+   with previews and the user's own message tone and ringtone, in-app sounds, and (Android) keeping the connection
+   alive in background + the battery exemption. iPhones and browsers get a hint about when messages and calls can
+   arrive until push notifications exist. *@
 @inherits UiComponentBase
 @inject ISettingsService Settings
 @inject ISoundService Sounds
@@ -9,6 +10,8 @@
 @inject IBackgroundConnectionService Background
 @inject IPlatformInfo Platform
 @inject ToastService Toasts
+@inject DialogService Dialogs
+@inject CustomSoundService CustomSounds
 
 <SettingsScaffold Title="@L["settings.notifications.title"]">
     @{
@@ -73,8 +76,14 @@
         }
     </Section>
 
-    <Section Title="@L["settings.notifications.messageTone"]" Footer="@L["settings.notifications.toneHint"]">
-        <ChoiceList TValue="string" Options="MessageTones" Value="n.MessageTone" ValueChanged="SetMessageToneAsync" />
+    <Section Title="@L["settings.notifications.pack"]" Footer="@L["settings.notifications.packHint"]">
+        <SoundPackPicker Value="@n.SoundPack" ValueChanged="SetPackAsync" Label="@L["settings.notifications.pack"]" />
+    </Section>
+
+    <Section Title="@L["settings.notifications.messageTone"]" Footer="@ToneFooter(n.CustomMessageTone)">
+        <TonePicker Options="MessageTones" Value="@n.MessageTone" ValueChanged="SetMessageToneAsync" CustomSupported="CustomSounds.IsSupported"
+                    Custom="n.CustomMessageTone" PickHint="@L["settings.notifications.customPickHint.message"]" Busy="@(_importing == CustomSoundSlot.Message)"
+                    OnImport="() => ImportAsync(CustomSoundSlot.Message)" OnRemove="() => RemoveAsync(CustomSoundSlot.Message)" />
     </Section>
 
     <Section Title="@L["settings.notifications.calls"]" DividerInset="64px">
@@ -82,8 +91,10 @@
                     Checked="n.CallsEnabled" CheckedChanged="v => SetAsync(s => s.Notifications.CallsEnabled = v, requestPermission: v)" />
     </Section>
 
-    <Section Title="@L["settings.notifications.ringtone"]">
-        <ChoiceList TValue="string" Options="Ringtones" Value="n.Ringtone" ValueChanged="SetRingtoneAsync" />
+    <Section Title="@L["settings.notifications.ringtone"]" Footer="@(n.CustomRingtone is null ? null : ToneFooter(n.CustomRingtone))">
+        <TonePicker Options="Ringtones" Value="@n.Ringtone" ValueChanged="SetRingtoneAsync" CustomSupported="CustomSounds.IsSupported"
+                    Custom="n.CustomRingtone" PickHint="@L["settings.notifications.customPickHint.ringtone"]" Busy="@(_importing == CustomSoundSlot.Ringtone)"
+                    OnImport="() => ImportAsync(CustomSoundSlot.Ringtone)" OnRemove="() => RemoveAsync(CustomSoundSlot.Ringtone)" />
     </Section>
 
     <Section Title="@L["settings.notifications.inApp"]" DividerInset="64px">
@@ -109,6 +120,7 @@
 
 @code {
     private PermissionState? _permission;
+    private CustomSoundSlot? _importing;
 
     private IReadOnlyList<ChoiceOption<string>> MessageTones =>
         Sounds.Tones.MessageTones.Select(t => new ChoiceOption<string>(t.Key, L[t.NameKey]))
@@ -121,6 +133,8 @@
     protected override async Task OnInitializedAsync()
     {
         RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        // A preview (an own ringtone runs up to 12 s) ends with the page; a ringing call does not.
+        OnDispose(Sounds.StopPreview);
         await CheckPermissionAsync();
     }
 
@@ -156,17 +170,83 @@
         }
     }
 
+    private Task SetPackAsync(string pack) => Settings.UpdateAsync(s => s.Notifications.SoundPack = pack);
+
     private async Task SetMessageToneAsync(string key)
     {
-        Sounds.Preview(key);
+        if (key == ToneCatalog.Custom) Sounds.PreviewCustom(CustomSoundSlot.Message);
+        else Sounds.Preview(key);
         await Settings.UpdateAsync(s => s.Notifications.MessageTone = key);
     }
 
     private async Task SetRingtoneAsync(string key)
     {
-        Sounds.Preview(key);
+        if (key == ToneCatalog.Custom) Sounds.PreviewCustom(CustomSoundSlot.Ringtone);
+        else Sounds.Preview(key);
         await Settings.UpdateAsync(s => s.Notifications.Ringtone = key);
     }
+
+    // Under the tones: "tap to listen" and, once there is an own sound, where it lives (and, on Apple devices, that
+    // system notifications keep the pack's sound).
+    private string ToneFooter(CustomSound? custom)
+    {
+        var text = L["settings.notifications.toneHint"];
+        if (custom is null) return text;
+        text += " " + L["settings.notifications.customHint"];
+        return Platform.Platform is ClientPlatform.iOS or ClientPlatform.MacOS && Platform.IsNativeApp
+            ? text + " " + L["settings.notifications.customAppleHint"]
+            : text;
+    }
+
+    private async Task ImportAsync(CustomSoundSlot slot)
+    {
+        if (_importing is not null) return;
+        _importing = slot;
+        try
+        {
+            var problem = await CustomSounds.ImportAsync(slot);
+            if (problem == CustomSoundProblem.None) Sounds.PreviewCustom(slot);
+            else if (problem is { } refused) Toasts.Warning(ProblemText(slot, refused));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _importing = null;
+            RequestRender();
+        }
+    }
+
+    private async Task RemoveAsync(CustomSoundSlot slot)
+    {
+        var pack = Sounds.Tones.FindPack(Settings.Current.Notifications.SoundPack) ?? Sounds.Tones.Packs[0];
+        var confirmed = await Dialogs.ConfirmAsync(L["settings.notifications.customRemoveTitle"],
+            L.Format("settings.notifications.customRemoveText", L[pack.NameKey]), L["common.delete"], danger: true);
+        if (!confirmed) return;
+        try
+        {
+            await CustomSounds.ResetAsync(slot);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private string ProblemText(CustomSoundSlot slot, CustomSoundProblem problem) => problem switch
+    {
+        CustomSoundProblem.Format => L["settings.notifications.customError.format"],
+        CustomSoundProblem.Empty => L["settings.notifications.customError.empty"],
+        CustomSoundProblem.TooLarge => L.Format("settings.notifications.customError.tooLarge", CustomSoundRules.MaxBytes / (1024 * 1024)),
+        CustomSoundProblem.TooShort => L["settings.notifications.customError.tooShort"],
+        CustomSoundProblem.SystemCannotPlay => L["settings.notifications.customError.system"],
+        CustomSoundProblem.TooLong => slot == CustomSoundSlot.Message
+            ? L["settings.notifications.customError.tooLongMessage"]
+            : L["settings.notifications.customError.tooLongRingtone"],
+        _ => L["settings.notifications.customError.unreadable"],
+    };
 
     private async Task SetKeepConnectedAsync(bool enabled)
     {

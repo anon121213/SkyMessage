@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SkyMessage.App.Services;
 using SkyMessage.Client.Core.Platform;
 using SkyMessage.Client.Core.Services;
+using SkyMessage.Client.Core.Settings;
 using SkyMessage.Contracts;
 using UIKit;
 using UserNotifications;
@@ -92,8 +93,8 @@ public sealed class AppleNotificationService : ILocalNotificationService
                     [new NSString("message"), new NSString(notification.ChatId.ToString())],
                     [new NSString(KindKey), new NSString(ChatKey)]),
             };
-            if (!notification.Silent && settings?.Sound != false)
-                content.Sound = Sound(settings?.MessageTone, ["chime", "pop", "glass"], "chime");
+            if (!notification.Silent && settings?.Sound != false && SoundCatalog.MessageSound(settings ?? new NotificationSettings()) is { } sound)
+                content.Sound = Sound(sound);
             var id = $"msg-{notification.ChatId:N}-{notification.MessageId ?? Guid.NewGuid():N}";
             await Center.AddNotificationRequestAsync(UNNotificationRequest.FromIdentifier(id, content, null)).ConfigureAwait(false);
         }
@@ -134,7 +135,7 @@ public sealed class AppleNotificationService : ILocalNotificationService
                     [new NSString("call"), new NSString(call.Id.ToString()), new NSString(call.ChatId.ToString())],
                     [new NSString(KindKey), new NSString(CallKey), new NSString(ChatKey)]),
             };
-            if (settings?.Sound != false) content.Sound = Sound(settings?.Ringtone, ["classic", "soft", "bright"], "classic");
+            if (settings?.Sound != false) content.Sound = Sound(SoundCatalog.RingtoneSound(settings ?? new NotificationSettings()));
             await Center.AddNotificationRequestAsync(UNNotificationRequest.FromIdentifier(CallId(call.Id), content, null)).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -252,10 +253,15 @@ public sealed class AppleNotificationService : ILocalNotificationService
         Center.SetNotificationCategories(new NSSet<UNNotificationCategory>(audio, video));
     }
 
-    private static UNNotificationSound Sound(string? key, string[] allowed, string fallback)
+    /// <summary>
+    /// The pack's CAF at the bundle root (tools/tones). iOS plays notification sounds only from the bundle or
+    /// Library/Sounds and only as PCM, IMA4, µ-law or a-law, so the user's own sound (any format) is heard in the
+    /// app, and its pack's sound in notifications.
+    /// </summary>
+    private static UNNotificationSound Sound(SoundChoice sound)
     {
-        var tone = key is not null && allowed.Contains(key, StringComparer.OrdinalIgnoreCase) ? key.ToLowerInvariant() : fallback;
-        return UNNotificationSound.GetSound($"tone_{tone}.wav");
+        var pack = sound.Fallback;
+        return UNNotificationSound.GetSound($"{SoundCatalog.ResourceName(pack.Pack, pack.Key)}.caf");
     }
 
     private static string CallId(Guid callId) => $"call-{callId:N}";

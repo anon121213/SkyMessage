@@ -55,6 +55,8 @@
     {
         Notifications.InAppNotificationRaised += OnRaised;
         OnDispose(() => Notifications.InAppNotificationRaised -= OnRaised);
+        // The signed-in shell is up: fetch the tones it will play, so the first message or call is not held up.
+        Sounds.Preload();
     }
 
     private void OnRaised(InAppNotification notification) => _ = InvokeAsync(() =>

@@ -1,0 +1,97 @@
+@* The three sound packs as little flat scenes: marimba bars seen from above (wood), a handbell (bells), a few piano
+   keys (piano). Picking a card selects the pack and plays its version of the selected message tone; the round
+   button on the scene only listens. The ring grows in and the check pops only once the user changed something. *@
+@inherits UiComponentBase
+@inject ISoundService Sounds
+@inject HapticFeedback Haptics
+
+<div class="snd-packs @(_touched ? "is-live" : null)" role="radiogroup" aria-label="@Label">
+    @foreach (var pack in Sounds.Tones.Packs)
+    {
+        var selected = pack.Key == Value;
+        var name = L[pack.NameKey];
+        <div @key="pack.Key" class="snd-pack @(selected ? "is-selected" : null)">
+            <button type="button" role="radio" aria-checked="@(selected ? "true" : "false")" class="snd-pack__pick" @onclick="() => PickAsync(pack.Key)">
+                <span class="snd-pack__art snd-pack__art--@pack.Key" aria-hidden="true">
+                    @Scene(pack.Key)
+                    @if (selected)
+                    {
+                        <span class="snd-pack__check"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                    }
+                </span>
+                <span class="snd-pack__name">@name</span>
+                <span class="snd-pack__hint">@L[pack.DescriptionKey]</span>
+            </button>
+            <button type="button" class="snd-pack__play" title="@L.Format("settings.notifications.listen", name)"
+                    aria-label="@L.Format("settings.notifications.listen", name)" @onclick="() => Sounds.PreviewPack(pack.Key)">
+                <Icon Name="@IconNames.Play" Size="14" StrokeWidth="2.4" />
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _touched;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+
+    private async Task PickAsync(string pack)
+    {
+        Sounds.PreviewPack(pack);
+        if (pack == Value) return;
+        _touched = true;
+        Haptics.Selection();
+        await ValueChanged.InvokeAsync(pack);
+    }
+
+    // SVG wants invariant numbers whatever the UI language.
+    private static string Num(double value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static RenderFragment Scene(string pack) => pack switch
+    {
+        SoundCatalog.Wood => WoodScene,
+        SoundCatalog.Bells => BellsScene,
+        _ => PianoScene,
+    };
+
+    // The scenes keep their top-right corner free for the play button.
+
+    // Five marimba bars, longest to shortest, strung on two cords.
+    private static readonly RenderFragment WoodScene =
+        @<svg class="snd-scene" viewBox="0 0 120 90" focusable="false">
+            <rect class="snd-scene__bg" width="120" height="90" />
+            <rect class="snd-wood snd-wood--a" x="14" y="30" width="12" height="52" rx="4" />
+            <rect class="snd-wood snd-wood--b" x="31" y="32.5" width="12" height="47" rx="4" />
+            <rect class="snd-wood snd-wood--a" x="48" y="35" width="12" height="42" rx="4" />
+            <rect class="snd-wood snd-wood--b" x="65" y="37.5" width="12" height="37" rx="4" />
+            <rect class="snd-wood snd-wood--a" x="82" y="40" width="12" height="32" rx="4" />
+            <path class="snd-wood__cord" d="M9 42 L99 49 M9 70 L99 63" />
+        </svg>;
+
+    // A small handbell with its clapper and two soft sound arcs.
+    private static readonly RenderFragment BellsScene =
+        @<svg class="snd-scene" viewBox="0 0 120 90" focusable="false">
+            <rect class="snd-scene__bg" width="120" height="90" />
+            <rect class="snd-bell__handle" x="48" y="16" width="8" height="15" rx="4" />
+            <path class="snd-bell" d="M52 29c-13 0-20 9.5-20 22v9.5c0 4-5 6.5-8 10.5h56c-3-4-8-6.5-8-10.5V51c0-12.5-7-22-20-22z" />
+            <circle class="snd-bell__clapper" cx="52" cy="76" r="5" />
+            <path class="snd-bell__arc" d="M19 43c-4 6-4 14 0 20M85 43c4 6 4 14 0 20" />
+        </svg>;
+
+    // An octave of keys under a fallboard: seven white, five black.
+    private static readonly RenderFragment PianoScene =
+        @<svg class="snd-scene" viewBox="0 0 120 90" focusable="false">
+            <rect class="snd-scene__bg" width="120" height="90" />
+            <rect class="snd-key__board" x="9" y="34" width="91.6" height="8" rx="3" />
+            @for (var i = 0; i < 7; i++)
+            {
+                <rect class="snd-key" x="@Num(12 + i * 12.4)" y="40" width="11.2" height="44" rx="2.5" />
+            }
+            @foreach (var after in new[] { 0, 1, 3, 4, 5 })
+            {
+                <rect class="snd-key snd-key--black" x="@Num(12 + (after + 1) * 12.4 - 4.3)" y="40" width="7.4" height="26" rx="2" />
+            }
+        </svg>;
+}

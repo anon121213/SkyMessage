@@ -22,6 +22,12 @@ internal static class AppPaths
 
     public static string Media => Ensure(Path.Combine(FileSystem.CacheDirectory, "media"));
 
+    /// <summary>
+    /// The user's own sounds (CustomSoundStore): app data, never a cache the OS may trim. On Android this is
+    /// files/sounds/, the folder the FileProvider of AndroidManifest.xml shares (res/xml/sound_paths.xml).
+    /// </summary>
+    public static string Sounds => Ensure(Path.Combine(FileSystem.AppDataDirectory, "sounds"));
+
     public static string Temp => Ensure(Path.Combine(FileSystem.CacheDirectory, "tmp"));
 
     public static string NewTempFile(string extension) =>

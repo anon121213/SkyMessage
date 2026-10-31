@@ -152,6 +152,35 @@
         return tx(storeName, 'readwrite', store => { store.delete(key); });
     }
 
+    // The user's own notification sounds live in a database of their own: they are device settings, which neither
+    // signing out nor clearing the offline cache (the 'kv' store) may take away. One record per file name.
+    let soundsDbPromise = null;
+
+    function soundsTx(mode, work) {
+        if (!soundsDbPromise) {
+            soundsDbPromise = new Promise((resolve, reject) => {
+                if (!('indexedDB' in self)) { reject(new Error('IndexedDB unavailable')); return; }
+                const request = indexedDB.open('skymessage-sounds', 1);
+                request.onupgradeneeded = () => { request.result.createObjectStore('files'); };
+                request.onsuccess = () => {
+                    const db = request.result;
+                    db.onversionchange = () => { db.close(); soundsDbPromise = null; };
+                    resolve(db);
+                };
+                request.onerror = () => { soundsDbPromise = null; reject(request.error); };
+                request.onblocked = () => { soundsDbPromise = null; reject(new Error('IndexedDB blocked')); };
+            });
+        }
+        return soundsDbPromise.then(db => new Promise((resolve, reject) => {
+            const transaction = db.transaction('files', mode);
+            let result = null;
+            work(transaction.objectStore('files'), r => { result = r; });
+            transaction.oncomplete = () => resolve(result);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error('aborted'));
+        }));
+    }
+
     // ---- Notifications (via the service worker: Chrome Android has no `new Notification()`) ----
 
     let swRegistration = null;
@@ -420,6 +449,20 @@
                     cursor.continue();
                 };
             }),
+        },
+
+        sounds: {
+            put: (name, bytes, type) => soundsTx('readwrite', store => {
+                store.put({ type: type || '', blob: new Blob([bytes], { type: type || 'application/octet-stream' }) }, name);
+            }),
+            async get(name) {
+                const item = await soundsTx('readonly', (store, set) => {
+                    const request = store.get(name);
+                    request.onsuccess = () => set(request.result || null);
+                });
+                return item && item.blob ? new Uint8Array(await item.blob.arrayBuffer()) : null;
+            },
+            del: name => soundsTx('readwrite', store => { store.delete(name); }),
         },
 
         blobs: {

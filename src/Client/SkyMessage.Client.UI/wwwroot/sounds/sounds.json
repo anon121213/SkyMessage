@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "rate": 48000,
+  "packs": {
+    "bells": {
+      "bright": {
+        "samples": 144000,
+        "loop": true,
+        "hash": "9ae9765427e2"
+      },
+      "busy": {
+        "samples": 72000,
+        "hash": "f610282063d4"
+      },
+      "chime": {
+        "samples": 42240,
+        "hash": "fa255bc9ccd8"
+      },
+      "classic": {
+        "samples": 144000,
+        "loop": true,
+        "hash": "7f326745801f"
+      },
+      "end": {
+        "samples": 37440,
+        "hash": "3e3246e3d7f7"
+      },
+      "glass": {
+        "samples": 43200,
+        "hash": "b28e9b90920b"
+      },
+      "pop": {
+        "samples": 31200,
+        "hash": "be145e2d9f92"
+      },
+      "ringback": {
+        "samples": 192000,
+        "loop": true,
+        "hash": "bb495f20f546"
+      },
+      "soft": {
+        "samples": 180000,
+        "loop": true,
+        "hash": "53e456408dc5"
+      }
+    },
+    "piano": {
+      "bright": {
+        "samples": 144000,
+        "loop": true,
+        "hash": "edc3f981c9ce"
+      },
+      "busy": {
+        "samples": 72000,
+        "hash": "e21b8a1d5f56"
+      },
+      "chime": {
+        "samples": 42240,
+        "hash": "3ef0f8736eba"
+      },
+      "classic": {
+        "samples": 144000,
+        "loop": true,
+        "hash": "e3a65fd32a18"
+      },
+      "end": {
+        "samples": 38400,
+        "hash": "fbf34f171a69"
+      },
+      "glass": {
+        "samples": 42240,
+        "hash": "8da2de139e0d"
+      },
+      "pop": {
+        "samples": 24000,
+        "hash": "1293913ef839"
+      },
+      "ringback": {
+        "samples": 192000,
+        "loop": true,
+        "hash": "c479e0c77e64"
+      },
+      "soft": {
+        "samples": 192000,
+        "loop": true,
+        "hash": "5f4159f744a1"
+      }
+    },
+    "wood": {
+      "bright": {
+        "samples": 153600,
+        "loop": true,
+        "hash": "8a0709f96123"
+      },
+      "busy": {
+        "samples": 72000,
+        "hash": "1ca699c37ba0"
+      },
+      "chime": {
+        "samples": 43200,
+        "hash": "73540494ed48"
+      },
+      "classic": {
+        "samples": 144000,
+        "loop": true,
+        "hash": "24cec60f661a"
+      },
+      "end": {
+        "samples": 38400,
+        "hash": "6eb80aa5a7dc"
+      },
+      "glass": {
+        "samples": 43200,
+        "hash": "c4fd89038cab"
+      },
+      "pop": {
+        "samples": 21600,
+        "hash": "93881027383a"
+      },
+      "ringback": {
+        "samples": 192000,
+        "loop": true,
+        "hash": "4f0ab4c4febe"
+      },
+      "soft": {
+        "samples": 192000,
+        "loop": true,
+        "hash": "a8e3fbd21c9d"
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+/* "Choose your own sound": a plus in the radio column, the title in the accent color. (Every element styled here is
+   written in TonePicker.razor, so plain scoped selectors reach it inside the ListItems.) */
+.tone-add__plus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    color: var(--sm-accent);
+    box-shadow: inset 0 0 0 2px var(--sm-accent);
+}
+
+.tone-add .sm-list-item__title {
+    color: var(--sm-accent);
+}
+
+.tone-own__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-right: -6px;
+    color: var(--sm-text-2);
+}

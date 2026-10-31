@@ -154,6 +154,7 @@ internal sealed class SettingsService : ISettingsService
         if (string.IsNullOrWhiteSpace(s.Appearance.Wallpaper)) s.Appearance.Wallpaper = "aurora";
         s.Chats.VoicePlaybackRate = s.Chats.VoicePlaybackRate is >= 0.5 and <= 3 ? s.Chats.VoicePlaybackRate : 1.0;
         if (string.IsNullOrWhiteSpace(s.Chats.QuickReaction)) s.Chats.QuickReaction = "👍";
+        SoundCatalog.Normalize(s.Notifications);
         s.Data.CacheLimitMb = Math.Clamp(s.Data.CacheLimitMb, 50, 64 * 1024);
         s.Data.AutoDownloadWifi ??= new AutoDownloadSettings();
         s.Data.AutoDownloadMobile ??= new AutoDownloadSettings();

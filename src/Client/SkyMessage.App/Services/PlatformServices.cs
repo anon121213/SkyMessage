@@ -22,6 +22,7 @@ public static class PlatformServices
         services.AddSingleton<ILocalCacheStore, LocalCacheStore>();
         services.AddSingleton<IOutboxFileStore, OutboxFileStore>();
         services.AddSingleton<IMediaFileStore, MediaFileStore>();
+        services.AddSingleton<ICustomSoundStore, CustomSoundStore>();
         services.AddSingleton<IShareService, ShareService>();
         services.AddSingleton<IFileOpener, FileOpener>();
         services.AddSingleton<IExternalLauncher, ExternalLauncher>();
