@@ -70,6 +70,13 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!--
+      Self-updates from our server (AndroidAppUpdateInstaller, PackageInstaller sessions): the user allows "Install
+      unknown apps" for SkyMessage once; on Android 12+ updates of SkyMessage itself then install without a
+      confirmation (USER_ACTION_NOT_REQUIRED needs UPDATE_PACKAGES_WITHOUT_USER_ACTION, a normal permission).
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!--
       Saving to Downloads on Android 8-9, and camera capture below Android 13: MAUI's MediaPicker requires this
       permission there and throws when the manifest does not list it (maxSdkVersion 28 dropped it on 10-12).
     -->

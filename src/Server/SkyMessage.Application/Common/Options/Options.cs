@@ -82,6 +82,19 @@ public sealed class LiveKitOptions
     public int TokenTtlMinutes { get; set; } = 15;
 }
 
+/// <summary>
+/// Section "Updates": the directory CI publishes app releases into (<see cref="ManifestFile"/> plus the APKs it names),
+/// mounted into the API container. APKs are served under /updates; the manifest feeds api/app/version.
+/// </summary>
+public sealed class UpdatesOptions
+{
+    public const string Section = "Updates";
+    /// <summary>Directory with the manifest and the APKs. Empty = this deployment publishes no app updates.</summary>
+    public string? Path { get; set; }
+    /// <summary>Manifest written by CI (<c>.github/workflows/release.yml</c>), a file name inside <see cref="Path"/>.</summary>
+    public string ManifestFile { get; set; } = "latest.json";
+}
+
 /// <summary>Section "Push".</summary>
 public sealed class PushOptions
 {

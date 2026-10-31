@@ -76,6 +76,9 @@ public static class ClientCoreSetup
         services.AddSingleton<IScreenCaptureGuard, ScreenCaptureGuard>();
         services.AddSingleton<IAudioFocusCoordinator, AudioFocusCoordinator>();
         services.AddSingleton<IClientBootstrapper, ClientBootstrapper>();
+        services.AddSingleton<IAppUpdateFeed, AppUpdateFeed>();
+        services.AddSingleton<AppUpdateService>();
+        services.AddSingleton<IAppUpdateService>(sp => sp.GetRequiredService<AppUpdateService>());
 
         // Stores
         services.AddSingleton<IUserStore, UserStore>();

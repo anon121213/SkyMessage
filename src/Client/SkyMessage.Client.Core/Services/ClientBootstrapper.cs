@@ -10,7 +10,8 @@ namespace SkyMessage.Client.Core.Services;
 /// settings, the session, the endpoint memory and the stores' local caches, then returns — realtime, the chat list,
 /// contacts and the outbox continue in the background (never waiting for the network). On sign-out it stops
 /// realtime, cancels notifications and the background connection; calls and stores clean up through the account
-/// lifecycle. All stores are constructed here so they subscribe to realtime before the first event.
+/// lifecycle. All stores are constructed here so they subscribe to realtime before the first event. It also starts
+/// the self-updater (<see cref="AppUpdateService"/>).
 /// </summary>
 internal sealed class ClientBootstrapper : IClientBootstrapper
 {
@@ -23,6 +24,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
     private readonly IContactStore _contacts;
     private readonly ILocalNotificationService _notifications;
     private readonly IBackgroundConnectionService _background;
+    private readonly AppUpdateService _updates;
     private readonly ILogger<ClientBootstrapper> _logger;
     private readonly object _lock = new();
     private Task? _start;
@@ -47,6 +49,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         IMediaDownloadService downloads,
         ILocalNotificationService notifications,
         IBackgroundConnectionService background,
+        AppUpdateService updates,
         ILogger<ClientBootstrapper> logger)
     {
         // messages, users, typing, drafts, calls, coordinators, urls, downloads: constructed for their subscriptions.
@@ -60,6 +63,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         _contacts = contacts;
         _notifications = notifications;
         _background = background;
+        _updates = updates;
         _logger = logger;
     }
 
@@ -94,6 +98,8 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         else
             _endpoints.RefreshInfoAsync().Forget(_logger);
 
+        // Signed in or not: updates come from the server either way (its first check waits for the start to settle).
+        _updates.Start();
         _started = true;
     }
 

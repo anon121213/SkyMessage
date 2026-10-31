@@ -17,6 +17,7 @@ public sealed class AppSettings
     public DeviceSettings Devices { get; set; } = new();
     public DataSettings Data { get; set; } = new();
     public ConnectionSettings Connection { get; set; } = new();
+    public UpdateSettings Updates { get; set; } = new();
     /// <summary>"auto" (follow the OS), "ru" or "en".</summary>
     public string Language { get; set; } = "auto";
 
@@ -178,4 +179,12 @@ public sealed class ConnectionSettings
     public ProxySettings Proxy { get; set; } = new();
     /// <summary>Allow SignalR to fall back to Server-Sent Events / long polling when WebSockets are blocked.</summary>
     public bool AllowTransportFallback { get; set; } = true;
+}
+
+/// <summary>Self-updates (Android): new builds download in the background and install while the app is not in use.</summary>
+public sealed class UpdateSettings
+{
+    public bool AutoUpdate { get; set; } = true;
+    /// <summary>Download automatically only on unmetered Wi-Fi/Ethernet (the user's Download goes ahead on any network).</summary>
+    public bool WifiOnly { get; set; }
 }

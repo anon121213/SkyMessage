@@ -7,6 +7,7 @@ using SkyMessage.Infrastructure.Identity;
 using SkyMessage.Infrastructure.MediaFiles;
 using SkyMessage.Infrastructure.Messaging;
 using SkyMessage.Infrastructure.Persistence;
+using SkyMessage.Infrastructure.Updates;
 
 namespace SkyMessage.Infrastructure;
 
@@ -20,6 +21,7 @@ public static class DependencyInjection
         services.AddOptions<MediaProcessingOptions>().Bind(configuration.GetSection(MediaProcessingOptions.Section));
         services.AddOptions<LiveKitOptions>().Bind(configuration.GetSection(LiveKitOptions.Section));
         services.AddOptions<PushOptions>().Bind(configuration.GetSection(PushOptions.Section));
+        services.AddOptions<UpdatesOptions>().Bind(configuration.GetSection(UpdatesOptions.Section));
 
         services.AddSingleton<IClock, SystemClock>();
         services.AddMemoryCache();
@@ -29,6 +31,7 @@ public static class DependencyInjection
         services.AddMessagingInfrastructure(configuration);
         services.AddMediaInfrastructure(configuration);
         services.AddCallsInfrastructure(configuration);
+        services.AddUpdatesInfrastructure();
 
         return services;
     }

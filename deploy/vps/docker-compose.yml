@@ -70,6 +70,10 @@ services:
       Server__TrustedProxyNetworks__0: "172.30.80.0/24"
       # One FFmpeg job at a time: the VPS has 2 cores shared with another project.
       MediaProcessing__MaxConcurrency: "1"
+      # App releases (publish-update.sh): the manifest feeds api/app/version, the APKs are served under /updates.
+      Updates__Path: /updates
+    volumes:
+      - ./updates:/updates:ro
     depends_on:
       db:
         condition: service_healthy

@@ -40,6 +40,8 @@ public static class WebPlatformSetup
         services.AddSingleton<IBackgroundConnectionService, WebBackgroundConnectionService>();
         services.AddSingleton<IInterProcessLock, WebInterProcessLock>();
         services.AddSingleton<IHttpHandlerFactory, WebHttpHandlerFactory>();
+        // The server serves the new client; IAppUpdateService asks the page to reload when it changes.
+        services.AddSingleton<IAppUpdateInstaller, UnsupportedAppUpdateInstaller>();
         return services;
     }
 }

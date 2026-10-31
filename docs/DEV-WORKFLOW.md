@@ -61,16 +61,26 @@ Each feature runs in its own git worktree and is isolated at runtime too:
 ## Tests
 
 ```bash
-dotnet test tests/SkyMessage.UnitTests --artifacts-path artifacts/<feature>-tests
-dotnet test tests/SkyMessage.Client.Core.Tests --artifacts-path artifacts/<feature>-tests
-dotnet test tests/SkyMessage.Api.IntegrationTests --artifacts-path artifacts/<feature>-tests   # needs Docker (Testcontainers)
+for t in UnitTests Client.Core.Tests Api.IntegrationTests; do
+  dotnet build tests/SkyMessage.$t --artifacts-path artifacts/<feature>-tests -v q -nologo
+done
+dotnet test --project tests/SkyMessage.UnitTests --no-build -p:ArtifactsPath=$PWD/artifacts/<feature>-tests
+dotnet test --project tests/SkyMessage.Client.Core.Tests --no-build -p:ArtifactsPath=$PWD/artifacts/<feature>-tests
+dotnet test --project tests/SkyMessage.Api.IntegrationTests --no-build -p:ArtifactsPath=$PWD/artifacts/<feature>-tests  # Docker
 ```
+
+`global.json` runs tests on Microsoft.Testing.Platform: `dotnet test` takes the project with `--project` and forwards
+any option it does not know (`-nologo`, `--artifacts-path`, ...) to the test app, which rejects it (exit code 5) and
+the run reports "Zero tests ran". Build with your options first, then `dotnet test --project ... --no-build` (the
+`ArtifactsPath` property tells it where that build is). `dotnet run --project tests/<X>` also runs a suite.
 
 Every feature adds tests for its server rules and client stores. A feature is done when it builds with 0 errors and
 0 warnings, all three test projects pass, the UI has been looked at in both themes, and the branch is committed.
 
 ## Releases
 
-Merging `develop` into `main` is a release (only with the owner's go-ahead). CI (`.github/workflows`) builds and tests
-every push; on `main` it builds the signed APK and the server, deploys the server, and publishes the APK with its
-version manifest; installed apps notice the new version and update themselves.
+Merging `develop` into `main` is a release (only with the owner's go-ahead). CI (`.github/workflows/ci.yml`) builds
+and tests every push and pull request; on `main`, `release.yml` runs CI, builds the signed APK and uploads it, deploys
+the server and only then offers the APK (its version manifest goes live right after the new server starts; a failed
+deploy withdraws it); installed apps and open web pages notice the new version and update themselves. The release number is the commit count of `main` (version `0.2.<n>`, Android versionCode `<n>`), so `main`
+is never rewritten. Secrets, the server side and the whole flow: `deploy/vps/README.md`, "CI, releases and auto-update".

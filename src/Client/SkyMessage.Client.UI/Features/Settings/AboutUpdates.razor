@@ -1,0 +1,137 @@
+@* Settings › About › Updates. Android: the newer build and where it stands (with its action), the install permission
+   while it is missing, "Check for updates", automatic updates and "Wi-Fi only". Web: a deployed newer client (reload)
+   and the check. Hosts that update through a store show nothing. *@
+@inherits UiComponentBase
+@inject IAppUpdateService Updates
+@inject AppUpdatePrompts Prompts
+@inject IPlatformInfo Platform
+@inject ISettingsService Settings
+@inject FormatService Format
+
+@if (Updates.CanSelfUpdate)
+{
+    var status = Updates.Status;
+    var updates = Settings.Current.Updates;
+    <Section Title="@L["settings.about.updates"]" Footer="@L["settings.about.updates.footer"]" DividerInset="64px">
+        @if (status.Release is { } release)
+        {
+            <ListItem Icon="@IconNames.CloudDownload" IconColor="@SettingsTones.Orchid" Title="@L.Format("settings.about.version", release.VersionName)"
+                      Subtitle="@ReleaseState(status, release)" Multiline="true">
+                <Trailing>
+                    @if (status.Phase == AppUpdatePhase.Installing)
+                    {
+                        <Spinner Size="20" />
+                    }
+                    else if (ReleaseAction(status) is { } action)
+                    {
+                        <Button Size="ButtonSize.Small" Variant="ButtonVariant.Tonal" Loading="_busy" OnClick="() => RunAsync(status.Phase, status.Error)">@action</Button>
+                    }
+                </Trailing>
+            </ListItem>
+            @if (status.NeedsInstallPermission)
+            {
+                <ListItem Icon="@IconNames.ShieldCheck" IconColor="@SettingsTones.Gold" Title="@L["settings.about.updates.permission"]"
+                          Subtitle="@L["settings.about.updates.permissionHint"]" Multiline="true" Chevron="true" OnClick="AskPermissionAsync" />
+            }
+        }
+        <ListItem Icon="@IconNames.RefreshCw" IconColor="@SettingsTones.Sky" Title="@L["settings.about.updates.check"]" Subtitle="@CheckState(status)"
+                  Multiline="true" Disabled="status.IsChecking" OnClick="CheckAsync">
+            <Trailing>
+                @if (status.IsChecking)
+                {
+                    <Spinner Size="20" />
+                }
+            </Trailing>
+        </ListItem>
+        <SwitchItem Icon="@IconNames.Download" IconColor="@SettingsTones.Violet" Title="@L["settings.about.updates.auto"]"
+                    Subtitle="@L["settings.about.updates.autoHint"]" Checked="updates.AutoUpdate"
+                    CheckedChanged="v => Settings.UpdateAsync(s => s.Updates.AutoUpdate = v)" />
+        <SwitchItem Icon="@IconNames.Wifi" IconColor="@SettingsTones.Lagoon" Title="@L["settings.about.updates.wifiOnly"]"
+                    Subtitle="@L["settings.about.updates.wifiOnlyHint"]" Checked="updates.WifiOnly" Disabled="!updates.AutoUpdate"
+                    CheckedChanged="v => Settings.UpdateAsync(s => s.Updates.WifiOnly = v)" />
+    </Section>
+}
+else if (!Platform.IsNativeApp)
+{
+    var status = Updates.Status;
+    <Section Title="@L["settings.about.updates"]" Footer="@L["settings.about.updates.webFooter"]" DividerInset="64px">
+        @if (status.NewWebVersion is { } version)
+        {
+            <ListItem Icon="@IconNames.CloudDownload" IconColor="@SettingsTones.Orchid" Title="@L.Format("settings.about.updates.webNew", version)"
+                      Subtitle="@L["settings.about.updates.webHint"]" Multiline="true">
+                <Trailing>
+                    <Button Size="ButtonSize.Small" Variant="ButtonVariant.Tonal" OnClick="Updates.ReloadWebNow">@L["app.update.action.reload"]</Button>
+                </Trailing>
+            </ListItem>
+        }
+        <ListItem Icon="@IconNames.RefreshCw" IconColor="@SettingsTones.Sky" Title="@L["settings.about.updates.check"]" Subtitle="@CheckState(status)"
+                  Multiline="true" Disabled="status.IsChecking" OnClick="CheckAsync">
+            <Trailing>
+                @if (status.IsChecking)
+                {
+                    <Spinner Size="20" />
+                }
+            </Trailing>
+        </ListItem>
+    </Section>
+}
+
+@code {
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Updates.Changed += h, h => Updates.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+    }
+
+    private string ReleaseState(AppUpdateStatus status, AndroidReleaseDto release) => status.Phase switch
+    {
+        AppUpdatePhase.Ready => L["settings.about.updates.ready"],
+        AppUpdatePhase.Installing => L["settings.about.updates.installing"],
+        AppUpdatePhase.Downloading => L.Format("settings.about.updates.downloading", (int)Math.Round(status.Progress * 100)),
+        AppUpdatePhase.Failed => Prompts.ErrorText(status.Error),
+        _ when status.WaitingForWifi => L["settings.about.updates.waitingWifi"],
+        _ => L.Format("settings.about.updates.available", Format.FileSize(release.Size)),
+    };
+
+    private string? ReleaseAction(AppUpdateStatus status) => status.Phase switch
+    {
+        AppUpdatePhase.Ready => L["app.update.action.install"],
+        AppUpdatePhase.Failed when AppUpdatePrompts.IsPermanent(status.Error) => L["app.update.action.downloadManually"],
+        AppUpdatePhase.Failed => L["app.update.action.retry"],
+        AppUpdatePhase.Available => L["app.update.action.download"],
+        _ => null,
+    };
+
+    private string? CheckState(AppUpdateStatus status)
+    {
+        if (status.IsChecking) return L["settings.about.updates.checking"];
+        // A failed manual check (a failed download reports its error on the build's own row).
+        if (status.Error is not null && status.Phase != AppUpdatePhase.Failed) return L["settings.about.updates.checkFailed"];
+        if (status.LastCheckedAt is not { } checkedAt) return null;
+        var when = Format.DateTime(checkedAt);
+        var upToDate = status.Release is null && (Updates.CanSelfUpdate || status.NewWebVersion is null);
+        return upToDate ? L.Format("settings.about.updates.upToDateAt", when) : L.Format("settings.about.updates.checkedAt", when);
+    }
+
+    private Task CheckAsync() => Updates.CheckNowAsync();
+
+    private Task AskPermissionAsync() => Prompts.AskPermissionAsync();
+
+    private async Task RunAsync(AppUpdatePhase phase, string? error)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            if (phase == AppUpdatePhase.Ready) await Prompts.InstallAsync();
+            else if (phase == AppUpdatePhase.Failed && AppUpdatePrompts.IsPermanent(error)) await Prompts.DownloadManuallyAsync();
+            else await Updates.DownloadNowAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

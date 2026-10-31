@@ -1,0 +1,36 @@
+@* Our explainer before Android's "Install unknown apps" screen (AppUpdatePrompts): why SkyMessage asks, and the three
+   steps on the system screen. Shown by itself once, when the first update is ready; afterwards when the user taps
+   Update. Result: true = open the system screen, false = not now. *@
+@inherits UiComponentBase
+
+<div class="permission-sheet">
+    <div class="permission-sheet__art" aria-hidden="true">
+        <Icon Name="@IconNames.ShieldCheck" Size="30" StrokeWidth="1.9" />
+    </div>
+    <p class="permission-sheet__lead">@L["app.update.permission.text"]</p>
+    <ol class="permission-sheet__steps">
+        @foreach (var (number, key) in Steps)
+        {
+            <li class="permission-sheet__step">
+                <span class="permission-sheet__number sm-nums" aria-hidden="true">@number</span>
+                <span>@L[key]</span>
+            </li>
+        }
+    </ol>
+    <p class="permission-sheet__note">@L["app.update.permission.note"]</p>
+</div>
+<DialogActions Stack="true">
+    <Button Variant="ButtonVariant.Ghost" OnClick="() => Dialog.Close(false)">@L["app.update.permission.later"]</Button>
+    <Button Icon="@IconNames.Settings" OnClick="() => Dialog.Close(true)">@L["app.update.permission.open"]</Button>
+</DialogActions>
+
+@code {
+    private static readonly (int Number, string Key)[] Steps =
+    [
+        (1, "app.update.permission.step1"),
+        (2, "app.update.permission.step2"),
+        (3, "app.update.permission.step3"),
+    ];
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+}
