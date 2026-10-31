@@ -344,6 +344,16 @@ public sealed class WebSystemUiService(WebBridge bridge) : ISystemUiService
     }
 }
 
+/// <summary>A browser cannot keep a page out of screenshots: protected chats only hide their copy/save actions.</summary>
+public sealed class WebScreenSecurityService : IScreenSecurityService
+{
+    public bool IsSupported => false;
+
+    public void SetSecure(bool secure)
+    {
+    }
+}
+
 public sealed class WebHapticsService(WebBridge bridge) : IHapticsService
 {
     public bool IsSupported => bridge.State.CanVibrate;

@@ -273,6 +273,8 @@ public interface IRealtimeService
     event Action<ChatRefEvent>? ChatRemoved;
     event Action<ChatRefEvent>? ChatMembersChanged;
     event Action<ChatSettingsChangedEvent>? ChatSettingsChanged;
+    /// <summary>I rearranged my pinned chats (on any device, this one included).</summary>
+    event Action<PinnedChatsOrderDto>? PinnedChatsReordered;
     event Action<HistoryClearedEvent>? HistoryCleared;
     event Action<ChatRefEvent>? PinnedMessagesChanged;
     event Action<PresenceChangedEvent>? PresenceChanged;
@@ -316,4 +318,18 @@ public sealed record InAppNotification(Guid ChatId, Guid? SenderId, string Title
 public interface INotificationCoordinator
 {
     event Action<InAppNotification>? InAppNotificationRaised;
+}
+
+/// <summary>
+/// No screenshots while something protected is on screen (a chat with content protection, its shared media). Every
+/// screen that shows protected content holds a handle from <see cref="Protect"/> and disposes it when it goes away or
+/// the protection ends; the window stays secure while any handle is held (<see cref="Platform.IScreenSecurityService"/>).
+/// </summary>
+public interface IScreenCaptureGuard
+{
+    /// <summary>The platform can block screenshots (Android).</summary>
+    bool IsSupported { get; }
+    bool IsSecure { get; }
+    /// <summary>Holds the window secure until the handle is disposed (disposing twice is harmless).</summary>
+    IDisposable Protect();
 }

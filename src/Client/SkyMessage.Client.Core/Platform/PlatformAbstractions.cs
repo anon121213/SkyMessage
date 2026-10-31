@@ -364,6 +364,18 @@ public interface INetworkStatusService
 }
 
 /// <summary>
+/// Keeps the app's window out of screenshots, screen recordings, casting and the recents preview (Android:
+/// WindowManager FLAG_SECURE). Used through <see cref="Services.IScreenCaptureGuard"/> while a protected chat is open.
+/// Other platforms: <see cref="IsSupported"/> = false and <see cref="SetSecure"/> does nothing (a browser cannot stop
+/// screenshots). Never throws; safe to call from any thread.
+/// </summary>
+public interface IScreenSecurityService
+{
+    bool IsSupported { get; }
+    void SetSecure(bool secure);
+}
+
+/// <summary>
 /// Status/navigation bar appearance (follow the in-app theme, not the OS). On Android 15+ (edge-to-edge)
 /// only the icon color applies — <c>backgroundHex</c> is ignored and the CSS must paint behind the bars.
 /// </summary>

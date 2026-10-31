@@ -210,6 +210,14 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
     public Task<ChatUserSettingsDto> UpdateChatSettingsAsync(Guid chatId, UpdateChatSettingsRequest request, CancellationToken ct = default) =>
         Json<ChatUserSettingsDto>(HttpMethod.Put, ApiRoutes.Chats.SettingsPath(chatId), request, idempotent: true, ct);
 
+    // The same order again changes nothing: safe to repeat.
+    public Task<PinnedChatsOrderDto> ReorderPinnedChatsAsync(IReadOnlyList<Guid> chatIdsTopFirst, CancellationToken ct = default) =>
+        Json<PinnedChatsOrderDto>(HttpMethod.Put, ApiRoutes.Chats.PinnedOrder, new ReorderPinnedChatsRequest { ChatIds = chatIdsTopFirst }, idempotent: true, ct);
+
+    // A state, not a toggle: safe to repeat.
+    public Task<ChatInfoDto> SetContentProtectionAsync(Guid chatId, bool enabled, CancellationToken ct = default) =>
+        Json<ChatInfoDto>(HttpMethod.Put, ApiRoutes.Chats.ContentProtectionPath(chatId), new SetContentProtectionRequest { Enabled = enabled }, idempotent: true, ct);
+
     // Read marks only move forward on the server: safe to repeat.
     public Task MarkReadAsync(Guid chatId, long upToSeq, CancellationToken ct = default) =>
         NoContent(ApiRequest.Json(HttpMethod.Post, ApiRoutes.Chats.ReadPath(chatId), new MarkReadRequest { UpToSeq = upToSeq }, idempotent: true), ct);

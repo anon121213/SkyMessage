@@ -37,7 +37,7 @@ public sealed class CompositionTests
                      typeof(IDeviceContactsService), typeof(IPermissionService), typeof(ILocalNotificationService), typeof(IAudioRouteService),
                      typeof(ICallPlatformService), typeof(IShareService), typeof(IFileSaveService), typeof(IFileOpener), typeof(IAppLifecycle),
                      typeof(IExternalLauncher), typeof(IDeepLinkSource), typeof(ISystemUiService), typeof(IHapticsService),
-                     typeof(IBackgroundConnectionService),
+                     typeof(IBackgroundConnectionService), typeof(IScreenSecurityService),
                  })
         {
             services.AddSingleton(type, Substitute.For([type], []));
@@ -56,7 +56,7 @@ public sealed class CompositionTests
             typeof(ISettingsService), typeof(IMediaUrlBuilder), typeof(IMediaContentSource), typeof(IMediaUploader),
             typeof(IMediaDownloadService), typeof(ILinkBuilder), typeof(INotificationCoordinator), typeof(IChatListStore),
             typeof(IMessageStore), typeof(IUserStore), typeof(IContactStore), typeof(ITypingStore), typeof(IDraftStore),
-            typeof(IAccountLocalStore), typeof(ICallService),
+            typeof(IAccountLocalStore), typeof(ICallService), typeof(IScreenCaptureGuard),
         };
 
         foreach (var contract in contracts)

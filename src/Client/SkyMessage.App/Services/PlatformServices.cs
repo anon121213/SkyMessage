@@ -36,6 +36,7 @@ public static class PlatformServices
         services.AddSingleton<IPermissionService, AndroidPermissionService>();
         services.AddSingleton<INetworkStatusService, AndroidNetworkStatusService>();
         services.AddSingleton<ISystemUiService, AndroidSystemUiService>();
+        services.AddSingleton<IScreenSecurityService, AndroidScreenSecurityService>();
         services.AddSingleton<IHapticsService, AndroidHapticsService>();
         services.AddSingleton<IFilePickerService, AndroidFilePickerService>();
         services.AddSingleton<IMediaCompressor, AndroidMediaCompressor>();
@@ -50,6 +51,7 @@ public static class PlatformServices
         services.AddSingleton<IPermissionService, ApplePermissionService>();
         services.AddSingleton<INetworkStatusService, AppleNetworkStatusService>();
         services.AddSingleton<ISystemUiService, AppleSystemUiService>();
+        services.AddSingleton<IScreenSecurityService, UnsupportedScreenSecurityService>();
         services.AddSingleton<IFilePickerService, AppleFilePickerService>();
         services.AddSingleton<IMediaCompressor, AppleMediaCompressor>();
         services.AddSingleton<IPhoneNumberService, UnsupportedPhoneNumberService>();

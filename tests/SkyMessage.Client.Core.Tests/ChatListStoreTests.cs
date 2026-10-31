@@ -287,6 +287,195 @@ public sealed class ChatListStoreTests
         await Wait.UntilAsync(() => h.Api.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(ISkyApi.MarkReadAsync)));
         await h.Api.Received(1).MarkReadAsync(chat.Id, 10, Arg.Any<CancellationToken>());
     }
+
+    // ---- Pinned chats order, contact bar, content protection ----
+
+    private static ChatSummaryDto Pinned(string title, long order, int pinMinutes = 0, bool archived = false) =>
+        Chat(title, 0, pinned: true, pinMinutes: pinMinutes, archived: archived) with { PinOrder = order };
+
+    private static PinnedChatsOrderDto Order(params ChatSummaryDto[] topFirst) => new()
+    {
+        Chats = topFirst.Select((c, i) => new ChatPinOrderDto { ChatId = c.Id, PinOrder = topFirst.Length - i }).ToList(),
+    };
+
+    [Fact]
+    public async Task Pinned_chats_follow_my_pin_order_and_chats_cached_without_one_fall_back_to_the_pin_time()
+    {
+        var h = new Harness();
+        var a = Pinned("a", 1, pinMinutes: 9);
+        var b = Pinned("b", 3, pinMinutes: 1);
+        var c = Pinned("c", 2, pinMinutes: 5);
+        var oldNew = Pinned("cached, newer pin", 0, pinMinutes: 8);
+        var oldOld = Pinned("cached, older pin", 0, pinMinutes: 2);
+        var plain = Chat("plain", 50);
+
+        await h.LoadAsync(plain, a, oldOld, b, c, oldNew);
+
+        h.Store.Chats.Select(x => x.Title).ShouldBe(["b", "c", "a", "cached, newer pin", "cached, older pin", "plain"]);
+    }
+
+    [Fact]
+    public async Task Reordering_shows_the_new_order_at_once_and_takes_the_servers_numbers()
+    {
+        var h = new Harness();
+        var a = Pinned("a", 3);
+        var b = Pinned("b", 2);
+        var c = Pinned("c", 1);
+        var archived = Pinned("archived", 7, archived: true);
+        var plain = Chat("plain", 5);
+        await h.LoadAsync(a, b, c, archived, plain);
+        var answer = new TaskCompletionSource<PinnedChatsOrderDto>();
+        h.Api.ReorderPinnedChatsAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>()).Returns(answer.Task);
+
+        var reorder = h.Store.ReorderPinnedAsync([c.Id, a.Id, b.Id]);
+
+        await Wait.UntilAsync(() => h.Store.Chats[0].Id == c.Id, "the drag's result shows before the server answers");
+        h.Store.Chats.Select(x => x.Title).ShouldBe(["c", "a", "b", "plain"]);
+        h.Store.ArchivedChats.Single().PinOrder.ShouldBe(4, "the archived pin keeps its place above them, renumbered like the server does");
+        await h.Api.Received(1).ReorderPinnedChatsAsync(Arg.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { c.Id, a.Id, b.Id })), Arg.Any<CancellationToken>());
+
+        answer.SetResult(Order(archived, c, a, b));
+        await reorder;
+        h.Store.Get(c.Id)!.PinOrder.ShouldBe(3);
+        h.Store.Get(plain.Id)!.PinOrder.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_refused_reorder_puts_the_old_order_back()
+    {
+        var h = new Harness();
+        var a = Pinned("a", 2);
+        var b = Pinned("b", 1);
+        await h.LoadAsync(a, b);
+        h.Api.ReorderPinnedChatsAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiException(400, ErrorCodes.Validation, "no"));
+
+        await Should.ThrowAsync<ApiException>(() => h.Store.ReorderPinnedAsync([b.Id, a.Id]));
+
+        h.Store.Chats.Select(x => x.Title).ShouldBe(["a", "b"]);
+        h.Store.Get(a.Id)!.PinOrder.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task An_order_made_on_another_device_arrives_in_realtime()
+    {
+        var h = new Harness();
+        var a = Pinned("a", 2);
+        var b = Pinned("b", 1);
+        await h.LoadAsync(a, b);
+
+        h.Realtime.PinnedChatsReordered += Raise.Event<Action<PinnedChatsOrderDto>>(Order(b, a));
+
+        await Wait.UntilAsync(() => h.Store.Chats[0].Id == b.Id);
+        h.Store.Get(a.Id)!.PinOrder.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_new_pin_goes_on_top_and_unpinning_drops_the_order()
+    {
+        var h = new Harness();
+        var a = Pinned("a", 4);
+        var b = Pinned("b", 9);
+        var fresh = Chat("fresh", 1);
+        await h.LoadAsync(a, b, fresh);
+        var answer = new TaskCompletionSource<ChatUserSettingsDto>();
+        h.Api.UpdateChatSettingsAsync(fresh.Id, Arg.Any<UpdateChatSettingsRequest>(), Arg.Any<CancellationToken>()).Returns(answer.Task);
+
+        var pin = h.Store.SetPinnedAsync(fresh.Id, true);
+
+        await Wait.UntilAsync(() => h.Store.Chats[0].Id == fresh.Id);
+        h.Store.Get(fresh.Id)!.PinOrder.ShouldBe(10);
+        answer.SetResult(new ChatUserSettingsDto { IsPinned = true, PinnedAt = T0, PinOrder = 10 });
+        await pin;
+
+        h.Api.UpdateChatSettingsAsync(b.Id, Arg.Any<UpdateChatSettingsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ChatUserSettingsDto { IsPinned = false, PinOrder = 0 });
+        await h.Store.SetPinnedAsync(b.Id, false);
+        h.Store.Get(b.Id)!.PinOrder.ShouldBe(0);
+        h.Store.Chats.Select(x => x.Title).ShouldBe(["fresh", "a", "b"]);
+    }
+
+    [Fact]
+    public async Task A_refused_settings_change_keeps_my_pin_order_and_closed_contact_bar()
+    {
+        var h = new Harness();
+        var chat = Pinned("a", 5) with { Type = ChatType.Private, ContactBarDismissed = true };
+        await h.LoadAsync(chat);
+        h.Api.UpdateChatSettingsAsync(chat.Id, Arg.Any<UpdateChatSettingsRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiException(500, ClientErrorCodes.Network, "down"));
+
+        await Should.ThrowAsync<ApiException>(() => h.Store.SetMutedAsync(chat.Id, -1));
+
+        var back = h.Store.Get(chat.Id)!;
+        back.PinOrder.ShouldBe(5);
+        back.ContactBarDismissed.ShouldBeTrue();
+        back.MutedUntil.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Closing_the_contact_bar_is_sent_and_other_devices_follow_through_settings_events()
+    {
+        var h = new Harness();
+        var chat = Chat("stranger", 1) with { Type = ChatType.Private };
+        var other = Chat("other", 2) with { Type = ChatType.Private };
+        await h.LoadAsync(chat, other);
+        h.Api.UpdateChatSettingsAsync(chat.Id, Arg.Any<UpdateChatSettingsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ChatUserSettingsDto { ContactBarDismissed = true });
+
+        await h.Store.SetContactBarDismissedAsync(chat.Id);
+
+        h.Store.Get(chat.Id)!.ContactBarDismissed.ShouldBeTrue();
+        await h.Api.Received(1).UpdateChatSettingsAsync(chat.Id, Arg.Is<UpdateChatSettingsRequest>(r => r.ContactBarDismissed == true && r.IsPinned == null),
+            Arg.Any<CancellationToken>());
+
+        h.Realtime.ChatSettingsChanged += Raise.Event<Action<ChatSettingsChangedEvent>>(new ChatSettingsChangedEvent
+        {
+            ChatId = other.Id,
+            Settings = new ChatUserSettingsDto { ContactBarDismissed = true },
+        });
+        await Wait.UntilAsync(() => h.Store.Get(other.Id)!.ContactBarDismissed);
+    }
+
+    [Fact]
+    public async Task Protecting_a_private_chat_shows_at_once_and_follows_the_servers_answer_and_events()
+    {
+        var h = new Harness();
+        var peer = Guid.CreateVersion7();
+        var chat = Chat("peer", 1) with { Type = ChatType.Private, MemberCount = 2 };
+        await h.LoadAsync(chat);
+        var answer = new TaskCompletionSource<ChatInfoDto>();
+        h.Api.SetContentProtectionAsync(chat.Id, true, Arg.Any<CancellationToken>()).Returns(answer.Task);
+
+        var turnOn = h.Store.SetContentProtectionAsync(chat.Id, true);
+
+        await Wait.UntilAsync(() => h.Store.Get(chat.Id)!.ProtectContent);
+        h.Store.Get(chat.Id)!.ProtectContentBy.ShouldBe([h.Me]);
+        answer.SetResult(new ChatInfoDto { Id = chat.Id, Type = ChatType.Private, MemberCount = 2, ProtectContent = true, ProtectContentBy = [peer, h.Me] });
+        await turnOn;
+        h.Store.Get(chat.Id)!.ProtectContentBy.ShouldBe([peer, h.Me]);
+
+        // The peer takes theirs back elsewhere, then I take mine: ChatUpdated carries the state to private chats too.
+        h.Realtime.ChatUpdated += Raise.Event<Action<ChatInfoDto>>(new ChatInfoDto
+        {
+            Id = chat.Id, Type = ChatType.Private, MemberCount = 2, ProtectContent = false, ProtectContentBy = [],
+        });
+        await Wait.UntilAsync(() => !h.Store.Get(chat.Id)!.ProtectContent);
+        h.Store.Get(chat.Id)!.Title.ShouldBe("peer", "a private chat keeps its own title");
+    }
+
+    [Fact]
+    public async Task A_refused_protection_change_is_put_back()
+    {
+        var h = new Harness();
+        var group = Chat("family", 1);
+        await h.LoadAsync(group);
+        h.Api.SetContentProtectionAsync(group.Id, true, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiException(403, ErrorCodes.NotChatAdmin, "no"));
+
+        await Should.ThrowAsync<ApiException>(() => h.Store.SetContentProtectionAsync(group.Id, true));
+
+        h.Store.Get(group.Id)!.ProtectContent.ShouldBeFalse();
+    }
 }
 
 public sealed class UserStoreTests

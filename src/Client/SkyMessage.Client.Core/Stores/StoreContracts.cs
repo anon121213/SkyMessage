@@ -20,7 +20,7 @@ namespace SkyMessage.Client.Core.Stores;
 
 public interface IChatListStore
 {
-    /// <summary>Non-archived chats: pinned first (newest pin first), then by LastActivityAt desc. Hidden chats excluded.</summary>
+    /// <summary>Non-archived chats: pinned first (in my pin order, PinOrder desc), then by LastActivityAt desc. Hidden chats excluded.</summary>
     IReadOnlyList<ChatSummaryDto> Chats { get; }
     IReadOnlyList<ChatSummaryDto> ArchivedChats { get; }
     bool IsLoaded { get; }
@@ -48,7 +48,20 @@ public interface IChatListStore
     Task<ChatSummaryDto> GetSavedMessagesAsync(CancellationToken cancellationToken = default);
     Task<CreateGroupResultDto> CreateGroupAsync(CreateGroupRequest request, CancellationToken cancellationToken = default);
     Task<ChatSummaryDto> JoinByInviteAsync(string token, CancellationToken cancellationToken = default);
+    /// <summary>A new pin goes on top of my other pins.</summary>
     Task SetPinnedAsync(Guid chatId, bool pinned);
+    /// <summary>
+    /// Rearranges my pinned chats (top first; usually the pinned chats of one list): applied at once, stored on the
+    /// server and synced to my other devices (PinnedChatsReordered). Put back and rethrown when the server refuses.
+    /// </summary>
+    Task ReorderPinnedAsync(IReadOnlyList<Guid> chatIdsTopFirst);
+    /// <summary>Closes the "add to contacts / block" bar of a private chat (on all my devices).</summary>
+    Task SetContactBarDismissedAsync(Guid chatId);
+    /// <summary>
+    /// Content protection on/off (<see cref="ContentProtectionRules"/>): groups for everyone (admins), private chats my
+    /// own part. Optimistic; put back and rethrown when the server refuses.
+    /// </summary>
+    Task SetContentProtectionAsync(Guid chatId, bool enabled);
     Task SetArchivedAsync(Guid chatId, bool archived);
     /// <summary>0 = unmute, -1 = forever, &gt;0 seconds.</summary>
     Task SetMutedAsync(Guid chatId, int muteForSeconds);

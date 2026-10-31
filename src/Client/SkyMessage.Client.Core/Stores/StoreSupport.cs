@@ -106,9 +106,13 @@ internal static class ChatRules
 {
     public static bool IsMuted(ChatSummaryDto chat, DateTimeOffset now) => chat.MutedUntil is { } until && until > now;
 
-    /// <summary>Pinned first (newest pin first), then by last activity (newest first).</summary>
+    /// <summary>
+    /// Pinned first in my pin order (higher PinOrder first; ties — chats cached before pin orders existed — newest pin
+    /// first), then by last activity (newest first). Same order as the server's chat list.
+    /// </summary>
     public static IReadOnlyList<ChatSummaryDto> Sort(IEnumerable<ChatSummaryDto> chats) =>
         chats.OrderByDescending(c => c.IsPinned)
+            .ThenByDescending(c => c.IsPinned ? c.PinOrder : 0)
             .ThenByDescending(c => c.IsPinned ? c.PinnedAt ?? DateTimeOffset.MinValue : DateTimeOffset.MinValue)
             .ThenByDescending(c => c.LastActivityAt)
             .ThenByDescending(c => c.Id)
@@ -118,9 +122,63 @@ internal static class ChatRules
     {
         IsPinned = settings.IsPinned,
         PinnedAt = settings.PinnedAt,
+        PinOrder = settings.IsPinned ? settings.PinOrder : 0,
         IsArchived = settings.IsArchived,
         MutedUntil = settings.MutedUntil,
+        ContactBarDismissed = settings.ContactBarDismissed,
     };
+
+    /// <summary>The per-user settings part of a summary (to put it back after a refused change).</summary>
+    public static ChatUserSettingsDto SettingsOf(ChatSummaryDto chat) => new()
+    {
+        IsPinned = chat.IsPinned,
+        PinnedAt = chat.PinnedAt,
+        PinOrder = chat.PinOrder,
+        IsArchived = chat.IsArchived,
+        MutedUntil = chat.MutedUntil,
+        ContactBarDismissed = chat.ContactBarDismissed,
+    };
+
+    /// <summary>The chat-wide state a ChatUpdated event carries (title and photo are a group's own; private chats keep theirs).</summary>
+    public static ChatSummaryDto WithInfo(ChatSummaryDto chat, ChatInfoDto info)
+    {
+        // The same ids keep the held list, so an unchanged chat stays equal (no re-render, no cache write).
+        var by = chat.ProtectContentBy.SequenceEqual(info.ProtectContentBy) ? chat.ProtectContentBy : info.ProtectContentBy;
+        return chat.Type == ChatType.Group
+            ? chat with
+            {
+                Title = info.Title ?? chat.Title,
+                AvatarMediaId = info.AvatarMediaId,
+                MemberCount = info.MemberCount,
+                Permissions = info.Permissions,
+                ActiveCallId = info.ActiveCallId,
+                ProtectContent = info.ProtectContent,
+                ProtectContentBy = by,
+            }
+            : chat with
+            {
+                MemberCount = info.MemberCount,
+                ActiveCallId = info.ActiveCallId,
+                ProtectContent = info.ProtectContent,
+                ProtectContentBy = by,
+            };
+    }
+
+    /// <summary>
+    /// New pin orders for the chats listed (the server's answer or event, or a local reorder); a chat not pinned here
+    /// keeps 0 (its pin will arrive with its settings). True when anything moved.
+    /// </summary>
+    public static bool ApplyPinOrders(Dictionary<Guid, ChatSummaryDto> chats, IEnumerable<ChatPinOrderDto> orders)
+    {
+        var changed = false;
+        foreach (var order in orders)
+        {
+            if (!chats.TryGetValue(order.ChatId, out var chat) || !chat.IsPinned || chat.PinOrder == order.PinOrder) continue;
+            chats[order.ChatId] = chat with { PinOrder = order.PinOrder };
+            changed = true;
+        }
+        return changed;
+    }
 }
 
 /// <summary>Country calling code → ISO region, for parsing address-book numbers without '+'.</summary>

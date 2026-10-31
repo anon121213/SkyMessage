@@ -29,6 +29,8 @@ public class MainActivity : MauiAppCompatActivity
         _backCallback = new BackCallback(this);
         OnBackPressedDispatcher.AddCallback(this, _backCallback);
         (AppServices.Get<ISystemUiService>() as AndroidSystemUiService)?.Apply(this);
+        // A recreated activity has a fresh window: a protected chat still on screen keeps it out of screenshots.
+        (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.Apply(this);
 
         // A recreated activity (or a relaunch from recents) must not replay an old deep link / call action.
         var intent = Intent;
