@@ -91,6 +91,8 @@ public partial class CallOverlay : IAsyncDisposable
     private IReadOnlyList<AudioRoute> _routes = [];
     private string? _chosenRouteId;
     private AudioRouteKind? _chosenRouteKind;
+    // This call has shown a picture (see CheckPicture): from then on its sound defaults to the loudspeaker.
+    private bool _pictureSeen;
     private IReadOnlyList<MediaDeviceItem> _speakers = [];
     private IReadOnlyList<MediaDeviceItem> _microphones = [];
     private ContextMenu? _audioMenu;
@@ -251,6 +253,8 @@ public partial class CallOverlay : IAsyncDisposable
         _lastView = Display;
         _lastExpanded = _expanded;
         CallUi.SetCovering(_expanded && _lastView is not null);
+        // After every render: the picture, the expanded screen and the media state it depends on are all current.
+        CheckPicture();
         if (firstRender) await SyncAsync();
         await BindStageAsync();
         await BindGestureAsync();
@@ -414,6 +418,7 @@ public partial class CallOverlay : IAsyncDisposable
         _endedAt = null;
         _chosenRouteId = null;
         _chosenRouteKind = null;
+        _pictureSeen = false;
         _routes = [];
     }
 
@@ -808,31 +813,41 @@ public partial class CallOverlay : IAsyncDisposable
 
     /// <summary>
     /// Phones: puts call audio where it belongs after the microphone is (re)published — the WebView's WebRTC stack
-    /// may re-pick a device when capture restarts. Explicit choice in this call, else a connected headset, else the
-    /// default from settings (speaker for video calls).
+    /// may re-pick a device when capture restarts — and when the call starts showing a picture
+    /// (<see cref="CallRoutePolicy.Pick"/>: explicit choice in this call, else a connected headset, else the default
+    /// from settings; automatic is the loudspeaker once the call shows a picture).
     /// </summary>
     private async Task ApplyRouteAsync()
     {
         if (!AudioRoutes.IsSupported || Calls.Current is not { } current) return;
         await RefreshRoutesAsync();
         if (_routes.Count == 0) return;
-        AudioRoute? target = null;
-        if (_chosenRouteId is not null || _chosenRouteKind is not null)
-            target = _routes.FirstOrDefault(r => _chosenRouteId is not null && r.Id == _chosenRouteId)
-                     ?? _routes.FirstOrDefault(r => r.Kind == _chosenRouteKind);
-        target ??= _routes.FirstOrDefault(r => r.Kind == AudioRouteKind.Bluetooth) ?? _routes.FirstOrDefault(r => r.Kind == AudioRouteKind.Wired);
-        if (target is null)
-        {
-            var preferred = Settings.Current.Devices.PreferredAudioRoute
-                            ?? (current.Call.IsVideo || CameraOn ? AudioRouteKind.Speaker : AudioRouteKind.Earpiece);
-            target = _routes.FirstOrDefault(r => r.Kind == preferred);
-        }
+        var showsPicture = _pictureSeen || current.Call.IsVideo || CameraOn;
+        var target = CallRoutePolicy.Pick(_routes, _chosenRouteId, _chosenRouteKind, Settings.Current.Devices.PreferredAudioRoute, showsPicture);
         if (target is null || target.IsActive)
         {
             ReportLocal();
             return;
         }
         await SetRouteAsync(target);
+    }
+
+    /// <summary>
+    /// Phones: an audio call that starts showing a picture — my camera, or someone's camera or shared screen on the
+    /// open call screen with the app in front — moves its sound to the loudspeaker, where a video call starts: the
+    /// phone is now held in front of the face, the earpiece is too quiet there, and the proximity lock that follows
+    /// the earpiece would darken the picture whenever a hand covers the sensor. Once per call; a route the user picked
+    /// in this call, a connected headset or a route from settings stays (<see cref="CallRoutePolicy.Pick"/>). The
+    /// sound does not move back when the picture goes: it stays audible, and one tap returns it to the earpiece.
+    /// </summary>
+    private void CheckPicture()
+    {
+        if (_pictureSeen || !AudioRoutes.IsSupported || Calls.Current is not { } current || !CallUi.IsLive(current)) return;
+        var remotePicture = _expanded && Lifecycle.IsForeground && _remote.Any(r => r.HasVideo || r.HasScreen);
+        if (!current.Call.IsVideo && !CameraOn && !remotePicture) return;
+        _pictureSeen = true;
+        // Before the media is up the microphone publish applies the route anyway (a video call starts there as well).
+        if (_engineConnected && _chosenRouteId is null && _chosenRouteKind is null) _ = ApplyRouteAsync();
     }
 
     private async Task SetRouteAsync(AudioRoute route)
@@ -993,6 +1008,11 @@ public partial class CallOverlay : IAsyncDisposable
             if (!IsDisposed && _seenIncomingId is not null) await SyncAsync();
         });
         if (!foreground) return;
+        // A share or camera that started while the app was in background is only seen now.
+        _ = InvokeAsync(() =>
+        {
+            if (!IsDisposed) CheckPicture();
+        });
         _ = InvokeAsync(async () =>
         {
             await Task.Delay(1600);

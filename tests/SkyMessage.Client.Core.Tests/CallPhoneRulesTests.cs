@@ -11,8 +11,9 @@ using Xunit;
 namespace SkyMessage.Client.Core.Tests;
 
 /// <summary>
-/// Calls on phones: when the screen may go dark at the ear (proximity lock), when it must not time out (a picture on
-/// the call screen) and when music in other apps pauses (audio focus) — the decisions the Android host applies.
+/// Calls on phones: when the screen may go dark at the ear (proximity lock), where the sound plays (earpiece, speaker,
+/// headset), when the screen must not time out (a picture on the call screen) and when music in other apps pauses
+/// (audio focus) — the decisions the call screen and the Android host apply.
 /// </summary>
 public sealed class CallPhoneRulesTests
 {
@@ -58,6 +59,77 @@ public sealed class CallPhoneRulesTests
         var timeline = new[] { AudioRouteKind.Earpiece, AudioRouteKind.Speaker, AudioRouteKind.Earpiece, AudioRouteKind.Bluetooth };
         timeline.Select(r => CallScreenPolicy.HoldsProximityLock(r, cameraOn: false, inCommunication: true))
             .ShouldBe([true, false, true, false]);
+    }
+
+    // ---- where the sound goes ----
+
+    private static readonly AudioRoute Earpiece = new(AudioRouteKind.Earpiece, "Phone", true, "1");
+    private static readonly AudioRoute Speaker = new(AudioRouteKind.Speaker, "Speaker", false, "2");
+    private static readonly AudioRoute Buds = new(AudioRouteKind.Bluetooth, "Buds", false, "3");
+    private static readonly AudioRoute Car = new(AudioRouteKind.Bluetooth, "Car", false, "4");
+    private static readonly AudioRoute Cable = new(AudioRouteKind.Wired, "Headphones", false, "5");
+
+    [Fact]
+    public void A_voice_call_plays_on_the_earpiece_and_a_call_with_a_picture_on_the_speaker()
+    {
+        CallRoutePolicy.Pick([Earpiece, Speaker], null, null, null, showsPicture: false).ShouldBe(Earpiece);
+        CallRoutePolicy.Pick([Earpiece, Speaker], null, null, null, showsPicture: true).ShouldBe(Speaker);
+    }
+
+    [Fact]
+    public void Watching_a_picture_and_then_the_proximity_rule_leave_the_screen_on()
+    {
+        // An audio call at the ear; the other side starts showing a screen: the sound moves to the speaker, which lets
+        // go of the proximity lock.
+        var atTheEar = CallRoutePolicy.Pick([Earpiece, Speaker], null, null, null, showsPicture: false)!;
+        CallScreenPolicy.HoldsProximityLock(atTheEar.Kind, cameraOn: false, inCommunication: true).ShouldBeTrue();
+        var watching = CallRoutePolicy.Pick([Earpiece, Speaker], null, null, null, showsPicture: true)!;
+        CallScreenPolicy.HoldsProximityLock(watching.Kind, cameraOn: false, inCommunication: true).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_route_picked_in_the_call_stays_when_a_picture_appears()
+    {
+        CallRoutePolicy.Pick([Earpiece, Speaker], "1", AudioRouteKind.Earpiece, null, showsPicture: true).ShouldBe(Earpiece);
+        CallRoutePolicy.Pick([Earpiece, Speaker, Buds], "1", AudioRouteKind.Earpiece, null, showsPicture: true).ShouldBe(Earpiece, "a choice beats a headset");
+    }
+
+    [Fact]
+    public void A_picked_device_that_went_away_falls_back_to_its_kind()
+    {
+        CallRoutePolicy.Pick([Earpiece, Speaker, Car], "3", AudioRouteKind.Bluetooth, null, showsPicture: false).ShouldBe(Car);
+    }
+
+    [Fact]
+    public void A_connected_headset_keeps_the_sound_whatever_the_call_shows()
+    {
+        CallRoutePolicy.Pick([Earpiece, Speaker, Cable], null, null, null, showsPicture: true).ShouldBe(Cable);
+        CallRoutePolicy.Pick([Earpiece, Speaker, Cable, Buds], null, null, null, showsPicture: false).ShouldBe(Buds);
+        CallRoutePolicy.Pick([Earpiece, Speaker, Cable, Buds], null, null, AudioRouteKind.Wired, showsPicture: false).ShouldBe(Cable,
+            "headphones chosen in settings come first when both are connected");
+        CallRoutePolicy.Pick([Earpiece, Speaker, Buds], null, null, AudioRouteKind.Speaker, showsPicture: true).ShouldBe(Buds);
+    }
+
+    [Fact]
+    public void A_route_from_settings_wins_over_the_automatic_one()
+    {
+        CallRoutePolicy.Pick([Earpiece, Speaker], null, null, AudioRouteKind.Earpiece, showsPicture: true).ShouldBe(Earpiece);
+        CallRoutePolicy.Pick([Earpiece, Speaker], null, null, AudioRouteKind.Speaker, showsPicture: false).ShouldBe(Speaker);
+    }
+
+    [Fact]
+    public void Headphones_from_settings_that_are_not_connected_fall_back_to_the_automatic_route()
+    {
+        CallRoutePolicy.Pick([Earpiece, Speaker], null, null, AudioRouteKind.Bluetooth, showsPicture: false).ShouldBe(Earpiece);
+        CallRoutePolicy.Pick([Earpiece, Speaker], null, null, AudioRouteKind.Wired, showsPicture: true).ShouldBe(Speaker);
+    }
+
+    [Fact]
+    public void Nothing_to_pick_leaves_the_route_alone()
+    {
+        CallRoutePolicy.Pick([], null, null, null, showsPicture: true).ShouldBeNull();
+        // A tablet: no earpiece for a voice call.
+        CallRoutePolicy.Pick([Speaker], null, null, null, showsPicture: false).ShouldBeNull();
     }
 
     // ---- screen timeout ----

@@ -636,7 +636,10 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
-  iOS; re-apply the preferred route after publish and on device changes), HttpHandlerFactory
+  iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the
+  call, else a connected headset, else the setting, else earpiece for voice and loudspeaker once the call shows a
+  picture — an audio call moves to the loudspeaker once when my camera or someone's camera/screen appears on the
+  open call screen, which also releases the proximity lock), HttpHandlerFactory
   (`SocketsHttpHandler` with Happy Eyeballs `ConnectCallback` (IPv6 first, IPv4 after 250 ms), HTTP/SOCKS5
   proxy, per-attempt connect timeouts, pooled lifetime 5 min; iOS: `NSUrlSessionHandler` when no proxy (or
   iOS 17+ proxy configurations); `CreateProxy` and `CreateWebSocketConnector` for SignalR; Android WebView
