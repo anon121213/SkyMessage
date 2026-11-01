@@ -128,7 +128,12 @@ public sealed class MediaProcessingTests : IDisposable
         var waveform = result.Waveform.ShouldNotBeNull();
         waveform.Length.ShouldBe(100);
         waveform.Max().ShouldBe((byte)255);
-        waveform.Count(v => v > 150).ShouldBeGreaterThanOrEqualTo(90);
+        // A steady tone must give a flat waveform. Compare with the median, not the peak: the encoders' start-up
+        // transient can be the loudest bucket, and how loud it is differs between machines (CI runners vs. dev boxes).
+        var body = waveform[3..^3].Select(v => (int)v).Order().ToArray();
+        var median = body[body.Length / 2];
+        median.ShouldBeGreaterThan(100);
+        body.Count(v => Math.Abs(v - median) <= median * 0.3).ShouldBeGreaterThanOrEqualTo(85);
         var probe = await Runner().ProbeAsync(result.Path, "mov", Ct);
         var audio = probe.Audio.ShouldNotBeNull();
         audio.CodecName.ShouldBe("aac");

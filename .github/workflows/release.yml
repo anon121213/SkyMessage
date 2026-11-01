@@ -39,7 +39,7 @@ jobs:
       build-number: ${{ steps.version.outputs.build-number }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -101,7 +101,7 @@ jobs:
       BUILD_NUMBER: ${{ needs.plan.outputs.build-number }}
       VERSION: ${{ needs.plan.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -109,7 +109,7 @@ jobs:
         with:
           global-json-file: global.json
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -183,7 +183,7 @@ jobs:
       BUILD_NUMBER: ${{ needs.plan.outputs.build-number }}
       VERSION: ${{ needs.plan.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-dotnet@v4
         with:
