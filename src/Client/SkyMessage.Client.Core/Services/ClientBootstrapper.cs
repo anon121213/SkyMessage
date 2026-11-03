@@ -11,7 +11,8 @@ namespace SkyMessage.Client.Core.Services;
 /// contacts and the outbox continue in the background (never waiting for the network). On sign-out it stops
 /// realtime, cancels notifications and the background connection; calls and stores clean up through the account
 /// lifecycle. All stores are constructed here so they subscribe to realtime before the first event. It also starts
-/// the self-updater (<see cref="AppUpdateService"/>).
+/// the self-updater (<see cref="AppUpdateService"/>) and reads the app passcode before any screen shows
+/// (<see cref="AppLockService"/>: with one the app starts locked).
 /// </summary>
 internal sealed class ClientBootstrapper : IClientBootstrapper
 {
@@ -25,6 +26,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
     private readonly ILocalNotificationService _notifications;
     private readonly IBackgroundConnectionService _background;
     private readonly AppUpdateService _updates;
+    private readonly AppLockService _appLock;
     private readonly ILogger<ClientBootstrapper> _logger;
     private readonly object _lock = new();
     private Task? _start;
@@ -50,6 +52,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         ILocalNotificationService notifications,
         IBackgroundConnectionService background,
         AppUpdateService updates,
+        AppLockService appLock,
         ILogger<ClientBootstrapper> logger)
     {
         // messages, users, typing, drafts, calls, coordinators, urls, downloads: constructed for their subscriptions.
@@ -64,6 +67,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         _notifications = notifications;
         _background = background;
         _updates = updates;
+        _appLock = appLock;
         _logger = logger;
     }
 
@@ -77,7 +81,15 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
     private async Task StartCoreAsync()
     {
         await _settings.LoadAsync().ConfigureAwait(false);
-        await _auth.InitializeAsync().ConfigureAwait(false);
+        try
+        {
+            await _auth.InitializeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            // Before the first screen, even when restoring the session failed: with a passcode the app starts locked.
+            await _appLock.InitializeAsync().ConfigureAwait(false);
+        }
         await _endpoints.InitializeAsync().ConfigureAwait(false);
 
         _realtime.SessionRevoked += _ =>

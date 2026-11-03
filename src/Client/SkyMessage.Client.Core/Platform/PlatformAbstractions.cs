@@ -403,6 +403,46 @@ public interface IScreenSecurityService
     void SetSecure(bool secure);
 }
 
+/// <summary>How a system fingerprint/face prompt ended (<see cref="IAppLockPlatform.AuthenticateAsync"/>).</summary>
+public enum BiometricOutcome
+{
+    Succeeded,
+    /// <summary>The user closed the prompt or chose to type the passcode instead.</summary>
+    Cancelled,
+    /// <summary>Too many failed tries: the system disabled the sensor for a while.</summary>
+    LockedOut,
+    /// <summary>No sensor, nothing enrolled, the setting is off, or the prompt could not be shown.</summary>
+    Unavailable,
+}
+
+/// <summary>Texts of the system biometric prompt, localized by the caller.</summary>
+public sealed record BiometricPromptText(string Title, string? Subtitle, string CancelText);
+
+/// <summary>
+/// Platform side of the app passcode (<see cref="Services.IAppLockService"/>). Android: fingerprint or face unlock
+/// through the system BiometricPrompt (Android 10+, weak biometrics allowed so face unlock counts), the recent-apps
+/// switcher kept free of the app's content while a passcode is set (Android 13+ without a recents screenshot, older
+/// versions with FLAG_SECURE while the app is in the background) and the boot clock. Browser, iOS, Mac: no
+/// biometrics (the setting is hidden), the rest does nothing. Implementations never throw.
+/// </summary>
+public interface IAppLockPlatform
+{
+    /// <summary>The platform can unlock with a fingerprint or face at all (the setting is shown).</summary>
+    bool SupportsBiometrics { get; }
+    /// <summary>A fingerprint or face is enrolled and the sensor can be used right now.</summary>
+    bool CanUseBiometrics { get; }
+    /// <summary>Shows the system prompt (from the foreground); completes when it is answered or dismissed.</summary>
+    Task<BiometricOutcome> AuthenticateAsync(BiometricPromptText text, CancellationToken cancellationToken = default);
+    /// <summary>While true, the recent-apps switcher shows no picture of the app's content.</summary>
+    void SetHiddenInRecents(bool hidden);
+    /// <summary>
+    /// Time since the device booted, deep sleep included (Android SystemClock.elapsedRealtime); null where there is no
+    /// such clock. Unlike the wall clock the user cannot move it, unlike the process clock it keeps running while the
+    /// phone sleeps, so the auto-lock and the pause after wrong passcodes are measured with it when it exists.
+    /// </summary>
+    TimeSpan? SinceBoot { get; }
+}
+
 /// <summary>
 /// Status/navigation bar appearance (follow the in-app theme, not the OS). On Android 15+ (edge-to-edge)
 /// only the icon color applies — <c>backgroundHex</c> is ignored and the CSS must paint behind the bars.

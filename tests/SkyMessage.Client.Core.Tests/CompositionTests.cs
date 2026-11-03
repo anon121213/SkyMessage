@@ -38,7 +38,7 @@ public sealed class CompositionTests
                      typeof(ICallPlatformService), typeof(IShareService), typeof(IFileSaveService), typeof(IFileOpener), typeof(IAppLifecycle),
                      typeof(IExternalLauncher), typeof(IDeepLinkSource), typeof(ISystemUiService), typeof(IHapticsService),
                      typeof(IBackgroundConnectionService), typeof(IScreenSecurityService), typeof(IAudioFocusService),
-                     typeof(IAppUpdateInstaller),
+                     typeof(IAppUpdateInstaller), typeof(IAppLockPlatform),
                  })
         {
             services.AddSingleton(type, Substitute.For([type], []));
@@ -58,6 +58,7 @@ public sealed class CompositionTests
             typeof(IMediaDownloadService), typeof(ILinkBuilder), typeof(INotificationCoordinator), typeof(IChatListStore),
             typeof(IMessageStore), typeof(IUserStore), typeof(IContactStore), typeof(ITypingStore), typeof(IDraftStore),
             typeof(IAccountLocalStore), typeof(ICallService), typeof(IScreenCaptureGuard), typeof(IAudioFocusCoordinator),
+            typeof(IAppLockService),
         };
 
         foreach (var contract in contracts)
@@ -114,6 +115,7 @@ public sealed class NotificationCoordinatorTests
         public IChatListStore Chats { get; } = Substitute.For<IChatListStore>();
         public IAppLifecycle App { get; } = Substitute.For<IAppLifecycle>();
         public ILocalNotificationService Notifications { get; } = Substitute.For<ILocalNotificationService>();
+        public IAppLockService Lock { get; } = Substitute.For<IAppLockService>();
         public AppSettings Settings { get; } = new();
         public NotificationCoordinator Coordinator { get; }
         public List<InAppNotification> InApp { get; } = [];
@@ -124,7 +126,7 @@ public sealed class NotificationCoordinatorTests
             users.DisplayNameOf(Arg.Any<Guid>()).Returns("Anna");
             Chats.TitleOf(Arg.Any<ChatSummaryDto>()).Returns(c => c.Arg<ChatSummaryDto>().Title);
             Coordinator = new NotificationCoordinator(Substitute.For<IRealtimeService>(), Fakes.Auth(Me, "me_user"), Chats, users,
-                Fakes.Settings(Settings), App, Notifications, Substitute.For<IServiceProvider>(), TimeProvider.System, Log.For<NotificationCoordinator>());
+                Fakes.Settings(Settings), App, Notifications, Lock, Substitute.For<IServiceProvider>(), TimeProvider.System, Log.For<NotificationCoordinator>());
             Coordinator.InAppNotificationRaised += InApp.Add;
         }
 
@@ -182,5 +184,39 @@ public sealed class NotificationCoordinatorTests
         await h.Coordinator.HandleAsync(Fakes.Message(chat.Id, 2, Guid.CreateVersion7(), "another"));
 
         await h.Notifications.Received(1).ShowMessageAsync(Arg.Is<LocalNotification>(n => n.Body == "New message"));
+    }
+
+    [Fact]
+    public async Task A_locked_app_shows_no_banner_and_notifies_through_the_system_even_in_front()
+    {
+        var h = new Harness();
+        h.App.IsForeground.Returns(true);
+        h.Lock.IsLocked.Returns(true);
+        var chat = h.AddChat();
+        // The chat was open when the app locked: nothing of it is on screen now.
+        h.Chats.ActiveChatId.Returns(chat.Id);
+
+        await h.Coordinator.HandleAsync(Fakes.Message(chat.Id, 1, Guid.CreateVersion7(), "see you at five"));
+
+        h.InApp.ShouldBeEmpty();
+        await h.Notifications.Received(1).ShowMessageAsync(Arg.Is<LocalNotification>(n => n.Title == "Family" && n.Body == "see you at five"));
+        await h.Notifications.DidNotReceive().CancelForChatAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task With_hidden_text_a_locked_app_tells_neither_who_wrote_nor_what()
+    {
+        var h = new Harness();
+        h.App.IsForeground.Returns(false);
+        h.Lock.IsLocked.Returns(true);
+        h.Lock.ShouldHideNotificationText().Returns(true);
+        h.Settings.Language = "ru";
+        var chat = h.AddChat(ChatType.Group);
+
+        await h.Coordinator.HandleAsync(Fakes.Message(chat.Id, 1, Guid.CreateVersion7(), "секрет"));
+
+        await h.Notifications.Received(1).CancelForChatAsync(chat.Id);
+        await h.Notifications.Received(1).ShowMessageAsync(Arg.Is<LocalNotification>(n =>
+            n.ChatId == chat.Id && n.Title == "SkyMessage" && n.Body == "Новое сообщение"));
     }
 }
