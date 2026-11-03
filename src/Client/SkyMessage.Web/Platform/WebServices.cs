@@ -354,6 +354,27 @@ public sealed class WebScreenSecurityService : IScreenSecurityService
     }
 }
 
+/// <summary>
+/// The app passcode in a browser works with the keypad only: a page cannot show the system fingerprint prompt as a local
+/// unlock (the setting is hidden), cannot keep its tab out of the browser's tab previews, and has no boot clock (the
+/// auto-lock uses the wall and page clocks). The passcode hash is in localStorage (<see cref="WebSecureStore"/>).
+/// </summary>
+public sealed class WebAppLockPlatform : IAppLockPlatform
+{
+    public bool SupportsBiometrics => false;
+
+    public bool CanUseBiometrics => false;
+
+    public TimeSpan? SinceBoot => null;
+
+    public Task<BiometricOutcome> AuthenticateAsync(BiometricPromptText text, CancellationToken cancellationToken = default) =>
+        Task.FromResult(BiometricOutcome.Unavailable);
+
+    public void SetHiddenInRecents(bool hidden)
+    {
+    }
+}
+
 public sealed class WebHapticsService(WebBridge bridge) : IHapticsService
 {
     public bool IsSupported => bridge.State.CanVibrate;

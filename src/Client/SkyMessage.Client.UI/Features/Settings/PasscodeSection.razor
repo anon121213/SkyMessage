@@ -1,0 +1,128 @@
+@* Settings › Privacy › Passcode (a sub-page of privacy): turn the app passcode on (4 or 6 digits, twice), change it,
+   choose when the app locks by itself, allow fingerprint/face unlock (Android with one enrolled; hidden in browsers),
+   hide notification text while locked, lock right now, turn it off (the current code is asked first). The code steps run
+   in PasscodeDialog; the rules live in Core's IAppLockService. *@
+@inherits UiComponentBase
+@inject IAppLockService AppLock
+@inject IAppLockPlatform LockPlatform
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject ILogger<PasscodeSection> Logger
+
+<SettingsScaffold Title="@L["passcode.title"]">
+    @if (!AppLock.IsEnabled)
+    {
+        <div class="passcode-off">
+            <EmptyState Icon="@IconNames.Lock" Title="@L["passcode.intro.title"]" Text="@L["passcode.intro.text"]" Class="passcode-intro">
+                <Actions>
+                    <Button Icon="@IconNames.KeyRound" OnClick="EnableAsync">@L["passcode.enable"]</Button>
+                </Actions>
+            </EmptyState>
+            <p class="passcode-note">@L["passcode.intro.forgotNote"]</p>
+        </div>
+    }
+    else
+    {
+        <Section Title="@L["passcode.group.locking"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.KeyRound" IconColor="@SettingsTones.Violet" Title="@L["passcode.change"]"
+                      Subtitle="@L.Plural("passcode.digits", AppLock.Length)" Chevron="true" OnClick="ChangeAsync" />
+            <ListItem Icon="@IconNames.Timer" IconColor="@SettingsTones.Lagoon" Title="@L["passcode.autoLock"]"
+                      Meta="@PasscodeUi.AutoLockName(L, AppLock.AutoLockDelay, brief: true)" Chevron="true" OnClick="ChooseAutoLockAsync" />
+            @if (AppLock.SupportsBiometrics)
+            {
+                var available = AppLock.CanUseBiometrics;
+                <SwitchItem Icon="@IconNames.Fingerprint" IconColor="@SettingsTones.Mint" Title="@L["passcode.biometric.setting"]"
+                            Subtitle="@(available ? L["passcode.biometric.settingHint"] : L["passcode.biometric.notEnrolled"])"
+                            Checked="@(AppLock.UseBiometrics && available)" Disabled="@(!available || _busy)" CheckedChanged="SetBiometricsAsync" />
+            }
+            <SwitchItem Icon="@IconNames.EyeOff" IconColor="@SettingsTones.Orchid" Title="@L["passcode.hideText"]" Subtitle="@L["passcode.hideTextHint"]"
+                        Checked="AppLock.HideNotificationText" Disabled="_busy" CheckedChanged="SetHideTextAsync" />
+        </Section>
+
+        <Section Footer="@L["passcode.lockNowHint"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.Lock" IconColor="@SettingsTones.Periwinkle" Title="@L["passcode.lockNow"]" OnClick="AppLock.LockNow" />
+        </Section>
+
+        <Section Footer="@L["passcode.intro.forgotNote"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.LockOpen" IconColor="@SettingsTones.Rose" Title="@L["passcode.disable"]" Danger="true" OnClick="DisableAsync" />
+        </Section>
+    }
+</SettingsScaffold>
+
+@code {
+    private static readonly DialogOptions StepOptions = new() { Presentation = OverlayPresentation.Auto, Size = DialogSize.Small };
+
+    private bool _busy;
+
+    protected override void OnInitialized() => RenderOn(h => AppLock.Changed += h, h => AppLock.Changed -= h);
+
+    private Task EnableAsync() => RunFlowAsync(PasscodeDialog.Flow.Enable, "passcode.setup.newTitle", "passcode.enabled");
+
+    private Task ChangeAsync() => RunFlowAsync(PasscodeDialog.Flow.Change, "passcode.setup.currentTitle", "passcode.changed");
+
+    private Task DisableAsync() => RunFlowAsync(PasscodeDialog.Flow.Disable, "passcode.setup.currentTitle", "passcode.disabled");
+
+    private async Task RunFlowAsync(PasscodeDialog.Flow flow, string titleKey, string doneKey)
+    {
+        var done = await Dialogs.ShowAsync<PasscodeDialog>(L[titleKey],
+            new Dictionary<string, object?> { [nameof(PasscodeDialog.Mode)] = flow }, StepOptions);
+        if (done is true) Toasts.Success(L[doneKey]);
+    }
+
+    private async Task ChooseAutoLockAsync()
+    {
+        var current = AppLock.AutoLockDelay;
+        var options = AppLockRules.AutoLockChoices
+            .Select(delay => new ChoiceOption<TimeSpan>(delay, PasscodeUi.AutoLockName(L, delay)) { Selected = delay == current })
+            .ToList();
+        var choice = await Dialogs.ChooseAsync(L["passcode.autoLock"], options, L["passcode.autoLockHint"]);
+        if (choice is null || choice.Value == current) return;
+        await SaveAsync(() => AppLock.SetAutoLockDelayAsync(choice.Value));
+    }
+
+    private async Task SetBiometricsAsync(bool on)
+    {
+        if (!on)
+        {
+            await SaveAsync(() => AppLock.SetUseBiometricsAsync(false));
+            return;
+        }
+        // The finger (or face) is checked once before it may open the app.
+        _busy = true;
+        try
+        {
+            var outcome = await LockPlatform.AuthenticateAsync(new BiometricPromptText(L["passcode.biometric.confirmTitle"], L["passcode.biometric.confirmText"], L["common.cancel"]));
+            if (outcome == BiometricOutcome.Succeeded) await AppLock.SetUseBiometricsAsync(true);
+            else if (outcome != BiometricOutcome.Cancelled) Toasts.Warning(L["passcode.biometric.unavailable"]);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Biometric unlock could not be turned on");
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task SetHideTextAsync(bool hide) => SaveAsync(() => AppLock.SetHideNotificationTextAsync(hide));
+
+    private async Task SaveAsync(Func<Task> save)
+    {
+        _busy = true;
+        try
+        {
+            await save();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Passcode option not saved");
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

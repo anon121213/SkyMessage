@@ -1,0 +1,287 @@
+@* The app passcode's lock screen (docs/DESIGN.md "Lock screen"): rendered once by MainLayout and shown while
+   IAppLockService.IsLocked, over every screen, dialog and toast of the shell. The calm sky, the logo mark, "Enter the
+   passcode", the dots and our glass keypad (PasscodePad); the fingerprint key when the user allowed it (offered by
+   itself once per lock while the app is in front). Wrong codes shake the dots; after five a pause counts down.
+   "Forgot the passcode?" signs out of this device after a confirmation shown right here (dialogs live under the lock).
+   An active call stays reachable: "Back to the call" opens the call screen, which shows above the lock (an incoming
+   call opens it by itself). It appears at once, opaque (fading in would show the chats for a moment) and fades out
+   when unlocked. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IAppLockService AppLock
+@inject IAppLifecycle Lifecycle
+@inject ICallService Calls
+@inject IAuthService Auth
+@inject AppJs Js
+@inject ILogger<LockScreen> Logger
+
+@if (_shown)
+{
+    var paused = RetryIn > TimeSpan.Zero;
+    <div @ref="_root" class="lock @(_leaving ? "lock--leaving" : null)" role="dialog" aria-modal="true" aria-labelledby="lock-title" tabindex="-1">
+        <SkyBackdrop Comet="false" />
+        <div class="lock__scroll">
+            <div class="lock__column">
+                <div class="lock__top">
+                    @if (CallLive)
+                    {
+                        <button type="button" class="lock__call" @onclick="CallUi.Expand">
+                            <span class="lock__call-icon" aria-hidden="true"><Icon Name="@IconNames.Phone" Size="15" StrokeWidth="2.4" /></span>
+                            <span>@(Calls.Incoming is not null && !CallUi.IsLive(Calls.Current) ? L["passcode.lock.incomingCall"] : L["passcode.lock.backToCall"])</span>
+                        </button>
+                    }
+                </div>
+
+                <header class="lock__head">
+                    <Logo Size="60" Mark="true" Animated="true" Class="lock__logo" />
+                    <h1 id="lock-title" class="lock__title">@L["passcode.lock.title"]</h1>
+                    <p class="lock__hint @(_hintIsError || paused ? "lock__hint--error" : null)" aria-live="polite">@HintText(paused)</p>
+                </header>
+
+                @if (_confirmingForgot)
+                {
+                    <div class="lock__forgot-card sm-card" role="alertdialog" aria-labelledby="lock-forgot-title" aria-describedby="lock-forgot-text">
+                        <h2 id="lock-forgot-title" class="lock__forgot-title">@L["passcode.forgot.title"]</h2>
+                        <p id="lock-forgot-text" class="lock__forgot-text">@L["passcode.forgot.text"]</p>
+                        <div class="lock__forgot-actions">
+                            <Button Variant="ButtonVariant.Secondary" Disabled="_signingOut" OnClick="CancelForgot">@L["common.cancel"]</Button>
+                            <Button Variant="ButtonVariant.Danger" Loading="_signingOut" Icon="@IconNames.LogOut" OnClick="SignOutAsync">@L["passcode.forgot.signOut"]</Button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <PasscodePad @ref="_pad" Length="@Math.Max(AppLockRules.ShortLength, AppLock.Length)" Disabled="paused" LockScreen="true"
+                                 ExtraIcon="@(OffersBiometrics ? IconNames.Fingerprint : null)" ExtraLabel="@L["passcode.lock.biometric"]"
+                                 OnExtra="() => PromptBiometricsAsync(manual: true)" OnComplete="UnlockAsync" />
+                    <button type="button" class="lock__forgot" @onclick="AskForgot">@L["passcode.lock.forgot"]</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>The fade-out after unlocking (sm-fade-out, a little shorter than --sm-dur).</summary>
+    private const int LeaveMs = 180;
+
+    private ElementReference _root;
+    private PasscodePad? _pad;
+    private JsHandle? _focusTrap;
+    private bool _shown;
+    private bool _leaving;
+    private int _leaveVersion;
+    private bool _focused;
+    private string? _hint;
+    private bool _hintIsError;
+    private bool _confirmingForgot;
+    private bool _signingOut;
+    private bool _prompting;
+    private int _promptedFor = -1;
+    private int _tickVersion;
+
+    private TimeSpan RetryIn => AppLock.RetryIn;
+
+    private bool OffersBiometrics => AppLock.UseBiometrics && AppLock.CanUseBiometrics;
+
+    private bool CallLive => CallUi.IsLive(Calls.Current) || Calls.Incoming is not null;
+
+    protected override void OnInitialized()
+    {
+        _shown = AppLock.IsLocked;
+        AppLock.Changed += OnLockChanged;
+        Lifecycle.ForegroundChanged += OnForegroundChanged;
+        RenderOn(h => Calls.Changed += h, h => Calls.Changed -= h);
+        OnDispose(() =>
+        {
+            AppLock.Changed -= OnLockChanged;
+            Lifecycle.ForegroundChanged -= OnForegroundChanged;
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_shown && !_leaving)
+        {
+            if (!_focused)
+            {
+                _focused = true;
+                await Js.FocusAsync(_root);
+                _focusTrap ??= await Js.TrapFocusAsync(_root);
+            }
+            if (RetryIn > TimeSpan.Zero) StartTicking();
+            await MaybeOfferBiometricsAsync();
+        }
+        else if (_focusTrap is not null)
+        {
+            var trap = _focusTrap;
+            _focusTrap = null;
+            _focused = false;
+            await trap.DisposeAsync();
+        }
+    }
+
+    private void OnLockChanged() => _ = InvokeAsync(() =>
+    {
+        if (IsDisposed) return;
+        var locked = AppLock.IsLocked;
+        if (locked && (!_shown || _leaving))
+        {
+            // Locked (again): show at once, start fresh.
+            _leaveVersion++;
+            _shown = true;
+            _leaving = false;
+            _hint = null;
+            _hintIsError = false;
+            _confirmingForgot = false;
+            _signingOut = false;
+        }
+        else if (!locked && _shown && !_leaving)
+        {
+            _leaving = true;
+            var version = ++_leaveVersion;
+            _ = HideLaterAsync(version);
+        }
+        StateHasChanged();
+    });
+
+    private async Task HideLaterAsync(int version)
+    {
+        await Task.Delay(LeaveMs);
+        await InvokeAsync(() =>
+        {
+            if (IsDisposed || version != _leaveVersion) return;
+            _shown = false;
+            _leaving = false;
+            StateHasChanged();
+        });
+    }
+
+    private void OnForegroundChanged(bool foreground)
+    {
+        if (foreground) _ = InvokeAsync(MaybeOfferBiometricsAsync);
+    }
+
+    /// <summary>Once per lock, while the app is in front: the fingerprint prompt comes up by itself.</summary>
+    private async Task MaybeOfferBiometricsAsync()
+    {
+        if (!_shown || _leaving || _confirmingForgot || !Lifecycle.IsForeground || !OffersBiometrics) return;
+        var lockCount = AppLock.LockCount;
+        if (_promptedFor == lockCount) return;
+        _promptedFor = lockCount;
+        await PromptBiometricsAsync(manual: false);
+    }
+
+    private async Task PromptBiometricsAsync(bool manual)
+    {
+        if (_prompting || !AppLock.IsLocked) return;
+        _prompting = true;
+        try
+        {
+            var outcome = await AppLock.UnlockWithBiometricsAsync(new BiometricPromptText(L["passcode.biometric.title"], null, L["passcode.biometric.usePasscode"]));
+            if (outcome == BiometricOutcome.LockedOut || (manual && outcome == BiometricOutcome.Unavailable))
+            {
+                _hint = L["passcode.biometric.unavailable"];
+                _hintIsError = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Biometric unlock failed");
+        }
+        finally
+        {
+            _prompting = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task UnlockAsync(string code)
+    {
+        PasscodeCheck check;
+        try
+        {
+            check = await AppLock.UnlockAsync(code);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "The passcode check failed");
+            check = new PasscodeCheck(PasscodeCheckStatus.Wrong);
+        }
+        switch (check.Status)
+        {
+            case PasscodeCheckStatus.Correct:
+                _hint = null;
+                return;
+            case PasscodeCheckStatus.Paused:
+                _hint = null;
+                _pad?.Clear();
+                StartTicking();
+                return;
+            default:
+                _hintIsError = true;
+                _hint = PasscodeUi.WrongHint(L, check);
+                if (check.RetryIn > TimeSpan.Zero) StartTicking();
+                if (_pad is not null) await _pad.FailAsync();
+                return;
+        }
+    }
+
+    private string HintText(bool paused)
+    {
+        if (paused) return L.Format("passcode.paused", PasscodeUi.Wait(RetryIn));
+        return _hint ?? " ";
+    }
+
+    /// <summary>Re-renders every second while a pause runs, then once more to enable the keypad.</summary>
+    private void StartTicking()
+    {
+        var version = ++_tickVersion;
+        _ = InvokeAsync(async () =>
+        {
+            while (!IsDisposed && version == _tickVersion && _shown)
+            {
+                var left = RetryIn;
+                if (left <= TimeSpan.Zero)
+                {
+                    _hint = null;
+                    _hintIsError = false;
+                    StateHasChanged();
+                    return;
+                }
+                StateHasChanged();
+                var untilNextSecond = left.TotalMilliseconds % 1000;
+                await Task.Delay(TimeSpan.FromMilliseconds(untilNextSecond < 20 ? 1000 : untilNextSecond));
+            }
+        });
+    }
+
+    private void AskForgot() => _confirmingForgot = true;
+
+    private void CancelForgot() => _confirmingForgot = false;
+
+    private async Task SignOutAsync()
+    {
+        if (_signingOut) return;
+        _signingOut = true;
+        try
+        {
+            // Hangs up a call, revokes this session on the server (offline: locally only) and clears this device's data;
+            // signing out removes the passcode too. The shell goes away with the session.
+            await Auth.LogoutAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Signing out from the lock screen failed");
+            _signingOut = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _tickVersion++;
+        _leaveVersion++;
+        Dispose();
+        if (_focusTrap is not null) await _focusTrap.DisposeAsync();
+    }
+}

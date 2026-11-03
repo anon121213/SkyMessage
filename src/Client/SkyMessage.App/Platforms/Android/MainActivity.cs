@@ -8,6 +8,7 @@ using ActivityFlags = Android.Content.ActivityFlags;
 using SkyMessage.App.Droid;
 using SkyMessage.App.Services;
 using SkyMessage.Client.Core.Platform;
+using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Stores;
 
 namespace SkyMessage.App;
@@ -29,8 +30,10 @@ public class MainActivity : MauiAppCompatActivity
         _backCallback = new BackCallback(this);
         OnBackPressedDispatcher.AddCallback(this, _backCallback);
         (AppServices.Get<ISystemUiService>() as AndroidSystemUiService)?.Apply(this);
-        // A recreated activity has a fresh window: a protected chat still on screen keeps it out of screenshots.
+        // A recreated activity has a fresh window: a protected chat still on screen (or the passcode lock) keeps it out of
+        // screenshots, and with a passcode set the recents picture stays blank.
         (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.Apply(this);
+        (AppServices.Get<IAppLockPlatform>() as AndroidAppLockPlatform)?.Apply(this);
 
         // A recreated activity (or a relaunch from recents) must not replay an old deep link / call action.
         var intent = Intent;
@@ -46,9 +49,17 @@ public class MainActivity : MauiAppCompatActivity
         HandleIntent(intent);
     }
 
+    protected override void OnPause()
+    {
+        // Android 12 and older with a passcode set: secure while paused, so the recents picture shows no chats.
+        (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.SetPaused(this, true);
+        base.OnPause();
+    }
+
     protected override void OnResume()
     {
         base.OnResume();
+        (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.SetPaused(this, false);
         // In the foreground a foreground service may start: revive the background connection if its process died.
         AndroidBackgroundConnectionService.EnsureRunning(ApplicationContext ?? this);
         // A call showing a picture keeps the screen on, also on a window created meanwhile.
@@ -180,11 +191,20 @@ public class MainActivity : MauiAppCompatActivity
         calls.Changed += _callChanged;
     }
 
-    /// <summary>Back closes overlays/screens through WebView history; at the root the app goes to background (never finishes).</summary>
+    /// <summary>
+    /// Back closes overlays/screens through WebView history; at the root the app goes to background (never finishes). The
+    /// passcode lock screen has nothing behind it to go back to: Back leaves the app (the call screen shown over it still
+    /// minimizes first).
+    /// </summary>
     private sealed class BackCallback(MainActivity activity) : OnBackPressedCallback(true)
     {
         public override void HandleOnBackPressed()
         {
+            if (AppServices.Get<IAppLockService>() is { IsLocked: true } && !SkyMessage.Client.UI.Features.Calls.CallUi.IsCovering)
+            {
+                activity.MoveTaskToBack(true);
+                return;
+            }
             var page = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault()?.Page as MainPage;
             if (page?.TryGoBack() == true) return;
             activity.MoveTaskToBack(true);

@@ -4,24 +4,27 @@
    Every phone layer reaches up under the status bar. A rightward drag takes the top layer away (swipe back,
    js/app.js attachSwipeBack). Wide screens: the sky behind a glass icon rail, a glass list panel (resizable), the
    routed content (a chat floats as a rounded card) and (≥ 1280 px) a glass info panel. Notices and the connection
-   pill float over everything. Motion: docs/MOTION.md. *@
+   pill float over everything. While the app passcode locks the app, the lock screen covers all of it (everything stays
+   mounted underneath, inert and "covered": no read marks, no autoplay, no banners); only the call screen goes above it.
+   Motion: docs/MOTION.md. *@
 @inherits LayoutComponentBase
 @implements IAsyncDisposable
 @inject LayoutService Layout
 @inject NavigationService Nav
 @inject IChatListStore ChatList
+@inject IAppLockService AppLock
 @inject HapticFeedback Haptics
 @inject AppJs Js
 
-<div class="shell shell--@Layout.Mode.ToString().ToLowerInvariant()">
+<div class="shell shell--@Layout.Mode.ToString().ToLowerInvariant() @(Locked ? "shell--locked" : null)">
     @if (Layout.IsPhone)
     {
-        <div @ref="_phone" class="shell__phone">
+        <div @ref="_phone" class="shell__phone" inert="@Locked">
             <div class="shell__root @(TabBarShown ? "shell__root--tabbar" : null) @(BaseCovered ? "is-covered" : null) @_rootAnim" inert="@BaseCovered"
                  data-swipe-under="@(UnderIsRoot ? "" : null)">
                 <SkyBackdrop Sparkles="false" Comet="false" Class="shell__sky" />
                 <div class="shell__base">
-                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Base, BaseCovered))">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Base, BaseCovered || Locked))">
                         <ErrorBoundary @ref="_baseBoundary">
                             <ChildContent>@BaseScreen</ChildContent>
                             <ErrorContent Context="error">
@@ -40,7 +43,7 @@
             {
                 <div @key="layer.ChatId" class="shell__layer shell__layer--chat @layer.Class" inert="@layer.Covered"
                      data-swipe-back="@(layer.Top ? "" : null)" data-swipe-under="@(layer.Under ? "" : null)">
-                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Chat, layer.Covered))">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Chat, layer.Covered || Locked))">
                         <SkyMessage.Client.UI.Features.Chat.ChatPage ChatId="layer.ChatId" />
                     </CascadingValue>
                 </div>
@@ -48,7 +51,7 @@
             @if (ShowPageLayer)
             {
                 <div @key="Nav.CurrentPath" class="shell__layer @_pageAnim" data-swipe-back="">
-                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Page, false))">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Page, Locked))">
                         @Guarded
                     </CascadingValue>
                 </div>
@@ -57,13 +60,13 @@
     }
     else
     {
-        <div class="shell__wide @(ShowSidebar ? "shell__wide--sidebar" : null)">
+        <div class="shell__wide @(ShowSidebar ? "shell__wide--sidebar" : null)" inert="@Locked">
             <SkyBackdrop Sparkles="false" Comet="false" Class="shell__sky" />
             <IconRail />
             @if (ShowSidebar)
             {
                 <aside class="shell__sidebar sm-glass">
-                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Sidebar, false))">
+                    <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Sidebar, Locked))">
                         @if (Nav.Section == ShellSection.Contacts)
                         {
                             <SkyMessage.Client.UI.Features.Contacts.ContactsPanel />
@@ -80,7 +83,7 @@
                 @if (RetainedChatId is { } chatId)
                 {
                     <div @key="chatId" class="shell__chat @(ChatCovered ? "is-hidden" : null)" inert="@ChatCovered">
-                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Chat, ChatCovered))">
+                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Chat, ChatCovered || Locked))">
                             <SkyMessage.Client.UI.Features.Chat.ChatPage ChatId="chatId" />
                         </CascadingValue>
                     </div>
@@ -88,7 +91,7 @@
                 @if (ChatRouteId is null)
                 {
                     <div class="shell__content">
-                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Main, false))">
+                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Main, Locked))">
                             @Guarded
                         </CascadingValue>
                     </div>
@@ -99,7 +102,7 @@
                 @if (Layout.HasInfoColumn)
                 {
                     <aside class="shell__info sm-glass">
-                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Info, false))">
+                        <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Info, Locked))">
                             @Guarded
                         </CascadingValue>
                     </aside>
@@ -109,7 +112,7 @@
                     <div class="shell__info-overlay">
                         <div class="shell__info-scrim" @onclick="CloseInfoAsync"></div>
                         <aside class="shell__info shell__info--floating sm-glass sm-glass--strong">
-                            <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.InfoOverlay, false))">
+                            <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.InfoOverlay, Locked))">
                                 @Guarded
                             </CascadingValue>
                         </aside>
@@ -124,6 +127,7 @@
     <NotificationBanner />
     <DialogHost />
     <ToastHost AboveTabBar="TabBarVisible" />
+    <SkyMessage.Client.UI.Features.Passcode.LockScreen />
     <SkyMessage.Client.UI.Features.Calls.CallOverlay />
 </div>
 
@@ -179,6 +183,9 @@
 
     private string Path => Nav.CurrentPath;
     private bool IsTopLevel => NavigationService.IsTopLevel(Path);
+
+    /// <summary>The app passcode hides the shell behind the lock screen (Features/Passcode/LockScreen).</summary>
+    private bool Locked => AppLock.IsLocked;
     private Guid? ChatRouteId => NavigationService.ChatIdOf(Path);
     private string? ChatSubPage => NavigationService.ChatSubPageOf(Path);
     private bool IsInfoRoute => ChatRouteId is not null && ChatSubPage is not null;
@@ -279,7 +286,10 @@
         Layout.Changed += OnChanged;
         Nav.Changed += OnNavigated;
         ChatList.Changed += OnChatsChanged;
+        AppLock.Changed += OnLockChanged;
     }
+
+    private void OnLockChanged() => _ = InvokeAsync(StateHasChanged);
 
     protected override void OnParametersSet() => UpdateLayerAnimations();
 
@@ -463,6 +473,7 @@
         Layout.Changed -= OnChanged;
         Nav.Changed -= OnNavigated;
         ChatList.Changed -= OnChatsChanged;
+        AppLock.Changed -= OnLockChanged;
         _leavingVersion++;
         if (_resizerHandle is not null) await _resizerHandle.DisposeAsync();
         if (_swipeBack is not null) await _swipeBack.DisposeAsync();

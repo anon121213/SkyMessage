@@ -10,6 +10,8 @@ public static class SettingsRoutes
     public const string Phone = "phone";
     public const string Privacy = "privacy";
     public const string Blocked = "blocked";
+    /// <summary>The app passcode (a sub-page of privacy).</summary>
+    public const string Passcode = "passcode";
     public const string Sessions = "sessions";
     public const string Notifications = "notifications";
     public const string Appearance = "appearance";

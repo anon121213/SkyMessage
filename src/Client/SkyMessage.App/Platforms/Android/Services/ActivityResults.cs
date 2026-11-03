@@ -7,12 +7,14 @@ namespace SkyMessage.App.Droid;
 /// <summary>
 /// Awaitable Activity Result API launches through the current activity's <see cref="ActivityResultRegistry"/>
 /// (registered with a unique key and unregistered after the result, so they work at any time, not only
-/// before the activity is started).
+/// before the activity is started). The trip to the picker or settings screen is announced to the app passcode, so
+/// "lock immediately" does not lock the app for choosing a photo (IAppLockService.ExpectReturn).
 /// </summary>
 internal static class ActivityResults
 {
     public static async Task<Java.Lang.Object?> LaunchAsync(ActivityResultContract contract, Java.Lang.Object? input, CancellationToken cancellationToken = default)
     {
+        using var trip = SkyMessage.App.Services.AppServices.Get<SkyMessage.Client.Core.Services.IAppLockService>()?.ExpectReturn();
         var tcs = new TaskCompletionSource<Java.Lang.Object?>(TaskCreationOptions.RunContinuationsAsynchronously);
         ActivityResultLauncher? launcher = null;
 

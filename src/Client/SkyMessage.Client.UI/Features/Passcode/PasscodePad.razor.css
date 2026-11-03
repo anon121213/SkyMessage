@@ -1,0 +1,141 @@
+/* The passcode pad (docs/DESIGN.md "Lock screen"): dots that fill with the accent gradient and a glass keypad of round
+   keys. The keys are translucent cards with the glass rim but no backdrop blur: twelve blurred circles over a moving
+   sky would be too heavy for budget phones, and over the soft sky the blur would barely show. Press = spring scale
+   (transform only); the erase key and the optional fingerprint key are plain glyphs. No glows. */
+
+.pcpad {
+    --pc-key: clamp(3.75rem, 10.5vh, 4.75rem);
+    --pc-gap-x: clamp(1.25rem, 6vw, 1.75rem);
+    --pc-gap-y: clamp(0.75rem, 2.2vh, 1.125rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(1.5rem, 4.5vh, 2.25rem);
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+}
+
+/* ---- Dots ---- */
+
+.pcpad__dots {
+    display: flex;
+    align-items: center;
+    gap: 1.125rem;
+    height: 1rem;
+}
+
+.pcpad__dot {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 2px var(--sm-text-3);
+}
+
+.pcpad__dot.is-filled {
+    background: var(--sm-grad);
+    box-shadow: none;
+    animation: pcpad-dot-in var(--sm-dur-fast) var(--sm-spring) both;
+}
+
+@keyframes pcpad-dot-in {
+    from { transform: scale(0.55); }
+    to { transform: none; }
+}
+
+/* A wrong code: every dot turns rose and the row shakes once. */
+.pcpad__dots.is-error {
+    animation: sm-shake 360ms var(--sm-ease);
+}
+
+.pcpad__dots.is-error .pcpad__dot {
+    background: var(--sm-danger);
+    box-shadow: none;
+    animation: none;
+}
+
+/* ---- Keys ---- */
+
+.pcpad__keys {
+    display: grid;
+    grid-template-columns: repeat(3, var(--pc-key));
+    gap: var(--pc-gap-y) var(--pc-gap-x);
+}
+
+.pcpad__key,
+.pcpad__gap {
+    width: var(--pc-key);
+    height: var(--pc-key);
+}
+
+.pcpad__key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--sm-card);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1.75rem;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--sm-dur-fast) var(--sm-spring), opacity var(--sm-dur-fast) var(--sm-ease);
+}
+
+.pcpad__key:active:not(:disabled) {
+    transform: scale(0.9);
+    background: var(--sm-glass-strong);
+}
+
+@media (hover: hover) {
+    .pcpad__key:hover:not(:disabled) {
+        background: var(--sm-glass-strong);
+    }
+}
+
+.pcpad__key:focus-visible {
+    outline: 2px solid var(--sm-accent);
+    outline-offset: 3px;
+}
+
+.pcpad__key--plain {
+    background: transparent;
+    box-shadow: none;
+    color: var(--sm-text-2);
+}
+
+.pcpad__key--plain:active:not(:disabled) {
+    background: var(--sm-press);
+}
+
+@media (hover: hover) {
+    .pcpad__key--plain:hover:not(:disabled) {
+        background: var(--sm-hover);
+    }
+}
+
+/* Erase is there only once something was typed (it keeps its place, so the keypad never shifts). */
+.pcpad__erase.is-idle {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.pcpad--disabled .pcpad__key:not(.pcpad__key--plain) {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.pcpad__key:disabled {
+    cursor: default;
+}
+
+/* Slow devices: an opaque card instead of the translucent one. */
+html[data-fx="lite"] .pcpad__key:not(.pcpad__key--plain) {
+    background: var(--sm-card-solid);
+}

@@ -6,7 +6,7 @@ namespace SkyMessage.Client.UI.Features.Settings;
 /// <summary>A settings screen: route key (<see cref="SettingsRoutes"/>), title key, icon and the hue of its pastel tile (<see cref="SettingsTones"/>).</summary>
 public sealed record SettingsSectionInfo(string Key, string TitleKey, string Icon, string Color);
 
-/// <summary>The settings menu, grouped. "blocked" is a sub-page of privacy and has no menu row of its own.</summary>
+/// <summary>The settings menu, grouped. "blocked" and "passcode" are sub-pages of privacy without menu rows of their own.</summary>
 public static class SettingsCatalog
 {
     public static IReadOnlyList<SettingsSectionInfo> Account { get; } =
@@ -34,19 +34,22 @@ public static class SettingsCatalog
     ];
 
     private static readonly SettingsSectionInfo BlockedInfo = new(SettingsRoutes.Blocked, "settings.blocked.title", IconNames.Ban, SettingsTones.Rose);
+    private static readonly SettingsSectionInfo PasscodeInfo = new(SettingsRoutes.Passcode, "passcode.title", IconNames.Lock, SettingsTones.Violet);
 
-    public static IEnumerable<SettingsSectionInfo> All => Account.Concat(App).Concat(Help).Append(BlockedInfo);
+    public static IEnumerable<SettingsSectionInfo> All => Account.Concat(App).Concat(Help).Append(BlockedInfo).Append(PasscodeInfo);
+
+    private static bool IsPrivacyPage(string key) => key is SettingsRoutes.Blocked or SettingsRoutes.Passcode;
 
     /// <summary>Known section key (case-insensitive) in its canonical form, else null.</summary>
     public static string? Normalize(string? key) =>
         string.IsNullOrWhiteSpace(key) ? null : All.FirstOrDefault(s => string.Equals(s.Key, key.Trim(), StringComparison.OrdinalIgnoreCase))?.Key;
 
     /// <summary>The menu row that represents a section (sub-pages highlight their parent).</summary>
-    public static string MenuKeyOf(string key) => key == SettingsRoutes.Blocked ? SettingsRoutes.Privacy : key;
+    public static string MenuKeyOf(string key) => IsPrivacyPage(key) ? SettingsRoutes.Privacy : key;
 
     /// <summary>Where Back goes from a section opened by a deep link.</summary>
     public static string ParentPathOf(string key) =>
-        key == SettingsRoutes.Blocked ? SettingsRoutes.PathOf(SettingsRoutes.Privacy) : "/settings";
+        IsPrivacyPage(key) ? SettingsRoutes.PathOf(SettingsRoutes.Privacy) : "/settings";
 }
 
 /// <summary>Cascaded by SettingsPage: sections rendered next to the menu (wide screens) hide their back button.</summary>
