@@ -81,6 +81,18 @@ public interface ISkyApi
     Task DeleteChatAsync(Guid chatId, bool forEveryone, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetPinnedMessagesAsync(Guid chatId, CancellationToken ct = default);
 
+    // Folders (every change answers with the whole new state, see ApiRoutes.Folders)
+    Task<ChatFoldersDto> GetChatFoldersAsync(CancellationToken ct = default);
+    /// <summary>Creates the folder with this id or replaces its name, icon and rules (its pins stay).</summary>
+    Task<ChatFoldersDto> SaveChatFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken ct = default);
+    Task<ChatFoldersDto> DeleteChatFolderAsync(Guid folderId, CancellationToken ct = default);
+    Task<ChatFoldersDto> ReorderChatFoldersAsync(IReadOnlyList<Guid> folderIds, CancellationToken ct = default);
+    Task<ChatFoldersDto> SetFolderPinAsync(Guid folderId, Guid chatId, bool pinned, CancellationToken ct = default);
+    Task<ChatFoldersDto> ReorderFolderPinsAsync(Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst, CancellationToken ct = default);
+    Task<ChatFoldersDto> UpdateChatListSettingsAsync(ChatListSettingsDto settings, CancellationToken ct = default);
+    /// <summary>Marks every chat of the folder read; null = "All chats" (everything outside the archive).</summary>
+    Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default);
+
     // Messages
     Task<MessagesPageDto> GetMessagesAsync(Guid chatId, long? beforeSeq = null, long? afterSeq = null, long? aroundSeq = null, int limit = Limits.MessagesPageDefault, CancellationToken ct = default);
     Task<MessageChangesDto> GetMessageChangesAsync(Guid chatId, string cursor, CancellationToken ct = default);

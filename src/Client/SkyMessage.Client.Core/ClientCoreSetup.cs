@@ -83,6 +83,7 @@ public static class ClientCoreSetup
         // Stores
         services.AddSingleton<IUserStore, UserStore>();
         services.AddSingleton<IChatListStore, ChatListStore>();
+        services.AddSingleton<IChatFolderStore, ChatFolderStore>();
         services.AddSingleton<IMessageStore, MessageStore>();
         services.AddSingleton<IContactStore, ContactStore>();
         services.AddSingleton<ITypingStore, TypingStore>();
