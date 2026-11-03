@@ -174,6 +174,15 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
 * `TabBar` / `IconRail` show `TotalUnread` on Chats (the badge pops in / bumps); the active pill slides between
   areas and the selected icon bounces; the rail's avatar opens Settings. `TabBar Active="section"` shows another
   area as active (the shell passes the root screen's area).
+* `LockScreen` (Features/Passcode) — the app passcode's lock screen, rendered by MainLayout and shown while
+  `IAppLockService.IsLocked`: z-index 990, above dialogs (900), menus (950), banners (960) and toasts (980); while locked
+  the shell gets `.shell--locked` and the call screen moves above it (996). Everything underneath stays mounted but
+  `inert`, and every `ShellContext.IsCovered` is true (the ChatPage rule then stops read marks, autoplay and the active
+  chat). Its confirmation ("Forgot the passcode?") is drawn on the lock screen itself — a `DialogService` dialog would
+  open under it. `PasscodePad` (`Length`, `Disabled`, `OnComplete(code)`, optional `ExtraIcon`/`OnExtra` key left of 0,
+  `LockScreen`; `FailAsync()` = rose dots + shake + haptic, `Clear()`) is the keypad for any passcode step: no text
+  field, so phones never open the system keyboard; `js/passcode.js` sends a computer's digit keys and Backspace to the
+  pad in front (not inert, not covered at its center).
 * `BootSplash`, `CrashScreen` (`Compact` inside panes), `NotFoundView`, `RedirectTo`, `AuthLayout`.
 
 ---
@@ -314,6 +323,7 @@ Custom dialog content component:
 ```
 
 Results complete after the dialog's history entry is gone, so you can navigate right after `await`.
+`Dialog.SetTitle(text)` re-renders the frame's title (multi-step dialogs such as the passcode steps use it).
 `DialogOptions`: `Size` (Small/Medium/Large), `Dismissible`, `ShowClose`, `Presentation` (Dialog/Sheet/Auto),
 `Flush` (no body padding), `Class`.
 
@@ -374,8 +384,8 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
 * `PeopleExtensions`: `Users.Resolve(id, embedded)`, `user.NameOf(L)`, `Users.NameOf(id, L, embedded)`,
   `user.IsOnline()`, `user.Handle()` ("@name").
 * `AvatarPalette`: `Background(id)` (gradient), `Color(id)` (sender name color), `Initials(name)`.
-* `SettingsRoutes`: section keys `profile, phone, privacy, blocked, sessions, notifications, appearance, chats,
-  devices, data, language, connection, about`; `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`. Other screens
+* `SettingsRoutes`: section keys `profile, phone, privacy, blocked, passcode, sessions, notifications, appearance,
+  chats, devices, data, language, connection, about` (`blocked` and `passcode` are sub-pages of privacy); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`. Other screens
   link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them.
 * `UiDispatcher` (scoped): `Post(work)` / `InvokeAsync(work)` on the renderer from non-component services.
 * `AnonymousPageAttribute`: `@attribute [AnonymousPage]` for signed-out pages.
@@ -424,9 +434,9 @@ BatteryCharging Bell BellOff BellRing Bluetooth Bold BookOpen BookUser Bookmark 
 Check CheckCheck ChevronDown ChevronLeft ChevronRight ChevronUp ChevronsDown Circle CircleAlert CircleCheck
 CircleCheckBig CircleDot CircleEllipsis CircleHelp CircleMinus CirclePause CirclePlay CirclePlus CircleStop
 CircleUser CircleUserRound CircleX Clock Cloud CloudAlert CloudDownload CloudOff Code Coffee Contact ContactRound
-Copy CornerDownLeft CornerUpLeft CornerUpRight Crown Database DoorOpen Download Ear Earth Ellipsis
+Copy CornerDownLeft CornerUpLeft CornerUpRight Crown Database Delete DoorOpen Download Ear Earth Ellipsis
 EllipsisVertical Eraser Expand ExternalLink Eye EyeOff FastForward File FileArchive FileAudio FileDown FileImage
-FileText FileVideo Film Flag FlipHorizontal2 FolderOpen Forward Gauge Ghost Globe GripHorizontal GripVertical
+FileText FileVideo Film Fingerprint Flag FlipHorizontal2 FolderOpen Forward Gauge Ghost Globe GripHorizontal GripVertical
 Hand HardDrive Hash Headphones Heart History Hourglass House Image ImagePlus ImageUp Images Inbox Info Italic
 KeyRound Keyboard Languages Laptop LayoutGrid Leaf LifeBuoy Lightbulb Link Link2 Link2Off List ListChecks
 ListFilter ListOrdered ListX LoaderCircle Lock LockOpen LogIn LogOut Mail Maximize2 Menu MessageCircle
@@ -434,7 +444,7 @@ MessageCircleMore MessageCircleOff MessageCirclePlus MessageSquare MessageSquare
 Minimize2 Minus Monitor MonitorOff MonitorSmartphone MonitorUp Moon Music Network OctagonAlert Paintbrush Palette
 PanelLeft PanelRight Paperclip Pause PawPrint Pencil Phone PhoneCall PhoneForwarded PhoneIncoming PhoneMissed
 PhoneOff PhoneOutgoing PictureInPicture2 Pin PinOff Plane Play PlugZap Plus QrCode Quote RefreshCcw RefreshCw
-Reply Rewind RotateCcw RotateCw Save ScanQrCode ScreenShare ScreenShareOff ScrollText Search SearchX Send
+Reply Rewind RotateCcw RotateCw Save ScanFace ScanQrCode ScreenShare ScreenShareOff ScrollText Search SearchX Send
 SendHorizontal Server ServerOff Settings Settings2 Share Share2 Shield ShieldAlert ShieldBan ShieldCheck Shrink
 Signal SignalHigh SignalLow SignalMedium SlidersHorizontal Smartphone Smile SmilePlus Sparkles Speaker Square
 SquareCheck SquarePen Star Strikethrough Sun SunMoon SwatchBook SwitchCamera TabletSmartphone ThumbsUp Ticket

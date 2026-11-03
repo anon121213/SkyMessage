@@ -700,6 +700,22 @@
             vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* ignore */ } },
         },
 
+        crypto: {
+            // PBKDF2-HMAC-SHA256 for the app passcode through WebCrypto: .NET runs interpreted in the browser and its own
+            // is many times slower. Null without WebCrypto (not a secure context): .NET's own is used then.
+            async pbkdf2(passcode, salt, iterations, length) {
+                const subtle = self.crypto && self.crypto.subtle;
+                if (!subtle) return null;
+                try {
+                    const key = await subtle.importKey('raw', new TextEncoder().encode(passcode), 'PBKDF2', false, ['deriveBits']);
+                    const bits = await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, length * 8);
+                    return new Uint8Array(bits);
+                } catch (e) {
+                    return null;
+                }
+            },
+        },
+
         locks: {
             acquire(name, id) {
                 if (navigator.locks && navigator.locks.request) {

@@ -41,10 +41,10 @@
   "passcode.lockNowHint": "SkyMessage сразу спросит код-пароль.",
   "passcode.disable": "Выключить код-пароль",
 
-  "passcode.setup.currentTitle": "Введите текущий код-пароль",
+  "passcode.setup.currentTitle": "Текущий код-пароль",
   "passcode.setup.currentHint": "Тот код, которым вы открываете SkyMessage",
   "passcode.setup.newTitle": "Придумайте код-пароль",
-  "passcode.setup.newTitleChange": "Придумайте новый код-пароль",
+  "passcode.setup.newTitleChange": "Новый код-пароль",
   "passcode.setup.newHint": "{0} — легко запомнить вам и трудно угадать другим",
   "passcode.setup.confirmTitle": "Повторите код-пароль",
   "passcode.setup.confirmHint": "Ещё раз, чтобы не ошибиться",

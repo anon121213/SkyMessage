@@ -436,6 +436,11 @@ public interface IAppLockPlatform
     /// <summary>While true, the recent-apps switcher shows no picture of the app's content.</summary>
     void SetHiddenInRecents(bool hidden);
     /// <summary>
+    /// PBKDF2-HMAC-SHA256 of the passcode (UTF-8) with the platform's own crypto, where that is much faster than .NET's
+    /// (browsers: WebCrypto — .NET runs interpreted there); null to use .NET's. Both give the same bytes.
+    /// </summary>
+    Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length);
+    /// <summary>
     /// Time since the device booted, deep sleep included (Android SystemClock.elapsedRealtime); null where there is no
     /// such clock. Unlike the wall clock the user cannot move it, unlike the process clock it keeps running while the
     /// phone sleeps, so the auto-lock and the pause after wrong passcodes are measured with it when it exists.

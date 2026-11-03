@@ -92,8 +92,8 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
         accounts.Register(this);
     }
 
-    /// <summary>Rounds for new hashes (calibrated on the device; tests use a few to stay fast).</summary>
-    internal Func<int> ChooseIterations { get; set; } = PasscodeHasher.ChooseIterations;
+    /// <summary>Rounds for new hashes; null calibrates them on the device (tests use a few to stay fast).</summary>
+    internal int? FixedIterations { get; set; }
 
     public event Action? Changed;
 
@@ -205,6 +205,41 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
         }).ConfigureAwait(false);
         if (!changed) return;
         _platform.SetHiddenInRecents(hidden);
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// Coming back: another instance of the app on this device (a second browser tab) may have turned the passcode on,
+    /// off or changed it meanwhile. Turned on elsewhere while this one was away: it locks too. Never throws.
+    /// </summary>
+    internal async Task RefreshFromStoreAsync()
+    {
+        bool? enabled = null;
+        await _queue.RunAsync(async () =>
+        {
+            if (!_initialized) return;
+            PasscodeConfig? stored;
+            try
+            {
+                stored = await ReadConfigAsync(throwOnFailure: true).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "The passcode could not be re-read; keeping the current one");
+                return;
+            }
+            lock (_gate)
+            {
+                if (stored == _config) return;
+                var wasEnabled = _config is not null;
+                _config = stored;
+                if (stored is null) ClearCore();
+                else if (!wasEnabled) LockCore();
+                enabled = stored is not null;
+            }
+        }).ConfigureAwait(false);
+        if (enabled is not { } isEnabled) return;
+        _platform.SetHiddenInRecents(isEnabled);
         RaiseChanged();
     }
 
@@ -369,34 +404,38 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
 
     private void OnForegroundChanged(bool foreground)
     {
-        var changed = false;
-        lock (_gate)
-        {
-            if (_config is not { } config)
-            {
-                _away = null;
-                StopAwayTimer();
-                return;
-            }
-            if (!foreground)
-            {
-                // Leaving while locked changes nothing; an unlock while away (a fingerprint prompt shown as a separate
-                // screen) must not lock again on the way back either.
-                if (_locked) return;
-                var delay = config.AutoLock;
-                if (Volatile.Read(ref _trips) > 0 && delay < AppLockRules.OwnTripGrace) delay = AppLockRules.OwnTripGrace;
-                _away = new Away(_time.GetUtcNow(), _time.GetTimestamp(), _platform.SinceBoot, delay);
-                if (delay <= TimeSpan.Zero) changed = LockCore();
-                else StartAwayTimer();
-            }
-            else
-            {
-                StopAwayTimer();
-                if (_away is { } away && !_locked && AwayTooLong(away)) changed = LockCore();
-                _away = null;
-            }
-        }
+        bool changed;
+        lock (_gate) changed = foreground ? OnReturnCore() : OnLeaveCore();
         if (changed) RaiseChanged();
+        if (foreground) RefreshFromStoreAsync().Forget(_logger);
+    }
+
+    /// <summary>Under the lock. Starts measuring the time away (or locks at once for "immediately").</summary>
+    private bool OnLeaveCore()
+    {
+        // Leaving while locked changes nothing; an unlock while away (a fingerprint prompt shown as a separate screen)
+        // must not lock again on the way back either.
+        if (_config is not { } config || _locked)
+        {
+            _away = null;
+            StopAwayTimer();
+            return false;
+        }
+        var delay = config.AutoLock;
+        if (Volatile.Read(ref _trips) > 0 && delay < AppLockRules.OwnTripGrace) delay = AppLockRules.OwnTripGrace;
+        _away = new Away(_time.GetUtcNow(), _time.GetTimestamp(), _platform.SinceBoot, delay);
+        if (delay <= TimeSpan.Zero) return LockCore();
+        StartAwayTimer();
+        return false;
+    }
+
+    /// <summary>Under the lock. Locks when the app was away too long.</summary>
+    private bool OnReturnCore()
+    {
+        StopAwayTimer();
+        var changed = _away is { } away && !_locked && _config is not null && AwayTooLong(away) && LockCore();
+        _away = null;
+        return changed;
     }
 
     private async Task<PasscodeCheck> CheckAsync(string passcode, bool unlock)
@@ -405,16 +444,19 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
         {
             PasscodeConfig? config;
             TimeSpan retryIn;
+            lock (_gate) config = _config;
+            if (config is null) return new PasscodeCheck(PasscodeCheckStatus.NotSet);
+            // Wrong attempts made in another instance (a second browser tab) count here too.
+            var stored = await ReadAttemptsAsync().ConfigureAwait(false);
             lock (_gate)
             {
-                config = _config;
+                if (stored.Failures > _attempts.Failures) _attempts = stored;
                 retryIn = RetryInCore();
             }
-            if (config is null) return new PasscodeCheck(PasscodeCheckStatus.NotSet);
             if (retryIn > TimeSpan.Zero) return new PasscodeCheck(PasscodeCheckStatus.Paused, 0, retryIn);
 
             var correct = config.Hash is { } hash && AppLockRules.IsValidPasscode(passcode)
-                && await Task.Run(() => PasscodeHasher.Verify(passcode, hash)).ConfigureAwait(false);
+                && await PasscodeHasher.VerifyAsync(passcode, hash, DeriveAsync).ConfigureAwait(false);
             if (correct)
             {
                 lock (_gate)
@@ -456,11 +498,25 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
         if (updated) RaiseChanged();
     }
 
-    private Task<PasscodeHash> HashAsync(string passcode)
+    private async Task<PasscodeHash> HashAsync(string passcode)
     {
-        var choose = ChooseIterations;
-        // Off the UI thread on native hosts (a quarter of a second of work); the browser has one thread either way.
-        return Task.Run(() => PasscodeHasher.Create(passcode, choose()));
+        var iterations = FixedIterations ?? await PasscodeHasher.ChooseIterationsAsync(DeriveAsync).ConfigureAwait(false);
+        return await PasscodeHasher.CreateAsync(passcode, iterations, DeriveAsync).ConfigureAwait(false);
+    }
+
+    /// <summary>The platform's PBKDF2 when it has a faster one (browsers), else .NET's — the same bytes either way.</summary>
+    private async Task<byte[]> DeriveAsync(string passcode, byte[] salt, int iterations, int length)
+    {
+        try
+        {
+            if (await _platform.DeriveKeyAsync(passcode, salt, iterations, length).ConfigureAwait(false) is { } fast && fast.Length == length)
+                return fast;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "The platform key derivation failed; using .NET's");
+        }
+        return await PasscodeHasher.Managed(passcode, salt, iterations, length).ConfigureAwait(false);
     }
 
     // ---- state (under _gate) ----
@@ -543,16 +599,19 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
 
     // ---- storage ----
 
-    private async Task<PasscodeConfig?> ReadConfigAsync()
+    /// <summary>
+    /// The stored record; null without one. A storage failure reads as an unverifiable passcode (without the record
+    /// there is no telling whether one exists: the safe side), or is rethrown with <paramref name="throwOnFailure"/>.
+    /// </summary>
+    private async Task<PasscodeConfig?> ReadConfigAsync(bool throwOnFailure = false)
     {
         string? json;
         try
         {
             json = await _store.GetAsync(ConfigKey).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!throwOnFailure)
         {
-            // Without the record there is no way to tell whether a passcode exists: stay on the safe side.
             _logger.LogWarning(ex, "The passcode could not be read");
             return new PasscodeConfig { Hash = null };
         }

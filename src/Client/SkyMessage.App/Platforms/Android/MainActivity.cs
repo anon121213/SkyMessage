@@ -158,6 +158,10 @@ public class MainActivity : MauiAppCompatActivity
     {
         if (show == _showingOverLockScreen) return;
         _showingOverLockScreen = show;
+        // Over the phone's own lock screen only the call may show: with an app passcode set, the chats stay locked
+        // behind it for whoever holds the phone (minimizing the call shows our lock screen).
+        if (show && GetSystemService(KeyguardService) is KeyguardManager { IsKeyguardLocked: true })
+            AppServices.Get<IAppLockService>()?.LockNow();
         try
         {
             if (OperatingSystem.IsAndroidVersionAtLeast(27))

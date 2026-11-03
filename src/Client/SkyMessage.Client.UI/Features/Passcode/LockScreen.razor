@@ -13,6 +13,7 @@
 @inject ICallService Calls
 @inject IAuthService Auth
 @inject AppJs Js
+@inject LayoutService Layout
 @inject ILogger<LockScreen> Logger
 
 @if (_shown)
@@ -79,6 +80,7 @@
     private bool _prompting;
     private int _promptedFor = -1;
     private int _tickVersion;
+    private bool _ticking;
 
     private TimeSpan RetryIn => AppLock.RetryIn;
 
@@ -105,19 +107,25 @@
         {
             if (!_focused)
             {
+                // Taking the focus also closes a soft keyboard left open by a text field underneath. With a mouse and
+                // keyboard, Tab stays on the lock screen and the focus goes back where it was after unlocking; on touch
+                // screens it does not (focusing a text field again would bring the keyboard up).
                 _focused = true;
                 await Js.FocusAsync(_root);
-                _focusTrap ??= await Js.TrapFocusAsync(_root);
+                if (!Layout.IsTouch) _focusTrap ??= await Js.TrapFocusAsync(_root);
             }
             if (RetryIn > TimeSpan.Zero) StartTicking();
             await MaybeOfferBiometricsAsync();
         }
-        else if (_focusTrap is not null)
+        else
         {
-            var trap = _focusTrap;
-            _focusTrap = null;
             _focused = false;
-            await trap.DisposeAsync();
+            if (_focusTrap is not null)
+            {
+                var trap = _focusTrap;
+                _focusTrap = null;
+                await trap.DisposeAsync();
+            }
         }
     }
 
@@ -222,6 +230,8 @@
                 _hintIsError = true;
                 _hint = PasscodeUi.WrongHint(L, check);
                 if (check.RetryIn > TimeSpan.Zero) StartTicking();
+                // The reason shows together with the shake.
+                StateHasChanged();
                 if (_pad is not null) await _pad.FailAsync();
                 return;
         }
@@ -233,25 +243,34 @@
         return _hint ?? " ";
     }
 
-    /// <summary>Re-renders every second while a pause runs, then once more to enable the keypad.</summary>
+    /// <summary>Re-renders every second while a pause runs, then once more to enable the keypad (one loop at a time).</summary>
     private void StartTicking()
     {
-        var version = ++_tickVersion;
+        if (_ticking) return;
+        _ticking = true;
+        var version = _tickVersion;
         _ = InvokeAsync(async () =>
         {
-            while (!IsDisposed && version == _tickVersion && _shown)
+            try
             {
-                var left = RetryIn;
-                if (left <= TimeSpan.Zero)
+                while (!IsDisposed && version == _tickVersion && _shown)
                 {
-                    _hint = null;
-                    _hintIsError = false;
+                    var left = RetryIn;
+                    if (left <= TimeSpan.Zero)
+                    {
+                        _hint = null;
+                        _hintIsError = false;
+                        StateHasChanged();
+                        return;
+                    }
+                    var untilNextSecond = left.TotalMilliseconds % 1000;
+                    await Task.Delay(TimeSpan.FromMilliseconds(untilNextSecond < 20 ? 1000 : untilNextSecond));
                     StateHasChanged();
-                    return;
                 }
-                StateHasChanged();
-                var untilNextSecond = left.TotalMilliseconds % 1000;
-                await Task.Delay(TimeSpan.FromMilliseconds(untilNextSecond < 20 ? 1000 : untilNextSecond));
+            }
+            finally
+            {
+                _ticking = false;
             }
         });
     }

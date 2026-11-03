@@ -357,9 +357,10 @@ public sealed class WebScreenSecurityService : IScreenSecurityService
 /// <summary>
 /// The app passcode in a browser works with the keypad only: a page cannot show the system fingerprint prompt as a local
 /// unlock (the setting is hidden), cannot keep its tab out of the browser's tab previews, and has no boot clock (the
-/// auto-lock uses the wall and page clocks). The passcode hash is in localStorage (<see cref="WebSecureStore"/>).
+/// auto-lock uses the wall and page clocks). The passcode hash is in localStorage (<see cref="WebSecureStore"/>); it is
+/// derived with WebCrypto, which is many times faster than .NET's interpreted PBKDF2 here.
 /// </summary>
-public sealed class WebAppLockPlatform : IAppLockPlatform
+public sealed class WebAppLockPlatform(WebBridge bridge) : IAppLockPlatform
 {
     public bool SupportsBiometrics => false;
 
@@ -372,6 +373,18 @@ public sealed class WebAppLockPlatform : IAppLockPlatform
 
     public void SetHiddenInRecents(bool hidden)
     {
+    }
+
+    public async Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length)
+    {
+        try
+        {
+            return await bridge.Js.InvokeAsync<byte[]?>("skyPlatform.crypto.pbkdf2", passcode, salt, iterations, length).ConfigureAwait(false);
+        }
+        catch (JSException)
+        {
+            return null;
+        }
     }
 }
 

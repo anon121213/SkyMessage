@@ -75,6 +75,8 @@ public sealed class UnsupportedAppLockPlatform : IAppLockPlatform
     public void SetHiddenInRecents(bool hidden)
     {
     }
+
+    public Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length) => Task.FromResult<byte[]?>(null);
 }
 
 /// <summary>

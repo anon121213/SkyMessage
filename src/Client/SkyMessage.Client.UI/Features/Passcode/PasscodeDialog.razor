@@ -42,7 +42,7 @@
     private string? _hint;
     private bool _hintIsError;
     private bool _saving;
-    private int _tickVersion;
+    private bool _ticking;
 
     [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
     [Parameter] public Flow Mode { get; set; }
@@ -124,6 +124,7 @@
                 _hintIsError = true;
                 _hint = PasscodeUi.WrongHint(L, check);
                 if (check.RetryIn > TimeSpan.Zero) StartTicking();
+                StateHasChanged();
                 if (_pad is not null) await _pad.FailAsync();
                 return;
         }
@@ -133,11 +134,13 @@
     {
         if (code != _new)
         {
+            // The reason shows with the shake, and stays while the code is made again.
             _new = null;
-            if (_pad is not null) await _pad.FailAsync();
-            GoTo(Step.New);
             _hint = L["passcode.setup.mismatch"];
             _hintIsError = true;
+            StateHasChanged();
+            if (_pad is not null) await _pad.FailAsync();
+            GoTo(Step.New, keepHint: true);
             return;
         }
         _saving = true;
@@ -168,11 +171,14 @@
         }
     }
 
-    private void GoTo(Step step)
+    private void GoTo(Step step, bool keepHint = false)
     {
         _step = step;
-        _hint = null;
-        _hintIsError = false;
+        if (!keepHint)
+        {
+            _hint = null;
+            _hintIsError = false;
+        }
         SetTitle();
         _pad?.Clear();
     }
@@ -185,21 +191,32 @@
         _pad?.Clear();
     }
 
+    /// <summary>Re-renders every second while a pause runs, then once more to enable the keypad (one loop at a time).</summary>
     private void StartTicking()
     {
-        var version = ++_tickVersion;
+        if (_ticking) return;
+        _ticking = true;
         _ = InvokeAsync(async () =>
         {
-            while (!IsDisposed && version == _tickVersion)
+            try
             {
-                var left = AppLock.RetryIn;
-                StateHasChanged();
-                if (left <= TimeSpan.Zero) return;
-                var untilNextSecond = left.TotalMilliseconds % 1000;
-                await Task.Delay(TimeSpan.FromMilliseconds(untilNextSecond < 20 ? 1000 : untilNextSecond));
+                while (!IsDisposed)
+                {
+                    var left = AppLock.RetryIn;
+                    if (left <= TimeSpan.Zero)
+                    {
+                        StateHasChanged();
+                        return;
+                    }
+                    var untilNextSecond = left.TotalMilliseconds % 1000;
+                    await Task.Delay(TimeSpan.FromMilliseconds(untilNextSecond < 20 ? 1000 : untilNextSecond));
+                    StateHasChanged();
+                }
+            }
+            finally
+            {
+                _ticking = false;
             }
         });
     }
-
-    protected override void Dispose(bool disposing) => _tickVersion++;
 }

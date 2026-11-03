@@ -451,7 +451,27 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   its `CommandRequested` and `ILocalNotificationService.CallActionInvoked` feed `RequestCommand`/accept/
   decline. Incoming in background → `ShowIncomingCallAsync`.
 - **INotificationCoordinator** per its doc; badge = `TotalUnread` via `SetBadgeCountAsync`; notification taps
-  open `DeepLinks.AppChatUri(chatId)`.
+  open `DeepLinks.AppChatUri(chatId)`. While the app passcode locks the app, messages notify through the system
+  even in foreground (no in-app banner); with "hide notification text" the notification says only
+  "SkyMessage: New message" and replaces the chat's earlier one (its lines go too).
+- **IAppLockService** (app passcode, "код-пароль"; rules in `AppLockRules`, per device and for the whole app): a 4-
+  or 6-digit code; only a salted PBKDF2-HMAC-SHA256 hash is stored (`PasscodeHasher`: 16-byte salt, rounds calibrated
+  when the code is set to ≈ 0.25 s per check on this device, 10,000–600,000, kept with the hash; the browser derives
+  it with WebCrypto through `IAppLockPlatform.DeriveKeyAsync`, the same bytes as .NET's) in `ISecureStore`
+  ("passcode.v1" with the options, "passcode.attempts.v1"). With a passcode: every cold start is locked
+  (`ClientBootstrapper` reads it right after the session, before the first screen, also when restoring the session
+  failed); leaving the app (`IAppLifecycle`) for longer than the auto-lock delay locks it — immediately / 1 min
+  (default) / 5 min / 1 h / 5 h — measured with the wall, process and boot clock (`IAppLockPlatform.SinceBoot`): sleep
+  counts, a wall clock moved back locks (without a boot clock) and never helps; a check every 5 s while away locks
+  before the user is back, so returning never shows chats for a moment; "immediately" locks as the app leaves, except
+  for the app's own pickers/camera/system screens (`ExpectReturn`, `AppLockRules.OwnTripGrace` 2 min);
+  `LockNow`. Five wrong codes in a row pause the checks for 30 s, each further one doubles the pause up to 1 h
+  (boot clock when known: moving the clock or restarting does not shorten it); the count survives restarts, is shared
+  by browser tabs and starts over after a right code or fingerprint. While locked the window is secure
+  (`IScreenCaptureGuard`); while a passcode is set the recents picture shows no content. Change and turn off need the
+  current code; turned on/off in another tab is picked up when this one comes back. An unreadable record locks with no
+  code matching. Signing out of the device (also "Forgot the passcode?") removes the passcode; a passcode left on a
+  signed-out device is removed at start.
 - **IClientBootstrapper** per its doc (no network wait; owns sign-in/out cleanup; enables
   `IBackgroundConnectionService` according to `KeepConnectedInBackground`).
 - **ILinkBuilder**: `ServerInfoDto.PublicBaseUrl ?? BaseUri` + `DeepLinks.*Path`.
@@ -558,7 +578,10 @@ Pin, Forward (chat picker), Select (multi: forward/delete), Save, Delete for me/
 **ui-settings-calls** builds Settings (`/settings`, `/settings/{section}`): profile edit (avatar upload,
 name, username with availability, bio), phone (detect via `IPhoneNumberService` on Android, manual entry with
 region, unlink, "who can find me by number"), privacy & security (all levels, blocked users, active
-sessions, change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
+sessions, the app passcode — `/settings/passcode`: turn on with a 4- or 6-digit code entered twice, change, auto-lock
+delay, fingerprint/face unlock (shown where `IAppLockPlatform.SupportsBiometrics`, confirmed by the system prompt once),
+hide notification text while locked, lock now, turn off; the code steps run in `Features/Passcode/PasscodeDialog` —,
+change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
 in background + battery exemption via `IBackgroundConnectionService`; on iOS a hint that the app must stay
 open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, wallpapers with live preview, font size, bubble radius,
 animations, compact list), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
@@ -583,6 +606,17 @@ offer to re-enable it) executing `ICallService.CommandRequested` and reporting `
 (vendor the UMD build of npm `livekit-client@2.22.4` + LICENSE into `wwwroot/lib/livekit/`), maps
 participants by `metadata.userId` (identity is per device), reports through a `DotNetObjectReference`.
 `devices.js` serves both settings and calls.
+
+**App passcode** (`Features/Passcode`): `LockScreen`, rendered once by `MainLayout`, covers the signed-in shell while
+`IAppLockService.IsLocked` (z-index 990: over dialogs, menus, banners and toasts). The shell stays mounted underneath,
+`inert`, and every `ShellContext` reports `IsCovered` (no read marks, autoplay or active chat; notifications go through
+the system). The calm sky, the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`; no
+system keyboard; on a computer digits and Backspace type through `js/passcode.js`, Escape does not reach the app
+underneath); wrong codes shake the dots (rose) with a haptic, the pause after five counts down on the hint line; the
+fingerprint key and a one-time automatic prompt per lock when allowed; "Forgot the passcode?" confirms in place and
+signs out of this device (`IAuthService.LogoutAsync`: local data cleared, passcode removed). An active call stays
+reachable: "Back to the call" expands the call screen, which goes above the lock while locked (an incoming call opens
+it by itself); minimizing it shows the lock again. Android Back on the lock screen moves the app to the background.
 
 **Localization**: `ILocalizer` reads embedded JSON `Localization/{lang}/{area}.json` (flat keys like
 `"chat.composer.placeholder"`); areas owned as in §4; error codes → `errors.json` (`"error.<code>"`).
@@ -616,7 +650,7 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   POST_NOTIFICATIONS, FOREGROUND_SERVICE + _MICROPHONE + _CAMERA + _REMOTE_MESSAGING (background connection —
   not dataSync, which is capped at 6 h/day on targetSdk 35+), RECEIVE_BOOT_COMPLETED (restart the background
   service on boot / package replaced when enabled), WAKE_LOCK, VIBRATE, BLUETOOTH_CONNECT,
-  REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, USE_FULL_SCREEN_INTENT, WRITE_EXTERNAL_STORAGE maxSdkVersion 28;
+  REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, USE_FULL_SCREEN_INTENT, USE_BIOMETRIC, WRITE_EXTERNAL_STORAGE maxSdkVersion 28;
   `allowBackup="false"`; `<queries>` for IMAGE_CAPTURE, VIDEO_CAPTURE, VIEW (https/mailto/tel) and SEND;
   DEBUG-only `UsesCleartextTraffic`; `skymessage://` and notification deep links. Call service type derived
   from granted permissions (microphone; camera added only in foreground); Accept/AcceptVideo notification
@@ -654,6 +688,12 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   (transient focus for ringing, calls, recordings), BackgroundConnectionService (low-priority persistent foreground
   service + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
+  AppLockPlatform (app passcode: framework BiometricPrompt on Android 10+ with weak biometrics so face unlock counts,
+  USE_BIOMETRIC; no recents picture while a passcode is set — `setRecentsScreenshotEnabled(false)` on Android 13+,
+  FLAG_SECURE while the activity is paused below; `SystemClock.elapsedRealtime` as the boot clock; Back on the lock
+  screen leaves the app unless the call screen is over it; shown over the phone's own lock screen for a call, the app
+  locks (`LockNow`), so minimizing the call never shows chats there; `ActivityResults` launches and camera capture
+  announce `ExpectReturn`; iOS/Mac: keypad only),
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
   iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the

@@ -83,13 +83,14 @@
         else _keys = keys;
     }
 
-    /// <summary>A physical key (passcode.js): "0"…"9" or "Backspace".</summary>
+    /// <summary>A physical key (passcode.js): "0"…"9" or "Backspace". Not a UI event: the pad renders itself.</summary>
     [JSInvokable]
     public Task OnKey(string key) => InvokeAsync(async () =>
     {
         if (Disabled || IsDisposed) return;
         if (key == "Backspace") Erase();
         else if (key.Length == 1 && char.IsAsciiDigit(key[0])) await PressAsync(key[0]);
+        if (!IsDisposed) StateHasChanged();
     });
 
     /// <summary>The code was wrong (or did not match): rose dots, a shake and a haptic, then they clear.</summary>

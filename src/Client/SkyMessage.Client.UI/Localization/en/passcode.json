@@ -41,10 +41,10 @@
   "passcode.lockNowHint": "SkyMessage asks for the passcode right away.",
   "passcode.disable": "Turn off passcode",
 
-  "passcode.setup.currentTitle": "Enter your current passcode",
+  "passcode.setup.currentTitle": "Current passcode",
   "passcode.setup.currentHint": "The code you use to open SkyMessage",
   "passcode.setup.newTitle": "Create a passcode",
-  "passcode.setup.newTitleChange": "Create a new passcode",
+  "passcode.setup.newTitleChange": "New passcode",
   "passcode.setup.newHint": "{0} — easy for you to remember, hard for others to guess",
   "passcode.setup.confirmTitle": "Repeat the passcode",
   "passcode.setup.confirmHint": "Once more, to be sure",

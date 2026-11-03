@@ -83,6 +83,9 @@ public sealed class AndroidAppLockPlatform(AndroidScreenSecurityService screen, 
         }
     }
 
+    /// <summary>.NET's PBKDF2 already runs in the platform's crypto on Android (one native call for all rounds).</summary>
+    public Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length) => Task.FromResult<byte[]?>(null);
+
     public void SetHiddenInRecents(bool hidden)
     {
         _hiddenInRecents = hidden;

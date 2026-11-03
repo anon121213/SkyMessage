@@ -61,6 +61,9 @@ internal sealed class FakeLockPlatform(LockClocks clocks) : IAppLockPlatform
     public BiometricOutcome NextOutcome { get; set; } = BiometricOutcome.Succeeded;
     public int Prompts { get; private set; }
     public bool HiddenInRecents { get; private set; }
+    /// <summary>A platform PBKDF2 (as browsers have); null = the platform has none and .NET's is used.</summary>
+    public Func<string, byte[], int, int, Task<byte[]?>>? Kdf { get; set; }
+    public int KdfCalls { get; private set; }
 
     public TimeSpan? SinceBoot => clocks.Boot;
 
@@ -71,6 +74,12 @@ internal sealed class FakeLockPlatform(LockClocks clocks) : IAppLockPlatform
     }
 
     public void SetHiddenInRecents(bool hidden) => HiddenInRecents = hidden;
+
+    public Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length)
+    {
+        KdfCalls++;
+        return Kdf?.Invoke(passcode, salt, iterations, length) ?? Task.FromResult<byte[]?>(null);
+    }
 }
 
 internal sealed class FakeLifecycle : IAppLifecycle
@@ -167,11 +176,13 @@ public sealed class AppLockRulesTests
 
 public sealed class PasscodeHasherTests
 {
+    private static readonly PasscodeKdf Managed = PasscodeHasher.Managed;
+
     [Fact]
-    public void Only_a_salted_hash_is_kept_and_it_verifies_the_right_passcode_only()
+    public async Task Only_a_salted_hash_is_kept_and_it_verifies_the_right_passcode_only()
     {
-        var first = PasscodeHasher.Create("2580", 1_000);
-        var second = PasscodeHasher.Create("2580", 1_000);
+        var first = await PasscodeHasher.CreateAsync("2580", 1_000, Managed);
+        var second = await PasscodeHasher.CreateAsync("2580", 1_000, Managed);
 
         first.Algorithm.ShouldBe("pbkdf2-sha256");
         first.Iterations.ShouldBe(1_000);
@@ -181,26 +192,34 @@ public sealed class PasscodeHasherTests
         first.Hash.ShouldNotBe(second.Hash, "the same passcode hashes differently on every device");
         first.Hash.ShouldNotContain("2580");
 
-        PasscodeHasher.Verify("2580", first).ShouldBeTrue();
-        PasscodeHasher.Verify("2581", first).ShouldBeFalse();
-        PasscodeHasher.Verify("258000", first).ShouldBeFalse();
-        PasscodeHasher.Verify("", first).ShouldBeFalse();
+        (await PasscodeHasher.VerifyAsync("2580", first, Managed)).ShouldBeTrue();
+        (await PasscodeHasher.VerifyAsync("2581", first, Managed)).ShouldBeFalse();
+        (await PasscodeHasher.VerifyAsync("258000", first, Managed)).ShouldBeFalse();
+        (await PasscodeHasher.VerifyAsync("", first, Managed)).ShouldBeFalse();
     }
 
     [Fact]
-    public void A_damaged_or_foreign_hash_never_verifies()
+    public async Task The_hash_is_standard_pbkdf2_sha256_so_any_implementation_reads_it()
     {
-        var hash = PasscodeHasher.Create("1234", 1_000);
-        PasscodeHasher.Verify("1234", hash with { Algorithm = "md5" }).ShouldBeFalse();
-        PasscodeHasher.Verify("1234", hash with { Salt = "not base64!" }).ShouldBeFalse();
-        PasscodeHasher.Verify("1234", hash with { Hash = Convert.ToBase64String(new byte[8]) }).ShouldBeFalse();
-        PasscodeHasher.Verify("1234", hash with { Iterations = 0 }).ShouldBeFalse();
+        // RFC 7914 §11 test vector for PBKDF2-HMAC-SHA256 ("passwd", "salt", 1 round, 64 bytes), first 32 bytes.
+        var bytes = await PasscodeHasher.Managed("passwd", "salt"u8.ToArray(), 1, 32);
+        Convert.ToHexString(bytes).ShouldBe("55AC046E56E3089FEC1691C22544B605F94185216DDE0465E68B9D57C20DACBC");
     }
 
     [Fact]
-    public void The_round_count_is_calibrated_within_bounds()
+    public async Task A_damaged_or_foreign_hash_never_verifies()
     {
-        var rounds = PasscodeHasher.ChooseIterations();
+        var hash = await PasscodeHasher.CreateAsync("1234", 1_000, Managed);
+        (await PasscodeHasher.VerifyAsync("1234", hash with { Algorithm = "md5" }, Managed)).ShouldBeFalse();
+        (await PasscodeHasher.VerifyAsync("1234", hash with { Salt = "not base64!" }, Managed)).ShouldBeFalse();
+        (await PasscodeHasher.VerifyAsync("1234", hash with { Hash = Convert.ToBase64String(new byte[8]) }, Managed)).ShouldBeFalse();
+        (await PasscodeHasher.VerifyAsync("1234", hash with { Iterations = 0 }, Managed)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_round_count_is_calibrated_within_bounds()
+    {
+        var rounds = await PasscodeHasher.ChooseIterationsAsync(Managed);
         rounds.ShouldBeInRange(PasscodeHasher.MinIterations, PasscodeHasher.MaxIterations);
         (rounds % 1000).ShouldBe(0);
     }
@@ -232,7 +251,7 @@ public sealed class AppLockServiceTests
             var (_, accounts) = Fakes.Account();
             Lock = new AppLockService(Store, Lifecycle, Platform, Capture, Auth, accounts, Clocks, Log.For<AppLockService>())
             {
-                ChooseIterations = () => 1_000,
+                FixedIterations = 1_000,
             };
             Lock.Changed += () => Interlocked.Increment(ref Changes);
         }
@@ -569,6 +588,58 @@ public sealed class AppLockServiceTests
         h.Clocks.Advance(TimeSpan.FromMinutes(1));
         h.Lock.ShouldHideNotificationText().ShouldBeTrue();
         h.Lock.IsLocked.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Another_tab_turning_the_passcode_on_or_off_is_picked_up_on_return()
+    {
+        var a = new Harness();
+        await a.Lock.InitializeAsync();
+        var b = new Harness(a.Store, signedIn: true, a.Clocks);
+        await b.Lock.InitializeAsync();
+
+        await a.Lock.EnableAsync(Code);
+        b.Lock.IsEnabled.ShouldBeFalse("the other tab has not looked yet");
+        b.Leave();
+        b.Return();
+        await Wait.UntilAsync(() => b.Lock.IsLocked, "a passcode turned on elsewhere locks the tab that was away");
+        b.Lock.IsEnabled.ShouldBeTrue();
+
+        (await a.Lock.DisableAsync(Code)).IsCorrect.ShouldBeTrue();
+        b.Leave();
+        b.Return();
+        await Wait.UntilAsync(() => !b.Lock.IsEnabled);
+        b.Lock.IsLocked.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Wrong_passcodes_in_another_tab_count_toward_the_same_pause()
+    {
+        var a = await Harness.WithPasscodeAsync();
+        var b = new Harness(a.Store, signedIn: true, a.Clocks);
+        await b.Lock.InitializeAsync();
+
+        await FailAsync(a.Lock, 3);
+        (await b.Lock.UnlockAsync("0000")).AttemptsLeft.ShouldBe(1);
+        (await b.Lock.UnlockAsync("0000")).RetryIn.ShouldBe(TimeSpan.FromSeconds(30));
+
+        (await a.Lock.UnlockAsync(Code)).Status.ShouldBe(PasscodeCheckStatus.Paused, "opening more tabs gives no extra tries");
+    }
+
+    [Fact]
+    public async Task A_faster_platform_hash_is_used_and_reads_the_same_as_dotnets()
+    {
+        var h = new Harness();
+        h.Platform.Kdf = async (code, salt, rounds, length) => await PasscodeHasher.Managed(code, salt, rounds, length);
+        await h.Lock.InitializeAsync();
+        await h.Lock.EnableAsync(Code);
+        h.Platform.KdfCalls.ShouldBeGreaterThan(0);
+
+        // The browser lost WebCrypto (or this is another host): .NET's own PBKDF2 checks the same hash.
+        var next = h.Restart();
+        next.Platform.Kdf = (_, _, _, _) => throw new InvalidOperationException("no WebCrypto");
+        await next.Lock.InitializeAsync();
+        (await next.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
     }
 
     [Fact]
