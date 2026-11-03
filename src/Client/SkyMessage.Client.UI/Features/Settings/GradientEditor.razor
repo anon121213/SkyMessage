@@ -1,0 +1,142 @@
+@* Colors of a gradient (or of one flat color): ready-made gradients or single colors to start from, a chip per color
+   (tap one to edit it with the strips below, a "+" adds one, the bin takes the chosen one away) and, for backgrounds,
+   the direction. Every change goes out at once (ColorsChanged / AngleChanged) so previews follow live. *@
+@inherits UiComponentBase
+
+<div class="grad-edit">
+    @if (Presets is { Count: > 0 } presets)
+    {
+        <div class="grad-edit__group">
+            <span class="grad-edit__label">@L["settings.background.presets"]</span>
+            @* Scrolls sideways on narrow screens: not a swipe back. *@
+            <div class="grad-edit__presets" data-no-swipe-back>
+                @foreach (var preset in presets)
+                {
+                    <ColorSwatch @key="preset.Key" Color="@preset.Css" RingColor="@preset.Colors[0]" Size="42" Label="@L[preset.NameKey]"
+                                 Selected="@Matches(preset)" OnClick="() => ApplyAsync(preset)" Class="grad-edit__preset" />
+                }
+            </div>
+        </div>
+    }
+    @if (Palette is { Count: > 0 } palette)
+    {
+        <div class="grad-edit__group">
+            <span class="grad-edit__label">@L["settings.appearance.customPalette"]</span>
+            <div class="grad-edit__palette">
+                @foreach (var hex in palette)
+                {
+                    <ColorSwatch @key="hex" Color="@hex" Size="34" Label="@hex" Selected="@string.Equals(hex, ActiveHex, StringComparison.OrdinalIgnoreCase)"
+                                 OnClick="() => SetActiveAsync(hex)" Class="grad-edit__swatch" />
+                }
+            </div>
+        </div>
+    }
+
+    <div class="grad-edit__group">
+        <span class="grad-edit__label">@(Colors.Count == 1 ? L["settings.background.color"] : L["settings.background.colors"])</span>
+        <div class="grad-edit__stops">
+            <div class="grad-edit__chips" role="radiogroup" aria-label="@L["settings.background.colors"]">
+                @for (var i = 0; i < Colors.Count; i++)
+                {
+                    var index = i;
+                    var active = index == Active;
+                    <button @key="index" type="button" role="radio" aria-checked="@(active ? "true" : "false")" class="grad-edit__chip @(active ? "is-active" : null)"
+                            style="@($"--chip:{Colors[index]}")" aria-label="@L.Format("settings.background.colorN", index + 1)" title="@Colors[index]"
+                            @onclick="() => _active = index">
+                        <span class="grad-edit__chip-fill"></span>
+                    </button>
+                }
+                @if (Colors.Count < MaxStops)
+                {
+                    <button type="button" class="grad-edit__add" aria-label="@L["settings.background.addColor"]" title="@L["settings.background.addColor"]" @onclick="AddAsync">
+                        <Icon Name="@IconNames.Plus" Size="18" StrokeWidth="2.4" />
+                    </button>
+                }
+            </div>
+            @if (Colors.Count > MinStops)
+            {
+                <IconButton Icon="@IconNames.Trash2" Label="@L["settings.background.removeColor"]" Size="38" OnClick="RemoveAsync" />
+            }
+        </div>
+    </div>
+
+    <ColorStrips Hex="@ActiveHex" HexChanged="SetActiveAsync" MinLightness="MinLightness" MaxLightness="MaxLightness"
+                 Label="@L.Format("settings.background.colorN", Active + 1)" />
+
+    @if (Angle is { } angle)
+    {
+        <div class="grad-edit__angle" data-no-swipe-back>
+            <span class="grad-edit__dial" style="@($"--angle:{angle}deg")" aria-hidden="true"><Icon Name="@IconNames.ArrowUp" Size="16" StrokeWidth="2.6" /></span>
+            <Slider Value="angle" ValueChanged="SetAngleAsync" Min="0" Max="355" Step="5" ShowValue="true" Label="@L["settings.background.angle"]"
+                    Format="@(v => $"{v:0}°")" Class="grad-edit__angle-slider" />
+        </div>
+    }
+</div>
+
+@code {
+    private int _active;
+
+    /// <summary>"#RRGGBB" stops, first to last.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Colors { get; set; } = [];
+    [Parameter] public EventCallback<List<string>> ColorsChanged { get; set; }
+    [Parameter] public int MinStops { get; set; } = 2;
+    [Parameter] public int MaxStops { get; set; } = 3;
+    /// <summary>The direction in degrees, or null for no direction control.</summary>
+    [Parameter] public int? Angle { get; set; }
+    [Parameter] public EventCallback<int> AngleChanged { get; set; }
+    [Parameter] public IReadOnlyList<GradientPreset>? Presets { get; set; }
+    /// <summary>Single colors to give the chosen chip.</summary>
+    [Parameter] public IReadOnlyList<string>? Palette { get; set; }
+    [Parameter] public int MinLightness { get; set; } = 4;
+    [Parameter] public int MaxLightness { get; set; } = 96;
+
+    private int Active => Math.Clamp(_active, 0, Math.Max(0, Colors.Count - 1));
+
+    private string ActiveHex => Colors.Count == 0 ? "#6A4BFF" : Colors[Active];
+
+    private bool Matches(GradientPreset preset) =>
+        preset.Colors.Count == Colors.Count
+        && preset.Colors.Zip(Colors).All(p => string.Equals(p.First, p.Second, StringComparison.OrdinalIgnoreCase))
+        && (Angle is null || Angle == preset.Angle);
+
+    private async Task ApplyAsync(GradientPreset preset)
+    {
+        _active = 0;
+        await ColorsChanged.InvokeAsync([.. preset.Colors]);
+        if (Angle is not null) await AngleChanged.InvokeAsync(preset.Angle);
+    }
+
+    private Task SetActiveAsync(string hex)
+    {
+        if (ThemeCatalog.NormalizeHex(hex) is not { } color) return Task.CompletedTask;
+        var colors = Colors.ToList();
+        if (colors.Count == 0) colors.Add(color);
+        else colors[Active] = color;
+        return ColorsChanged.InvokeAsync(colors);
+    }
+
+    /// <summary>A new color after the chosen one: halfway to the next, or a lighter turn of the last one.</summary>
+    private Task AddAsync()
+    {
+        if (Colors.Count >= MaxStops) return Task.CompletedTask;
+        var colors = Colors.ToList();
+        var from = ThemeCatalog.Color.Parse(colors.Count == 0 ? "#6A4BFF" : colors[Active]);
+        var added = Active + 1 < colors.Count
+            ? ThemeCatalog.Color.Mix(from, ThemeCatalog.Color.Parse(colors[Active + 1]), 0.5)
+            : from.Shift(hue: 28, lightness: from.Luminance > 0.5 ? -0.06 : 0.08);
+        colors.Insert(Math.Min(colors.Count, Active + 1), added.Hex);
+        _active = Math.Min(colors.Count - 1, Active + 1);
+        return ColorsChanged.InvokeAsync(colors);
+    }
+
+    private Task RemoveAsync()
+    {
+        if (Colors.Count <= MinStops) return Task.CompletedTask;
+        var colors = Colors.ToList();
+        colors.RemoveAt(Active);
+        _active = Math.Max(0, Active - 1);
+        return ColorsChanged.InvokeAsync(colors);
+    }
+
+    private Task SetAngleAsync(double value) => AngleChanged.InvokeAsync((int)Math.Round(value));
+}

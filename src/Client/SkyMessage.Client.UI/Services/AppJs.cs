@@ -234,6 +234,12 @@ public sealed class AppJs(IJSRuntime js, ILogger<AppJs> logger) : IAsyncDisposab
     public ValueTask<JsHandle> ObserveSystemThemeAsync<T>(DotNetObjectReference<T> target, string method) where T : class =>
         AttachAsync("observeSystemTheme", target, method);
 
+    /// <summary>A background picture as the page shows it (blur baked in by boot.js): an object URL, or null while it cannot be loaded.</summary>
+    public ValueTask<string?> BackdropUrlAsync(string source, int blur) => InvokeAsync<string?>("backdropUrl", source, blur);
+
+    /// <summary>The long side, in device pixels, a background picture needs on this screen.</summary>
+    public ValueTask<int> BackdropMaxSideAsync() => InvokeAsync<int>("backdropMaxSide");
+
     public ValueTask SetDocumentTitleAsync(string title) => InvokeVoidAsync("setTitle", title);
 
     /// <summary>Sets &lt;html lang&gt; and remembers it for boot.js.</summary>

@@ -39,6 +39,8 @@
   "chat.menu.leave": "Leave group",
   "chat.menu.leaveOrDelete": "Leave or delete group",
   "chat.menu.delete": "Delete chat",
+  "chat.menu.background": "Chat background",
+  "chat.background.title": "Chat background",
   "chat.menu.reply": "Reply",
   "chat.menu.pin": "Pin",
   "chat.menu.unpin": "Unpin",

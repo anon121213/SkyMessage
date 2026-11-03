@@ -7,14 +7,16 @@ using SkyMessage.Client.Core.Settings;
 namespace SkyMessage.Client.UI.Services;
 
 /// <summary>
-/// Applies the appearance settings to the page (CSS variables, light/dark, reduced motion, compact list) and
-/// keeps the native system bars in sync. boot.js re-applies the last state before Blazor starts, so there is
-/// no flash on launch. Scoped; Routes.razor calls <see cref="InitializeAsync"/> once.
+/// Applies the appearance settings to the page (CSS variables, light/dark, reduced motion, compact list, the pictures
+/// of the user's own backgrounds) and keeps the native system bars in sync. boot.js re-applies the last state before
+/// Blazor starts, so there is no flash on launch (pictures load right after). Scoped; Routes.razor calls
+/// <see cref="InitializeAsync"/> once, which also lets <see cref="BackdropPhotoService"/> tidy up unused pictures.
 /// </summary>
 public sealed class ThemeService : IAsyncDisposable
 {
     private readonly ISettingsService _settings;
     private readonly ISystemUiService _systemUi;
+    private readonly BackdropPhotoService _photos;
     private readonly AppJs _js;
     private readonly ILogger<ThemeService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -25,11 +27,13 @@ public sealed class ThemeService : IAsyncDisposable
     private bool _initialized;
     private bool _disposed;
 
-    public ThemeService(ThemeCatalog catalog, ISettingsService settings, ISystemUiService systemUi, AppJs js, ILogger<ThemeService> logger)
+    public ThemeService(ThemeCatalog catalog, ISettingsService settings, ISystemUiService systemUi, BackdropPhotoService photos, AppJs js,
+        ILogger<ThemeService> logger)
     {
         Catalog = catalog;
         _settings = settings;
         _systemUi = systemUi;
+        _photos = photos;
         _js = js;
         _logger = logger;
         AccentHex = catalog.DefaultAccent.Hex;
@@ -63,6 +67,8 @@ public sealed class ThemeService : IAsyncDisposable
         _self = DotNetObjectReference.Create(this);
         _systemWatch = await _js.ObserveSystemThemeAsync(_self, nameof(OnSystemThemeChanged));
         await ApplyAsync(force: true);
+        // The settings are loaded by now: pictures nothing refers to any more go, once the start has settled.
+        _photos.Start(TimeSpan.FromSeconds(20));
     }
 
     /// <summary>Applies <paramref name="appearance"/> without saving it (live preview). Call <see cref="EndPreviewAsync"/> when done.</summary>
@@ -92,8 +98,9 @@ public sealed class ThemeService : IAsyncDisposable
         try
         {
             var appearance = _preview ?? _settings.Current.Appearance;
-            var state = Catalog.BuildState(appearance);
-            var signature = $"{state.Mode}|{state.ReduceMotion}|{state.Compact}|{state.Css}";
+            var state = Catalog.BuildState(appearance, _photos.IsSupported ? _photos.SourceOf : null);
+            var images = string.Join(",", state.Images.Select(i => $"{i.Slot}:{i.Theme}:{i.Src}:{i.Blur}"));
+            var signature = $"{state.Mode}|{state.ReduceMotion}|{state.Compact}|{images}|{state.Css}";
             if (!force && signature == _appliedSignature) return;
             _appliedSignature = signature;
 

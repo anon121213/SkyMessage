@@ -1,7 +1,8 @@
 // SkyMessage boot script (classic script). Hosts include it BEFORE the Blazor script:
 //   <script src="_content/SkyMessage.Client.UI/js/boot.js"></script>
-// 1. Applies the last persisted theme (light/dark, accent, wallpaper, font size) before the first paint,
-//    so the app never flashes the wrong colors on launch.
+// 1. Applies the last persisted theme (light/dark, accent, backgrounds, font size) before the first paint,
+//    so the app never flashes the wrong colors on launch; the pictures of the user's own backgrounds load right
+//    after (see "Background pictures").
 // 2. Picks the effects level: slow phones (≤ 2 GB memory, ≤ 2 cores or Data Saver) get html[data-fx="lite"] — solid
 //    surfaces instead of blur and a still sky (docs/DESIGN.md); localStorage "sm.fx" = "lite"/"full" overrides it.
 // 3. Installs the overlay-history filter on `popstate` ahead of Blazor's router listener: every overlay
@@ -25,7 +26,195 @@
     return media && media.matches ? 'dark' : 'light';
   }
 
+  // ---- Background pictures ----------------------------------------------------------------------------
+  // The user's own pictures behind the screens and the chats (Settings › Appearance, a chat's menu). The theme state's
+  // "images" name them per slot ("sky": the app's, "chat": the chats' default) and theme. Each is loaded from its source
+  // — an app-origin path the native host serves, or "idb:<name>" for the browser's IndexedDB "skymessage-backdrops"
+  // (store "files", { type, blob }, written by web-platform.js) — and drawn once onto a canvas: always a still, opaque
+  // picture (a GIF shows its first frame) with its blur baked in, so nothing is filtered while the page scrolls. The
+  // result stays an object URL for the session; the page shows it through --sm-sky-photo / --sm-chat-photo (app.css).
+  var PHOTO_BLUR_PX = 28;
+  var PHOTO_CACHE = 16;
+  var photoJobs = {};
+  var photoUrls = {};
+  var photoOrder = [];
+  var photoApplied = {};
+  var photoSeq = 0;
+  var photoDbPromise = null;
+  var filterSupport = null;
+  var lastState = null;
+
+  function photoDb() {
+    if (photoDbPromise) return photoDbPromise;
+    photoDbPromise = new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+      var request = window.indexedDB.open('skymessage-backdrops', 1);
+      request.onupgradeneeded = function () {
+        if (!request.result.objectStoreNames.contains('files')) request.result.createObjectStore('files');
+      };
+      request.onsuccess = function () {
+        var db = request.result;
+        db.onversionchange = function () { db.close(); photoDbPromise = null; };
+        resolve(db);
+      };
+      request.onerror = function () { photoDbPromise = null; reject(request.error); };
+      request.onblocked = function () { photoDbPromise = null; reject(new Error('IndexedDB blocked')); };
+    });
+    return photoDbPromise;
+  }
+
+  function storedPhoto(name) {
+    return photoDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var request = db.transaction('files', 'readonly').objectStore('files').get(name);
+        request.onsuccess = function () { resolve(request.result && request.result.blob ? request.result.blob : null); };
+        request.onerror = function () { resolve(null); };
+      });
+    });
+  }
+
+  function loadPhoto(src) {
+    if (src.indexOf('idb:') === 0) return storedPhoto(src.substring(4));
+    return window.fetch(src).then(function (response) { return response.ok ? response.blob() : null; });
+  }
+
+  function imageOf(blob) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(blob);
+      var img = new Image();
+      img.onload = function () { resolve(img); setTimeout(function () { URL.revokeObjectURL(url); }, 0); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('undecodable picture')); };
+      img.src = url;
+    });
+  }
+
+  function decodePhoto(blob) {
+    if (typeof window.createImageBitmap !== 'function') return imageOf(blob);
+    return window.createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(function () { return imageOf(blob); });
+  }
+
+  function canvasFilter() {
+    if (filterSupport === null) {
+      try {
+        var ctx = document.createElement('canvas').getContext('2d');
+        ctx.filter = 'blur(2px)';
+        filterSupport = ctx.filter === 'blur(2px)';
+      } catch (e) { filterSupport = false; }
+    }
+    return filterSupport;
+  }
+
+  // The picture at the size it covers the window with (no more pixels than the screen shows; far fewer when blurred,
+  // the blur hides the detail anyway), blurred by level/100 × 28 CSS px. Without canvas filters (old Safari) the
+  // upscaling of an even smaller picture does the softening.
+  function bakePhoto(blob, level) {
+    if (!level && blob.type === 'image/jpeg') return Promise.resolve(URL.createObjectURL(blob));
+    return decodePhoto(blob).then(function (image) {
+      var w = image.naturalWidth || image.width, h = image.naturalHeight || image.height;
+      if (!w || !h) return null;
+      var vw = Math.max(320, window.innerWidth || 0), vh = Math.max(320, window.innerHeight || 0);
+      var dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      var cover = Math.max(vw / w, vh / h);
+      var blurPx = level / 100 * PHOTO_BLUR_PX;
+      var filter = canvasFilter();
+      var scale = Math.min(1, cover * dpr);
+      if (blurPx > 0) scale = Math.min(scale, cover / Math.max(1, blurPx / (filter ? 4 : 1.6)));
+      var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+      var canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(image, 0, 0, cw, ch);
+      if (blurPx > 0 && filter) {
+        // In canvas pixels: the canvas covers the window at max(vw/cw, vh/ch) CSS px each. Drawn a little larger than
+        // the canvas, so the blur has picture to take from at the edges too (the sharp copy underneath backs them).
+        var radius = blurPx / Math.max(vw / cw, vh / ch);
+        var margin = Math.ceil(radius * 2);
+        ctx.filter = 'blur(' + radius.toFixed(2) + 'px)';
+        ctx.drawImage(image, -margin, -margin, cw + margin * 2, ch + margin * 2);
+        ctx.filter = 'none';
+      }
+      if (image.close) image.close();
+      return new Promise(function (resolve) {
+        canvas.toBlob(function (out) { resolve(out ? URL.createObjectURL(out) : null); }, 'image/jpeg', 0.9);
+      });
+    });
+  }
+
+  function photoLevel(level) { return Math.max(0, Math.min(100, Math.round(level || 0))); }
+
+  function touchPhoto(key) {
+    var index = photoOrder.indexOf(key);
+    if (index >= 0) photoOrder.splice(index, 1);
+    photoOrder.push(key);
+  }
+
+  function trimPhotos() {
+    var index = 0;
+    while (photoOrder.length > PHOTO_CACHE && index < photoOrder.length) {
+      var key = photoOrder[index];
+      if (photoApplied.sky === key || photoApplied.chat === key) { index++; continue; }
+      photoOrder.splice(index, 1);
+      if (photoUrls[key]) URL.revokeObjectURL(photoUrls[key]);
+      delete photoUrls[key];
+      delete photoJobs[key];
+    }
+  }
+
+  // An object URL of the picture at `src` with blur `level` (0..100), or null when it cannot be loaded (tried again
+  // next time).
+  function photo(src, level) {
+    level = photoLevel(level);
+    var key = src + '|' + level;
+    if (photoJobs[key]) {
+      if (photoUrls[key]) touchPhoto(key);
+      return photoJobs[key];
+    }
+    var job = loadPhoto(src)
+      .then(function (blob) { return blob ? bakePhoto(blob, level) : null; })
+      .then(null, function () { return null; });
+    photoJobs[key] = job;
+    job.then(function (url) {
+      if (photoJobs[key] !== job) { if (url) URL.revokeObjectURL(url); return; }
+      if (!url) { delete photoJobs[key]; return; }
+      photoUrls[key] = url;
+      touchPhoto(key);
+      trimPhotos();
+    });
+    return job;
+  }
+
+  function applyPhotos(state, theme) {
+    var seq = ++photoSeq;
+    var images = (state && state.images) || [];
+    ['sky', 'chat'].forEach(function (slot) {
+      var item = null;
+      for (var i = 0; i < images.length; i++) {
+        if (images[i] && images[i].slot === slot && images[i].theme === theme) item = images[i];
+      }
+      var prop = '--sm-' + slot + '-photo';
+      if (!item || !item.src) {
+        photoApplied[slot] = null;
+        root.style.removeProperty(prop);
+        return;
+      }
+      var key = item.src + '|' + photoLevel(item.blur);
+      if (photoApplied[slot] === key && root.style.getPropertyValue(prop)) return;
+      photo(item.src, item.blur).then(function (url) {
+        if (seq !== photoSeq) return;
+        photoApplied[slot] = url ? key : null;
+        if (url) root.style.setProperty(prop, 'url("' + url + '")');
+        else root.style.removeProperty(prop);
+      });
+    });
+  }
+
   function apply(state) {
+    if (state) lastState = state;
     var mode = (state && state.mode) || root.getAttribute('data-theme-mode') || 'system';
     var theme = resolve(mode);
     root.setAttribute('data-theme-mode', mode);
@@ -48,6 +237,7 @@
       document.head.appendChild(meta);
     }
     if (meta) meta.setAttribute('content', theme === 'dark' ? '#150F38' : '#ECE6FF');
+    try { applyPhotos(lastState, theme); } catch (e) { /* the colors are applied; pictures are a bonus */ }
     return theme === 'dark';
   }
 
@@ -73,7 +263,7 @@
     else if (media.addListener) media.addListener(onScheme);
   }
 
-  window.__smBoot = { applyTheme: apply, resolveTheme: resolve, themeKey: THEME_KEY, langKey: LANG_KEY };
+  window.__smBoot = { applyTheme: apply, resolveTheme: resolve, photo: photo, themeKey: THEME_KEY, langKey: LANG_KEY };
 
   // ---- Overlay history ----------------------------------------------------------------------------
   // stack: open overlay ids (bottom first); base: overlay marker of the entry below the first overlay (a stale

@@ -28,6 +28,9 @@ internal static class AppPaths
     /// </summary>
     public static string Sounds => Ensure(Path.Combine(FileSystem.AppDataDirectory, "sounds"));
 
+    /// <summary>The user's background pictures (BackdropImageStore): app data, never a cache the OS may trim.</summary>
+    public static string Backdrops => Ensure(Path.Combine(FileSystem.AppDataDirectory, "backdrops"));
+
     public static string Temp => Ensure(Path.Combine(FileSystem.CacheDirectory, "tmp"));
 
     public static string NewTempFile(string extension) =>

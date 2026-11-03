@@ -79,6 +79,7 @@ public static class ClientCoreSetup
         services.AddSingleton<IAppUpdateFeed, AppUpdateFeed>();
         services.AddSingleton<AppUpdateService>();
         services.AddSingleton<IAppUpdateService>(sp => sp.GetRequiredService<AppUpdateService>());
+        services.AddSingleton<BackdropPhotoService>();
 
         // Stores
         services.AddSingleton<IUserStore, UserStore>();

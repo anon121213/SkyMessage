@@ -21,6 +21,8 @@
 }
 
 .look-preview__sky,
+.look-preview__photo,
+.look-preview__veil,
 .look-preview__fade,
 .look-preview__stars {
     position: absolute;
@@ -29,7 +31,20 @@
 }
 
 .look-preview__sky {
+    z-index: -5;
+}
+
+/* The chats' picture as the chats show it (its blur baked in), under its veil. */
+.look-preview__photo {
+    z-index: -4;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.look-preview__veil {
     z-index: -3;
+    background: var(--sm-bg);
 }
 
 /* The previous sky, fading out over the new one. */
@@ -334,6 +349,151 @@ html[data-fx="lite"] .look-preview__head {
     border-radius: 34%;
 }
 
+/* ---------- Message colors: my bubbles' style, their tint ---------- */
+
+.look-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 8px 10px;
+}
+
+.look-messages__label {
+    padding: 0 6px;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sm-text-2);
+}
+
+.look-styles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 9rem));
+    justify-content: center;
+    gap: 12px;
+    padding: 4px 2px 10px;
+}
+
+.look-style {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: var(--sm-text-2);
+    background: none;
+    cursor: pointer;
+}
+
+.look-style:focus-visible {
+    outline: none;
+}
+
+/* A bit of the chats' background with one of my bubbles on it. */
+.look-style__tile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 4.25rem;
+    border-radius: 18px;
+    box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
+    transition: transform 260ms var(--sm-spring);
+}
+
+.look-style:active .look-style__tile {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.look-style__tile::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 23px;
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.92);
+    pointer-events: none;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.look-style.is-selected .look-style__tile::after,
+.look-style:focus-visible .look-style__tile::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+.look-style__bubble {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.5rem;
+    height: 1.875rem;
+    padding: 0 12px;
+    border-radius: var(--sm-bubble-radius);
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    box-shadow: var(--sm-shadow-1);
+}
+
+/* No colors of my own yet: an empty bubble with a plus. */
+.look-style__bubble--add {
+    color: var(--sm-accent);
+    background: var(--sm-card-solid);
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sm-accent) 40%, transparent);
+}
+
+.look-style__name {
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.look-style.is-selected .look-style__name {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+.look-styles.is-live .look-sky__check,
+.look-messages.is-live .look-sky__check {
+    animation: sm-pop 320ms var(--sm-spring);
+}
+
+.look-tints {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px 16px;
+    padding: 6px 0 2px;
+}
+
+/* Tints are light by day: a rim keeps them apart from the card, the check takes the accent. */
+.look-tints ::deep .sm-swatch {
+    color: var(--sm-accent);
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+}
+
+.look-tints ::deep .sm-swatch--selected {
+    box-shadow: inset 0 0 0 1px var(--sm-border), 0 0 0 2.5px var(--sm-surface), 0 0 0 4.5px var(--sm-swatch-color, var(--sm-accent));
+}
+
+.look-messages.is-live ::deep .sm-swatch--selected .sm-icon {
+    animation: sm-pop 320ms var(--sm-spring);
+}
+
+.look-accents__dot--tint {
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+}
+
 /* ---------- The sky: mini skies ---------- */
 
 .look-skies {
@@ -388,6 +548,54 @@ html[data-fx="lite"] .look-preview__head {
     overflow: hidden;
     border-radius: inherit;
     box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
+}
+
+.look-sky__photo,
+.look-sky__veil {
+    position: absolute;
+    inset: 0;
+}
+
+.look-sky__photo {
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.look-sky__veil {
+    background: var(--sm-bg);
+}
+
+/* "Свой" before there is one: a quiet plus on a tinted tile. */
+.look-sky__paint--add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sm-accent);
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sm-accent) 30%, transparent);
+}
+
+/* Chosen: a small pencil says a second tap edits it. */
+.look-sky__edit,
+.look-style__edit {
+    position: absolute;
+    z-index: 1;
+    left: -6px;
+    bottom: -6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: var(--sm-accent);
+    background: var(--sm-card-solid);
+    box-shadow: 0 0 0 2.5px var(--sm-card-solid), inset 0 0 0 1px var(--sm-border);
+}
+
+.look-skies--chats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .look-sky__stars {

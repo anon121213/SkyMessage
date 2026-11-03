@@ -25,6 +25,7 @@
 @inject ShareHelper Share
 @inject HapticFeedback Haptics
 @inject LayoutService Layout
+@inject BackdropPainter Backdrops
 @inject EmojiCatalog Emoji
 @inject FormatService Format
 @inject AppJs AppJs
@@ -36,8 +37,10 @@
        or the selection / search capsule in its place —, the group call banner, the pinned strip) and the composer.
        chat.js attachChrome publishes the chrome's sizes (--chat-stack-h / --chat-bottom-h; ChatPage.razor.css derives
        --chat-top-h from them), which the list pads itself by. *@
-    <div class="chat @(_selecting ? "chat--selecting" : null) @(Protected ? "chat--protected" : null)" @ref="_root" data-chat-root>
-        @* A calm sky to read over: the drifting light and (at night) the stars (the kit's defaults: no comet). *@
+    <div class="chat @(_selecting ? "chat--selecting" : null) @(Protected ? "chat--protected" : null)" @ref="_root" data-chat-root
+         style="@Backdrops.ChatStyle(ChatId)">
+        @* A calm sky to read over: the drifting light and (at night) the stars (the kit's defaults: no comet) — or the
+           chat's own background ("Фон чата" in the header menu: its tokens inline on this root, BackdropPainter). *@
         <SkyBackdrop Variant="SkyVariant.Chat" Class="chat__sky" />
         <div class="chat__top" data-chat-top>
             @if (_selecting)
@@ -300,6 +303,7 @@
         Realtime.ChatRemoved += removed;
         OnDispose(() => Realtime.ChatRemoved -= removed);
         RenderOn(h => CallUi.CoveringChanged += h, h => CallUi.CoveringChanged -= h);
+        RenderOn(h => Backdrops.Changed += h, h => Backdrops.Changed -= h);
     }
 
     protected override async Task OnParametersSetAsync()

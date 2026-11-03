@@ -1,0 +1,187 @@
+.bd-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* By day and at night, side by side. */
+.bd-edit__previews {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.bd-edit__scope {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 2px 4px;
+}
+
+.bd-edit__body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 6rem;
+}
+
+/* ---- Skies (chats): the same little skies as Appearance ---- */
+
+.bd-edit__skies {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px 8px;
+    padding: 6px 2px 2px;
+}
+
+.bd-edit__sky {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: var(--sm-text-2);
+    background: none;
+    cursor: pointer;
+}
+
+.bd-edit__sky:focus-visible {
+    outline: none;
+}
+
+.bd-edit__sky-tile {
+    position: relative;
+    display: block;
+    aspect-ratio: 1;
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
+    transition: transform 260ms var(--sm-spring);
+}
+
+.bd-edit__sky:active .bd-edit__sky-tile {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.bd-edit__sky-tile::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 18px;
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.92);
+    pointer-events: none;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.bd-edit__sky.is-selected .bd-edit__sky-tile::after,
+.bd-edit__sky:focus-visible .bd-edit__sky-tile::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+.bd-edit__sky-name {
+    font-size: 0.75rem;
+    line-height: 1.2;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bd-edit__sky.is-selected .bd-edit__sky-name {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+/* ---- Photo ---- */
+
+.bd-edit__photo {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* No photo yet: one big soft target. */
+.bd-edit__pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 16px 18px;
+    border: 0;
+    border-radius: var(--sm-radius-xl);
+    font: inherit;
+    color: var(--sm-text);
+    background: var(--sm-grad-soft);
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sm-accent) 28%, transparent);
+    cursor: pointer;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.bd-edit__pick:active {
+    transform: scale(0.97);
+    transition-duration: 90ms;
+}
+
+.bd-edit__pick:disabled {
+    cursor: progress;
+}
+
+.bd-edit__pick-art {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    margin-bottom: 4px;
+    color: var(--sm-accent);
+    background: var(--sm-card-solid);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.bd-edit__pick-title {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+}
+
+.bd-edit__pick-hint {
+    max-width: 18rem;
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    text-align: center;
+    color: var(--sm-text-2);
+}
+
+.bd-edit__picked {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.bd-edit__thumb {
+    flex-shrink: 0;
+    width: 3.5rem;
+    height: 3.5rem;
+    background: var(--sm-surface-3) center / cover no-repeat;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.bd-edit ::deep .sm-slider {
+    padding: 0 4px;
+}
+
+/* "Back to the default" sits on the left, away from Save. */
+.bd-edit ::deep .bd-edit__reset {
+    margin-right: auto;
+}

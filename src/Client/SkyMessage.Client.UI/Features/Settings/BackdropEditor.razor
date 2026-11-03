@@ -1,0 +1,293 @@
+@* DialogService content: a background of the user's own. For the app (Target App): one for both themes or one for each
+   (a switch, then the theme to edit), as a gradient (ready-made ones, 2–3 colors, the direction) or a photo from the
+   gallery (blur, dim). The chats' background (ChatDefault) and one chat's (Chat) can be a sky too, and go back to the
+   default. Two mocks on top, by day and at night, show the result live (BackdropPreview). Result: BackdropEditorResult;
+   photos picked here that end up unused are discarded when it closes. *@
+@inherits UiComponentBase
+@inject ThemeService Theme
+@inject ISettingsService Settings
+@inject BackdropPhotoService Photos
+@inject BackdropPainter Painter
+@inject AppJs Js
+@inject ToastService Toasts
+
+<div class="bd-edit">
+    <div class="bd-edit__previews" aria-hidden="true">
+        @foreach (var dark in new[] { false, true })
+        {
+            var paint = Theme.Catalog.Paint(ShownIn(dark), dark);
+            <BackdropPreview @key="dark" Screen="@(Target == BackdropTarget.App)" Dark="dark" Paint="paint" Palette="@Theme.Catalog.Palette(Settings.Current.Appearance, dark)"
+                             PhotoUrl="@(paint.Photo is { } photo ? Painter.Url(photo, 0) : null)" Active="@(!_sameForBoth && _editDark == dark)"
+                             Label="@(dark ? L["theme.mode.dark"] : L["theme.mode.light"])" />
+        }
+    </div>
+
+    @if (Target == BackdropTarget.App)
+    {
+        <div class="bd-edit__scope">
+            <Switch Checked="_sameForBoth" CheckedChanged="SetSameForBoth" Label="@L["settings.background.bothThemes"]"
+                    Description="@L["settings.background.bothThemesHint"]" />
+            @if (!_sameForBoth)
+            {
+                <SlidingSegmentedControl TValue="bool" Options="ThemeOptions" Value="_editDark" ValueChanged="v => _editDark = v" Label="@L["settings.background.which"]" />
+            }
+        </div>
+    }
+
+    <SlidingSegmentedControl TValue="BackdropKind" Options="KindOptions" Value="Current.Kind" ValueChanged="SetKind" Label="@L["settings.background.kind"]" />
+
+    <div class="bd-edit__body">
+        @switch (Current.Kind)
+        {
+            case BackdropKind.Sky:
+                <div class="bd-edit__skies" role="radiogroup" aria-label="@L["settings.background.kind.sky"]">
+                    @foreach (var sky in Theme.Wallpapers)
+                    {
+                        var selected = string.Equals(sky.Key, Current.Sky, StringComparison.OrdinalIgnoreCase);
+                        var colors = Theme.IsDark ? sky.Dark : sky.Light;
+                        <button @key="sky.Key" type="button" role="radio" aria-checked="@(selected ? "true" : "false")"
+                                class="bd-edit__sky @(selected ? "is-selected" : null)" @onclick="() => Current.Sky = sky.Key">
+                            <span class="bd-edit__sky-tile" style="@($"background:{colors.PreviewCss};background-color:{colors.Base}")"></span>
+                            <span class="bd-edit__sky-name">@L[sky.NameKey]</span>
+                        </button>
+                    }
+                </div>
+                break;
+            case BackdropKind.Gradient:
+                <GradientEditor @key="EditKey" Colors="Current.Colors" ColorsChanged="v => Current.Colors = v" Angle="Current.Angle" AngleChanged="v => Current.Angle = v"
+                                Presets="Theme.Catalog.BackdropGradients" MinStops="BackdropRules.MinColors" MaxStops="BackdropRules.MaxColors" />
+                break;
+            case BackdropKind.Photo:
+                <div class="bd-edit__photo">
+                    @if (Current.Photo is { } photo)
+                    {
+                        <div class="bd-edit__picked">
+                            <span class="bd-edit__thumb" style="@(Painter.Url(photo, 0) is { } url ? $"background-image:url(\"{url}\")" : null)"></span>
+                            <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.ImagePlus" Loading="_importing" OnClick="PickPhotoAsync">@L["settings.background.otherPhoto"]</Button>
+                        </div>
+                        <Slider Value="Current.Blur" ValueChanged="v => Current.Blur = (int)Math.Round(v)" Min="0" Max="100" Step="1" ShowValue="true"
+                                Label="@L["settings.background.blur"]" Format="@(v => $"{v:0}%")" />
+                        <Slider Value="Current.Dim" ValueChanged="v => Current.Dim = (int)Math.Round(v)" Min="0" Max="90" Step="1" ShowValue="true"
+                                Label="@L["settings.background.dim"]" Format="@(v => $"{v:0}%")" />
+                    }
+                    else
+                    {
+                        <button type="button" class="bd-edit__pick" disabled="@_importing" @onclick="PickPhotoAsync">
+                            <span class="bd-edit__pick-art">
+                                @if (_importing)
+                                {
+                                    <Spinner Size="26" />
+                                }
+                                else
+                                {
+                                    <Icon Name="@IconNames.ImagePlus" Size="26" />
+                                }
+                            </span>
+                            <span class="bd-edit__pick-title">@(_importing ? L["settings.background.photoBusy"] : L["settings.background.pickPhoto"])</span>
+                            <span class="bd-edit__pick-hint">@L["settings.background.pickPhotoHint"]</span>
+                        </button>
+                    }
+                </div>
+                break;
+        }
+    </div>
+
+    <DialogActions>
+        @if (ResetLabel is { } reset)
+        {
+            <Button Variant="ButtonVariant.Ghost" Class="bd-edit__reset" OnClick="Reset">@reset</Button>
+        }
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button OnClick="Save" Disabled="@(!CanSave)">@L["common.save"]</Button>
+    </DialogActions>
+</div>
+
+@code {
+    private readonly List<BackdropPhoto> _picked = [];
+    private readonly HashSet<string> _keep = new(StringComparer.Ordinal);
+    private Backdrop _light = BackdropRules.DefaultGradient(dark: false);
+    private Backdrop _dark = BackdropRules.DefaultGradient(dark: true);
+    private Backdrop _single = new();
+    private bool _sameForBoth = true;
+    private bool _editDark;
+    private bool _importing;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    [Parameter] public BackdropTarget Target { get; set; }
+    /// <summary>Target App: the app's background so far (null: none yet).</summary>
+    [Parameter] public AppBackground? App { get; set; }
+    /// <summary>Targets ChatDefault and Chat: the background so far (null: the default).</summary>
+    [Parameter] public Backdrop? Initial { get; set; }
+
+    /// <summary>What is being edited: the app's one theme (or both), or the chat background.</summary>
+    private Backdrop Current => Target != BackdropTarget.App ? _single : _sameForBoth || !_editDark ? _light : _dark;
+
+    /// <summary>Remounts the gradient editor when another theme's colors are edited (its chosen chip starts over).</summary>
+    private string EditKey => Target == BackdropTarget.App && !_sameForBoth && _editDark ? "dark" : "light";
+
+    /// <summary>The theme of the background being edited (a gradient started for it suits it).</summary>
+    private bool EditingDark => Target == BackdropTarget.App ? (_sameForBoth ? Theme.IsDark : _editDark) : Theme.IsDark;
+
+    /// <summary>A photo background needs its photo (both themes' sides when they differ).</summary>
+    private bool CanSave => Target == BackdropTarget.App && !_sameForBoth ? Complete(_light) && Complete(_dark) : Complete(Current);
+
+    private static bool Complete(Backdrop backdrop) => backdrop.Kind != BackdropKind.Photo || backdrop.Photo is not null;
+
+    private string? ResetLabel => Target switch
+    {
+        BackdropTarget.ChatDefault => L["settings.background.followApp"],
+        BackdropTarget.Chat => L["settings.background.default"],
+        _ => null,
+    };
+
+    private IReadOnlyList<ChoiceOption<bool>> ThemeOptions =>
+    [
+        new(false, L["theme.mode.light"]) { Icon = IconNames.Sun },
+        new(true, L["theme.mode.dark"]) { Icon = IconNames.Moon },
+    ];
+
+    private IReadOnlyList<ChoiceOption<BackdropKind>> KindOptions
+    {
+        get
+        {
+            var options = new List<ChoiceOption<BackdropKind>>();
+            if (Target != BackdropTarget.App) options.Add(new(BackdropKind.Sky, L["settings.background.kind.sky"]) { Icon = IconNames.Cloud });
+            options.Add(new(BackdropKind.Gradient, L["settings.background.kind.gradient"]) { Icon = IconNames.Palette });
+            if (Painter.PhotosSupported) options.Add(new(BackdropKind.Photo, L["settings.background.kind.photo"]) { Icon = IconNames.Image });
+            return options;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Painter.Changed += h, h => Painter.Changed -= h);
+        var appearance = Settings.Current.Appearance;
+        if (Target == BackdropTarget.App)
+        {
+            if (BackdropRules.Normalize(App) is { } app)
+            {
+                _sameForBoth = app.SameForBoth;
+                _light = app.Light.Clone();
+                _dark = app.Dark.Clone();
+            }
+            else
+            {
+                // A first background of one's own starts from the gradient that suits the theme in use.
+                _sameForBoth = true;
+                _light = BackdropRules.DefaultGradient(Theme.IsDark);
+                _dark = BackdropRules.DefaultGradient(dark: true);
+            }
+            _editDark = Theme.IsDark && !_sameForBoth;
+            return;
+        }
+        // A chat background: its own so far, else the sky the app shows (a gradient when the app has its own).
+        _single = BackdropRules.Normalize(Initial)?.Clone() ?? new Backdrop
+        {
+            Kind = BackdropKind.Sky,
+            Sky = Theme.Catalog.FindWallpaper(appearance.Wallpaper).Key,
+        };
+        if (_single.Colors.Count < BackdropRules.MinColors) _single.Colors = BackdropRules.DefaultGradient(Theme.IsDark).Colors;
+        _single.Sky ??= Theme.Catalog.FindWallpaper(appearance.Wallpaper).Key;
+    }
+
+    /// <summary>The background a mock of <paramref name="dark"/> shows.</summary>
+    private Backdrop ShownIn(bool dark) =>
+        Target != BackdropTarget.App ? _single : _sameForBoth || !dark ? _light : _dark;
+
+    private void SetSameForBoth(bool value)
+    {
+        _sameForBoth = value;
+        _editDark = !value && Theme.IsDark;
+    }
+
+    private void SetKind(BackdropKind kind)
+    {
+        var current = Current;
+        current.Kind = kind;
+        if (kind == BackdropKind.Gradient && current.Colors.Count < BackdropRules.MinColors)
+            current.Colors = BackdropRules.DefaultGradient(EditingDark).Colors;
+        if (kind == BackdropKind.Sky && string.IsNullOrEmpty(current.Sky)) current.Sky = ThemeCatalog.DefaultWallpaperKey;
+    }
+
+    private async Task PickPhotoAsync()
+    {
+        if (_importing) return;
+        _importing = true;
+        try
+        {
+            var target = Current;
+            var max = await Js.BackdropMaxSideAsync();
+            var result = await Photos.ImportAsync(max > 0 ? max : 2048);
+            if (result.Photo is { } photo)
+            {
+                _picked.Add(photo);
+                var first = target.Photo is null;
+                target.Photo = photo;
+                if (first)
+                {
+                    // A first picture starts soft behind the app's screens (text sits on it), sharp in a chat.
+                    target.Blur = Target == BackdropTarget.App ? BackdropRules.AppPhotoBlur : BackdropRules.ChatPhotoBlur;
+                    target.Dim = Target == BackdropTarget.App ? BackdropRules.AppPhotoDim : BackdropRules.ChatPhotoDim;
+                }
+            }
+            else if (!result.IsCancelled)
+            {
+                Toasts.Show(result.Problem switch
+                {
+                    BackdropPhotoProblem.Format => L["settings.background.photoFormat"],
+                    BackdropPhotoProblem.TooLarge => L["settings.background.photoTooLarge"],
+                    _ => L["settings.background.photoFailed"],
+                }, ToastKind.Error);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Show(L["settings.background.photoFailed"], ToastKind.Error);
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private void Save()
+    {
+        if (!CanSave) return;
+        if (Target == BackdropTarget.App)
+        {
+            var app = BackdropRules.Normalize(new AppBackground { SameForBoth = _sameForBoth, Light = _light, Dark = _dark });
+            if (app is null) return;
+            Keep(app.Light.Photo, app.Dark.Photo);
+            Dialog.Close(new BackdropEditorResult(app, null));
+            return;
+        }
+        var backdrop = BackdropRules.Normalize(_single);
+        if (backdrop is null) return;
+        Keep(backdrop.Photo);
+        Dialog.Close(new BackdropEditorResult(null, backdrop));
+    }
+
+    private void Reset() => Dialog.Close(new BackdropEditorResult(null, null) { Reset = true });
+
+    private void Keep(params BackdropPhoto?[] photos)
+    {
+        foreach (var photo in photos)
+        {
+            if (photo is not null) _keep.Add(photo.FileName);
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // Photos picked here and not saved: nobody else knows them.
+            foreach (var photo in _picked.Where(p => !_keep.Contains(p.FileName)))
+            {
+                _ = Photos.DiscardAsync(photo);
+            }
+        }
+        base.Dispose(disposing);
+    }
+}

@@ -1,0 +1,68 @@
+@* DialogService content: my own bubble colors — one (flat) or two (a gradient). The ink is chosen for them, white or
+   dark, and the colors are nudged when neither reads well enough (ThemeCatalog keeps 4.5:1). A slice of a chat on the
+   chats' background shows my bubble and theirs live, in the theme in use. Result: List<string> ("#RRGGBB"). *@
+@inherits UiComponentBase
+@inject ThemeService Theme
+@inject ISettingsService Settings
+@inject BackdropPainter Painter
+
+<div class="bubble-pick">
+    @{
+        var paint = Theme.Catalog.CustomBubble(_colors, Theme.IsDark);
+        var sky = Theme.Catalog.ChatPaint(Settings.Current.Appearance, Theme.IsDark);
+        var photoUrl = sky.Photo is { } photo ? Painter.Url(photo, sky.Blur) : null;
+    }
+    <div class="bubble-pick__preview" aria-hidden="true">
+        <div class="bubble-pick__sky" style="@($"background:{sky.Css};background-color:{sky.Base}")"></div>
+        @if (photoUrl is not null)
+        {
+            <div class="bubble-pick__photo" style="@($"background-image:url(\"{photoUrl}\")")"></div>
+        }
+        @if (sky.Dim > 0)
+        {
+            <div class="bubble-pick__veil" style="@($"opacity:{sky.Dim.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}")"></div>
+        }
+        <div class="bubble-pick__bubble bubble-pick__bubble--in">@L["settings.appearance.preview.in"]</div>
+        <div class="bubble-pick__bubble bubble-pick__bubble--out" style="@($"background:{paint.Background};color:{paint.Ink}")">
+            @L["settings.appearance.preview.out"]
+            <span class="bubble-pick__meta" style="@($"color:{paint.Meta}")">09:42 <Icon Name="@IconNames.CheckCheck" Size="14" /></span>
+        </div>
+    </div>
+
+    <p class="bubble-pick__hint">@L["settings.appearance.bubbleColorsHint"]</p>
+
+    <GradientEditor Colors="_colors" ColorsChanged="v => _colors = v" MinStops="1" MaxStops="AppearanceRules.MaxOutgoingColors" Palette="Palette"
+                    MinLightness="8" MaxLightness="92" />
+
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button OnClick="() => Dialog.Close(_colors.ToList())">@L["common.save"]</Button>
+    </DialogActions>
+</div>
+
+@code {
+    // Deep colors for white text and a few light ones for dark text.
+    private static readonly string[] Palette =
+    [
+        "#6A4BFF", "#C2338F", "#E5533D", "#2F9E44", "#0F9488", "#3157E8",
+        "#FFD8B8", "#FFE08A", "#C7EFD3", "#CFE3FF", "#E4D7FF", "#3F4A5C",
+    ];
+
+    private List<string> _colors = [];
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    /// <summary>My colors so far (none: start from the accent's pair).</summary>
+    [Parameter] public IReadOnlyList<string>? Initial { get; set; }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Painter.Changed += h, h => Painter.Changed -= h);
+        _colors = (Initial ?? []).Select(ThemeCatalog.NormalizeHex).OfType<string>().Take(AppearanceRules.MaxOutgoingColors).ToList();
+        if (_colors.Count == 0)
+        {
+            var accent = Theme.Catalog.AccentHexOf(Settings.Current.Appearance);
+            _colors = [accent, Theme.Catalog.SecondHexOf(accent)];
+        }
+    }
+}

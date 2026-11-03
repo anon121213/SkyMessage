@@ -1736,6 +1736,19 @@ export function applyTheme(state) {
   return dark;
 }
 
+/** A background picture as the page shows it (boot.js bakes its blur in): an object URL, or null when it cannot be loaded. */
+export function backdropUrl(src, blur) {
+  const boot = window.__smBoot;
+  return boot && boot.photo && src ? boot.photo(src, blur) : Promise.resolve(null);
+}
+
+/** The long side, in device pixels, a background picture needs on this screen (it is downscaled to it when picked). */
+export function backdropMaxSide() {
+  const screen = window.screen || {};
+  const side = Math.max(screen.width || 0, screen.height || 0, window.innerWidth || 0, window.innerHeight || 0);
+  return Math.round(side * Math.min(3, Math.max(1, window.devicePixelRatio || 1)));
+}
+
 export function observeSystemTheme(ref, method) {
   const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (!media) return { dispose: noop };

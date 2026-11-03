@@ -46,12 +46,32 @@ public sealed class AppearanceSettings
     public string? CustomAccentHex { get; set; }
     /// <summary>85..140.</summary>
     public int FontScalePercent { get; set; } = 100;
-    /// <summary>Built-in wallpaper key or "none".</summary>
+    /// <summary>
+    /// The sky behind the app's screens: a built-in key, "none", or "custom" (<see cref="BackdropRules.CustomWallpaper"/>)
+    /// for the user's own <see cref="CustomBackground"/>.
+    /// </summary>
     public string Wallpaper { get; set; } = "aurora";
     /// <summary>Message bubble corner radius in px, 4..24.</summary>
     public int BubbleRadius { get; set; } = 16;
     public bool Animations { get; set; } = true;
     public bool CompactChatList { get; set; }
+
+    /// <summary>How my bubbles are painted. Settings saved before this existed have none: the accent's gradient, as before.</summary>
+    [JsonConverter(typeof(TolerantEnumConverter<OutgoingBubbleStyle>))]
+    public OutgoingBubbleStyle OutgoingBubble { get; set; } = OutgoingBubbleStyle.Gradient;
+    /// <summary>
+    /// My own bubble colors for <see cref="OutgoingBubbleStyle.Custom"/>: one "#RRGGBB" (flat) or two (a gradient). Kept
+    /// while another style is chosen, so they can be picked again.
+    /// </summary>
+    public List<string> OutgoingColors { get; set; } = [];
+    /// <summary>The other person's bubbles: a key of <see cref="AppearanceRules.IncomingTints"/> ("default": white by day, indigo at night).</summary>
+    public string IncomingTint { get; set; } = AppearanceRules.DefaultTint;
+    /// <summary>"Свой фон" of the app, shown while <see cref="Wallpaper"/> is "custom"; kept while a sky is chosen.</summary>
+    public AppBackground? CustomBackground { get; set; }
+    /// <summary>The chats' background unless a chat has its own; null = the app's background.</summary>
+    public Backdrop? ChatBackground { get; set; }
+    /// <summary>Backgrounds of single chats (chat id → background), set from the chat's menu.</summary>
+    public Dictionary<Guid, Backdrop> ChatBackgrounds { get; set; } = [];
 }
 
 public sealed class ChatBehaviorSettings

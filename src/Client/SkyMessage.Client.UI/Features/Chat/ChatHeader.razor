@@ -1,6 +1,6 @@
 @* Chat header: a floating frosted capsule over the chat sky — back (phones), squircle avatar + name + status line
    (typing / presence / members; a bell or shield after the name for a muted or protected chat), call buttons, search
-   (wide) and the chat menu (info, shared media, mute, clear history, leave/delete). Tap on the avatar or the name opens the chat info. The back button carries data-shell-back: the phone
+   (wide) and the chat menu (info, shared media, select, mute, the chat's background, clear history, leave/delete). Tap on the avatar or the name opens the chat info. The back button carries data-shell-back: the phone
    shell's swipe back (and its animated back tap) runs this very button (app.js attachSwipeBack). *@
 @inherits UiComponentBase
 @inject IChatListStore ChatList
@@ -13,6 +13,9 @@
 @inject ChatActions Actions
 @inject ToastService Toasts
 @inject LayoutService Layout
+@inject DialogService Dialogs
+@inject ISettingsService Settings
+@inject BackdropPhotoService Photos
 
 <header class="chead @(Back ? null : "chead--no-back") @Class">
     @if (Back)
@@ -97,6 +100,7 @@
         }
         <MenuItem Icon="@IconNames.Images" Label="@L["chat.menu.media"]" OnClick="OpenMedia" />
         <MenuItem Icon="@IconNames.ListChecks" Label="@L["chat.menu.select"]" OnClick="() => OnSelect.InvokeAsync()" />
+        <MenuItem Icon="@IconNames.Image" Label="@L["chat.menu.background"]" OnClick="EditBackgroundAsync" />
         @if (chat.Type != ChatType.Saved)
         {
             <MenuItem Icon="@(chat.IsMuted(DateTimeOffset.UtcNow) ? IconNames.Bell : IconNames.BellOff)"
@@ -193,6 +197,26 @@
         var x = e.ClientX > 0 ? e.ClientX : Layout.Width - 16;
         var y = e.ClientY > 0 ? e.ClientY : 56;
         await _menu.OpenAsync(x, y);
+    }
+
+    /// <summary>"Фон чата": this chat's own background (a sky, a gradient or a photo), or back to the chats' one.</summary>
+    private async Task EditBackgroundAsync()
+    {
+        var current = Settings.Current.Appearance.ChatBackgrounds.GetValueOrDefault(ChatId);
+        var result = await Dialogs.ShowAsync<BackdropEditor>(L["chat.background.title"], new Dictionary<string, object?>
+        {
+            [nameof(BackdropEditor.Target)] = BackdropTarget.Chat,
+            [nameof(BackdropEditor.Initial)] = current?.Clone(),
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as BackdropEditorResult;
+        if (result is null) return;
+        try
+        {
+            await Photos.SetChatAsync(ChatId, result.Reset ? null : result.Backdrop);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
     }
 
     private async Task CallAsync(bool video)

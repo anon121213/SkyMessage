@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using SkyMessage.Client.Core.Settings;
 
 namespace SkyMessage.Client.UI.Services;
@@ -33,21 +32,64 @@ public sealed record WallpaperInfo(string Key, string NameKey, SkyColors Light, 
     public string DarkBase => Dark.Base;
 }
 
-/// <summary>Everything the page needs to theme itself; persisted by JS so boot.js can apply it before Blazor starts.</summary>
-public sealed record ThemeState(string Mode, string Css, bool ReduceMotion, bool Compact);
+/// <summary>A calm tint for the other person's bubbles, by day and at night (the ink is derived from it).</summary>
+public sealed record BubbleTintInfo(string Key, string NameKey, string Light, string Dark);
 
-/// <summary>Accents, skies and the CSS variable builder (docs/DESIGN.md). Singleton, no JS.</summary>
-public sealed partial class ThemeCatalog
+/// <summary>A ready-made gradient offered by the background editor; <see cref="NameKey"/> names it for screen readers.</summary>
+public sealed record GradientPreset(string Key, string NameKey, IReadOnlyList<string> Colors, int Angle)
+{
+    public string Css => ThemeCatalog.GradientCss(Colors, Angle);
+}
+
+/// <summary>
+/// A picture the theme shows: the app's ("sky") or the chats' default ("chat") background in the "light" or "dark"
+/// theme. <see cref="Src"/> is where the page loads it from (IBackdropImageStore.PageSource), <see cref="Blur"/> 0..100.
+/// </summary>
+public sealed record ThemeImage(string Slot, string Theme, string Src, int Blur);
+
+/// <summary>
+/// Everything the page needs to theme itself; persisted by JS so boot.js can apply it before Blazor starts (the pictures
+/// in <see cref="Images"/> load right after).
+/// </summary>
+public sealed record ThemeState(string Mode, string Css, bool ReduceMotion, bool Compact, IReadOnlyList<ThemeImage> Images)
+{
+    public ThemeState(string mode, string css, bool reduceMotion, bool compact) : this(mode, css, reduceMotion, compact, []) { }
+}
+
+/// <summary>How a bubble is painted: its background (a color or a gradient), a solid color of it, the ink and the meta color.</summary>
+public sealed record BubblePaint(string Background, string Solid, string Ink, string Meta);
+
+/// <summary>
+/// A still picture of a background for previews and tiles: <see cref="Css"/> over <see cref="Base"/>, star dots
+/// (0..1), and for a photo the picture with its blur (0..100) and veil (0..1).
+/// </summary>
+public sealed record BackdropPaint(string Css, string Base, double Stars, BackdropPhoto? Photo = null, int Blur = 0, double Dim = 0);
+
+/// <summary>The few tokens a mock screen needs to look like one theme while the page shows the other (editor previews).</summary>
+public sealed record PreviewPalette(string Text, string Text2, string Glass, string Card, string Veil, string Accent, BubblePaint Outgoing, BubblePaint Incoming);
+
+/// <summary>Accents, skies, bubble paints, backgrounds and the CSS variable builder (docs/DESIGN.md). Singleton, no JS.</summary>
+public sealed class ThemeCatalog
 {
     public const string DefaultAccentKey = "violet";
     public const string DefaultWallpaperKey = "aurora";
     public const string NoWallpaperKey = "none";
+    /// <summary>The app's own background (<see cref="AppearanceSettings.CustomBackground"/>) instead of a sky.</summary>
+    public const string CustomWallpaperKey = BackdropRules.CustomWallpaper;
+
+    /// <summary>WCAG AA for normal text: what the ink on every bubble keeps against every part of it.</summary>
+    public const double MinTextContrast = 4.5;
 
     // Light/dark neutrals; keep in sync with app.css.
     private const string LightBg = "#F6F3FF";
     private const string LightText = "#1C1634";
+    private const string LightText2 = "#615A7C";
     private const string DarkBg = "#0D0B1E";
+    private const string DarkText = "#F3F0FF";
+    private const string DarkText2 = "#B4ACD5";
     private const string None = "rgba(0,0,0,0)";
+    private const string OutMetaOnLight = "rgba(255,255,255,0.72)";
+    private const string OutMetaOnDark = "rgba(28,22,52,0.62)";
 
     /// <summary>Deep gradient pairs: white text stays readable on both ends (outgoing bubbles, buttons).</summary>
     public IReadOnlyList<AccentInfo> Accents { get; } =
@@ -97,12 +139,41 @@ public sealed partial class ThemeCatalog
             new($"linear-gradient(180deg, {DarkBg} 0%, {DarkBg} 100%)", DarkBg, None, None, None, 0)),
     ];
 
+    /// <summary>The other person's bubbles: white/indigo (as before) and a few calm tints, light by day and deep at night.</summary>
+    public IReadOnlyList<BubbleTintInfo> IncomingTints { get; } =
+    [
+        new(AppearanceRules.DefaultTint, "theme.tint.default", "#FFFFFF", "#231D45"),
+        new("lavender", "theme.tint.lavender", "#EEE9FF", "#2E2655"),
+        new("peach", "theme.tint.peach", "#FFEEE4", "#3A2434"),
+        new("mint", "theme.tint.mint", "#E5F6ED", "#17332F"),
+        new("sky", "theme.tint.sky", "#E5EFFF", "#1B2B4B"),
+        new("sand", "theme.tint.sand", "#F7F0E1", "#332A24"),
+    ];
+
+    /// <summary>Gradients the background editor offers: soft ones for the day, deep ones for the night, one sunset.</summary>
+    public IReadOnlyList<GradientPreset> BackdropGradients { get; } =
+    [
+        new("dawn", "theme.gradient.dawn", ["#FFE7D6", "#FFDCE8", "#E4DCFF"], 165),
+        new("lilac", "theme.gradient.lilac", ["#EEE8FF", "#D8CCFF"], 180),
+        new("mint", "theme.gradient.mint", ["#E1F6EB", "#D4EEF4"], 160),
+        new("lagoon", "theme.gradient.lagoon", ["#DCEFFF", "#E2E0FF"], 200),
+        new("peach", "theme.gradient.peach", ["#FFF1E1", "#FFDACD"], 150),
+        new("sunset", "theme.gradient.sunset", ["#F7A48B", "#B977CF", "#5A63D8"], 160),
+        new("dusk", "theme.gradient.dusk", ["#3A1F50", "#1A1236"], 170),
+        new("night", "theme.gradient.night", ["#161C40", "#0B0A1C"], 180),
+        new("forest", "theme.gradient.forest", ["#12342C", "#0D1A20"], 165),
+        new("evening", "theme.gradient.evening", ["#4A2030", "#22122B", "#110D24"], 170),
+    ];
+
     public AccentInfo DefaultAccent => Accents[0];
 
     public AccentInfo? FindAccent(string? key) => Accents.FirstOrDefault(a => string.Equals(a.Key, key, StringComparison.OrdinalIgnoreCase));
 
     public WallpaperInfo FindWallpaper(string? key) =>
         Wallpapers.FirstOrDefault(w => string.Equals(w.Key, key, StringComparison.OrdinalIgnoreCase)) ?? Wallpapers[0];
+
+    public BubbleTintInfo FindTint(string? key) =>
+        IncomingTints.FirstOrDefault(t => string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase)) ?? IncomingTints[0];
 
     /// <summary>Accent hex in effect: valid custom hex, else the palette key, else violet.</summary>
     public string AccentHexOf(AppearanceSettings appearance) =>
@@ -116,40 +187,36 @@ public sealed partial class ThemeCatalog
     }
 
     /// <summary>"#RRGGBB" in upper case, or null when the value is not a 6-digit hex color.</summary>
-    public static string? NormalizeHex(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var v = value.Trim();
-        if (!v.StartsWith('#')) v = "#" + v;
-        return HexRegex().IsMatch(v) ? v.ToUpperInvariant() : null;
-    }
+    public static string? NormalizeHex(string? value) => AppearanceRules.NormalizeHex(value);
 
-    /// <summary>The theme state for <paramref name="appearance"/> (CSS variables for both themes + flags).</summary>
-    public ThemeState BuildState(AppearanceSettings appearance)
+    /// <summary>
+    /// The theme state for <paramref name="appearance"/>: CSS variables for both themes, the pictures to show (their
+    /// page sources from <paramref name="photoSource"/>; without one the pictures are left out) and the flags.
+    /// </summary>
+    public ThemeState BuildState(AppearanceSettings appearance, Func<BackdropPhoto, string>? photoSource = null)
     {
         var hex = AccentHexOf(appearance);
         var accent = Color.Parse(hex);
         var accent2 = Color.Parse(SecondHexOf(hex));
-        var wallpaper = FindWallpaper(appearance.Wallpaper);
         var fontPx = 16.0 * Math.Clamp(appearance.FontScalePercent, 85, 140) / 100.0;
         // The roundness setting (4..24, default 16) maps onto the softer shapes of this design (5..30 px, default 20).
         var radius = Math.Round(Math.Clamp(appearance.BubbleRadius, 4, 24) * 1.25);
+        var images = new List<ThemeImage>();
 
-        var css = new StringBuilder(4096);
+        var css = new StringBuilder(6144);
         css.Append("html:root{");
         Var(css, "--sm-font-size", $"{fontPx.ToString("0.##", CultureInfo.InvariantCulture)}px");
         Var(css, "--sm-bubble-radius", $"{radius.ToString(CultureInfo.InvariantCulture)}px");
         css.Append('}');
 
-        css.Append("html:root[data-theme=\"light\"]{");
-        AppendAccent(css, accent, accent2, dark: false);
-        AppendSky(css, wallpaper.Light);
-        css.Append('}');
-
-        css.Append("html:root[data-theme=\"dark\"]{");
-        AppendAccent(css, accent, accent2, dark: true);
-        AppendSky(css, wallpaper.Dark);
-        css.Append('}');
+        foreach (var dark in new[] { false, true })
+        {
+            css.Append(dark ? "html:root[data-theme=\"dark\"]{" : "html:root[data-theme=\"light\"]{");
+            AppendAccent(css, accent, accent2, dark);
+            AppendBubbles(css, appearance, dark);
+            AppendBackgrounds(css, appearance, dark, images, photoSource);
+            css.Append('}');
+        }
 
         var mode = appearance.Theme switch
         {
@@ -157,7 +224,7 @@ public sealed partial class ThemeCatalog
             ThemeMode.Dark => "dark",
             _ => "system",
         };
-        return new ThemeState(mode, css.ToString(), !appearance.Animations, appearance.CompactChatList);
+        return new ThemeState(mode, css.ToString(), !appearance.Animations, appearance.CompactChatList, images);
     }
 
     /// <summary>Still picture of a sky for previews (settings tiles).</summary>
@@ -175,16 +242,189 @@ public sealed partial class ThemeCatalog
         return (dark ? Color.Mix(mid, Color.Parse(DarkBg), 0.12) : mid).Hex;
     }
 
-    /// <summary>Outgoing bubble background (the accent gradient) for an accent, as used in chats.</summary>
-    public string BubbleOutCss(string accentHex, bool dark)
+    /// <summary>Outgoing bubble background (the accent gradient, kept readable) for an accent, as used in chats.</summary>
+    public string BubbleOutCss(string accentHex, bool dark) => AccentBubble(accentHex, OutgoingBubbleStyle.Gradient, dark).Background;
+
+    /// <summary>My bubbles in the accent <paramref name="accentHex"/> painted as <paramref name="style"/> (Gradient or Solid).</summary>
+    public BubblePaint AccentBubble(string accentHex, OutgoingBubbleStyle style, bool dark)
     {
         var hex = NormalizeHex(accentHex) ?? DefaultAccent.Hex;
         var (from, to) = BubbleStops(Color.Parse(hex), Color.Parse(SecondHexOf(hex)), dark);
-        return $"linear-gradient(135deg, {from.Hex} 0%, {to.Hex} 100%)";
+        return style == OutgoingBubbleStyle.Solid ? Bubble([Color.Mix(from, to, 0.5)]) : Bubble([from, to]);
+    }
+
+    /// <summary>My bubbles as the appearance paints them in a theme (Gradient, Solid or my own colors).</summary>
+    public BubblePaint OutgoingPaint(AppearanceSettings appearance, bool dark)
+    {
+        if (appearance.OutgoingBubble == OutgoingBubbleStyle.Custom && CustomColors(appearance.OutgoingColors) is { Count: > 0 } custom)
+            return CustomBubble(custom, dark);
+        return AccentBubble(AccentHexOf(appearance), appearance.OutgoingBubble, dark);
+    }
+
+    /// <summary>My bubbles in my own colors (one: flat, two: a gradient), toned for the night like the accents are.</summary>
+    public BubblePaint CustomBubble(IReadOnlyList<string> colors, bool dark)
+    {
+        var stops = CustomColors(colors).Select(Color.Parse).Select(c => dark ? Color.Mix(c, Color.Parse(DarkBg), 0.1) : c).ToList();
+        return stops.Count == 0 ? AccentBubble(DefaultAccent.Hex, OutgoingBubbleStyle.Gradient, dark) : Bubble(stops);
+    }
+
+    /// <summary>The other person's bubbles in a tint (the default one is exactly app.css's white/indigo).</summary>
+    public BubblePaint IncomingPaint(string? tint, bool dark)
+    {
+        var info = FindTint(tint);
+        if (info.Key == AppearanceRules.DefaultTint)
+            return dark ? new("#231D45", "#231D45", DarkText, "rgba(243,240,255,0.5)") : new("#FFFFFF", "#FFFFFF", LightText, "#9A93B2");
+        var (ink, stops) = Readable([Color.Parse(dark ? info.Dark : info.Light)], Color.Parse(DarkText), Color.Parse(LightText));
+        var fill = stops[0].Hex;
+        var meta = ink.Hex == DarkText ? "rgba(243,240,255,0.5)" : "rgba(28,22,52,0.5)";
+        return new BubblePaint(fill, fill, ink.Hex, meta);
+    }
+
+    /// <summary>The app's background in a theme: its own (when chosen and valid), else null (a sky is in effect).</summary>
+    public static Backdrop? AppBackdropOf(AppearanceSettings appearance, bool dark) =>
+        string.Equals(appearance.Wallpaper, CustomWallpaperKey, StringComparison.OrdinalIgnoreCase) && appearance.CustomBackground is { } custom
+            ? BackdropRules.Normalize(custom.For(dark), allowSky: false)
+            : null;
+
+    /// <summary>A still picture of the app's background in a theme (tiles, previews).</summary>
+    public BackdropPaint AppPaint(AppearanceSettings appearance, bool dark)
+    {
+        if (AppBackdropOf(appearance, dark) is { } own) return Paint(own, dark);
+        var sky = dark ? FindWallpaper(appearance.Wallpaper).Dark : FindWallpaper(appearance.Wallpaper).Light;
+        return new BackdropPaint(sky.PreviewCss, sky.Base, sky.Stars);
+    }
+
+    /// <summary>A still picture of the chats' background in a theme: their own, else the app's.</summary>
+    public BackdropPaint ChatPaint(AppearanceSettings appearance, bool dark) =>
+        BackdropRules.Normalize(appearance.ChatBackground) is { } chat ? Paint(chat, dark) : AppPaint(appearance, dark);
+
+    /// <summary>A still picture of a background in a theme.</summary>
+    public BackdropPaint Paint(Backdrop backdrop, bool dark)
+    {
+        switch (backdrop.Kind)
+        {
+            case BackdropKind.Gradient when CustomColors(backdrop.Colors) is { Count: >= 2 } colors:
+                return new BackdropPaint(GradientCss(colors, backdrop.Angle), AverageHex(colors), 0);
+            case BackdropKind.Photo when backdrop.Photo is { } photo:
+                var bg = dark ? DarkBg : LightBg;
+                return new BackdropPaint($"linear-gradient({bg}, {bg})", bg, 0, photo, backdrop.Blur, Level(backdrop.Dim));
+            default:
+                var sky = dark ? FindWallpaper(backdrop.Sky).Dark : FindWallpaper(backdrop.Sky).Light;
+                return new BackdropPaint(sky.PreviewCss, sky.Base, sky.Stars);
+        }
+    }
+
+    /// <summary>
+    /// CSS custom properties for a chat with a background of its own (inline on the chat's root): the chat variant of
+    /// SkyBackdrop and the chat screen's edges read them. <paramref name="photoUrl"/> is the picture's URL once loaded.
+    /// </summary>
+    public string ChatStyle(Backdrop backdrop, bool dark, string? photoUrl)
+    {
+        var css = new StringBuilder(512);
+        foreach (var (name, value) in ChatVars(backdrop, dark))
+        {
+            Var(css, name, name == "--sm-chat-photo" && photoUrl is not null ? $"url(\"{photoUrl}\")" : value);
+        }
+        return css.ToString();
+    }
+
+    /// <summary>Tokens for a mock screen in one theme (background editor previews show both themes side by side).</summary>
+    public PreviewPalette Palette(AppearanceSettings appearance, bool dark)
+    {
+        var accent = Color.Parse(AccentHexOf(appearance));
+        var accentInk = dark ? Color.Mix(accent, Color.White, accent.Luminance < 0.12 ? 0.34 : 0.22) : accent;
+        return dark
+            ? new PreviewPalette(DarkText, DarkText2, "rgba(27,22,54,0.58)", "rgba(30,25,60,0.62)", DarkBg, accentInk.Hex,
+                OutgoingPaint(appearance, true), IncomingPaint(appearance.IncomingTint, true))
+            : new PreviewPalette(LightText, LightText2, "rgba(255,255,255,0.62)", "rgba(255,255,255,0.78)", LightBg, accentInk.Hex,
+                OutgoingPaint(appearance, false), IncomingPaint(appearance.IncomingTint, false));
     }
 
     /// <summary>Hex background behind the system bars for the given theme (the top of the default sky).</summary>
     public static string SystemBarColor(bool dark) => dark ? "#150F38" : "#ECE6FF";
+
+    /// <summary>A CSS linear gradient of evenly spaced stops at <paramref name="angle"/> degrees.</summary>
+    public static string GradientCss(IReadOnlyList<string> colors, int angle)
+    {
+        if (colors.Count == 0) return "none";
+        if (colors.Count == 1) return $"linear-gradient({colors[0]}, {colors[0]})";
+        var stops = string.Join(", ", colors.Select((c, i) => $"{c} {(i * 100 / (colors.Count - 1)).ToString(CultureInfo.InvariantCulture)}%"));
+        return $"linear-gradient({BackdropRules.WrapAngle(angle).ToString(CultureInfo.InvariantCulture)}deg, {stops})";
+    }
+
+    /// <summary>The average of colors ("#RRGGBB"): a gradient's base color.</summary>
+    public static string AverageHex(IReadOnlyList<string> colors)
+    {
+        if (colors.Count == 0) return LightBg;
+        var parsed = colors.Select(Color.Parse).ToList();
+        return new Color(parsed.Average(c => c.R), parsed.Average(c => c.G), parsed.Average(c => c.B)).Hex;
+    }
+
+    /// <summary>WCAG contrast ratio of two colors (1..21).</summary>
+    public static double Contrast(Color a, Color b)
+    {
+        var (hi, lo) = a.Luminance >= b.Luminance ? (a.Luminance, b.Luminance) : (b.Luminance, a.Luminance);
+        return (hi + 0.05) / (lo + 0.05);
+    }
+
+    /// <summary>
+    /// The ink for a fill of <paramref name="stops"/> (one: flat; more: an even gradient) and the fill kept readable:
+    /// whichever of <paramref name="lightInk"/> and <paramref name="darkInk"/> contrasts more with the fill's least
+    /// contrasting part, and when even that stays under <see cref="MinTextContrast"/>, the stops that fall short are
+    /// moved away from the ink (darker under light ink, lighter under dark ink) just enough; a gradient whose middle
+    /// still falls short moves a little more as a whole.
+    /// </summary>
+    public static (Color Ink, IReadOnlyList<Color> Stops) Readable(IReadOnlyList<Color> stops, Color lightInk, Color darkInk)
+    {
+        if (stops.Count == 0) return (lightInk, stops);
+        // Judged on the colors as written out (whole RGB values), which is what the page paints.
+        stops = stops.Select(Rounded).ToList();
+        var ink = WorstContrast(lightInk, stops) >= WorstContrast(darkInk, stops) ? lightInk : darkInk;
+        var away = ink == lightInk ? Color.Black : Color.White;
+        var adjusted = stops.Select(stop =>
+        {
+            var c = stop;
+            for (var step = 1; step <= 40 && Contrast(ink, c) < MinTextContrast; step++) c = Rounded(Color.Mix(stop, away, step * 0.025));
+            return c;
+        }).ToList();
+        for (var step = 1; step <= 40 && WorstContrast(ink, adjusted) < MinTextContrast; step++)
+            adjusted = adjusted.Select(c => Rounded(Color.Mix(c, away, 0.025))).ToList();
+        return (ink, adjusted);
+    }
+
+    /// <summary>The lowest contrast of <paramref name="ink"/> along a fill of evenly spaced stops (sampled in eighths).</summary>
+    public static double WorstContrast(Color ink, IReadOnlyList<Color> stops) => Samples(stops).Min(c => Contrast(ink, c));
+
+    /// <summary>Colors along an even gradient of <paramref name="stops"/>, as the page blends them (in sRGB).</summary>
+    public static IEnumerable<Color> Samples(IReadOnlyList<Color> stops)
+    {
+        if (stops.Count == 1)
+        {
+            yield return stops[0];
+            yield break;
+        }
+        for (var i = 0; i <= 8; i++)
+        {
+            var t = i / 8.0 * (stops.Count - 1);
+            var index = Math.Min((int)Math.Floor(t), stops.Count - 2);
+            yield return Color.Mix(stops[index], stops[index + 1], t - index);
+        }
+    }
+
+    private static Color Rounded(Color color) => Color.Parse(color.Hex);
+
+    private static IReadOnlyList<string> CustomColors(IReadOnlyList<string>? colors) =>
+        (colors ?? []).Select(NormalizeHex).OfType<string>().ToList();
+
+    private static BubblePaint Bubble(IReadOnlyList<Color> stops)
+    {
+        var (ink, readable) = Readable(stops, Color.White, Color.Parse(LightText));
+        var solid = Color.Mix(readable[0], readable[^1], 0.5);
+        var background = readable.Count == 1
+            ? readable[0].Hex
+            : $"linear-gradient(135deg, {string.Join(", ", readable.Select((c, i) => $"{c.Hex} {(i * 100 / (readable.Count - 1)).ToString(CultureInfo.InvariantCulture)}%"))})";
+        return new BubblePaint(background, solid.Hex, ink.Hex, ink == Color.White ? OutMetaOnLight : OutMetaOnDark);
+    }
 
     private static (Color From, Color To) BubbleStops(Color accent, Color accent2, bool dark) =>
         dark ? (Color.Mix(accent, Color.Parse(DarkBg), 0.1), Color.Mix(accent2, Color.Parse(DarkBg), 0.14)) : (accent, accent2);
@@ -193,15 +433,10 @@ public sealed partial class ThemeCatalog
     {
         var (from, to) = BubbleStops(accent, accent2, dark);
         var gradient = $"linear-gradient(135deg, {from.Hex} 0%, {to.Hex} 100%)";
-        // Text on the gradient: white unless the custom accent is very light.
-        var onAccent = Color.Mix(from, to, 0.5).Luminance > 0.42 ? Color.Parse(LightText) : Color.White;
-        var onAccentIsWhite = onAccent == Color.White;
+        // Text on the gradient: white, or dark where that reads better (a light custom accent).
+        var onAccent = WorstContrast(Color.White, [from, to]) >= WorstContrast(Color.Parse(LightText), [from, to]) ? Color.White : Color.Parse(LightText);
         Var(css, "--sm-grad", gradient);
-        Var(css, "--sm-bubble-out-bg", gradient);
-        Var(css, "--sm-bubble-out", Color.Mix(from, to, 0.5).Hex);
         Var(css, "--sm-on-accent", onAccent.Hex);
-        Var(css, "--sm-bubble-out-text", onAccent.Hex);
-        Var(css, "--sm-bubble-out-meta", onAccentIsWhite ? "rgba(255,255,255,0.72)" : "rgba(28,22,52,0.62)");
         if (!dark)
         {
             Var(css, "--sm-accent", accent.Hex);
@@ -230,23 +465,100 @@ public sealed partial class ThemeCatalog
         }
     }
 
-    private static void AppendSky(StringBuilder css, SkyColors sky)
+    private void AppendBubbles(StringBuilder css, AppearanceSettings appearance, bool dark)
     {
-        Var(css, "--sm-sky", sky.Gradient);
-        Var(css, "--sm-orb-1", sky.Orb1);
-        Var(css, "--sm-orb-2", sky.Orb2);
-        Var(css, "--sm-orb-3", sky.Orb3);
-        Var(css, "--sm-stars", sky.Stars.ToString("0.##", CultureInfo.InvariantCulture));
-        Var(css, "--sm-chat-bg", sky.Base);
-        Var(css, "--sm-chat-wallpaper", sky.Gradient);
+        var mine = OutgoingPaint(appearance, dark);
+        Var(css, "--sm-bubble-out-bg", mine.Background);
+        Var(css, "--sm-bubble-out", mine.Solid);
+        Var(css, "--sm-bubble-out-text", mine.Ink);
+        Var(css, "--sm-bubble-out-meta", mine.Meta);
+        // The default tint keeps app.css's own values.
+        if (FindTint(appearance.IncomingTint).Key == AppearanceRules.DefaultTint) return;
+        var theirs = IncomingPaint(appearance.IncomingTint, dark);
+        Var(css, "--sm-bubble-in", theirs.Background);
+        Var(css, "--sm-bubble-in-text", theirs.Ink);
+        Var(css, "--sm-bubble-in-meta", theirs.Meta);
     }
+
+    /// <summary>
+    /// The sky behind the app's screens and the chats' default background. The chats follow the app unless they have a
+    /// background of their own; a photo's picture itself is set by boot.js (--sm-sky-photo / --sm-chat-photo).
+    /// </summary>
+    private void AppendBackgrounds(StringBuilder css, AppearanceSettings appearance, bool dark, List<ThemeImage> images, Func<BackdropPhoto, string>? photoSource)
+    {
+        var theme = dark ? "dark" : "light";
+        if (AppBackdropOf(appearance, dark) is { } own)
+        {
+            var paint = Paint(own, dark);
+            var gradient = own.Kind == BackdropKind.Gradient ? GradientCss(own.Colors, own.Angle) : $"linear-gradient({paint.Base}, {paint.Base})";
+            Var(css, "--sm-sky", gradient);
+            Var(css, "--sm-orb-1", None);
+            Var(css, "--sm-orb-2", None);
+            Var(css, "--sm-orb-3", None);
+            Var(css, "--sm-stars", "0");
+            Var(css, "--sm-clouds", "0");
+            Var(css, "--sm-chat-bg", paint.Base);
+            Var(css, "--sm-chat-wallpaper", gradient);
+            if (own is { Kind: BackdropKind.Photo, Photo: { } photo })
+            {
+                Var(css, "--sm-sky-dim", Num(paint.Dim));
+                if (photoSource is not null) images.Add(new ThemeImage("sky", theme, photoSource(photo), own.Blur));
+            }
+        }
+        else
+        {
+            var sky = dark ? FindWallpaper(appearance.Wallpaper).Dark : FindWallpaper(appearance.Wallpaper).Light;
+            Var(css, "--sm-sky", sky.Gradient);
+            Var(css, "--sm-orb-1", sky.Orb1);
+            Var(css, "--sm-orb-2", sky.Orb2);
+            Var(css, "--sm-orb-3", sky.Orb3);
+            Var(css, "--sm-stars", Num(sky.Stars));
+            Var(css, "--sm-chat-bg", sky.Base);
+            Var(css, "--sm-chat-wallpaper", sky.Gradient);
+        }
+
+        if (BackdropRules.Normalize(appearance.ChatBackground) is not { } chat) return;
+        foreach (var (name, value) in ChatVars(chat, dark)) Var(css, name, value);
+        if (chat is { Kind: BackdropKind.Photo, Photo: { } chatPhoto } && photoSource is not null)
+            images.Add(new ThemeImage("chat", theme, photoSource(chatPhoto), chat.Blur));
+    }
+
+    /// <summary>Every chat token for a background of the chats' own (none left to fall back to the app's).</summary>
+    private IEnumerable<(string Name, string Value)> ChatVars(Backdrop backdrop, bool dark)
+    {
+        var paint = Paint(backdrop, dark);
+        if (backdrop.Kind == BackdropKind.Sky)
+        {
+            var sky = dark ? FindWallpaper(backdrop.Sky).Dark : FindWallpaper(backdrop.Sky).Light;
+            yield return ("--sm-chat-wallpaper", sky.Gradient);
+            yield return ("--sm-chat-bg", sky.Base);
+            yield return ("--sm-chat-orb-1", sky.Orb1);
+            yield return ("--sm-chat-orb-2", sky.Orb2);
+            yield return ("--sm-chat-orb-3", sky.Orb3);
+            yield return ("--sm-chat-stars", Num(sky.Stars));
+            yield return ("--sm-chat-clouds", dark ? "0" : "1");
+        }
+        else
+        {
+            yield return ("--sm-chat-wallpaper", backdrop.Kind == BackdropKind.Gradient ? GradientCss(backdrop.Colors, backdrop.Angle) : $"linear-gradient({paint.Base}, {paint.Base})");
+            yield return ("--sm-chat-bg", paint.Base);
+            yield return ("--sm-chat-orb-1", None);
+            yield return ("--sm-chat-orb-2", None);
+            yield return ("--sm-chat-orb-3", None);
+            yield return ("--sm-chat-stars", "0");
+            yield return ("--sm-chat-clouds", "0");
+        }
+        yield return ("--sm-chat-dim", Num(paint.Dim));
+        yield return ("--sm-chat-photo", "none");
+    }
+
+    private static double Level(int value) => Math.Clamp(value, 0, BackdropRules.MaxLevel) / (double)BackdropRules.MaxLevel;
+
+    private static string Num(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     private static void Var(StringBuilder css, string name, string value) => css.Append(name).Append(':').Append(value).Append(';');
 
-    [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
-    private static partial Regex HexRegex();
-
-    /// <summary>Small sRGB helper (mixing, luminance) — enough for deriving theme tokens.</summary>
+    /// <summary>Small sRGB helper (mixing, luminance, HSL) — enough for deriving theme tokens.</summary>
     public readonly record struct Color(double R, double G, double B)
     {
         public static Color White => new(255, 255, 255);
@@ -255,7 +567,7 @@ public sealed partial class ThemeCatalog
         public static Color Parse(string hex)
         {
             var v = hex.TrimStart('#');
-            if (v.Length != 6) return new Color(106, 75, 255);
+            if (v.Length != 6 || !v.All(Uri.IsHexDigit)) return new Color(106, 75, 255);
             return new Color(
                 int.Parse(v.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
                 int.Parse(v.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
@@ -271,39 +583,51 @@ public sealed partial class ThemeCatalog
         public string Rgba(double alpha) =>
             $"rgba({Clamp(R)},{Clamp(G)},{Clamp(B)},{alpha.ToString("0.###", CultureInfo.InvariantCulture)})";
 
-        /// <summary>The same color with its hue turned by <paramref name="hue"/> degrees and saturation/lightness nudged (0..1 units).</summary>
-        public Color Shift(double hue, double saturation = 0, double lightness = 0)
+        /// <summary>Hue 0..360, saturation and lightness 0..1.</summary>
+        public (double H, double S, double L) ToHsl()
         {
             double r = R / 255.0, g = G / 255.0, b = B / 255.0;
             double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
-            double h = 0, s, l = (max + min) / 2, d = max - min;
-            if (d == 0) s = 0;
-            else
+            double h = 0, s = 0, l = (max + min) / 2, d = max - min;
+            if (d > 0)
             {
                 s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
                 h = max == r ? (g - b) / d + (g < b ? 6 : 0) : max == g ? (b - r) / d + 2 : (r - g) / d + 4;
                 h *= 60;
             }
-            h = ((h + hue) % 360 + 360) % 360;
-            s = Math.Clamp(s + saturation, 0, 1);
-            l = Math.Clamp(l + lightness, 0, 1);
+            return (h, s, l);
+        }
+
+        /// <summary>A color from hue (degrees), saturation and lightness (0..1).</summary>
+        public static Color FromHsl(double h, double s, double l)
+        {
+            s = Math.Clamp(s, 0, 1);
+            l = Math.Clamp(l, 0, 1);
+            h = (h % 360 + 360) % 360 / 360;
             var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
             var p = 2 * l - q;
-            return new Color(Hue(p, q, h / 360 + 1.0 / 3) * 255, Hue(p, q, h / 360) * 255, Hue(p, q, h / 360 - 1.0 / 3) * 255);
+            return new Color(Hue(p, q, h + 1.0 / 3) * 255, Hue(p, q, h) * 255, Hue(p, q, h - 1.0 / 3) * 255);
+        }
 
-            static double Hue(double p, double q, double t)
-            {
-                if (t < 0) t += 1;
-                if (t > 1) t -= 1;
-                if (t < 1.0 / 6) return p + (q - p) * 6 * t;
-                if (t < 0.5) return q;
-                if (t < 2.0 / 3) return p + (q - p) * (2.0 / 3 - t) * 6;
-                return p;
-            }
+        /// <summary>The same color with its hue turned by <paramref name="hue"/> degrees and saturation/lightness nudged (0..1 units).</summary>
+        public Color Shift(double hue, double saturation = 0, double lightness = 0)
+        {
+            var (h, s, l) = ToHsl();
+            return FromHsl(h + hue, s + saturation, l + lightness);
         }
 
         /// <summary>WCAG relative luminance 0..1.</summary>
         public double Luminance => 0.2126 * Channel(R) + 0.7152 * Channel(G) + 0.0722 * Channel(B);
+
+        private static double Hue(double p, double q, double t)
+        {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1.0 / 6) return p + (q - p) * 6 * t;
+            if (t < 0.5) return q;
+            if (t < 2.0 / 3) return p + (q - p) * (2.0 / 3 - t) * 6;
+            return p;
+        }
 
         private static double Channel(double c)
         {

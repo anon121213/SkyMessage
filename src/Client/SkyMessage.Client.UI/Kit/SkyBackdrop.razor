@@ -1,9 +1,13 @@
 @* The living sky behind SkyMessage's screens (docs/DESIGN.md): the theme's base gradient, three slowly drifting soft
    lights, soft clouds by day, twinkling stars and a rare shooting star by night. Pure decoration:
    transform/opacity animations only, paused under [inert] (covered screens), still in data-fx="lite" and with reduced
-   motion. Place it as the first child of a positioned container (or Fixed for the whole viewport). *@
+   motion. The user's own background replaces it through the same tokens: a gradient (--sm-sky, no lights), or a still
+   picture (--sm-sky-photo / --sm-chat-photo, set by boot.js) under a veil (--sm-sky-dim / --sm-chat-dim). Place it as
+   the first child of a positioned container (or Fixed for the whole viewport). *@
 <div class="sm-sky @VariantClass @(Fixed ? "sm-sky--fixed" : null) @(Still ? "sm-sky--still" : null) @(Plain ? "sm-sky--plain" : null) @Class"
      aria-hidden="true">
+    <div class="sm-sky__photo"></div>
+    <div class="sm-sky__veil"></div>
     <div class="sm-sky__orb sm-sky__orb--1"></div>
     <div class="sm-sky__orb sm-sky__orb--2"></div>
     <div class="sm-sky__orb sm-sky__orb--3"></div>

@@ -181,6 +181,38 @@
         }));
     }
 
+    // The user's background pictures (Settings › Appearance, a chat's background) live in a database of their own too.
+    // boot.js reads it itself ("idb:<name>" sources) to show a picture before Blazor starts: the database, store and
+    // record shape ({ type, blob }) are shared with it.
+    let backdropsDbPromise = null;
+
+    function backdropsTx(mode, work) {
+        if (!backdropsDbPromise) {
+            backdropsDbPromise = new Promise((resolve, reject) => {
+                if (!('indexedDB' in self)) { reject(new Error('IndexedDB unavailable')); return; }
+                const request = indexedDB.open('skymessage-backdrops', 1);
+                request.onupgradeneeded = () => {
+                    if (!request.result.objectStoreNames.contains('files')) request.result.createObjectStore('files');
+                };
+                request.onsuccess = () => {
+                    const db = request.result;
+                    db.onversionchange = () => { db.close(); backdropsDbPromise = null; };
+                    resolve(db);
+                };
+                request.onerror = () => { backdropsDbPromise = null; reject(request.error); };
+                request.onblocked = () => { backdropsDbPromise = null; reject(new Error('IndexedDB blocked')); };
+            });
+        }
+        return backdropsDbPromise.then(db => new Promise((resolve, reject) => {
+            const transaction = db.transaction('files', mode);
+            let result = null;
+            work(transaction.objectStore('files'), r => { result = r; });
+            transaction.oncomplete = () => resolve(result);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error('aborted'));
+        }));
+    }
+
     // ---- Notifications (via the service worker: Chrome Android has no `new Notification()`) ----
 
     let swRegistration = null;
@@ -463,6 +495,17 @@
                 return item && item.blob ? new Uint8Array(await item.blob.arrayBuffer()) : null;
             },
             del: name => soundsTx('readwrite', store => { store.delete(name); }),
+        },
+
+        backdrops: {
+            put: (name, bytes, type) => backdropsTx('readwrite', store => {
+                store.put({ type: type || '', blob: new Blob([bytes], { type: type || 'application/octet-stream' }) }, name);
+            }),
+            del: name => backdropsTx('readwrite', store => { store.delete(name); }),
+            list: () => backdropsTx('readonly', (store, set) => {
+                const request = store.getAllKeys();
+                request.onsuccess = () => set((request.result || []).map(String));
+            }),
         },
 
         blobs: {
