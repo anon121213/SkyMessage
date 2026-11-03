@@ -3,14 +3,15 @@
    sky would be too heavy for budget phones, and over the soft sky the blur would barely show. Press = spring scale
    (transform only); the erase key and the optional fingerprint key are plain glyphs. No glows. */
 
+/* Keys grow with the screen height (56–76 px): short phones keep the whole screen without scrolling. */
 .pcpad {
-    --pc-key: clamp(3.75rem, 10.5vh, 4.75rem);
+    --pc-key: clamp(3.5rem, 10.5vh, 4.75rem);
     --pc-gap-x: clamp(1.25rem, 6vw, 1.75rem);
-    --pc-gap-y: clamp(0.75rem, 2.2vh, 1.125rem);
+    --pc-gap-y: clamp(0.625rem, 2.2vh, 1.125rem);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: clamp(1.5rem, 4.5vh, 2.25rem);
+    gap: clamp(1.25rem, 4.5vh, 2.25rem);
     -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;

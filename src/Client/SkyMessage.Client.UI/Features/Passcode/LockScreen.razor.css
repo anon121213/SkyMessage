@@ -42,11 +42,10 @@
     align-items: center;
 }
 
-/* The call capsule lives in a fixed-height strip, so the screen does not jump when a call starts or ends. */
+/* "Back to the call": a strip at the top while a call is live. */
 .lock__top {
     display: flex;
     justify-content: center;
-    min-height: 2.75rem;
     width: 100%;
 }
 
@@ -179,4 +178,22 @@
 
 .lock__forgot-actions ::deep .sm-btn {
     flex: 1 1 8rem;
+}
+
+/* Short phones (and a live call's strip on them): everything stays on one screen. */
+@media (max-height: 619.98px) {
+    .lock__head {
+        padding-top: 0;
+        margin-bottom: 1rem;
+    }
+
+    .lock__head ::deep .lock__logo {
+        margin-bottom: 0.5rem;
+    }
+
+    .lock__forgot {
+        margin-top: 0.375rem;
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
 }

@@ -23,18 +23,18 @@
         <SkyBackdrop Comet="false" />
         <div class="lock__scroll">
             <div class="lock__column">
-                <div class="lock__top">
-                    @if (CallLive)
-                    {
+                @if (CallLive)
+                {
+                    <div class="lock__top">
                         <button type="button" class="lock__call" @onclick="CallUi.Expand">
                             <span class="lock__call-icon" aria-hidden="true"><Icon Name="@IconNames.Phone" Size="15" StrokeWidth="2.4" /></span>
                             <span>@(Calls.Incoming is not null && !CallUi.IsLive(Calls.Current) ? L["passcode.lock.incomingCall"] : L["passcode.lock.backToCall"])</span>
                         </button>
-                    }
-                </div>
+                    </div>
+                }
 
                 <header class="lock__head">
-                    <Logo Size="60" Mark="true" Animated="true" Class="lock__logo" />
+                    <Logo Size="@(Layout.Height is > 0 and < 620 ? 44 : 60)" Mark="true" Animated="true" Class="lock__logo" />
                     <h1 id="lock-title" class="lock__title">@L["passcode.lock.title"]</h1>
                     <p class="lock__hint @(_hintIsError || paused ? "lock__hint--error" : null)" aria-live="polite">@HintText(paused)</p>
                 </header>
@@ -94,6 +94,7 @@
         AppLock.Changed += OnLockChanged;
         Lifecycle.ForegroundChanged += OnForegroundChanged;
         RenderOn(h => Calls.Changed += h, h => Calls.Changed -= h);
+        RenderOn(h => Layout.Changed += h, h => Layout.Changed -= h);
         OnDispose(() =>
         {
             AppLock.Changed -= OnLockChanged;

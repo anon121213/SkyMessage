@@ -444,7 +444,7 @@ MessageCircleMore MessageCircleOff MessageCirclePlus MessageSquare MessageSquare
 Minimize2 Minus Monitor MonitorOff MonitorSmartphone MonitorUp Moon Music Network OctagonAlert Paintbrush Palette
 PanelLeft PanelRight Paperclip Pause PawPrint Pencil Phone PhoneCall PhoneForwarded PhoneIncoming PhoneMissed
 PhoneOff PhoneOutgoing PictureInPicture2 Pin PinOff Plane Play PlugZap Plus QrCode Quote RefreshCcw RefreshCw
-Reply Rewind RotateCcw RotateCw Save ScanFace ScanQrCode ScreenShare ScreenShareOff ScrollText Search SearchX Send
+Reply Rewind RotateCcw RotateCw Save ScanQrCode ScreenShare ScreenShareOff ScrollText Search SearchX Send
 SendHorizontal Server ServerOff Settings Settings2 Share Share2 Shield ShieldAlert ShieldBan ShieldCheck Shrink
 Signal SignalHigh SignalLow SignalMedium SlidersHorizontal Smartphone Smile SmilePlus Sparkles Speaker Square
 SquareCheck SquarePen Star Strikethrough Sun SunMoon SwatchBook SwitchCamera TabletSmartphone ThumbsUp Ticket
