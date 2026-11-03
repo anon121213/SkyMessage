@@ -30,7 +30,10 @@ public interface IRealtimeClient
 
     Task ChatMembersChanged(ChatRefEvent e);
 
-    /// <summary>Pin / archive / mute changed on another device of the same user.</summary>
+    /// <summary>
+    /// Pin / archive / mute changed on another device of the same user, or a new message brought an archived chat back to
+    /// the list (<see cref="ChatListSettingsDto.KeepArchived"/> off).
+    /// </summary>
     Task ChatSettingsChanged(ChatSettingsChangedEvent e);
 
     /// <summary>The user rearranged their pinned chats (sent to all of the user's devices, the acting one included).</summary>

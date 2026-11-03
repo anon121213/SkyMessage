@@ -60,8 +60,8 @@ html[data-fx="lite"] .folder-tabs__track {
     position: absolute;
     inset: 0;
     border-radius: inherit;
+    /* Flat: the screen's one glow belongs to the compose orb (docs/DESIGN.md, "No AI clichés"). */
     background: var(--sm-grad);
-    box-shadow: var(--sm-glow-s);
     transition: opacity var(--sm-dur-fast) ease;
 }
 
