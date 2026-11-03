@@ -35,10 +35,8 @@
   // result stays an object URL for the session, with the picture's average color (its tone: the chat screen's edges
   // fade into it); the page shows them through --sm-sky-photo / --sm-chat-photo and --sm-sky-tone / --sm-chat-tone.
   var PHOTO_BLUR_PX = 28;
-  var PHOTO_CACHE = 32;
   var photoJobs = {};
   var photoUrls = {};
-  var photoOrder = [];
   var photoApplied = {};
   var photoSeq = 0;
   var photoDbPromise = null;
@@ -181,33 +179,12 @@
 
   function photoLevel(level) { return Math.max(0, Math.min(100, Math.round(level || 0))); }
 
-  function touchPhoto(key) {
-    var index = photoOrder.indexOf(key);
-    if (index >= 0) photoOrder.splice(index, 1);
-    photoOrder.push(key);
-  }
-
-  function trimPhotos() {
-    var index = 0;
-    while (photoOrder.length > PHOTO_CACHE && index < photoOrder.length) {
-      var key = photoOrder[index];
-      if (photoApplied.sky === key || photoApplied.chat === key) { index++; continue; }
-      photoOrder.splice(index, 1);
-      if (photoUrls[key]) URL.revokeObjectURL(photoUrls[key].url);
-      delete photoUrls[key];
-      delete photoJobs[key];
-    }
-  }
-
   // { url, tone } of the picture at `src` with blur `level` (0..100): an object URL and its average color; null when
   // it cannot be loaded (tried again next time).
   function photo(src, level) {
     level = photoLevel(level);
     var key = src + '|' + level;
-    if (photoJobs[key]) {
-      if (photoUrls[key]) touchPhoto(key);
-      return photoJobs[key];
-    }
+    if (photoJobs[key]) return photoJobs[key];
     var job = loadPhoto(src)
       .then(function (blob) { return blob ? bakePhoto(blob, level) : null; })
       .then(null, function () { return null; });
@@ -215,9 +192,8 @@
     job.then(function (result) {
       if (photoJobs[key] !== job) { if (result) URL.revokeObjectURL(result.url); return; }
       if (!result) { delete photoJobs[key]; return; }
+      // Kept for the session: the page (and a chat's inline style from .NET) may still show any of them.
       photoUrls[key] = result;
-      touchPhoto(key);
-      trimPhotos();
     });
     return job;
   }

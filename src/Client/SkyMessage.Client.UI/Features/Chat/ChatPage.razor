@@ -38,7 +38,7 @@
        chat.js attachChrome publishes the chrome's sizes (--chat-stack-h / --chat-bottom-h; ChatPage.razor.css derives
        --chat-top-h from them), which the list pads itself by. *@
     <div class="chat @(_selecting ? "chat--selecting" : null) @(Protected ? "chat--protected" : null)" @ref="_root" data-chat-root
-         style="@Backdrops.ChatStyle(ChatId)">
+         style="@BackdropStyle()">
         @* A calm sky to read over: the drifting light and (at night) the stars (the kit's defaults: no comet) — or the
            chat's own background ("Фон чата" in the header menu: its tokens inline on this root, BackdropPainter). *@
         <SkyBackdrop Variant="SkyVariant.Chat" Class="chat__sky" />
@@ -230,6 +230,11 @@
     private bool _guardClosed;
     private readonly object _guardLock = new();
 
+    private string? _backdropStyle;
+
+    /// <summary>This chat's own background as inline tokens (null: the chats' one), remembered for change checks.</summary>
+    private string? BackdropStyle() => _backdropStyle = Backdrops.ChatStyle(ChatId);
+
     [Parameter] public Guid ChatId { get; set; }
     /// <summary>Jump target from search ("/chat/{id}?seq=123").</summary>
     [SupplyParameterFromQuery(Name = "seq")] public long? Seq { get; set; }
@@ -303,7 +308,10 @@
         Realtime.ChatRemoved += removed;
         OnDispose(() => Realtime.ChatRemoved -= removed);
         RenderOn(h => CallUi.CoveringChanged += h, h => CallUi.CoveringChanged -= h);
-        RenderOn(h => Backdrops.Changed += h, h => Backdrops.Changed -= h);
+        // Only when this chat's own background looks different now (settings, theme, a photo that arrived).
+        Action backdrop = () => { if (Backdrops.ChatStyle(ChatId) != _backdropStyle) RequestRender(); };
+        Backdrops.Changed += backdrop;
+        OnDispose(() => Backdrops.Changed -= backdrop);
     }
 
     protected override async Task OnParametersSetAsync()
