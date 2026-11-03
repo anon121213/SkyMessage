@@ -8,8 +8,8 @@ public interface IMediaAccessService
 {
     /// <summary>
     /// May <paramref name="viewerId"/> read media <paramref name="mediaId"/> (owned by <paramref name="ownerId"/>)?
-    /// Yes for the owner; for the current avatar, an avatar-history photo or the cover photo of a user whose profile
-    /// photo the viewer may see; for the current or a history avatar of a chat the viewer is a member of; and for an
+    /// Yes for the owner; for the current avatar, an avatar-history photo (while there is a current one) or the cover
+    /// photo of a user whose profile photo the viewer may see; for the current or a history avatar of a chat the viewer is a member of; and for an
     /// attachment of a non-deleted message that is visible to the viewer in a chat they are a member of. Positive
     /// answers are cached for 60 s.
     /// </summary>
@@ -62,10 +62,11 @@ internal sealed class MediaAccessService(IAppDbContext db, IPrivacyService priva
         if (chatAvatar) return true;
 
         // Profile photos (current, earlier ones, the cover) are always the user's own uploads, so the owner is the only
-        // candidate (primary-key lookup).
+        // candidate (primary-key lookup). Earlier photos are shown only while there is a current one (as their list is).
         var isOwnersPhoto = await db.Users.AnyAsync(u => u.Id == ownerId && !u.IsDeleted
                                                          && (u.AvatarMediaId == mediaId || u.CoverMediaId == mediaId
-                                                             || db.AvatarPhotos.Any(a => a.UserId == ownerId && a.MediaId == mediaId)),
+                                                             || (u.AvatarMediaId != null
+                                                                 && db.AvatarPhotos.Any(a => a.UserId == ownerId && a.MediaId == mediaId))),
             cancellationToken);
         return isOwnersPhoto && await privacy.CanSeeProfilePhotoAsync(viewerId, ownerId, cancellationToken);
     }

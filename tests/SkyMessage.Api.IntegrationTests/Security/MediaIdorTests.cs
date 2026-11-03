@@ -202,13 +202,22 @@ public sealed class MediaIdorTests(ApiFactory factory)
         using (var blocked = await MediaKit.GetSignedAsync(factory, ApiRoutes.Media.ContentPath(avatar.Id, frank.Sign(avatar.Id))))
             await blocked.ShouldBeProblemAsync(HttpStatusCode.NotFound, ErrorCodes.MediaNotFound);
 
-        // A replaced avatar is no longer reachable through the profile rule.
+        // A replaced avatar stays in the avatar history under the same rule (blocked people still see nothing) ...
         var next = await MediaKit.UploadPhotoAsync(alice, "me2.jpg");
         await alice.Client.PutJsonAsync<MeDto>(ApiRoutes.Users.MeAvatar, new SetAvatarRequest { MediaId = next.Id });
         var stranger = await factory.RegisterUserAsync("stranger");
         using (var old = await MediaKit.GetSignedAsync(factory, ApiRoutes.Media.ContentPath(avatar.Id, stranger.Sign(avatar.Id))))
-            await old.ShouldBeProblemAsync(HttpStatusCode.NotFound, ErrorCodes.MediaNotFound);
+            await old.ShouldHaveStatusAsync(HttpStatusCode.OK);
         using (var current = await MediaKit.GetSignedAsync(factory, ApiRoutes.Media.ContentPath(next.Id, stranger.Sign(next.Id))))
             await current.ShouldHaveStatusAsync(HttpStatusCode.OK);
+        using (var blockedOld = await MediaKit.GetSignedAsync(factory, ApiRoutes.Media.ContentPath(avatar.Id, frank.Sign(avatar.Id))))
+            await blockedOld.ShouldBeProblemAsync(HttpStatusCode.NotFound, ErrorCodes.MediaNotFound);
+
+        // ... and is no longer reachable once deleted from it.
+        using (var delete = await alice.Client.SendJsonAsync(HttpMethod.Delete, ApiRoutes.Users.MeAvatarByIdPath(avatar.Id)))
+            await delete.ShouldHaveStatusAsync(HttpStatusCode.OK);
+        var latecomer = await factory.RegisterUserAsync("latecomer");
+        using (var deleted = await MediaKit.GetSignedAsync(factory, ApiRoutes.Media.ContentPath(avatar.Id, latecomer.Sign(avatar.Id))))
+            await deleted.ShouldBeProblemAsync(HttpStatusCode.NotFound, ErrorCodes.MediaNotFound);
     }
 }
