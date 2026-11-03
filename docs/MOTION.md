@@ -61,6 +61,8 @@ Rules:
 | Message | long-press | message menu with reactions (existing); the bubble lifts slightly |
 | Composer mic | tap / hold / slide left / slide up | switch voice↔video / record / cancel / lock (existing) |
 | Media viewer | swipe sideways / down, pinch, double-tap | next-prev / close / zoom (existing) |
+| Avatar viewer (profile, group info, chat header photo) | swipe sideways / down, pinch, double-tap | earlier-later photo of the history / close / zoom; it grows out of the tapped avatar and flies back into it (viewer.js) |
+| Avatar crop editor | drag, pinch, wheel, slider | pan / zoom 1–5× (the photo always covers the square); rotate and flip glide 240 ms |
 | Expanded call screen | drag down | minimize to the call bar |
 | Bottom sheet, phone menu | drag down | close (existing) |
 | In-app notification banner | swipe up | dismiss (existing) |
@@ -71,8 +73,8 @@ Coexistence:
   list does not scroll under it (it scrolls by itself near the edges). Before the lift, swipes and scrolling win.
 - Swipe-back only claims **rightward** horizontal pans; message swipe-to-reply only **leftward**; chat list items
   claim both but live on a root page (no swipe-back there).
-- An element that owns horizontal drags itself (sliders, horizontal scrollers, the PiP window, the media viewer, the
-  composer, the recorder) carries `data-no-swipe-back`; swipe-back never starts inside it.
+- An element that owns horizontal drags itself (sliders, horizontal scrollers, the PiP window, the media and avatar
+  viewers, the crop editor, the composer, the recorder) carries `data-no-swipe-back`; swipe-back never starts inside it.
 - A recognizer decides its axis after ~8px (`|dx| > 1.5·|dy|` for horizontal) and only then captures the pointer, so
   vertical scrolling stays native (`touch-action: pan-y` on horizontally swipeable surfaces).
 - The Android system back gesture keeps the screen edges; ours starts 24px in.

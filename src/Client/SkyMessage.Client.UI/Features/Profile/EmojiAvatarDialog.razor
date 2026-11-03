@@ -16,7 +16,7 @@
         {
             var index = i;
             var (from, to) = AvatarPalette.Pairs[i];
-            <ColorSwatch Color="@($"linear-gradient(145deg, {from} 0%, {to} 100%)")" RingColor="@to" Label="@($"{L["avatar.emoji.background"]} {index + 1}")"
+            <ColorSwatch Size="32" Color="@($"linear-gradient(145deg, {from} 0%, {to} 100%)")" RingColor="@to" Label="@($"{L["avatar.emoji.background"]} {index + 1}")"
                          Selected="@(_palette == index)" OnClick="() => _palette = index" />
         }
     </div>

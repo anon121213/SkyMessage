@@ -57,7 +57,7 @@ else
         <div class="profile__head">
             <div class="profile__portrait">
                 <span class="profile__ring" aria-hidden="true"></span>
-                <UserAvatar UserId="user.Id" Embedded="user" Size="124" ShowOnline="@(!isMe && !user.IsDeleted)" OnClick="ViewPhotoAsync" Class="profile__avatar" />
+                <UserAvatar UserId="user.Id" Embedded="user" Size="124" ShowOnline="@(!isMe && !user.IsDeleted)" OnClick="ViewPhoto" Class="profile__avatar" />
             </div>
             @* The mark one header height above the name's bottom drives the app bar's compact title (HeaderTitleWatcher):
                the name counts as gone once it has slid under the floating header, not when it leaves the screen. *@
@@ -364,7 +364,7 @@ else
         else if (choice?.Value == "copy") await Share.CopyAsync(phone);
     }
 
-    private void ViewPhotoAsync()
+    private void ViewPhoto()
     {
         if (User is { AvatarMediaId: not null } user) Avatars.ViewUser(user);
     }

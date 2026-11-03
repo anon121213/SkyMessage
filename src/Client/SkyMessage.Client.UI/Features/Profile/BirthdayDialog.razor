@@ -16,12 +16,13 @@
     {
         <p class="bday__privacy"><Icon Name="@IconNames.Eye" Size="16" />@who</p>
     }
-</div>
-<DialogActions>
     @if (Auth.Me?.Birthday is not null)
     {
-        <Button Variant="ButtonVariant.DangerGhost" Disabled="_saving" OnClick="RemoveAsync" Class="bday__remove">@L["birthday.remove"]</Button>
+        <Button Variant="ButtonVariant.DangerGhost" Size="ButtonSize.Small" Icon="@IconNames.Trash2" Disabled="_saving" OnClick="RemoveAsync"
+                Class="bday__remove">@L["birthday.remove"]</Button>
     }
+</div>
+<DialogActions>
     <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
     <Button Loading="_saving" OnClick="SaveAsync">@L["common.save"]</Button>
 </DialogActions>

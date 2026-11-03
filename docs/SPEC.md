@@ -197,6 +197,27 @@ session's key (cached 5 min, evicted on revoke), `MediaSignature.Verify`.
 `Photo`, `Ready`), phone `PUT/DELETE` (libphonenumber; region = `DefaultRegion` ?? caller's phone region ??
 "RU"; valid; E.164; taken → 409 `phone_taken`; optional FindByPhone update), privacy `GET/PUT`.
 Any profile/privacy/phone/avatar change sends `UserChanged` to related users **and the caller's own user**.
+
+**Avatar history** (`AvatarPhoto`, shared with groups, `AvatarHistory` in Application/Common): every photo that
+becomes the avatar is kept (newest `SetAt` first, at most `Limits.AvatarHistoryMax` = 30, the oldest go); setting a
+photo of the history again moves it to the front. `DELETE api/users/me/avatar` leaves no photo and drops that photo
+from the history (older ones stay); `DELETE api/users/me/avatars/{mediaId}` drops one photo — the current one is
+replaced by the newest remaining (none left → no photo); unknown → 404 `media_not_found`.
+`GET api/users/{id}/avatars` → `AvatarPhotoDto[]` (current first): for others only while the person has a current
+photo and `CanSeeProfilePhoto` allows it, else `[]`; unknown/deleted users → 404. The migration put every current
+avatar into its history.
+
+**Profile extras**: `PATCH api/users/me` also takes `ProfileColor` (a `ProfileStyle.Colors` key, "" = none) and
+`Links` (≤ `Limits.ProfileLinksMax` = 3, the whole list; URLs normalized by `ProfileStyle.NormalizeLinkUrl`: absolute
+http/https with a host, "https://" added, ≤ 512 chars; titles ≤ 32; duplicates dropped; anything else 400
+`validation_failed`). `PUT api/users/me/cover {Gradient | MediaId}` (a `ProfileStyle.CoverGradients` key or the
+caller's own `Ready` photo, exactly one) / `DELETE`. `PUT api/users/me/birthday {Day, Month, Year?}` (`Birthdays.IsValid`:
+a real date, Feb 29 needs a leap year when the year is given, year ≥ 1900, not in the future) / `DELETE`.
+What others see: `UserSummaryDto.ProfileColor` and `.Birthday` (per the **Birthday** privacy level, default
+Contacts; the year only if given), `UserProfileDto.Cover` (a photo cover follows the ProfilePhoto level; then the
+gradient is gone) and `.Links`. Someone who blocked the viewer (or a deleted account) shows none of it. Old apps
+save privacy without `Birthday`: a missing `PrivacySettingsDto.Birthday` keeps the stored level. Account deletion
+clears all of it and the avatar history.
 `GET api/users/{id}`, `GET api/users/by-username/{username}` → `UserProfileDto` (viewer-dependent).
 `POST api/users/batch {userIds ≤ 200}` → `UserSummaryDto[]` (unknown ids skipped).
 `GET api/users/search?q=` (`Search` limit): q ≥ 2 after stripping `@`. Matches: contacts and members of my
@@ -209,11 +230,15 @@ users and users who blocked me. Contacts first, then exact username match. Limit
 **Contacts/blocks**: `GET/POST api/contacts`, `POST api/contacts/bulk`, `PATCH/DELETE api/contacts/{userId}`
 (idempotent, no self → `cannot_target_self`, `IsMutual`), `GET api/blocks`, `PUT/DELETE api/blocks/{userId}`;
 both send `ContactsChanged` to the caller's user (blocks also `UserChanged` to both sides).
+Phone-book sync: `POST api/contacts/bulk {Synced: true}` marks new contacts `ContactSource.PhoneSync`
+(`ContactDto.IsSynced`; existing contacts stay as they are); adding, importing (bulk without `Synced`) or renaming a
+synced contact makes it Manual. `DELETE api/contacts/synced` → `{Removed}` removes only the synced ones.
 
 **Privacy** (`IPrivacyService`): blocks first — if the owner blocked the viewer every level is Nobody.
 `CanMessage(from,to)`: not blocked AND (`to.Messages == Everybody` OR `to` has `from` in contacts OR `to`
 already sent a message in their private chat); Nobody ≈ Contacts. `CanCall` per `to.Calls`.
-`CanAddToGroup` per `GroupInvites` (Nobody ≈ Contacts). `CanSeeProfilePhoto` per `ProfilePhoto`.
+`CanAddToGroup` per `GroupInvites` (Nobody ≈ Contacts). `CanSeeProfilePhoto` per `ProfilePhoto` (also the avatar
+history and a photo cover). Birthday per `Birthday` (Nobody means nobody).
 
 **Presence**: online = any *active* connection (`SetActive`; connections start active). Online↔offline
 transitions update `LastSeenAt` and send `PresenceChanged` to related users with the per-viewer
@@ -254,7 +279,11 @@ Chats:
   (403 `privacy_restricted`/`user_blocked`) and create with the peer's row `IsHidden = true`.
 - `POST api/chats/groups` → `CreateGroupResultDto`: title 1..128, avatar must be the caller's own
   `Ready` Photo, members via `CanAddToGroup` (failures returned), creator Owner, system `ChatCreated`.
-- `PATCH api/chats/{id}`, avatar `PUT/DELETE` (caller's own Photo), system messages, `ChatUpdated`.
+- `PATCH api/chats/{id}`, avatar `PUT/DELETE` (caller's own Photo, or one of the group's avatar history — any admin
+  may set it again), system messages, `ChatUpdated`. The group's avatar history works like a profile's:
+  `GET api/chats/{id}/avatars` (members), `DELETE api/chats/{id}/avatars/{mediaId}` (who may change the info; the
+  current one → the newest remaining takes over with `PhotoChanged`, or `PhotoRemoved`), `ChatUpdated` either way;
+  removing the avatar drops it from the history; a group created with a photo starts its history.
 - Members: add (AddMembers permission or admin; **banned users: only admins can add, which lifts the ban**),
   remove (admin; owner removes admins; creates a `ChatBan`; then calls every `IChatMembershipObserver`),
   role (owner; Owner = transfer), leave (ownership passes to the oldest admin, else oldest member; last
@@ -328,14 +357,15 @@ Messages:
   Replace chunks, update metadata, `Ready`, then `MediaProcessed` to the owner (also on `Failed`). Missing
   ffmpeg → store as-is and log.
 - `GET api/media/{id}/content?t=&download=1`, `.../thumbnail?t=` (anonymous endpoints): require a bearer
-  user or a valid `?t=` signature for that media id. Access: owner; or current `users.avatar_media_id` of
-  a user whose photo the viewer may see (`CanSeeProfilePhoto`); or current avatar of a chat the viewer is
-  a member of; or attached to a non-deleted message in a chat where the viewer is a member and the message
-  is visible to them. Positive checks cached 60 s. Seekable chunk-backed stream with `EnableRangeProcessing`,
+  user or a valid `?t=` signature for that media id. Access: owner; or the current avatar, a photo of the avatar
+  history or the cover photo of a user whose photo the viewer may see (`CanSeeProfilePhoto`); or the current or a
+  history avatar of a chat the viewer is a member of; or attached to a non-deleted message in a chat where the viewer
+  is a member and the message is visible to them. Positive checks cached 60 s. Seekable chunk-backed stream with `EnableRangeProcessing`,
   `ETag`, `Cache-Control: private, max-age=31536000, immutable`, `nosniff`, `CSP: sandbox`; Files and
   dangerous types (html, svg, xml, js) → `attachment` (+ octet-stream when dangerous).
 - `GET api/media/{id}` → `MediaDto` (same access rule).
-- Cleanup hourly: `Uploading` older than `IncompleteUploadTtlHours`; unreferenced `Ready` media older than 7 days.
+- Cleanup hourly: `Uploading` older than `IncompleteUploadTtlHours`; unreferenced `Ready` media older than 7 days
+  (avatar histories and covers count as references).
 
 ### 6.5 Calls (backend-calls)
 
@@ -376,7 +406,7 @@ Messages:
 | MessagesRead | chat members | read up to seq |
 | Typing | other members (not blockers) | hub SendTyping |
 | ChatAdded | the user(s) | new group, added, joined, first private message, unhide |
-| ChatUpdated | members | title/description/avatar/permissions/member count/active call/content protection |
+| ChatUpdated | members | title/description/avatar (and its history)/permissions/member count/active call/content protection |
 | ChatRemoved | the user(s) | left, removed, group deleted |
 | ChatMembersChanged | members | add/remove/role |
 | ChatSettingsChanged | caller's user | pin/archive/mute/contact bar closed |
@@ -384,7 +414,7 @@ Messages:
 | HistoryCleared | caller / both | clear history |
 | PinnedMessagesChanged | members | pin/unpin |
 | PresenceChanged | related users (per-viewer privacy, not blocked) | online/offline |
-| UserChanged | related users + the user's own devices | profile/privacy/phone/avatar/blocks |
+| UserChanged | related users + the user's own devices | profile/privacy/phone/avatar (and its history)/birthday/color/cover/links/blocks |
 | ContactsChanged | caller's user | contacts/blocks |
 | MediaProcessed | uploader | processing finished |
 | IncomingCall / CallUpdated | participants (group: members) | call lifecycle |
@@ -452,6 +482,19 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   decline. Incoming in background → `ShowIncomingCallAsync`.
 - **INotificationCoordinator** per its doc; badge = `TotalUnread` via `SetBadgeCountAsync`; notification taps
   open `DeepLinks.AppChatUri(chatId)`.
+- **IBirthdayService** (`Services/Birthdays.cs`): contacts whose birthday (as their privacy shows it) is today
+  (`Celebrating`, with the age when the year shows), the chat list's card closable for the day (`IAccountLocalStore`),
+  `IsBirthdayToday(user)` for the 🎂 next to anyone's name, and reminders at 10:00 local time for the next 14 days
+  through `IReminderNotificationService` (one per person, linking to their chat or profile; scheduled again at every
+  start, on contact/birthday/setting changes and after midnight; nothing with
+  `NotificationSettings.BirthdayReminders` off). Texts from the UI's `IReminderTexts` ("Сегодня день рождения: Анна":
+  the name after a colon needs no case ending).
+- **IContactSyncService** (`Services/ContactSync.cs`, `ContactsSettings.SyncPhoneContacts`, per device): with the
+  contacts permission (never asked for by itself — only when the user turns it on) it reads the phone book at sign-in
+  / app start and on `IDeviceContactsWatcher.Changed` (debounced 5 s), matches like the import, adds the people found
+  as synced contacts and announces each newcomer once ("X теперь в SkyMessage", `IReminderNotificationService`). The
+  first sync is quiet; people it ever found are remembered per account, so someone removed by hand is not brought
+  back. `RemoveSyncedAsync` deletes the synced contacts on the server, turns sync off and forgets them.
 - **IClientBootstrapper** per its doc (no network wait; owns sign-in/out cleanup; enables
   `IBackgroundConnectionService` according to `KeepConnectedInBackground`).
 - **ILinkBuilder**: `ServerInfoDto.PublicBaseUrl ?? BaseUri` + `DeepLinks.*Path`.
@@ -518,6 +561,18 @@ right-click), Toast, Tabs, SegmentedControl, ProgressRing, QrCode (QRCoder PNG d
 "classic"/"soft"/"bright", ringback, busy, call-end, plus the user's own sounds; `PlayMessageTone(key)`,
 `StartRingtone(key)`, `StartRingback()`, `Stop()`), `FormatService`
 (times, durations, sizes, last-seen phrases), `IMessagePreviewFormatter`, JS wrapper for `app.js`), and
+Avatars and profiles (Features/Profile): `AvatarOverlays` (scoped; `AvatarOverlayHost` in MainLayout) opens the
+**avatar viewer** from a profile, group info or the chat header — the media viewer's night and gestures (viewer.js:
+grows out of the tapped avatar, pinch/wheel/double-tap zoom, swipe through the history, swipe down to close), my own
+photos and a group's I may change: set as main, delete — and the **crop editor** (avatar.js: squircle preview over a
+dimmed veil, drag/pinch/wheel/slider zoom 1–5×, quarter turns, flip; Done draws a 1024 px JPEG on the device).
+`AvatarFlows` turns gallery/camera picks (pre-shrunk to 2048 px by the device's compressor, HEIC included) and the
+emoji maker (`EmojiAvatarDialog`: an emoji on an `AvatarPalette` gradient) into prepared photos that
+`AvatarUploader` sends as they are. `ProfileLook` maps profile colors to the accent pairs (ring, main action, a soft
+cover wash, sender names in groups) and cover keys to calm skies for both themes. Settings › Profile edits links,
+color, cover (gradients or a photo) and the birthday (`BirthdayDialog`); Privacy has the Birthday level;
+Notifications the birthday reminders switch; the chat list shows `BirthdayCard`; the phone-book page offers sync.
+
 features: Auth (welcome with server picker + connection test, login, register with live username check
 and invite code when required), ChatList (avatar, title, preview incl. "Draft:", sender for groups, time,
 unread + mention badges, pinned/muted marks, typing preview, actions pin/mute/archive/delete, archived
@@ -654,6 +709,10 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   (transient focus for ringing, calls, recordings), BackgroundConnectionService (low-priority persistent foreground
   service + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
+  ReminderNotificationService (Android: "Reminders" channel; future ones as inexact `setAndAllowWhileIdle` alarms whose
+  receiver posts the stored text, re-armed after reboot/update by `ReminderBootReceiver`; elsewhere unsupported — the
+  app reminds on the chat list), DeviceContactsWatcher (Android: a ContentObserver on the contacts provider while sync
+  is on; elsewhere unsupported),
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
   iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the

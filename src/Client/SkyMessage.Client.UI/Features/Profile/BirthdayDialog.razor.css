@@ -21,6 +21,11 @@
     color: var(--sm-text-2);
 }
 
+.bday ::deep .bday__remove {
+    align-self: flex-start;
+    margin-left: -10px;
+}
+
 .bday__privacy ::deep .sm-icon {
     flex-shrink: 0;
     color: var(--sm-accent);

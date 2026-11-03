@@ -110,7 +110,12 @@
                     <div class="sm-overline profile-look__label">@L["customize.color"]</div>
                     <div class="sm-swatches profile-look__swatches">
                         <ColorSwatch Color="var(--sm-surface-3)" RingColor="var(--sm-text-3)" Label="@L["customize.color.none"]" Selected="@(me.ProfileColor is null)"
-                                     Class="profile-look__none" OnClick="() => SetColorAsync(null)" />
+                                     Class="profile-look__none" OnClick="() => SetColorAsync(null)">
+                            @if (me.ProfileColor is not null)
+                            {
+                                <Icon Name="@IconNames.Ban" />
+                            }
+                        </ColorSwatch>
                         @foreach (var key in ProfileStyle.Colors)
                         {
                             if (ProfileLook.Accent(key) is not { } accent) continue;
@@ -119,7 +124,7 @@
                         }
                     </div>
                     <div class="sm-overline profile-look__label">@L["customize.cover"]</div>
-                    <div class="profile-look__covers" data-no-swipe-back>
+                    <div class="profile-look__covers">
                         <button type="button" class="profile-look__cover profile-look__cover--none @(me.Cover is null ? "is-selected" : null)"
                                 aria-pressed="@(me.Cover is null ? "true" : "false")" @onclick="() => SetCoverAsync(null)">
                             <span class="profile-look__tile"><Icon Name="@IconNames.Ban" /></span>
@@ -161,7 +166,7 @@
                 <ListItem Icon="@IconNames.Calendar" IconColor="@SettingsTones.Peach"
                           Title="@(me.Birthday is { } birthday ? ProfileLook.BirthdayText(Format, birthday) : L["birthday.add"])"
                           Meta="@(me.Birthday is null ? L["birthday.none"] : null)" Chevron="true" OnClick="EditBirthdayAsync" />
-                <ListItem Icon="@IconNames.Eye" IconColor="@SettingsTones.Violet" Title="@L["birthday.privacy.title"]"
+                <ListItem Icon="@IconNames.Eye" IconColor="@SettingsTones.Violet" Title="@L["birthday.whoSeesTitle"]"
                           Meta="@LevelName(me.Privacy.Birthday ?? PrivacyLevel.Contacts)" Chevron="true" OnClick="OpenPrivacy" />
             </Section>
 

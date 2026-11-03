@@ -29,5 +29,6 @@
   "birthday.privacy.hint": "Who sees your birthday and gets a reminder of it.",
   "birthday.reminders": "Birthdays",
   "birthday.reminders.hint": "A reminder at 10:00 on a contact's birthday",
-  "birthday.reminders.hintWeb": "A card above your chats on a contact's birthday"
+  "birthday.reminders.hintWeb": "A card above your chats on a contact's birthday",
+  "birthday.whoSeesTitle": "Who sees it"
 }

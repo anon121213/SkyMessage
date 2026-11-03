@@ -255,6 +255,11 @@ html[data-fx="lite"] .aeditor__bar {
     transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
 }
 
+/* The icon set draws this flip across a horizontal line; turned, it shows the mirror left to right that it does. */
+.aeditor__tool-orb ::deep .aeditor__flip-icon {
+    transform: rotate(90deg);
+}
+
 .aeditor__tool:active:not(:disabled) .aeditor__tool-orb {
     transform: scale(0.9);
     transition-duration: 90ms;

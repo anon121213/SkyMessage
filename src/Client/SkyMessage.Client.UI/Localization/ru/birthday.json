@@ -29,5 +29,6 @@
   "birthday.privacy.hint": "Кто видит ваш день рождения и получает напоминание о нём.",
   "birthday.reminders": "Дни рождения",
   "birthday.reminders.hint": "В 10:00 в день рождения контакта придёт напоминание",
-  "birthday.reminders.hintWeb": "В день рождения контакта над чатами появится карточка"
+  "birthday.reminders.hintWeb": "В день рождения контакта над чатами появится карточка",
+  "birthday.whoSeesTitle": "Кто видит"
 }
