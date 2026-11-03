@@ -267,11 +267,30 @@ Theme.Catalog.WallpaperCss(key, dark)   // background shorthand for preview tile
 Theme.Catalog.BubbleOutColor(hex, dark) // outgoing bubble color for previews
 ThemeCatalog.NormalizeHex("#6c5ce7")    // "#6C5CE7" or null (custom accent validation)
 await Theme.PreviewAsync(appearanceCopy); … await Theme.EndPreviewAsync();   // live preview without saving
+
+// Colors and backgrounds of one's own (SPEC §8.2): paints for previews and tiles, all per theme
+Theme.Catalog.OutgoingPaint(appearance, dark)   // BubblePaint(Background, Solid, Ink, Meta) of my bubbles as set
+Theme.Catalog.AccentBubble(hex, style, dark)    // my bubble in an accent, Gradient or Solid
+Theme.Catalog.CustomBubble(colors, dark)        // my own 1–2 colors
+Theme.Catalog.IncomingPaint(tintKey, dark)      // their bubbles; Theme.Catalog.IncomingTints: default, lavender, peach, mint, sky, sand
+Theme.Catalog.AppPaint(appearance, dark) / ChatPaint(appearance, dark) / Paint(backdrop, dark)
+                                                // BackdropPaint(Css, Base, Stars, Photo, Blur, Dim): a still picture of a background
+Theme.Catalog.Palette(appearance, dark)         // PreviewPalette: the tokens a mock screen needs to show one theme in the other
+Theme.Catalog.BackdropGradients                 // GradientPreset(Key, NameKey, Colors, Angle) for the gradient editor
+ThemeCatalog.Readable(stops, lightInk, darkInk) // the ink for a fill and the fill kept at ≥ 4.5:1 (Contrast, WorstContrast, Samples)
 ```
 
 Saving appearance = `Settings.UpdateAsync(s => s.Appearance.X = …)`; ThemeService re-applies automatically
-(CSS variables, `data-theme`, reduced motion, compact list, system bars via `ISystemUiService`). Accent names:
-`L[accent.NameKey]`, custom: `theme.accent.custom`; modes: `theme.mode.system|light|dark`.
+(CSS variables, `data-theme`, reduced motion, compact list, system bars via `ISystemUiService`, the pictures of the
+user's own backgrounds through boot.js). Accent names: `L[accent.NameKey]`, custom: `theme.accent.custom`; modes:
+`theme.mode.system|light|dark`; tints `theme.tint.*`; gradients `theme.gradient.*`. Backgrounds with photos are saved
+through `BackdropPhotoService` (Core: `ImportAsync(maxSide)` picks and stores a photo, `SetAppBackgroundAsync`,
+`SetChatDefaultAsync`, `SetChatAsync(chatId, backdrop?)`, `DiscardAsync`; unused photos are deleted by it).
+
+`BackdropPainter` (scoped) paints what the theme CSS cannot: `ChatStyle(chatId)` — inline CSS custom properties for
+the root of a chat with a background of its own (ChatPage puts it on `.chat`); `Url(photo, blur)` / `Image(photo, blur)`
+— a photo as the backgrounds show it (blur 0..100 baked in by boot.js; null until loaded, then `Changed` fires; use
+blur 0 plus a CSS `filter: blur()` for small live previews). Subscribe with `RenderOn(h => Painter.Changed += h, …)`.
 
 ### `LayoutService` (scoped)
 
@@ -582,9 +601,14 @@ Theme: `html[data-theme="light"|"dark"]`, plus `data-theme-mode`, `data-reduce-m
 **Tokens** — color: `--sm-accent --sm-accent-hover --sm-accent-soft --sm-on-accent --sm-link --sm-selection
 --sm-bg --sm-surface --sm-surface-2 --sm-surface-3 --sm-text --sm-text-2 --sm-text-3 --sm-border --sm-divider
 --sm-danger(-soft) --sm-success(-soft) --sm-warning(-soft) --sm-online --sm-scrim --sm-hover --sm-press`;
-bubbles: `--sm-bubble-out --sm-bubble-out-text --sm-bubble-out-meta --sm-bubble-in --sm-bubble-in-text
---sm-bubble-in-meta --sm-bubble-radius`; chat background: `--sm-chat-bg` (base color) + `--sm-chat-wallpaper`
-(full `background` shorthand: `background: var(--sm-chat-wallpaper); background-color: var(--sm-chat-bg);`);
+bubbles: `--sm-bubble-out-bg --sm-bubble-out --sm-bubble-out-text --sm-bubble-out-meta --sm-bubble-in --sm-bubble-in-text
+--sm-bubble-in-meta --sm-bubble-radius` (generated for the bubble style and tint in use; the ink keeps 4.5:1); chat
+background: `--sm-chat-bg` (base color; for a photo its tone under the veil) + `--sm-chat-wallpaper` (full `background`
+shorthand: `background: var(--sm-chat-wallpaper); background-color: var(--sm-chat-bg);`), and for SkyBackdrop's chat
+variant `--sm-chat-orb-1/2/3 --sm-chat-stars --sm-chat-clouds --sm-chat-photo --sm-chat-dim` (each falls back to the
+app sky's `--sm-orb-* --sm-stars --sm-clouds --sm-sky-photo --sm-sky-dim`); a photo background: `--sm-sky-photo` /
+`--sm-chat-photo` (a `url()`, set by boot.js on `<html>`, or inline for one chat), `--sm-sky-tone` / `--sm-chat-tone`
+(its average color), `--sm-sky-dim` / `--sm-chat-dim` (the veil, 0..1, over `--sm-bg`);
 shape/motion: `--sm-radius-s/m/l/xl --sm-shadow-1 --sm-shadow-2 --sm-ease --sm-ease-out --sm-dur --sm-dur-fast`;
 type/layout: `--sm-font --sm-font-mono --sm-font-size --sm-header-h --sm-tabbar-h --sm-rail-w --sm-sidebar-w
 --sm-info-w`; insets: `--sm-safe-top/bottom/left/right` and `--sm-kb-inset` (set by the MAUI host; **use the
@@ -655,8 +679,10 @@ swallow "page gone" errors. Your own feature JS (`chat.js`, `recorder.js`, `call
 separate ES module you import yourself (`IJSRuntime.InvokeAsync<IJSObjectReference>("import",
 "./_content/SkyMessage.Client.UI/js/chat.js")`).
 
-`boot.js` exposes `window.__smBoot` (theme) and `window.__smHistory` (overlay history) — use them only through
-`NavigationService`/`ThemeService`. `sounds.js` is used only through `ISoundService`.
+`boot.js` exposes `window.__smBoot` (theme, and `photo(src, blur)`: a background picture baked once per session) and
+`window.__smHistory` (overlay history) — use them only through `NavigationService`/`ThemeService`/`BackdropPainter`
+(app.js `backdropUrl(src, blur)` → `{ url, tone }`, `backdropMaxSide()` → the screen's long side in device pixels;
+`AppJs.BackdropUrlAsync` / `BackdropMaxSideAsync`). `sounds.js` is used only through `ISoundService`.
 
 ---
 
@@ -676,7 +702,10 @@ Reusable feature components: `UserPicker` / `UserPickerDialog` (Features/Contact
 `Exclude`, result `UserSummaryDto` or `IReadOnlyList<UserSummaryDto>` — e.g. "Forward to…" can use the chat list
 instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarViewerDialog`, `InviteFailuresDialog`,
 `ChatListItem`, `ChatActions`, `AddContactDialog`, `ServerPickerDialog` + `ServerStatus` (connection settings may
-reuse them; `ServerPickerDialog.Normalize(url)`).
+reuse them; `ServerPickerDialog.Normalize(url)`). Features/Settings: `ColorStrips` (our hue/vividness/lightness picker,
+`@bind`-style `Hex`/`HexChanged`), `GradientEditor` (1–3 color chips + strips, optional presets, palette and
+direction), `BackdropEditor` (DialogService content: `Target` App/ChatDefault/Chat, result `BackdropEditorResult`),
+`BackdropPreview` (a mock app screen or chat over a `BackdropPaint` in either theme), `BubbleColorsDialog`.
 
 ---
 

@@ -35,7 +35,7 @@
   // result stays an object URL for the session, with the picture's average color (its tone: the chat screen's edges
   // fade into it); the page shows them through --sm-sky-photo / --sm-chat-photo and --sm-sky-tone / --sm-chat-tone.
   var PHOTO_BLUR_PX = 28;
-  var PHOTO_CACHE = 16;
+  var PHOTO_CACHE = 32;
   var photoJobs = {};
   var photoUrls = {};
   var photoOrder = [];

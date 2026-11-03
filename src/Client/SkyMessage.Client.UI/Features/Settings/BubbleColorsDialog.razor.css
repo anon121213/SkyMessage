@@ -50,7 +50,6 @@
     line-height: 1.35;
     box-shadow: var(--sm-shadow-1);
     overflow-wrap: anywhere;
-    transition: background-color var(--sm-dur) ease, color var(--sm-dur) ease;
 }
 
 .bubble-pick__bubble--in {

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SkyMessage.Client.Core.Infrastructure;
 using SkyMessage.Client.Core.Platform;
@@ -45,6 +46,7 @@ public sealed class BackdropPhotoService : IDisposable
     private readonly IMediaCompressor _compressor;
     private readonly IBackdropImageStore _store;
     private readonly ISettingsService _settings;
+    private readonly IPreferencesStore _preferences;
     private readonly IRealtimeService _realtime;
     private readonly ILogger<BackdropPhotoService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -55,12 +57,13 @@ public sealed class BackdropPhotoService : IDisposable
     private bool _disposed;
 
     public BackdropPhotoService(IFilePickerService picker, IMediaCompressor compressor, IBackdropImageStore store, ISettingsService settings,
-        IRealtimeService realtime, ILogger<BackdropPhotoService> logger)
+        IPreferencesStore preferences, IRealtimeService realtime, ILogger<BackdropPhotoService> logger)
     {
         _picker = picker;
         _compressor = compressor;
         _store = store;
         _settings = settings;
+        _preferences = preferences;
         _realtime = realtime;
         _logger = logger;
         _referenced = BackdropRules.FileNamesIn(settings.Current.Appearance);
@@ -127,8 +130,17 @@ public sealed class BackdropPhotoService : IDisposable
                 Width = Math.Max(0, media.Width ?? 0),
                 Height = Math.Max(0, media.Height ?? 0),
             };
+            // Held before it exists: a cleanup running meanwhile must not take it.
             lock (_lock) _pending.Add(photo.FileName);
-            await _store.SaveAsync(photo.FileName, bytes, BackdropRules.Extensions[extension], cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _store.SaveAsync(photo.FileName, bytes, BackdropRules.Extensions[extension], cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                lock (_lock) _pending.Remove(photo.FileName);
+                throw;
+            }
             return new BackdropPhotoImport(photo, BackdropPhotoProblem.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -190,7 +202,10 @@ public sealed class BackdropPhotoService : IDisposable
         }
     }
 
-    /// <summary>Deletes stored pictures that no setting refers to and no editor holds.</summary>
+    /// <summary>
+    /// Deletes stored pictures that no setting refers to and no editor holds. The settings as stored count too: another
+    /// browser tab of the same device may have saved a picture this one's settings do not know yet.
+    /// </summary>
     public async Task CleanupAsync(CancellationToken cancellationToken = default)
     {
         if (!IsSupported) return;
@@ -198,11 +213,14 @@ public sealed class BackdropPhotoService : IDisposable
         try
         {
             var stored = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+            if (stored.Count == 0) return;
+            var saved = await StoredFileNamesAsync().ConfigureAwait(false);
+            if (saved is null) return;
             List<string> orphans;
             lock (_lock)
             {
                 var keep = BackdropRules.FileNamesIn(_settings.Current.Appearance);
-                orphans = stored.Where(name => !keep.Contains(name) && !_pending.Contains(name)).ToList();
+                orphans = stored.Where(name => !keep.Contains(name) && !saved.Contains(name) && !_pending.Contains(name)).ToList();
             }
             foreach (var name in orphans) await DeleteQuietlyAsync(name).ConfigureAwait(false);
             if (orphans.Count > 0) _logger.LogInformation("Removed {Count} unused background pictures", orphans.Count);
@@ -214,6 +232,23 @@ public sealed class BackdropPhotoService : IDisposable
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>The pictures the stored settings refer to; null when they cannot be read (then nothing is deleted).</summary>
+    private async Task<HashSet<string>?> StoredFileNamesAsync()
+    {
+        try
+        {
+            var json = await _preferences.GetAsync(SettingsService.Key).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(json)) return new HashSet<string>(StringComparer.Ordinal);
+            var stored = JsonSerializer.Deserialize<AppSettings>(json, SkyJson.Options);
+            return stored?.Appearance is { } appearance ? BackdropRules.FileNamesIn(appearance) : new HashSet<string>(StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "The stored settings could not be read for the picture cleanup");
+            return null;
         }
     }
 

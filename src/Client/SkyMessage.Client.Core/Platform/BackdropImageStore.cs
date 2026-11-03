@@ -24,18 +24,3 @@ public interface IBackdropImageStore
     /// </summary>
     string PageSource(string fileName);
 }
-
-/// <summary>Hosts without a place for pictures: backgrounds are gradients and skies only.</summary>
-public sealed class UnsupportedBackdropImageStore : IBackdropImageStore
-{
-    public bool IsSupported => false;
-
-    public Task SaveAsync(string fileName, byte[] content, string contentType, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("Background pictures are not supported on this device.");
-
-    public Task DeleteAsync(string fileName) => Task.CompletedTask;
-
-    public Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<string>>([]);
-
-    public string PageSource(string fileName) => "";
-}

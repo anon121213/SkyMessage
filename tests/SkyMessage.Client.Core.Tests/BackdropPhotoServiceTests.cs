@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
@@ -46,15 +47,15 @@ public sealed class BackdropPhotoServiceTests
         public IMediaCompressor Compressor { get; } = Substitute.For<IMediaCompressor>();
         public MemoryStore Store { get; } = new();
         public SettingsService Settings { get; }
+        public InMemorySecureStore Preferences { get; } = new();
         public IRealtimeService Realtime { get; } = Substitute.For<IRealtimeService>();
         public BackdropPhotoService Service { get; }
 
         public Rig()
         {
-            var prefs = new InMemorySecureStore();
-            Settings = new SettingsService(prefs, prefs, Substitute.For<IPlatformInfo>(), Log.For<SettingsService>());
+            Settings = new SettingsService(Preferences, Preferences, Substitute.For<IPlatformInfo>(), Log.For<SettingsService>());
             Compressor.CanCompressImages.Returns(true);
-            Service = new BackdropPhotoService(Picker, Compressor, Store, Settings, Realtime, Log.For<BackdropPhotoService>());
+            Service = new BackdropPhotoService(Picker, Compressor, Store, Settings, Preferences, Realtime, Log.For<BackdropPhotoService>());
         }
 
         /// <summary>The next pick returns a photo the compressor turns into <paramref name="bytes"/> of <paramref name="type"/>.</summary>
@@ -226,6 +227,34 @@ public sealed class BackdropPhotoServiceTests
         await rig.Service.DiscardAsync(held);
         await rig.Service.CleanupAsync();
         rig.Store.Files.Keys.ShouldBe([kept.FileName]);
+    }
+
+    [Fact]
+    public async Task Cleanup_keeps_a_photo_another_tab_saved_meanwhile()
+    {
+        var rig = new Rig();
+        await rig.Store.SaveAsync("bbbbbbbbbbbb.jpg", [1], "image/jpeg");
+        await rig.Store.SaveAsync("cccccccccccc.jpg", [2], "image/jpeg");
+        // Another tab of this browser saved settings that use one of them; this tab's settings do not know it.
+        var otherTab = new AppSettings();
+        otherTab.Appearance.ChatBackgrounds[Chat] = PhotoBackdrop(new BackdropPhoto { Id = "bbbbbbbbbbbb", Extension = ".jpg" });
+        await rig.Preferences.SetAsync(SettingsService.Key, JsonSerializer.Serialize(otherTab, SkyJson.Options));
+
+        await rig.Service.CleanupAsync();
+
+        rig.Store.Files.Keys.ShouldBe(["bbbbbbbbbbbb.jpg"]);
+    }
+
+    [Fact]
+    public async Task Unreadable_stored_settings_delete_nothing()
+    {
+        var rig = new Rig();
+        await rig.Store.SaveAsync("bbbbbbbbbbbb.jpg", [1], "image/jpeg");
+        await rig.Preferences.SetAsync(SettingsService.Key, "{ not json");
+
+        await rig.Service.CleanupAsync();
+
+        rig.Store.Files.Keys.ShouldBe(["bbbbbbbbbbbb.jpg"]);
     }
 
     [Fact]
