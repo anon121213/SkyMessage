@@ -181,7 +181,9 @@
     padding: 0 4px;
 }
 
-/* "Back to the default" sits on the left, away from Save. */
-.bd-edit ::deep .bd-edit__reset {
-    margin-right: auto;
+/* "Back to the default": a quiet capsule of its own, away from Save. */
+.bd-edit__reset {
+    display: flex;
+    justify-content: center;
+    padding-top: 2px;
 }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SkyMessage.Client.Core.Infrastructure;
 using SkyMessage.Client.Core.Platform;
 using SkyMessage.Client.Core.Settings;
+using SkyMessage.Contracts;
 
 namespace SkyMessage.Client.Core.Services;
 
@@ -30,7 +31,8 @@ public sealed record BackdropPhotoImport(BackdropPhoto? Photo, BackdropPhotoProb
 /// keeping it on this device (<see cref="IBackdropImageStore"/>), and forgetting pictures no setting refers to any
 /// more — whenever a background is replaced or reset, however the settings changed, and once after start for leftovers
 /// of an interrupted edit. A picture just picked belongs to the editor that picked it until a setting refers to it or
-/// the editor discards it. Singleton.
+/// the editor discards it. A chat that is gone for me (deleted, left, removed from) takes its background along.
+/// Singleton.
 /// </summary>
 public sealed class BackdropPhotoService : IDisposable
 {
@@ -43,6 +45,7 @@ public sealed class BackdropPhotoService : IDisposable
     private readonly IMediaCompressor _compressor;
     private readonly IBackdropImageStore _store;
     private readonly ISettingsService _settings;
+    private readonly IRealtimeService _realtime;
     private readonly ILogger<BackdropPhotoService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _lock = new();
@@ -52,15 +55,17 @@ public sealed class BackdropPhotoService : IDisposable
     private bool _disposed;
 
     public BackdropPhotoService(IFilePickerService picker, IMediaCompressor compressor, IBackdropImageStore store, ISettingsService settings,
-        ILogger<BackdropPhotoService> logger)
+        IRealtimeService realtime, ILogger<BackdropPhotoService> logger)
     {
         _picker = picker;
         _compressor = compressor;
         _store = store;
         _settings = settings;
+        _realtime = realtime;
         _logger = logger;
         _referenced = BackdropRules.FileNamesIn(settings.Current.Appearance);
         settings.Changed += OnSettingsChanged;
+        realtime.ChatRemoved += OnChatRemoved;
     }
 
     public bool IsSupported => _store.IsSupported;
@@ -220,6 +225,11 @@ public sealed class BackdropPhotoService : IDisposable
 
     private void OnSettingsChanged() => SyncAsync().Forget(_logger);
 
+    private void OnChatRemoved(ChatRefEvent e)
+    {
+        if (_settings.Current.Appearance.ChatBackgrounds.ContainsKey(e.ChatId)) SetChatAsync(e.ChatId, null).Forget(_logger);
+    }
+
     /// <summary>Pictures the settings referred to and no longer do (replaced, reset) are deleted.</summary>
     private async Task SyncAsync()
     {
@@ -288,5 +298,6 @@ public sealed class BackdropPhotoService : IDisposable
         if (_disposed) return;
         _disposed = true;
         _settings.Changed -= OnSettingsChanged;
+        _realtime.ChatRemoved -= OnChatRemoved;
     }
 }

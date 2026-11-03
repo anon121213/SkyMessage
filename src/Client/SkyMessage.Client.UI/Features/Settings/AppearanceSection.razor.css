@@ -490,10 +490,6 @@ html[data-fx="lite"] .look-preview__head {
     animation: sm-pop 320ms var(--sm-spring);
 }
 
-.look-accents__dot--tint {
-    box-shadow: inset 0 0 0 1px var(--sm-border);
-}
-
 /* ---------- The sky: mini skies ---------- */
 
 .look-skies {
@@ -594,8 +590,15 @@ html[data-fx="lite"] .look-preview__head {
     box-shadow: 0 0 0 2.5px var(--sm-card-solid), inset 0 0 0 1px var(--sm-border);
 }
 
+/* Two tiles with longer names ("Как у приложения"): the names may take two lines. */
 .look-skies--chats {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.look-skies--chats .look-sky__name {
+    margin: 0 -6px;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 .look-sky__stars {

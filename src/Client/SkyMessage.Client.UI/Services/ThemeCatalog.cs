@@ -316,14 +316,22 @@ public sealed class ThemeCatalog
 
     /// <summary>
     /// CSS custom properties for a chat with a background of its own (inline on the chat's root): the chat variant of
-    /// SkyBackdrop and the chat screen's edges read them. <paramref name="photoUrl"/> is the picture's URL once loaded.
+    /// SkyBackdrop and the chat screen's edges read them. <paramref name="photoUrl"/> and <paramref name="tone"/> (its
+    /// average color) are the picture's once it is loaded.
     /// </summary>
-    public string ChatStyle(Backdrop backdrop, bool dark, string? photoUrl)
+    public string ChatStyle(Backdrop backdrop, bool dark, string? photoUrl, string? tone = null)
     {
         var css = new StringBuilder(512);
         foreach (var (name, value) in ChatVars(backdrop, dark))
         {
-            Var(css, name, name == "--sm-chat-photo" && photoUrl is not null ? $"url(\"{photoUrl}\")" : value);
+            var shown = name switch
+            {
+                "--sm-chat-photo" when photoUrl is not null => $"url(\"{photoUrl}\")",
+                "--sm-chat-bg" when backdrop.Kind == BackdropKind.Photo && NormalizeHex(tone) is { } toneHex =>
+                    Color.Mix(Color.Parse(toneHex), Color.Parse(dark ? DarkBg : LightBg), Level(backdrop.Dim)).Hex,
+                _ => value,
+            };
+            Var(css, name, shown);
         }
         return css.ToString();
     }
@@ -497,7 +505,7 @@ public sealed class ThemeCatalog
             Var(css, "--sm-orb-3", None);
             Var(css, "--sm-stars", "0");
             Var(css, "--sm-clouds", "0");
-            Var(css, "--sm-chat-bg", paint.Base);
+            Var(css, "--sm-chat-bg", own.Kind == BackdropKind.Photo ? VeiledTone("--sm-sky-tone", paint) : paint.Base);
             Var(css, "--sm-chat-wallpaper", gradient);
             if (own is { Kind: BackdropKind.Photo, Photo: { } photo })
             {
@@ -541,7 +549,7 @@ public sealed class ThemeCatalog
         else
         {
             yield return ("--sm-chat-wallpaper", backdrop.Kind == BackdropKind.Gradient ? GradientCss(backdrop.Colors, backdrop.Angle) : $"linear-gradient({paint.Base}, {paint.Base})");
-            yield return ("--sm-chat-bg", paint.Base);
+            yield return ("--sm-chat-bg", backdrop.Kind == BackdropKind.Photo ? VeiledTone("--sm-chat-tone", paint) : paint.Base);
             yield return ("--sm-chat-orb-1", None);
             yield return ("--sm-chat-orb-2", None);
             yield return ("--sm-chat-orb-3", None);
@@ -551,6 +559,13 @@ public sealed class ThemeCatalog
         yield return ("--sm-chat-dim", Num(paint.Dim));
         yield return ("--sm-chat-photo", "none");
     }
+
+    /// <summary>
+    /// A photo's base color: its tone (measured by boot.js once the picture loaded, <paramref name="toneVar"/>) under its
+    /// veil, else the theme's background. The chat screen's edges fade into it.
+    /// </summary>
+    private static string VeiledTone(string toneVar, BackdropPaint paint) =>
+        $"color-mix(in srgb, var({toneVar}, {paint.Base}), {paint.Base} {Math.Round(paint.Dim * 100).ToString(CultureInfo.InvariantCulture)}%)";
 
     private static double Level(int value) => Math.Clamp(value, 0, BackdropRules.MaxLevel) / (double)BackdropRules.MaxLevel;
 

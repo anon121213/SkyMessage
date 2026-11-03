@@ -1736,7 +1736,7 @@ export function applyTheme(state) {
   return dark;
 }
 
-/** A background picture as the page shows it (boot.js bakes its blur in): an object URL, or null when it cannot be loaded. */
+/** A background picture as the page shows it (boot.js bakes its blur in): { url, tone } (an object URL and its average color), or null. */
 export function backdropUrl(src, blur) {
   const boot = window.__smBoot;
   return boot && boot.photo && src ? boot.photo(src, blur) : Promise.resolve(null);

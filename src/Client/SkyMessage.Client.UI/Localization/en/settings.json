@@ -236,7 +236,7 @@
   "settings.background.followApp": "Same as the app",
   "settings.background.default": "Reset",
   "settings.background.bothThemes": "For both themes",
-  "settings.background.bothThemesHint": "Turn off to have one background by day and another at night",
+  "settings.background.bothThemesHint": "The same background by day and at night",
   "settings.background.which": "Theme",
   "settings.background.kind": "Background",
   "settings.background.kind.sky": "Sky",

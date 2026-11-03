@@ -236,7 +236,7 @@
   "settings.background.followApp": "Как у приложения",
   "settings.background.default": "Сбросить",
   "settings.background.bothThemes": "Для обеих тем",
-  "settings.background.bothThemesHint": "Выключите, чтобы днём и ночью был разный фон",
+  "settings.background.bothThemesHint": "Один и тот же фон днём и ночью",
   "settings.background.which": "Тема",
   "settings.background.kind": "Фон",
   "settings.background.kind.sky": "Небо",

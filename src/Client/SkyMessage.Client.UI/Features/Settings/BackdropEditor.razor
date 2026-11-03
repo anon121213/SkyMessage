@@ -92,11 +92,14 @@
         }
     </div>
 
+    @if (ResetLabel is { } reset)
+    {
+        <div class="bd-edit__reset">
+            <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.RotateCcw" OnClick="Reset">@reset</Button>
+        </div>
+    }
+
     <DialogActions>
-        @if (ResetLabel is { } reset)
-        {
-            <Button Variant="ButtonVariant.Ghost" Class="bd-edit__reset" OnClick="Reset">@reset</Button>
-        }
         <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
         <Button OnClick="Save" Disabled="@(!CanSave)">@L["common.save"]</Button>
     </DialogActions>
@@ -152,9 +155,9 @@
         get
         {
             var options = new List<ChoiceOption<BackdropKind>>();
-            if (Target != BackdropTarget.App) options.Add(new(BackdropKind.Sky, L["settings.background.kind.sky"]) { Icon = IconNames.Cloud });
-            options.Add(new(BackdropKind.Gradient, L["settings.background.kind.gradient"]) { Icon = IconNames.Palette });
-            if (Painter.PhotosSupported) options.Add(new(BackdropKind.Photo, L["settings.background.kind.photo"]) { Icon = IconNames.Image });
+            if (Target != BackdropTarget.App) options.Add(new(BackdropKind.Sky, L["settings.background.kind.sky"]));
+            options.Add(new(BackdropKind.Gradient, L["settings.background.kind.gradient"]));
+            if (Painter.PhotosSupported) options.Add(new(BackdropKind.Photo, L["settings.background.kind.photo"]));
             return options;
         }
     }
@@ -173,16 +176,21 @@
             }
             else
             {
-                // A first background of one's own starts from the gradient that suits the theme in use.
-                _sameForBoth = true;
-                _light = BackdropRules.DefaultGradient(Theme.IsDark);
+                // A first background of one's own: one for each theme, each starting from a gradient that suits it (a
+                // light one shared with the night would put light text on a light background); the theme in use first.
+                _sameForBoth = false;
+                _light = BackdropRules.DefaultGradient(dark: false);
                 _dark = BackdropRules.DefaultGradient(dark: true);
             }
             _editDark = Theme.IsDark && !_sameForBoth;
             return;
         }
-        // A chat background: its own so far, else the sky the app shows (a gradient when the app has its own).
-        _single = BackdropRules.Normalize(Initial)?.Clone() ?? new Backdrop
+        // A chat background starts from what the chat shows now: its own, else the chats' one (for a single chat), else
+        // the app's own background, else the app's sky.
+        var shown = BackdropRules.Normalize(Initial)
+                    ?? (Target == BackdropTarget.Chat ? BackdropRules.Normalize(appearance.ChatBackground) : null)
+                    ?? ThemeCatalog.AppBackdropOf(appearance, Theme.IsDark);
+        _single = shown?.Clone() ?? new Backdrop
         {
             Kind = BackdropKind.Sky,
             Sky = Theme.Catalog.FindWallpaper(appearance.Wallpaper).Key,

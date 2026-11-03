@@ -5,6 +5,7 @@ using Shouldly;
 using SkyMessage.Client.Core.Platform;
 using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Settings;
+using SkyMessage.Contracts;
 using Xunit;
 
 namespace SkyMessage.Client.Core.Tests;
@@ -45,6 +46,7 @@ public sealed class BackdropPhotoServiceTests
         public IMediaCompressor Compressor { get; } = Substitute.For<IMediaCompressor>();
         public MemoryStore Store { get; } = new();
         public SettingsService Settings { get; }
+        public IRealtimeService Realtime { get; } = Substitute.For<IRealtimeService>();
         public BackdropPhotoService Service { get; }
 
         public Rig()
@@ -52,7 +54,7 @@ public sealed class BackdropPhotoServiceTests
             var prefs = new InMemorySecureStore();
             Settings = new SettingsService(prefs, prefs, Substitute.For<IPlatformInfo>(), Log.For<SettingsService>());
             Compressor.CanCompressImages.Returns(true);
-            Service = new BackdropPhotoService(Picker, Compressor, Store, Settings, Log.For<BackdropPhotoService>());
+            Service = new BackdropPhotoService(Picker, Compressor, Store, Settings, Realtime, Log.For<BackdropPhotoService>());
         }
 
         /// <summary>The next pick returns a photo the compressor turns into <paramref name="bytes"/> of <paramref name="type"/>.</summary>
@@ -224,6 +226,21 @@ public sealed class BackdropPhotoServiceTests
         await rig.Service.DiscardAsync(held);
         await rig.Service.CleanupAsync();
         rig.Store.Files.Keys.ShouldBe([kept.FileName]);
+    }
+
+    [Fact]
+    public async Task A_chat_that_is_gone_takes_its_background_along()
+    {
+        var rig = new Rig();
+        var photo = await rig.ImportAsync();
+        await rig.Service.SetChatAsync(Chat, PhotoBackdrop(photo));
+        var other = Guid.Parse("0199a1b2-0000-7000-8000-0000000000c2");
+        await rig.Service.SetChatAsync(other, new Backdrop { Kind = BackdropKind.Sky, Sky = "sea" });
+
+        rig.Realtime.ChatRemoved += Raise.Event<Action<ChatRefEvent>>(new ChatRefEvent { ChatId = Chat });
+
+        await Wait.UntilAsync(() => !rig.Settings.Current.Appearance.ChatBackgrounds.ContainsKey(Chat) && rig.Store.Files.IsEmpty);
+        rig.Settings.Current.Appearance.ChatBackgrounds.ShouldContainKey(other);
     }
 
     [Fact]

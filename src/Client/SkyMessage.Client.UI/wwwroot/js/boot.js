@@ -32,7 +32,8 @@
   // — an app-origin path the native host serves, or "idb:<name>" for the browser's IndexedDB "skymessage-backdrops"
   // (store "files", { type, blob }, written by web-platform.js) — and drawn once onto a canvas: always a still, opaque
   // picture (a GIF shows its first frame) with its blur baked in, so nothing is filtered while the page scrolls. The
-  // result stays an object URL for the session; the page shows it through --sm-sky-photo / --sm-chat-photo (app.css).
+  // result stays an object URL for the session, with the picture's average color (its tone: the chat screen's edges
+  // fade into it); the page shows them through --sm-sky-photo / --sm-chat-photo and --sm-sky-tone / --sm-chat-tone.
   var PHOTO_BLUR_PX = 28;
   var PHOTO_CACHE = 16;
   var photoJobs = {};
@@ -104,11 +105,43 @@
     return filterSupport;
   }
 
+  function hex2(v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }
+
+  // The average color of a picture (drawn down to 8×8 and averaged), "#rrggbb"; null when it cannot be read.
+  function toneOf(source) {
+    try {
+      var c = document.createElement('canvas');
+      c.width = 8;
+      c.height = 8;
+      var g = c.getContext('2d');
+      g.imageSmoothingEnabled = true;
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(source, 0, 0, 8, 8);
+      var d = g.getImageData(0, 0, 8, 8).data, r = 0, gr = 0, b = 0;
+      for (var i = 0; i < d.length; i += 4) { r += d[i]; gr += d[i + 1]; b += d[i + 2]; }
+      return '#' + hex2(r / 64) + hex2(gr / 64) + hex2(b / 64);
+    } catch (e) { return null; }
+  }
+
+  // A sharp JPEG is shown as stored (it was downscaled to the screen when picked): only a small copy is decoded, for
+  // its tone.
+  function sharpPhoto(blob) {
+    var url = URL.createObjectURL(blob);
+    var small = typeof window.createImageBitmap === 'function'
+      ? window.createImageBitmap(blob, { resizeWidth: 32, resizeHeight: 32, resizeQuality: 'medium' }).catch(function () { return imageOf(blob); })
+      : imageOf(blob);
+    return small.then(function (image) {
+      var tone = toneOf(image);
+      if (image.close) image.close();
+      return { url: url, tone: tone };
+    }, function () { return { url: url, tone: null }; });
+  }
+
   // The picture at the size it covers the window with (no more pixels than the screen shows; far fewer when blurred,
   // the blur hides the detail anyway), blurred by level/100 × 28 CSS px. Without canvas filters (old Safari) the
   // upscaling of an even smaller picture does the softening.
   function bakePhoto(blob, level) {
-    if (!level && blob.type === 'image/jpeg') return Promise.resolve(URL.createObjectURL(blob));
+    if (!level && blob.type === 'image/jpeg') return sharpPhoto(blob);
     return decodePhoto(blob).then(function (image) {
       var w = image.naturalWidth || image.width, h = image.naturalHeight || image.height;
       if (!w || !h) return null;
@@ -139,8 +172,9 @@
         ctx.filter = 'none';
       }
       if (image.close) image.close();
+      var tone = toneOf(canvas);
       return new Promise(function (resolve) {
-        canvas.toBlob(function (out) { resolve(out ? URL.createObjectURL(out) : null); }, 'image/jpeg', 0.9);
+        canvas.toBlob(function (out) { resolve(out ? { url: URL.createObjectURL(out), tone: tone } : null); }, 'image/jpeg', 0.9);
       });
     });
   }
@@ -159,14 +193,14 @@
       var key = photoOrder[index];
       if (photoApplied.sky === key || photoApplied.chat === key) { index++; continue; }
       photoOrder.splice(index, 1);
-      if (photoUrls[key]) URL.revokeObjectURL(photoUrls[key]);
+      if (photoUrls[key]) URL.revokeObjectURL(photoUrls[key].url);
       delete photoUrls[key];
       delete photoJobs[key];
     }
   }
 
-  // An object URL of the picture at `src` with blur `level` (0..100), or null when it cannot be loaded (tried again
-  // next time).
+  // { url, tone } of the picture at `src` with blur `level` (0..100): an object URL and its average color; null when
+  // it cannot be loaded (tried again next time).
   function photo(src, level) {
     level = photoLevel(level);
     var key = src + '|' + level;
@@ -178,10 +212,10 @@
       .then(function (blob) { return blob ? bakePhoto(blob, level) : null; })
       .then(null, function () { return null; });
     photoJobs[key] = job;
-    job.then(function (url) {
-      if (photoJobs[key] !== job) { if (url) URL.revokeObjectURL(url); return; }
-      if (!url) { delete photoJobs[key]; return; }
-      photoUrls[key] = url;
+    job.then(function (result) {
+      if (photoJobs[key] !== job) { if (result) URL.revokeObjectURL(result.url); return; }
+      if (!result) { delete photoJobs[key]; return; }
+      photoUrls[key] = result;
       touchPhoto(key);
       trimPhotos();
     });
@@ -197,18 +231,22 @@
         if (images[i] && images[i].slot === slot && images[i].theme === theme) item = images[i];
       }
       var prop = '--sm-' + slot + '-photo';
+      var toneProp = '--sm-' + slot + '-tone';
       if (!item || !item.src) {
         photoApplied[slot] = null;
         root.style.removeProperty(prop);
+        root.style.removeProperty(toneProp);
         return;
       }
       var key = item.src + '|' + photoLevel(item.blur);
       if (photoApplied[slot] === key && root.style.getPropertyValue(prop)) return;
-      photo(item.src, item.blur).then(function (url) {
+      photo(item.src, item.blur).then(function (result) {
         if (seq !== photoSeq) return;
-        photoApplied[slot] = url ? key : null;
-        if (url) root.style.setProperty(prop, 'url("' + url + '")');
+        photoApplied[slot] = result ? key : null;
+        if (result) root.style.setProperty(prop, 'url("' + result.url + '")');
         else root.style.removeProperty(prop);
+        if (result && result.tone) root.style.setProperty(toneProp, result.tone);
+        else root.style.removeProperty(toneProp);
       });
     });
   }

@@ -18,8 +18,8 @@ public sealed class BackdropPainter : IDisposable
     private readonly BackdropPhotoService _photos;
     private readonly AppJs _js;
     private readonly ILogger<BackdropPainter> _logger;
-    /// <summary>"source|blur" → object URL; null = it could not be loaded (tried again after the next settings change).</summary>
-    private readonly ConcurrentDictionary<string, string?> _urls = new(StringComparer.Ordinal);
+    /// <summary>"source|blur" → the picture; null = it could not be loaded (tried again after the next settings change).</summary>
+    private readonly ConcurrentDictionary<string, BackdropImage?> _images = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _loading = new(StringComparer.Ordinal);
     private bool _disposed;
 
@@ -44,47 +44,51 @@ public sealed class BackdropPainter : IDisposable
     public string? ChatStyle(Guid chatId)
     {
         if (!_settings.Current.Appearance.ChatBackgrounds.TryGetValue(chatId, out var backdrop)) return null;
-        var url = backdrop is { Kind: BackdropKind.Photo, Photo: { } photo } ? Url(photo, backdrop.Blur) : null;
-        return _theme.Catalog.ChatStyle(backdrop, _theme.IsDark, url);
+        var image = backdrop is { Kind: BackdropKind.Photo, Photo: { } photo } ? Image(photo, backdrop.Blur) : null;
+        return _theme.Catalog.ChatStyle(backdrop, _theme.IsDark, image?.Url, image?.Tone);
     }
 
     /// <summary>
-    /// The picture as the backgrounds show it (blur 0..100 baked in), or null while it loads or when it cannot be
+    /// The picture's URL as the backgrounds show it (blur 0..100 baked in), or null while it loads or when it cannot be
     /// loaded; <see cref="Changed"/> fires once it is there.
     /// </summary>
-    public string? Url(BackdropPhoto photo, int blur)
+    public string? Url(BackdropPhoto photo, int blur) => Image(photo, blur)?.Url;
+
+    /// <summary>The picture with its average color, as <see cref="Url"/> loads it.</summary>
+    public BackdropImage? Image(BackdropPhoto photo, int blur)
     {
         if (!_photos.IsSupported || _disposed) return null;
         var source = _photos.SourceOf(photo);
         if (string.IsNullOrEmpty(source)) return null;
-        var key = $"{source}|{Math.Clamp(blur, 0, BackdropRules.MaxLevel)}";
-        if (_urls.TryGetValue(key, out var url)) return url;
-        if (_loading.TryAdd(key, 0)) _ = LoadAsync(key, source, blur);
+        var level = Math.Clamp(blur, 0, BackdropRules.MaxLevel);
+        var key = $"{source}|{level}";
+        if (_images.TryGetValue(key, out var image)) return image;
+        if (_loading.TryAdd(key, 0)) _ = LoadAsync(key, source, level);
         return null;
     }
 
-    private async Task LoadAsync(string key, string source, int blur)
+    private async Task LoadAsync(string key, string source, int level)
     {
-        string? url = null;
+        BackdropImage? image = null;
         try
         {
-            url = await _js.BackdropUrlAsync(source, Math.Clamp(blur, 0, BackdropRules.MaxLevel));
+            image = await _js.BackdropUrlAsync(source, level);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "A background picture did not load");
         }
-        _urls[key] = url;
+        _images[key] = image;
         _loading.TryRemove(key, out _);
-        if (url is not null) Raise();
+        if (image is not null) Raise();
     }
 
     private void OnSettingsChanged()
     {
         // A picture that failed may be there now (an edit stored it meanwhile).
-        foreach (var (key, url) in _urls)
+        foreach (var (key, image) in _images)
         {
-            if (url is null) _urls.TryRemove(key, out _);
+            if (image is null) _images.TryRemove(key, out _);
         }
         Raise();
     }

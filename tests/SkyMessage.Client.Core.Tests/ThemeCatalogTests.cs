@@ -26,10 +26,11 @@ public sealed partial class ThemeCatalogTests
         return state.Css[(start + marker.Length)..end];
     }
 
+    /// <summary>The value in effect: the last declaration of <paramref name="name"/> in the block, as in CSS.</summary>
     private static string? VarOf(string block, string name)
     {
-        var match = Regex.Match(block, $"(?:^|;){Regex.Escape(name)}:([^;]*);");
-        return match.Success ? match.Groups[1].Value : null;
+        var matches = Regex.Matches(block, $"(?:^|;)(?={Regex.Escape(name)}:){Regex.Escape(name)}:([^;]*)");
+        return matches.Count > 0 ? matches[^1].Groups[1].Value : null;
     }
 
     private static IReadOnlyList<Color> StopsOf(string background) =>
@@ -260,6 +261,8 @@ public sealed partial class ThemeCatalogTests
             VarOf(block, "--sm-sky").ShouldBe(dark ? Catalog.FindWallpaper("aurora").Dark.Gradient : Catalog.FindWallpaper("aurora").Light.Gradient);
             VarOf(block, "--sm-chat-photo").ShouldBe("none", "boot.js sets the picture itself; nothing of the app's shows meanwhile");
             VarOf(block, "--sm-chat-dim").ShouldBe("0.2");
+            var bg = dark ? "#0D0B1E" : "#F6F3FF";
+            VarOf(block, "--sm-chat-bg").ShouldBe($"color-mix(in srgb, var(--sm-chat-tone, {bg}), {bg} 20%)", "the edges fade into the picture's tone under its veil");
             VarOf(block, "--sm-chat-orb-1").ShouldBe("rgba(0,0,0,0)");
             VarOf(block, "--sm-chat-stars").ShouldBe("0");
         }
@@ -280,9 +283,12 @@ public sealed partial class ThemeCatalogTests
         sky.ShouldContain("--sm-chat-clouds:1;");
 
         var photo = new Backdrop { Kind = BackdropKind.Photo, Photo = new BackdropPhoto { Id = "0a1b2c3d4e5f" }, Dim = 15 };
-        var withUrl = Catalog.ChatStyle(photo, dark: false, "blob:https://0.0.0.1/1234");
+        var withUrl = Catalog.ChatStyle(photo, dark: false, "blob:https://0.0.0.1/1234", "#204060");
         withUrl.ShouldContain("--sm-chat-photo:url(\"blob:https://0.0.0.1/1234\");");
         withUrl.ShouldContain("--sm-chat-dim:0.15;");
+        withUrl.ShouldContain($"--sm-chat-bg:{Color.Mix(Color.Parse("#204060"), Color.Parse("#F6F3FF"), 0.15).Hex};");
+        Catalog.ChatStyle(photo, dark: false, null).ShouldContain("--sm-chat-bg:color-mix(in srgb, var(--sm-chat-tone, #F6F3FF), #F6F3FF 15%);",
+            customMessage: "until the picture is there, its base is the theme's background");
     }
 
     [Fact]
