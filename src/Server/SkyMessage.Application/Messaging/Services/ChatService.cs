@@ -242,6 +242,9 @@ internal sealed class ChatService(
             allowed = allowed.Take(room).ToList();
         }
 
+        // A group from someone who is not in a member's contacts may start in that member's archive.
+        var archived = await ChatPlacement.ArchivedOnArrivalAsync(db, allowed, me, cancellationToken);
+
         var now = clock.UtcNow;
         var chat = new Chat
         {
@@ -258,7 +261,17 @@ internal sealed class ChatService(
         };
         chat.Members.Add(new ChatMember { ChatId = chat.Id, UserId = me, Role = ChatRole.Owner, JoinedAt = now });
         foreach (var userId in allowed)
-            chat.Members.Add(new ChatMember { ChatId = chat.Id, UserId = userId, Role = ChatRole.Member, JoinedAt = now, InvitedById = me });
+        {
+            chat.Members.Add(new ChatMember
+            {
+                ChatId = chat.Id,
+                UserId = userId,
+                Role = ChatRole.Member,
+                JoinedAt = now,
+                InvitedById = me,
+                IsArchived = archived.Contains(userId),
+            });
+        }
         db.Chats.Add(chat);
         await db.SaveChangesAsync(cancellationToken);
         db.ChangeTracker.Clear();

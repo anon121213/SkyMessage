@@ -39,6 +39,30 @@ public interface IChatService
     Task DeleteChatAsync(Guid chatId, bool forEveryone, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// My chat folders and chat list settings. Every change answers with the whole new state and sends it to all my devices
+/// (ChatFoldersChanged); a change that changes nothing is silent.
+/// </summary>
+public interface IChatFolderService
+{
+    Task<ChatFoldersDto> GetAsync(CancellationToken cancellationToken = default);
+    /// <summary>Creates the folder with this id (a new one goes last) or replaces its name, icon and rules; its pins stay.</summary>
+    Task<ChatFoldersDto> SaveFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> DeleteFolderAsync(Guid folderId, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> ReorderFoldersAsync(ReorderChatFoldersRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Pins one of my chats on top of the folder's own pins.</summary>
+    Task<ChatFoldersDto> PinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> UnpinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>Rearranges the folder's own pinned chats (top first), like <see cref="IChatService.ReorderPinnedAsync"/> does the global ones.</summary>
+    Task<ChatFoldersDto> ReorderPinnedAsync(Guid folderId, ReorderPinnedChatsRequest request, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> UpdateSettingsAsync(ChatListSettingsDto settings, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Marks every unread chat of the folder read (<paramref name="folderId"/> null = "All chats": every chat outside the
+    /// archive), evaluated with <see cref="ChatFolderRules"/> over my chat summaries; MessagesRead per chat as usual.
+    /// </summary>
+    Task MarkReadAsync(Guid? folderId, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Group membership, roles and invite links.</summary>
 public interface IChatMemberService
 {

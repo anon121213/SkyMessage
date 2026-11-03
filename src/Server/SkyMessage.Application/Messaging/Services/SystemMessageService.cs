@@ -125,6 +125,8 @@ internal sealed class SystemMessageService(
                 {
                     await db.ChatMembers.Where(m => m.ChatId == chatId && m.IsHidden)
                         .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsHidden, false), ct);
+                    // The first sign of a stranger may be their call: such a chat may start in the archive (ChatPlacement).
+                    await ChatPlacement.ArchiveAsync(db, chatId, await ChatPlacement.ArchivedOnArrivalAsync(db, unhidden, senderId ?? readerId, ct), ct);
                 }
 
                 await tx.CommitAsync(ct);

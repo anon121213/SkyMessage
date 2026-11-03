@@ -137,6 +137,34 @@ public static class ApiRoutes
         public static string ClearHistoryPath(Guid chatId) => $"api/chats/{chatId}/clear-history";
     }
 
+    /// <summary>
+    /// My chat folders and chat list settings. GET <see cref="Root"/> → <see cref="ChatFoldersDto"/>; every change answers
+    /// with the new whole state (and sends it to all my devices as <see cref="IRealtimeClient.ChatFoldersChanged"/>).
+    /// </summary>
+    public static class Folders
+    {
+        public const string Root = "api/folders";
+        /// <summary>PUT <see cref="SaveChatFolderRequest"/> creates or replaces that folder; DELETE removes it.</summary>
+        public const string ById = "api/folders/{folderId:guid}";
+        /// <summary>PUT <see cref="ReorderChatFoldersRequest"/>.</summary>
+        public const string Order = "api/folders/order";
+        /// <summary>PUT <see cref="ChatListSettingsDto"/> (new chats from strangers, the archive).</summary>
+        public const string Settings = "api/folders/settings";
+        /// <summary>PUT pins the chat on top of the folder's own pins; DELETE unpins it.</summary>
+        public const string Pin = "api/folders/{folderId:guid}/pins/{chatId:guid}";
+        /// <summary>PUT <see cref="ReorderPinnedChatsRequest"/>: the folder's own pinned chats, top first.</summary>
+        public const string PinnedOrder = "api/folders/{folderId:guid}/pinned-order";
+        /// <summary>POST: marks every chat of the folder read (204).</summary>
+        public const string Read = "api/folders/{folderId:guid}/read";
+        /// <summary>POST: marks every chat of "All chats" (all chats outside the archive) read (204).</summary>
+        public const string ReadAll = "api/folders/all/read";
+
+        public static string ByIdPath(Guid folderId) => $"api/folders/{folderId}";
+        public static string PinPath(Guid folderId, Guid chatId) => $"api/folders/{folderId}/pins/{chatId}";
+        public static string PinnedOrderPath(Guid folderId) => $"api/folders/{folderId}/pinned-order";
+        public static string ReadPath(Guid folderId) => $"api/folders/{folderId}/read";
+    }
+
     public static class Messages
     {
         /// <summary>GET ?beforeSeq=&amp;afterSeq=&amp;aroundSeq=&amp;limit= ; POST sends a message.</summary>

@@ -22,6 +22,8 @@ public interface IAppDbContext
     DbSet<MessageMention> MessageMentions { get; }
     DbSet<MessageHidden> HiddenMessages { get; }
     DbSet<PinnedMessage> PinnedMessages { get; }
+    DbSet<ChatFolder> ChatFolders { get; }
+    DbSet<ChatListPreferences> ChatListPreferences { get; }
 
     DbSet<Media> Media { get; }
     DbSet<MediaThumbnail> MediaThumbnails { get; }

@@ -49,6 +49,8 @@ internal sealed class ChatMemberService(
         var added = new List<Guid>();
         if (allowed.Count > 0)
         {
+            // Added by someone who is not in their contacts: the group may start in their archive.
+            var archived = await ChatPlacement.ArchivedOnArrivalAsync(db, allowed, me, cancellationToken);
             var now = clock.UtcNow;
             await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
             await ChatSequence.LockChatAsync(db, chatId, cancellationToken);
@@ -92,6 +94,7 @@ internal sealed class ChatMemberService(
                     InvitedById = me,
                     // History stays readable, but it is not "unread" for someone who just arrived.
                     LastReadSeq = chat.LastMessageSeq,
+                    IsArchived = archived.Contains(userId),
                 });
                 added.Add(userId);
             }

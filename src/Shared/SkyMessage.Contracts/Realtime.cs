@@ -36,6 +36,12 @@ public interface IRealtimeClient
     /// <summary>The user rearranged their pinned chats (sent to all of the user's devices, the acting one included).</summary>
     Task PinnedChatsReordered(PinnedChatsOrderDto order);
 
+    /// <summary>
+    /// The user's folders or chat list settings changed (all of the user's devices, the acting one included): the whole
+    /// new state; a copy with a lower <see cref="ChatFoldersDto.Revision"/> than one already seen is older.
+    /// </summary>
+    Task ChatFoldersChanged(ChatFoldersDto state);
+
     Task HistoryCleared(HistoryClearedEvent e);
 
     Task PinnedMessagesChanged(ChatRefEvent e);
