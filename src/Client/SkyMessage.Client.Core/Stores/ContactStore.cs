@@ -203,22 +203,39 @@ internal sealed class ContactStore : IContactStore, IAccountScoped
         return result.OrderBy(r => r.AlreadyContact).ThenBy(r => r.DeviceContactName, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
 
-    public async Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches)
+    public Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches) => AddMatchesAsync(confirmedMatches, synced: false);
+
+    public Task<IReadOnlyList<ContactDto>> AddSyncedAsync(IReadOnlyList<PhoneBookMatch> matches) => AddMatchesAsync(matches, synced: true);
+
+    public async Task<int> RemoveSyncedAsync()
     {
-        var requests = confirmedMatches
+        var result = await _api.RemoveSyncedContactsAsync().ConfigureAwait(false);
+        var removed = _contacts.Where(c => c.IsSynced).Select(c => c.User.Id).ToHashSet();
+        foreach (var id in removed)
+            if (_users.Get(id) is { } user) _users.Upsert([user with { IsContact = false, ContactName = null }]);
+        await MutateAsync(list => list.Where(c => !c.IsSynced).ToList(), null).ConfigureAwait(false);
+        // The server may know of synced contacts this device has not loaded yet.
+        if (result.Removed != removed.Count) LoadAsync(force: true).Forget(_logger);
+        return result.Removed;
+    }
+
+    private async Task<IReadOnlyList<ContactDto>> AddMatchesAsync(IReadOnlyList<PhoneBookMatch> matches, bool synced)
+    {
+        var requests = matches
             .Where(m => !m.AlreadyContact && !IsContact(m.User.Id))
             .GroupBy(m => m.User.Id)
             .Select(g => new AddContactRequest { UserId = g.Key, CustomName = Clean(g.First().DeviceContactName) })
             .ToList();
-        if (requests.Count == 0) return;
+        if (requests.Count == 0) return [];
 
         var added = new List<ContactDto>();
         foreach (var chunk in requests.Chunk(200))
-            added.AddRange(await _api.AddContactsBulkAsync(new AddContactsBulkRequest { Contacts = chunk }).ConfigureAwait(false));
+            added.AddRange(await _api.AddContactsBulkAsync(new AddContactsBulkRequest { Contacts = chunk, Synced = synced }).ConfigureAwait(false));
 
         _users.Upsert(added.Select(c => c.User));
         var ids = added.Select(c => c.User.Id).ToHashSet();
         await MutateAsync(list => list.Where(c => !ids.Contains(c.User.Id)).Concat(added).ToList(), null).ConfigureAwait(false);
+        return added;
     }
 
     async Task IAccountScoped.OnSignedInAsync(Guid userId)

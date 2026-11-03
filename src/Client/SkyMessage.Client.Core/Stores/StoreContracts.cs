@@ -236,6 +236,10 @@ public interface IContactStore
     /// <summary>Reads the phone book (asks permission) and returns registered users found by number (DefaultRegion from IPlatformInfo.CountryCode).</summary>
     Task<IReadOnlyList<PhoneBookMatch>> FindDeviceContactsAsync(CancellationToken cancellationToken = default);
     Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches);
+    /// <summary>Contact sync: adds these matches marked as synced (people already in contacts stay as they are); returns the added.</summary>
+    Task<IReadOnlyList<ContactDto>> AddSyncedAsync(IReadOnlyList<PhoneBookMatch> matches);
+    /// <summary>Removes the contacts sync added (<see cref="ContactDto.IsSynced"/>); returns how many went.</summary>
+    Task<int> RemoveSyncedAsync();
 }
 
 public interface ITypingStore

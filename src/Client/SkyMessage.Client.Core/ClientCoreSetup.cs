@@ -89,6 +89,10 @@ public static class ClientCoreSetup
         services.AddSingleton<IDraftStore, DraftStore>();
         services.AddSingleton<IAccountLocalStore, AccountLocalStore>();
         services.AddSingleton<ICallService, CallService>();
+        services.AddSingleton<BirthdayService>();
+        services.AddSingleton<IBirthdayService>(sp => sp.GetRequiredService<BirthdayService>());
+        services.AddSingleton<ContactSyncService>();
+        services.AddSingleton<IContactSyncService>(sp => sp.GetRequiredService<ContactSyncService>());
         return services;
     }
 }

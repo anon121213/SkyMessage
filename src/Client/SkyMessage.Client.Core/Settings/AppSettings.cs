@@ -18,6 +18,7 @@ public sealed class AppSettings
     public DataSettings Data { get; set; } = new();
     public ConnectionSettings Connection { get; set; } = new();
     public UpdateSettings Updates { get; set; } = new();
+    public ContactsSettings Contacts { get; set; } = new();
     /// <summary>"auto" (follow the OS), "ru" or "en".</summary>
     public string Language { get; set; } = "auto";
 
@@ -78,6 +79,11 @@ public sealed class NotificationSettings
     public bool KeepConnectedInBackground { get; set; } = true;
     /// <summary>Mentions and replies to me notify even in muted chats.</summary>
     public bool MentionsBypassMute { get; set; } = true;
+    /// <summary>
+    /// Contacts' birthdays: a reminder at 10:00 on the day (Android: a notification; everywhere: the card on the chat
+    /// list). See <c>IBirthdayService</c>.
+    /// </summary>
+    public bool BirthdayReminders { get; set; } = true;
     /// <summary>
     /// Sound pack (<see cref="SoundCatalog.Packs"/>: wood, bells, piano — our own synthesized sounds). It drives the
     /// message tone, the ringtone and the call sounds. Settings saved before packs existed have none: they get "wood"
@@ -179,6 +185,16 @@ public sealed class ConnectionSettings
     public ProxySettings Proxy { get; set; } = new();
     /// <summary>Allow SignalR to fall back to Server-Sent Events / long polling when WebSockets are blocked.</summary>
     public bool AllowTransportFallback { get; set; } = true;
+}
+
+/// <summary>Phone-book sync (this device's address book, so a per-device choice).</summary>
+public sealed class ContactsSettings
+{
+    /// <summary>
+    /// Re-read the phone book at every start (and when it changes, where the OS tells) and add the people found on
+    /// SkyMessage to my contacts (<c>IContactSyncService</c>). Off until the user turns it on.
+    /// </summary>
+    public bool SyncPhoneContacts { get; set; }
 }
 
 /// <summary>Self-updates (Android): new builds download in the background and install while the app is not in use.</summary>
