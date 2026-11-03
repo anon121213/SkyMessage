@@ -400,3 +400,40 @@ public sealed class ContactSyncServiceTests
         h.Service.IsEnabled.ShouldBeFalse();
     }
 }
+
+public sealed class SyncedContactsStoreTests
+{
+    [Fact]
+    public async Task Sync_adds_marked_contacts_and_removing_them_keeps_the_ones_added_by_hand()
+    {
+        var me = Guid.CreateVersion7();
+        var api = Substitute.For<ISkyApi>();
+        var manual = new UserSummaryDto { Id = Guid.CreateVersion7(), Username = "anna", DisplayName = "Anna", IsContact = true };
+        var found = new UserSummaryDto { Id = Guid.CreateVersion7(), Username = "oleg", DisplayName = "Oleg" };
+        api.GetContactsAsync(Arg.Any<CancellationToken>()).Returns(new List<ContactDto> { new() { User = manual } });
+        api.GetBlockedAsync(Arg.Any<CancellationToken>()).Returns(new List<UserSummaryDto>());
+        AddContactsBulkRequest? sent = null;
+        api.AddContactsBulkAsync(Arg.Do<AddContactsBulkRequest>(r => sent = r), Arg.Any<CancellationToken>())
+            .Returns(new List<ContactDto> { new() { User = found with { IsContact = true }, IsSynced = true } });
+        api.RemoveSyncedContactsAsync(Arg.Any<CancellationToken>()).Returns(new RemoveSyncedContactsResultDto { Removed = 1 });
+        var users = Substitute.For<IUserStore>();
+        var (cache, lifecycle) = Fakes.Account();
+        var contacts = new ContactStore(api, Substitute.For<IRealtimeService>(), Fakes.Auth(me), users, Substitute.For<IDeviceContactsService>(),
+            Substitute.For<IPlatformInfo>(), cache, lifecycle, Log.For<ContactStore>());
+        await lifecycle.ActivateAsync(me);
+        await contacts.LoadAsync(force: true);
+
+        var added = await contacts.AddSyncedAsync([new PhoneBookMatch("Олег", "+79001234567", found, false)]);
+
+        sent!.Synced.ShouldBeTrue();
+        sent.Contacts.Single().CustomName.ShouldBe("Олег");
+        added.Single().IsSynced.ShouldBeTrue();
+        contacts.IsContact(found.Id).ShouldBeTrue();
+
+        (await contacts.RemoveSyncedAsync()).ShouldBe(1);
+
+        contacts.IsContact(found.Id).ShouldBeFalse();
+        contacts.IsContact(manual.Id).ShouldBeTrue();
+        (await contacts.AddSyncedAsync([new PhoneBookMatch("Anna", "+79007654321", manual, true)])).ShouldBeEmpty("people already in contacts stay as they are");
+    }
+}

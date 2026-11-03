@@ -42,7 +42,7 @@ html[data-fx="lite"] .viewer__backdrop {
 .viewer__frame {
     position: relative;
     flex-shrink: 0;
-    width: min(100vw, calc((100vh - 9rem) * var(--ar, 1)), 44rem);
+    width: min(100vw, calc((100vh - 12.5rem) * var(--ar, 1)), 44rem);
     aspect-ratio: var(--ar, 1);
     animation: aviewer-in var(--sm-dur) var(--sm-ease-out) 60ms backwards;
 }
