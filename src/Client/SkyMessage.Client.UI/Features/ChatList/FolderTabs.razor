@@ -1,0 +1,79 @@
+@* The folder tabs under the chat list header: pills in a frosted capsule ("All chats" first), a gradient pill gliding
+   under the active one (js/folders.js attachFolderTabs; it also follows a swipe between folders part of the way), an
+   unread counter per folder (chats, grey when only muted ones have something), the user's emoji before a name.
+   Long-press or right-click a tab for its menu. The strip scrolls sideways when the folders do not fit; it owns those
+   drags (no swipe-back, no folder swipe there). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject HapticFeedback Haptics
+
+<div class="folder-tabs" role="tablist" aria-label="@L["folders.tabs.label"]">
+    <div @ref="_track" class="folder-tabs__track" data-no-swipe-back="" data-no-swipe="">
+        <div class="folder-tabs__row" data-folder-row="">
+            <span class="folder-tabs__pill" data-folder-indicator="" aria-hidden="true"></span>
+            @for (var i = 0; i < Items.Count; i++)
+            {
+                var item = Items[i];
+                var index = i;
+                var active = item.Id == ActiveId;
+                var emoji = FolderUi.EmojiOf(item.Icon);
+                <ContextMenuArea @key="@(item.Id ?? Guid.Empty)" Class="folder-tabs__slot" OnContextMenu="pos => OnMenu.InvokeAsync((item.Id, pos))">
+                    <button type="button" role="tab" class="folder-tab" data-folder-tab="@index" data-active="@(active ? "" : null)"
+                            aria-selected="@(active ? "true" : "false")" @onclick="() => SelectAsync(item)">
+                        @if (emoji is not null)
+                        {
+                            <span class="folder-tab__emoji sm-emoji" aria-hidden="true">@emoji</span>
+                        }
+                        <span class="folder-tab__name">@item.Name</span>
+                        @if (item.Badge.Count > 0)
+                        {
+                            <span class="folder-tab__count @(item.Badge.Muted ? "folder-tab__count--muted" : null)"
+                                  aria-label="@L.Plural("folders.tabs.unread", item.Badge.Count)">@FormatService.BadgeCount(item.Badge.Count)</span>
+                        }
+                    </button>
+                </ContextMenuArea>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private ElementReference _track;
+    private JsModule? _module;
+    private JsObject? _tabs;
+
+    /// <summary>A tab: <see cref="Id"/> null is "All chats".</summary>
+    public sealed record Item(Guid? Id, string Name, string? Icon, FolderBadge Badge);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
+    [Parameter] public Guid? ActiveId { get; set; }
+    [Parameter] public EventCallback<Guid?> OnSelect { get; set; }
+    /// <summary>Long-press / right-click on a tab.</summary>
+    [Parameter] public EventCallback<(Guid? Id, MenuPosition Position)> OnMenu { get; set; }
+
+    /// <summary>The scrolling strip (the chat list's folder swipe moves its pill too).</summary>
+    public ElementReference Track => _track;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = new JsModule(JS, FolderJs.Path);
+        _tabs = await _module.AttachAsync("attachFolderTabs", _track);
+        if (IsDisposed) await _tabs.DisposeAsync();
+    }
+
+    private async Task SelectAsync(Item item)
+    {
+        if (item.Id == ActiveId) return;
+        Haptics.Selection();
+        await OnSelect.InvokeAsync(item.Id);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_tabs is not null) await _tabs.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+    }
+}

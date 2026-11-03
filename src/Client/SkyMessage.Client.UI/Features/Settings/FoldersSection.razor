@@ -1,0 +1,254 @@
+@* Settings › Folders: my folders ("All chats" first and fixed; the others move by their handle, open on a tap and have a
+   long-press menu), recommended folders added with one tap, what a sideways swipe on a chat does, where new chats from
+   strangers go and how the archive behaves. Folders and the list settings sync to all my devices (IChatFolderStore). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IChatFolderStore Folders
+@inject IChatListStore ChatList
+@inject IContactStore Contacts
+@inject IUserStore Users
+@inject ISettingsService Settings
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<SettingsScaffold Title="@L["folders.settings.title"]">
+    <div class="folders-intro">
+        <SkyArt Kind="SkyArtKind.Folder" Size="150" />
+        <p class="folders-intro__text">@L["folders.settings.intro"]</p>
+    </div>
+
+    <Section Title="@L["folders.settings.mine"]" Footer="@MineFooter" DividerInset="64px">
+        <ListItem Icon="@IconNames.MessagesSquare" IconColor="@SettingsTones.Violet" Title="@L["folders.all"]" Subtitle="@L["folders.settings.allHint"]" />
+        <div @ref="_list" class="folders-list">
+            @foreach (var folder in Folders.Folders)
+            {
+                var item = folder;
+                <div @key="item.Id" class="folders-list__row" data-reorder-key="@item.Id">
+                    <ListItem OnClick="() => Edit(item.Id)" OnContextMenu="pos => OpenMenuAsync(item, pos)">
+                        <Leading><FolderIconTile Icon="@item.Icon" /></Leading>
+                        <ChildContent>
+                            <div class="sm-list-item__title">@item.Name</div>
+                            <div class="sm-list-item__subtitle">@L.Plural("folders.chats", CountOf(item))</div>
+                        </ChildContent>
+                        <Trailing>
+                            <span class="folders-list__handle" data-drag-handle="" title="@L["folders.settings.drag"]" @onclick:stopPropagation="true">
+                                <Icon Name="@IconNames.GripVertical" />
+                            </span>
+                        </Trailing>
+                    </ListItem>
+                </div>
+            }
+        </div>
+        @if (Folders.Folders.Count < Limits.MaxChatFolders)
+        {
+            <ListItem Icon="@IconNames.Plus" IconColor="@SettingsTones.Mint" OnClick="() => Nav.NavigateTo(FolderUi.EditPath())">
+                <TitleContent><div class="sm-list-item__title folders-create">@L["folders.settings.create"]</div></TitleContent>
+            </ListItem>
+        }
+    </Section>
+
+    @if (Suggested.Count > 0 && Folders.Folders.Count < Limits.MaxChatFolders)
+    {
+        <Section Title="@L["folders.settings.recommended"]" DividerInset="64px">
+            @foreach (var preset in Suggested)
+            {
+                var item = preset;
+                <ListItem @key="item.Key" Title="@L[FolderUi.NameKeyOf(item)]" Subtitle="@L[FolderUi.HintKeyOf(item)]" Multiline="true">
+                    <Leading><FolderIconTile Icon="@item.Icon" /></Leading>
+                    <Trailing>
+                        <Button Size="ButtonSize.Small" Variant="ButtonVariant.Tonal" Icon="@IconNames.Plus" OnClick="() => AddPresetAsync(item)">@L["common.add"]</Button>
+                    </Trailing>
+                </ListItem>
+            }
+        </Section>
+    }
+
+    @if (Folders.Folders.Count > 0)
+    {
+        <Section Title="@L["folders.settings.swipe"]">
+            <ChoiceList TValue="ChatSwipeMode" Options="SwipeOptions" Value="SwipeMode" ValueChanged="SetSwipeAsync" />
+        </Section>
+    }
+
+    <Section Title="@L["folders.settings.newChats"]" Footer="@L["folders.settings.newChats.hint"]">
+        <ChoiceList TValue="bool" Options="NewChatOptions" Value="Folders.Settings.ArchiveNewFromStrangers"
+                    ValueChanged="v => UpdateAsync(s => s with { ArchiveNewFromStrangers = v })" />
+    </Section>
+
+    <Section Title="@L["folders.settings.archive"]" DividerInset="64px">
+        <SwitchItem Icon="@IconNames.Archive" IconColor="@SettingsTones.Lagoon" Title="@L["folders.settings.keepArchived"]" Subtitle="@KeepArchivedHint"
+                    Checked="Folders.Settings.KeepArchived" CheckedChanged="v => UpdateAsync(s => s with { KeepArchived = v })" />
+        <SwitchItem Icon="@IconNames.Eye" IconColor="@SettingsTones.Periwinkle" Title="@L["folders.settings.showArchive"]"
+                    Subtitle="@(Folders.Settings.HideArchive ? L["folders.settings.showArchiveOff"] : L["folders.settings.showArchiveOn"])"
+                    Checked="!Folders.Settings.HideArchive" CheckedChanged="v => UpdateAsync(s => s with { HideArchive = !v })" />
+    </Section>
+</SettingsScaffold>
+
+<ContextMenu @ref="_menu" Title="@_menuFolder?.Name">
+    @if (_menuFolder is { } f)
+    {
+        var index = IndexOf(f.Id);
+        <MenuItem Icon="@IconNames.Pencil" Label="@L["folders.menu.edit"]" OnClick="() => Edit(f.Id)" />
+        @if (index > 0)
+        {
+            <MenuItem Icon="@IconNames.ChevronUp" Label="@L["folders.menu.up"]" OnClick="() => MoveAsync(f.Id, index - 1)" />
+        }
+        @if (index >= 0 && index < Folders.Folders.Count - 1)
+        {
+            <MenuItem Icon="@IconNames.ChevronDown" Label="@L["folders.menu.down"]" OnClick="() => MoveAsync(f.Id, index + 1)" />
+        }
+        <MenuDivider />
+        <MenuItem Icon="@IconNames.Trash2" Label="@L["folders.menu.delete"]" Danger="true" OnClick="() => DeleteAsync(f)" />
+    }
+</ContextMenu>
+
+@code {
+    private ElementReference _list;
+    private ContextMenu? _menu;
+    private ChatFolderDto? _menuFolder;
+    private DotNetObjectReference<FoldersSection>? _self;
+    private JsModule? _module;
+    private JsObject? _reorder;
+
+    private IReadOnlyList<ChatFolderPreset> Suggested =>
+        ChatFolderPresets.All.Where(p => !Folders.Folders.Any(f => ChatFolderPresets.Matching(f) == p)).ToList();
+
+    private string MineFooter => Folders.Folders.Count >= Limits.MaxChatFolders
+        ? L.Format("folders.settings.limit", Limits.MaxChatFolders)
+        : Folders.Folders.Count > 1 ? L["folders.settings.dragHint"] : L["folders.settings.mineHint"];
+
+    private string KeepArchivedHint => Folders.Settings.KeepArchived
+        ? L["folders.settings.keepArchivedOn"]
+        : Folders.Settings.ArchiveNewFromStrangers ? L["folders.settings.keepArchivedOffStrangers"] : L["folders.settings.keepArchivedOff"];
+
+    private ChatSwipeMode SwipeMode => Settings.Current.Chats.ChatSwipe == ChatSwipeMode.Actions ? ChatSwipeMode.Actions : ChatSwipeMode.Folders;
+
+    private IReadOnlyList<ChoiceOption<ChatSwipeMode>> SwipeOptions =>
+    [
+        new(ChatSwipeMode.Folders, L["folders.settings.swipe.folders"]) { Description = L["folders.settings.swipe.foldersHint"] },
+        new(ChatSwipeMode.Actions, L["folders.settings.swipe.actions"]) { Description = L["folders.settings.swipe.actionsHint"] },
+    ];
+
+    private IReadOnlyList<ChoiceOption<bool>> NewChatOptions =>
+    [
+        new(false, L["folders.settings.newChats.keep"]),
+        new(true, L["folders.settings.newChats.archive"]),
+    ];
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Folders.Changed += h, h => Folders.Changed -= h);
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        _module = new JsModule(JS, FolderJs.Path);
+        _reorder = await _module.AttachAsync("attachHandleReorder", _list, _self);
+        if (IsDisposed) await _reorder.DisposeAsync();
+    }
+
+    private int CountOf(ChatFolderDto folder) =>
+        ChatFolderView.Count(folder, ChatList.Chats.Concat(ChatList.ArchivedChats), c => FolderUi.PeerIsContact(c, Contacts, Users), DateTimeOffset.UtcNow);
+
+    private int IndexOf(Guid folderId)
+    {
+        var folders = Folders.Folders;
+        for (var i = 0; i < folders.Count; i++)
+            if (folders[i].Id == folderId) return i;
+        return -1;
+    }
+
+    private void Edit(Guid folderId) => Nav.NavigateTo(FolderUi.EditPath(folderId));
+
+    private async Task OpenMenuAsync(ChatFolderDto folder, MenuPosition position)
+    {
+        _menuFolder = folder;
+        if (_menu is not null) await _menu.OpenAsync(position);
+    }
+
+    private async Task AddPresetAsync(ChatFolderPreset preset)
+    {
+        var name = L[FolderUi.NameKeyOf(preset)];
+        try
+        {
+            await Folders.SaveAsync(ChatFolderPresets.Create(preset, name));
+            Toasts.Success(L.Format("folders.toast.added", name));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    /// <summary>A row was dropped by its handle: my folders in the new order.</summary>
+    [JSInvokable]
+    public Task OnReorder(string[] keys) => InvokeAsync(async () =>
+    {
+        var ids = new List<Guid>(keys.Length);
+        foreach (var key in keys)
+            if (Guid.TryParse(key, out var id)) ids.Add(id);
+        if (ids.Count < 2) return;
+        try
+        {
+            await Folders.ReorderAsync(ids);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    });
+
+    [JSInvokable]
+    public Task OnReorderLift() => InvokeAsync(Haptics.Tap);
+
+    private async Task MoveAsync(Guid folderId, int to)
+    {
+        var ids = PinnedOrderRules.Move(Folders.Folders.Select(f => f.Id).ToList(), IndexOf(folderId), to);
+        await OnReorder(ids.Select(id => id.ToString()).ToArray());
+    }
+
+    private async Task DeleteAsync(ChatFolderDto folder)
+    {
+        var ok = await Dialogs.ConfirmAsync(L.Format("folders.delete.title", folder.Name), L["folders.delete.text"], L["folders.delete.confirm"], danger: true);
+        if (!ok) return;
+        try
+        {
+            await Folders.DeleteAsync(folder.Id);
+            Toasts.Success(L["folders.toast.deleted"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SetSwipeAsync(ChatSwipeMode mode) => await Settings.UpdateAsync(s => s.Chats.ChatSwipe = mode);
+
+    private async Task UpdateAsync(Func<ChatListSettingsDto, ChatListSettingsDto> change)
+    {
+        try
+        {
+            await Folders.UpdateSettingsAsync(change(Folders.Settings));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_reorder is not null) await _reorder.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+    }
+}

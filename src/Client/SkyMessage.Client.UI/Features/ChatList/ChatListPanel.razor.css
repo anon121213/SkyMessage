@@ -76,6 +76,22 @@
     white-space: nowrap;
 }
 
+/* ---- The folder on screen: the part that follows a sideways swipe (js/folders.js) ---- */
+
+.chatlist__pane {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+    /* Vertical scrolling stays native; sideways drags are the folder swipe's (or the rows'). */
+    touch-action: pan-y;
+}
+
+/* While the list follows the finger nothing in it lights up as pressed. */
+.chatlist__pane[data-folder-swiping] ::deep .sm-list-item {
+    background: transparent;
+}
+
 /* ---- Archive folder: a soft card above the chats ---- */
 
 .chatlist__scroll ::deep .chatlist__archive {

@@ -887,6 +887,8 @@ export function attachRowSwipe(list, scroller, ref) {
 
   const down = (e) => {
     if (!e.isPrimary || (e.pointerType !== 'touch' && e.pointerType !== 'pen')) return;
+    // Sideways swipes switch folders instead (folders.js, the "Swipe on a chat" setting).
+    if (list.hasAttribute('data-row-swipe-off')) return;
     const wrap = rowOf(e.target);
     const onAction = !!(e.target instanceof Element && e.target.closest('[data-row-action]'));
     if (onAction) return;

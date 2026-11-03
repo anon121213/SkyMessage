@@ -14,6 +14,9 @@ public static class SettingsRoutes
     public const string Notifications = "notifications";
     public const string Appearance = "appearance";
     public const string Chats = "chats";
+    public const string Folders = "folders";
+    /// <summary>The folder editor (a sub-page of <see cref="Folders"/>): <c>?id=</c> an existing folder, none for a new one.</summary>
+    public const string Folder = "folder";
     public const string Devices = "devices";
     public const string Data = "data";
     public const string Language = "language";

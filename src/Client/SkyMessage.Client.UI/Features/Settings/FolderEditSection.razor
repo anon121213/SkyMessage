@@ -1,0 +1,279 @@
+@* Settings › Folders › a folder (/settings/folder?id=…, none = a new one): its name and icon (one of ours or an emoji),
+   which chats it takes in (types and chats picked by hand), what it leaves out (muted, read, archived, chats picked by
+   hand), and a live count of the chats it would show now (the same rules the server runs). Saving goes back to where
+   the editor was opened from; an existing folder can be deleted here too. *@
+@inherits UiComponentBase
+@inject IChatFolderStore Folders
+@inject IChatListStore ChatList
+@inject IContactStore Contacts
+@inject IUserStore Users
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+
+<SettingsScaffold Title="@(_isNew ? L["folders.edit.newTitle"] : L["folders.edit.title"])" Back="true">
+    <ChildContent>
+        @if (_draft is null)
+        {
+            @if (Folders.IsLoaded)
+            {
+                <EmptyState Icon="@IconNames.FolderOpen" Title="@L["folders.edit.notFound"]" Text="@L["folders.edit.notFoundText"]">
+                    <Actions>
+                        <Button Variant="ButtonVariant.Tonal" OnClick="() => Nav.GoBackAsync(FolderUi.SettingsPath)">@L["common.back"]</Button>
+                    </Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <SkeletonList Rows="5" />
+            }
+        }
+        else
+        {
+            var draft = _draft;
+            <div class="folder-edit__head sm-card">
+                <FolderIconTile Icon="@draft.Icon" Large="true" />
+                <div class="folder-edit__name">
+                    <TextField @bind-Value="_name" Label="@L["folders.edit.name"]"
+                               Placeholder="@L["folders.edit.namePlaceholder"]" MaxLength="Limits.ChatFolderNameMaxLength" Immediate="true"
+                               Autofocus="@_isNew" />
+                </div>
+            </div>
+
+            <Section Title="@L["folders.edit.icon"]">
+                <div class="folder-edit__icons" role="radiogroup" aria-label="@L["folders.edit.icon"]">
+                    @foreach (var icon in FolderUi.Icons)
+                    {
+                        var key = icon.Key;
+                        var selected = (draft.Icon ?? FolderUi.DefaultIconKey) == key;
+                        <button type="button" class="folder-edit__icon @(selected ? "is-selected" : null)" role="radio" aria-checked="@(selected ? "true" : "false")"
+                                title="@key" @onclick="() => SetIcon(key == FolderUi.DefaultIconKey ? null : key)">
+                            <Icon Name="@icon.Icon" />
+                        </button>
+                    }
+                    @{
+                        var emoji = FolderUi.EmojiOf(draft.Icon);
+                    }
+                    <button type="button" class="folder-edit__icon folder-edit__icon--emoji @(emoji is not null ? "is-selected" : null)" role="radio"
+                            aria-checked="@(emoji is not null ? "true" : "false")" aria-label="@L["folders.edit.emoji"]" @onclick="PickEmojiAsync">
+                        @if (emoji is not null)
+                        {
+                            <span class="sm-emoji">@emoji</span>
+                        }
+                        else
+                        {
+                            <Icon Name="@IconNames.SmilePlus" />
+                        }
+                    </button>
+                </div>
+            </Section>
+
+            <Section Title="@L["folders.edit.include"]" DividerInset="64px">
+                <SwitchItem Icon="@IconNames.ContactRound" IconColor="@SettingsTones.Mint" Title="@L["folders.edit.type.contacts"]" Subtitle="@L["folders.edit.type.contactsHint"]"
+                            Checked="draft.IncludeContacts" CheckedChanged="v => Change(d => d with { IncludeContacts = v })" />
+                <SwitchItem Icon="@IconNames.UserRoundPlus" IconColor="@SettingsTones.Peach" Title="@L["folders.edit.type.nonContacts"]" Subtitle="@L["folders.edit.type.nonContactsHint"]"
+                            Checked="draft.IncludeNonContacts" CheckedChanged="v => Change(d => d with { IncludeNonContacts = v })" />
+                <SwitchItem Icon="@IconNames.Users" IconColor="@SettingsTones.Sky" Title="@L["folders.edit.type.groups"]" Subtitle="@L["folders.edit.type.groupsHint"]"
+                            Checked="draft.IncludeGroups" CheckedChanged="v => Change(d => d with { IncludeGroups = v })" />
+                <SwitchItem Icon="@IconNames.Hash" IconColor="@SettingsTones.Orchid" Title="@L["folders.edit.type.channels"]" Subtitle="@L["folders.edit.type.channelsHint"]"
+                            Checked="draft.IncludeChannels" CheckedChanged="v => Change(d => d with { IncludeChannels = v })" />
+                <ListItem Icon="@IconNames.CirclePlus" IconColor="@SettingsTones.Violet" OnClick="PickIncludedAsync">
+                    <TitleContent><div class="sm-list-item__title folder-edit__add">@L["folders.edit.addChats"]</div></TitleContent>
+                </ListItem>
+                @ChatRows(draft.IncludedChatIds, id => Change(d => d with { IncludedChatIds = d.IncludedChatIds.Where(x => x != id).ToList() }))
+            </Section>
+
+            <Section Title="@L["folders.edit.exclude"]" DividerInset="64px">
+                <SwitchItem Icon="@IconNames.BellOff" IconColor="@SettingsTones.Mauve" Title="@L["folders.edit.excludeMuted"]" Subtitle="@L["folders.edit.excludeMutedHint"]"
+                            Checked="draft.ExcludeMuted" CheckedChanged="v => Change(d => d with { ExcludeMuted = v })" />
+                <SwitchItem Icon="@IconNames.CheckCheck" IconColor="@SettingsTones.Lagoon" Title="@L["folders.edit.excludeRead"]" Subtitle="@L["folders.edit.excludeReadHint"]"
+                            Checked="draft.ExcludeRead" CheckedChanged="v => Change(d => d with { ExcludeRead = v })" />
+                <SwitchItem Icon="@IconNames.Archive" IconColor="@SettingsTones.Gold" Title="@L["folders.edit.excludeArchived"]" Subtitle="@L["folders.edit.excludeArchivedHint"]"
+                            Checked="draft.ExcludeArchived" CheckedChanged="v => Change(d => d with { ExcludeArchived = v })" />
+                <ListItem Icon="@IconNames.CircleMinus" IconColor="@SettingsTones.Rose" OnClick="PickExcludedAsync">
+                    <TitleContent><div class="sm-list-item__title folder-edit__add">@L["folders.edit.excludeChats"]</div></TitleContent>
+                </ListItem>
+                @ChatRows(draft.ExcludedChatIds, id => Change(d => d with { ExcludedChatIds = d.ExcludedChatIds.Where(x => x != id).ToList() }))
+            </Section>
+
+            @if (!_isNew)
+            {
+                <Section>
+                    <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["folders.edit.delete"]" Danger="true" OnClick="DeleteAsync" />
+                </Section>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        @if (_draft is { } current)
+        {
+            <div class="folder-edit__footer">
+                <p class="folder-edit__preview @(Problem is null ? null : "folder-edit__preview--warn")" aria-live="polite">
+                    @(Problem ?? PreviewText(current))
+                </p>
+                <Button Block="true" Size="ButtonSize.Large" Icon="@IconNames.Check" Disabled="@(Problem is not null)" OnClick="SaveAsync">
+                    @(_isNew ? L["folders.edit.create"] : L["folders.edit.save"])
+                </Button>
+            </div>
+        }
+    </Footer>
+</SettingsScaffold>
+
+@code {
+    private ChatFolderDto? _draft;
+    private string _name = "";
+    private bool _isNew;
+    private bool _initialized;
+    // The editor stays mounted when the address names another folder: it starts over for that one.
+    private Guid? _initializedFor;
+
+    /// <summary>The folder to edit; none = a new folder.</summary>
+    [SupplyParameterFromQuery(Name = "id")] public Guid? FolderId { get; set; }
+
+    private string? Problem
+    {
+        get
+        {
+            if (_draft is not { } d) return null;
+            if (string.IsNullOrWhiteSpace(_name)) return L["folders.edit.needName"];
+            if (!ChatFolderRules.TakesInAnything(d.IncludeContacts, d.IncludeNonContacts, d.IncludeGroups, d.IncludeChannels, d.IncludedChatIds.Count))
+                return L["folders.edit.needRule"];
+            return null;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        // An existing folder may arrive after the editor opened (a cold start straight into it).
+        Folders.Changed += OnFoldersChanged;
+        OnDispose(() => Folders.Changed -= OnFoldersChanged);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_initialized && _initializedFor == FolderId) return;
+        _initialized = false;
+        _draft = null;
+        _isNew = false;
+        _name = "";
+        if (FolderId is { } id)
+        {
+            if (Folders.Get(id) is not { } folder) return;
+            _draft = folder;
+            _name = folder.Name;
+        }
+        else
+        {
+            _isNew = true;
+            _draft = new ChatFolderDto { Id = Guid.CreateVersion7(), ExcludeArchived = true };
+        }
+        _initialized = true;
+        _initializedFor = FolderId;
+    }
+
+    private void OnFoldersChanged()
+    {
+        if (_initialized) return;
+        _ = InvokeAsync(() =>
+        {
+            OnParametersSet();
+            StateHasChanged();
+        });
+    }
+
+    private void Change(Func<ChatFolderDto, ChatFolderDto> change)
+    {
+        if (_draft is { } draft) _draft = change(draft);
+    }
+
+    private void SetIcon(string? icon) => Change(d => d with { Icon = icon });
+
+    private async Task PickEmojiAsync()
+    {
+        var picked = await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.ChatList.FolderEmojiDialog>(L["folders.edit.emoji"],
+            options: new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Flush = true });
+        if (picked is string emoji && ChatFolderRules.IsValidIcon(emoji) && !string.IsNullOrEmpty(emoji)) SetIcon(emoji);
+    }
+
+    private Task PickIncludedAsync() => PickAsync(included: true);
+
+    private Task PickExcludedAsync() => PickAsync(included: false);
+
+    private async Task PickAsync(bool included)
+    {
+        if (_draft is not { } draft) return;
+        var picked = await Dialogs.ShowAsync<ChatPickerDialog>(included ? L["folders.picker.includeTitle"] : L["folders.picker.excludeTitle"],
+            new Dictionary<string, object?>
+            {
+                [nameof(ChatPickerDialog.Selected)] = included ? draft.IncludedChatIds : draft.ExcludedChatIds,
+                [nameof(ChatPickerDialog.Exclude)] = included ? draft.ExcludedChatIds : draft.IncludedChatIds,
+            },
+            new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Sheet, Flush = true });
+        if (picked is not IReadOnlyList<Guid> ids) return;
+        var list = ids.Distinct().Take(Limits.MaxChatFolderChats).ToList();
+        Change(d => included ? d with { IncludedChatIds = list } : d with { ExcludedChatIds = list });
+    }
+
+    private string PreviewText(ChatFolderDto draft)
+    {
+        var count = ChatFolderView.Count(draft, ChatList.Chats.Concat(ChatList.ArchivedChats), c => FolderUi.PeerIsContact(c, Contacts, Users),
+            DateTimeOffset.UtcNow);
+        return count == 0 ? L["folders.edit.previewNone"] : L.Plural("folders.edit.preview", count);
+    }
+
+    private RenderFragment ChatRows(IReadOnlyList<Guid> ids, Action<Guid> remove) => __builder =>
+    {
+        foreach (var id in ids)
+        {
+            if (ChatList.Get(id) is not { } chat) continue;
+            var chatId = id;
+            <ListItem @key="chatId" Compact="true" Class="folder-edit__chat">
+                <Leading><ChatAvatar Chat="chat" Size="38" /></Leading>
+                <ChildContent>
+                    <div class="sm-list-item__title">@(chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat))</div>
+                </ChildContent>
+                <Trailing>
+                    <IconButton Icon="@IconNames.X" Label="@L["common.remove"]" Size="36" OnClick="() => remove(chatId)" />
+                </Trailing>
+            </ListItem>
+        }
+    };
+
+    private async Task SaveAsync()
+    {
+        if (_draft is not { } draft || Problem is not null) return;
+        var folder = draft with { Name = _name.Trim() };
+        // The store shows the change at once; the editor does not wait for the server to answer.
+        var saving = Folders.SaveAsync(folder);
+        await Nav.GoBackAsync(FolderUi.SettingsPath);
+        try
+        {
+            await saving;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_draft is not { } draft) return;
+        var ok = await Dialogs.ConfirmAsync(L.Format("folders.delete.title", _name.Trim().Length > 0 ? _name.Trim() : draft.Name),
+            L["folders.delete.text"], L["folders.delete.confirm"], danger: true);
+        if (!ok) return;
+        var deleting = Folders.DeleteAsync(draft.Id);
+        await Nav.GoBackAsync(FolderUi.SettingsPath);
+        try
+        {
+            await deleting;
+            Toasts.Success(L["folders.toast.deleted"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

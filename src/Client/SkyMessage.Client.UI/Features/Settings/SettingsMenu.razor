@@ -7,6 +7,7 @@
 @inject IMediaUrlBuilder MediaUrls
 @inject IPlatformInfo Platform
 @inject DialogService Dialogs
+@inject IChatFolderStore Folders
 
 <div class="settings-menu sm-stagger">
     @if (Auth.Me is { } me)
@@ -78,6 +79,7 @@
         RenderOn(h => Auth.Changed += h, h => Auth.Changed -= h);
         RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
         RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        RenderOn(h => Folders.Changed += h, h => Folders.Changed -= h);
     }
 
     private RenderFragment Row(SettingsSectionInfo item) => __builder =>
@@ -99,6 +101,7 @@
             },
             SettingsRoutes.Notifications => settings.Notifications.Enabled ? L["common.on"] : L["common.off"],
             SettingsRoutes.Phone => string.IsNullOrEmpty(Auth.Me?.PhoneNumber) ? L["settings.phone.none.short"] : null,
+            SettingsRoutes.Folders => Folders.Folders.Count > 0 ? Folders.Folders.Count.ToString(L.Culture) : null,
             SettingsRoutes.Appearance => settings.Appearance.Theme switch
             {
                 ThemeMode.Light => L["theme.mode.light"],

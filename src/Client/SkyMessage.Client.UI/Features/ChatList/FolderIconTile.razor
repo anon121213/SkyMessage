@@ -1,0 +1,38 @@
+@* A folder's icon as a pastel squircle tile, like the settings rows' tiles: one of our glyphs (the hue follows the icon,
+   so a folder keeps its color) or the user's emoji on a soft accent tile. Decorative. *@
+
+<span class="sm-list-item__icon folder-tile @(Large ? "folder-tile--large" : null) @Class" style="--icon-bg:@Hue" aria-hidden="true">
+    @if (FolderUi.EmojiOf(Icon) is { } emoji)
+    {
+        <span class="folder-tile__emoji sm-emoji">@emoji</span>
+    }
+    else
+    {
+        <Icon Name="@(FolderUi.GlyphOf(Icon) ?? IconNames.FolderOpen)" />
+    }
+</span>
+
+@code {
+    private static readonly string[] Hues =
+    [
+        SettingsTones.Violet, SettingsTones.Mint, SettingsTones.Peach, SettingsTones.Sky, SettingsTones.Orchid,
+        SettingsTones.Lagoon, SettingsTones.Rose, SettingsTones.Gold, SettingsTones.Periwinkle,
+    ];
+
+    /// <summary>An icon key, an emoji, or null (the plain folder).</summary>
+    [Parameter] public string? Icon { get; set; }
+    /// <summary>The editor's preview: a bigger tile.</summary>
+    [Parameter] public bool Large { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string Hue
+    {
+        get
+        {
+            if (FolderUi.EmojiOf(Icon) is not null) return "var(--sm-accent)";
+            var key = string.IsNullOrEmpty(Icon) ? FolderUi.DefaultIconKey : Icon;
+            var index = FolderUi.Icons.Select((info, i) => (info, i)).FirstOrDefault(x => x.info.Key == key).i;
+            return Hues[index % Hues.Length];
+        }
+    }
+}

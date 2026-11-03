@@ -22,6 +22,7 @@ public static class SettingsCatalog
         new(SettingsRoutes.Notifications, "settings.notifications.title", IconNames.Bell, SettingsTones.Rose),
         new(SettingsRoutes.Appearance, "settings.appearance.title", IconNames.Palette, SettingsTones.Orchid),
         new(SettingsRoutes.Chats, "settings.chats.title", IconNames.MessageCircle, SettingsTones.Sky),
+        new(SettingsRoutes.Folders, "folders.settings.title", IconNames.FolderOpen, SettingsTones.Mint),
         new(SettingsRoutes.Devices, "settings.devices.title", IconNames.Headphones, SettingsTones.Peach),
         new(SettingsRoutes.Data, "settings.data.title", IconNames.HardDrive, SettingsTones.Gold),
         new(SettingsRoutes.Language, "settings.language.title", IconNames.Languages, SettingsTones.Lagoon),
@@ -34,19 +35,29 @@ public static class SettingsCatalog
     ];
 
     private static readonly SettingsSectionInfo BlockedInfo = new(SettingsRoutes.Blocked, "settings.blocked.title", IconNames.Ban, SettingsTones.Rose);
+    private static readonly SettingsSectionInfo FolderInfo = new(SettingsRoutes.Folder, "folders.edit.title", IconNames.FolderOpen, SettingsTones.Mint);
 
-    public static IEnumerable<SettingsSectionInfo> All => Account.Concat(App).Concat(Help).Append(BlockedInfo);
+    public static IEnumerable<SettingsSectionInfo> All => Account.Concat(App).Concat(Help).Append(BlockedInfo).Append(FolderInfo);
 
     /// <summary>Known section key (case-insensitive) in its canonical form, else null.</summary>
     public static string? Normalize(string? key) =>
         string.IsNullOrWhiteSpace(key) ? null : All.FirstOrDefault(s => string.Equals(s.Key, key.Trim(), StringComparison.OrdinalIgnoreCase))?.Key;
 
     /// <summary>The menu row that represents a section (sub-pages highlight their parent).</summary>
-    public static string MenuKeyOf(string key) => key == SettingsRoutes.Blocked ? SettingsRoutes.Privacy : key;
+    public static string MenuKeyOf(string key) => key switch
+    {
+        SettingsRoutes.Blocked => SettingsRoutes.Privacy,
+        SettingsRoutes.Folder => SettingsRoutes.Folders,
+        _ => key,
+    };
 
     /// <summary>Where Back goes from a section opened by a deep link.</summary>
-    public static string ParentPathOf(string key) =>
-        key == SettingsRoutes.Blocked ? SettingsRoutes.PathOf(SettingsRoutes.Privacy) : "/settings";
+    public static string ParentPathOf(string key) => key switch
+    {
+        SettingsRoutes.Blocked => SettingsRoutes.PathOf(SettingsRoutes.Privacy),
+        SettingsRoutes.Folder => SettingsRoutes.PathOf(SettingsRoutes.Folders),
+        _ => "/settings",
+    };
 }
 
 /// <summary>Cascaded by SettingsPage: sections rendered next to the menu (wide screens) hide their back button.</summary>

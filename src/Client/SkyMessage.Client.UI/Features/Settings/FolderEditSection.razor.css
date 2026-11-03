@@ -1,0 +1,81 @@
+/* The folder editor: the icon tile beside the name on a frosted card, a grid of squircle icon buttons, grouped rules,
+   and a sticky footer with the live count and Save. */
+
+.folder-edit__head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 6px;
+    padding: 14px 16px;
+    border-radius: var(--sm-radius-xl);
+}
+
+.folder-edit__name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.folder-edit__icons {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr));
+    gap: 8px;
+    padding: 10px 12px 12px;
+}
+
+.folder-edit__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    min-width: 2.75rem;
+    border-radius: 34%;
+    background: var(--sm-surface-2);
+    color: var(--sm-text-2);
+    font-size: 1.375rem;
+    line-height: 1;
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease, color var(--sm-dur-fast) ease;
+}
+
+.folder-edit__icon:active {
+    transform: scale(0.9);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .folder-edit__icon:hover {
+        color: var(--sm-text);
+    }
+}
+
+.folder-edit__icon.is-selected {
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    box-shadow: inset 0 0 0 2px var(--sm-accent);
+}
+
+html[data-input="keyboard"] .folder-edit__icon:focus-visible {
+    outline: 2px solid var(--sm-accent);
+    outline-offset: 2px;
+}
+
+.folder-edit__add {
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+}
+
+.folder-edit__footer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-edit__preview {
+    color: var(--sm-text-2);
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.folder-edit__preview--warn {
+    color: var(--sm-warning);
+}
