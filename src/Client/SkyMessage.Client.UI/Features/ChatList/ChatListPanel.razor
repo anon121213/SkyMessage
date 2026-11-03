@@ -93,8 +93,8 @@
             }
             else if (ActiveFolder is { } emptyFolder)
             {
-                <EmptyState Title="@(emptyFolder.ExcludeRead ? L["folders.empty.readTitle"] : L["folders.empty.title"])"
-                            Text="@(emptyFolder.ExcludeRead ? L["folders.empty.readText"] : L["folders.empty.text"])" Fill="true" Class="chatlist__empty">
+                <EmptyState Title="@(emptyFolder.ExcludeRead ? L["folders.empty.readTitle"] : L["folders.empty.title"])" Text="@EmptyFolderText(emptyFolder)"
+                            Fill="true" Class="chatlist__empty">
                     <Art><SkyArt Kind="SkyArtKind.Folder" Size="210" /></Art>
                     <Actions>
                         <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.Pencil" OnClick="() => EditFolder(emptyFolder.Id)">@L["folders.menu.edit"]</Button>
@@ -263,6 +263,15 @@
     }
 
     private bool PeerIsContact(ChatSummaryDto chat) => FolderUi.PeerIsContact(chat, Contacts, Users);
+
+    private string EmptyFolderText(ChatFolderDto folder)
+    {
+        if (folder.ExcludeRead) return L["folders.empty.readText"];
+        // Only channels, which no chat is yet: say so instead of pointing at the rules.
+        var channelsOnly = folder.IncludeChannels && !folder.IncludeContacts && !folder.IncludeNonContacts && !folder.IncludeGroups
+                           && folder.IncludedChatIds.Count == 0;
+        return channelsOnly ? L["folders.empty.channelsText"] : L["folders.empty.text"];
+    }
 
     /// <summary>Pinned where the list shows it: the folder's own pins, else the global ones ("All chats", the archive).</summary>
     private bool PinnedHere(ChatSummaryDto chat) => ActiveFolder is { } folder ? ChatFolderView.IsPinned(folder, chat.Id) : chat.IsPinned;

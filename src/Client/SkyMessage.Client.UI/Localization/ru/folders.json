@@ -19,6 +19,7 @@
   "folders.menu.down": "Ниже",
   "folders.empty.title": "В папке пока пусто",
   "folders.empty.text": "Сюда попадут чаты, которые подходят под правила папки.",
+  "folders.empty.channelsText": "Каналы появятся в следующих версиях — тогда они будут здесь.",
   "folders.empty.readTitle": "Всё прочитано",
   "folders.empty.readText": "Чаты с новыми сообщениями появятся здесь.",
   "folders.delete.title": "Удалить папку «{0}»?",

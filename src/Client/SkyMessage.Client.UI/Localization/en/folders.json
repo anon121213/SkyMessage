@@ -19,6 +19,7 @@
   "folders.menu.down": "Move down",
   "folders.empty.title": "Nothing here yet",
   "folders.empty.text": "Chats that match this folder's rules will show up here.",
+  "folders.empty.channelsText": "Channels are coming in a later version — they'll show up here.",
   "folders.empty.readTitle": "All caught up",
   "folders.empty.readText": "Chats with new messages will show up here.",
   "folders.delete.title": "Delete “{0}”?",
