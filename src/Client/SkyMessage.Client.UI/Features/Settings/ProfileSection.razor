@@ -1,5 +1,7 @@
-@* Edit my profile: photo (upload/remove), name, username with a live availability check (free / taken icons pop in),
-   bio; my shareable link. *@
+@* Edit my profile: photo (from the gallery or the camera framed in the crop editor, or an emoji on a color; the photo
+   opens my avatar history), name, username with a live availability check (free / taken icons pop in), bio, up to
+   three links; my look (profile color, cover — saved at once and previewed on the photo block), my birthday; my
+   shareable link. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IAuthService Auth
@@ -11,6 +13,10 @@
 @inject DialogService Dialogs
 @inject ToastService Toasts
 @inject NavigationService Nav
+@inject AvatarFlows AvatarSources
+@inject AvatarOverlays AvatarViewer
+@inject ThemeService Theme
+@inject FormatService Format
 @inject ILogger<ProfileSection> Logger
 
 <SettingsScaffold Title="@L["settings.profile.title"]">
@@ -20,10 +26,16 @@
     <ChildContent>
         @if (Auth.Me is { } me)
         {
-            <div class="profile-photo">
+            var cover = CoverStyle(me);
+            <div class="profile-photo @(cover is null ? null : "profile-photo--cover")" style="@ProfileLook.TintStyle(me.ProfileColor)">
+                @if (cover is not null)
+                {
+                    <div class="profile-photo__cover @(me.Cover?.MediaId is not null ? "profile-photo__cover--photo" : null)" style="@cover" aria-hidden="true"></div>
+                }
                 <div class="profile-photo__frame">
                     <span class="profile-photo__ring" aria-hidden="true"></span>
-                    <Avatar Url="@(_previewUrl ?? MediaUrls.AvatarUrl(me.AvatarMediaId))" Name="@(string.IsNullOrWhiteSpace(_name) ? me.DisplayName : _name)" Seed="me.Id" Size="120" />
+                    <Avatar Url="@(_previewUrl ?? MediaUrls.AvatarUrl(me.AvatarMediaId))" Name="@(string.IsNullOrWhiteSpace(_name) ? me.DisplayName : _name)" Seed="me.Id" Size="120"
+                            OnClick="OpenPhotoAsync" />
                     @if (_uploading)
                     {
                         <div class="profile-photo__progress">
@@ -69,6 +81,90 @@
                 </div>
             </Section>
 
+            <Section Title="@L["customize.links"]" Footer="@L["customize.links.hint"]">
+                <div class="profile-links sm-p-m sm-col sm-gap-m">
+                    @for (var i = 0; i < _links.Count; i++)
+                    {
+                        var index = i;
+                        var link = _links[i];
+                        <div @key="link" class="profile-links__item">
+                            <div class="profile-links__fields">
+                                <TextField Value="@link.Url" ValueChanged="v => SetLinkUrl(index, v)" Label="@L["customize.links.url"]"
+                                           Placeholder="@L["customize.links.urlPlaceholder"]" Type="url" InputMode="url" Autocapitalize="off" Spellcheck="false"
+                                           MaxLength="Limits.ProfileLinkUrlMaxLength" Error="@link.Error" Icon="@IconNames.Link" />
+                                <TextField Value="@link.Title" ValueChanged="v => SetLinkTitle(index, v)" Label="@L["customize.links.title"]"
+                                           Placeholder="@L["customize.links.titlePlaceholder"]" MaxLength="Limits.ProfileLinkTitleMaxLength" />
+                            </div>
+                            <IconButton Icon="@IconNames.X" Label="@L["customize.links.remove"]" Size="38" Class="profile-links__remove" OnClick="() => RemoveLink(index)" />
+                        </div>
+                    }
+                    @if (_links.Count < Limits.ProfileLinksMax)
+                    {
+                        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.Plus" Class="profile-links__add" OnClick="AddLink">@L["customize.links.add"]</Button>
+                    }
+                </div>
+            </Section>
+
+            <Section Title="@L["customize.section"]" Footer="@L["customize.color.hint"]">
+                <div class="profile-look sm-p-m">
+                    <div class="sm-overline profile-look__label">@L["customize.color"]</div>
+                    <div class="sm-swatches profile-look__swatches">
+                        <ColorSwatch Color="var(--sm-surface-3)" RingColor="var(--sm-text-3)" Label="@L["customize.color.none"]" Selected="@(me.ProfileColor is null)"
+                                     Class="profile-look__none" OnClick="() => SetColorAsync(null)" />
+                        @foreach (var key in ProfileStyle.Colors)
+                        {
+                            if (ProfileLook.Accent(key) is not { } accent) continue;
+                            <ColorSwatch @key="key" Color="@accent.Gradient" RingColor="@accent.Hex" Label="@L[accent.NameKey]" Selected="@(me.ProfileColor == key)"
+                                         OnClick="() => SetColorAsync(key)" />
+                        }
+                    </div>
+                    <div class="sm-overline profile-look__label">@L["customize.cover"]</div>
+                    <div class="profile-look__covers" data-no-swipe-back>
+                        <button type="button" class="profile-look__cover profile-look__cover--none @(me.Cover is null ? "is-selected" : null)"
+                                aria-pressed="@(me.Cover is null ? "true" : "false")" @onclick="() => SetCoverAsync(null)">
+                            <span class="profile-look__tile"><Icon Name="@IconNames.Ban" /></span>
+                            <span class="profile-look__name">@L["customize.cover.none"]</span>
+                        </button>
+                        @foreach (var key in ProfileStyle.CoverGradients)
+                        {
+                            if (!ProfileLook.IsCover(key)) continue;
+                            var selected = me.Cover?.Gradient == key;
+                            <button @key="key" type="button" class="profile-look__cover @(selected ? "is-selected" : null)" aria-pressed="@(selected ? "true" : "false")"
+                                    @onclick="() => SetCoverAsync(key)">
+                                <span class="profile-look__tile" style="@($"background:{ProfileLook.CoverCss(key, Theme.IsDark)}")"></span>
+                                <span class="profile-look__name">@L[ProfileLook.CoverNameKey(key)]</span>
+                            </button>
+                        }
+                        <button type="button" class="profile-look__cover @(me.Cover?.MediaId is not null ? "is-selected" : null)" disabled="@_coverBusy"
+                                aria-pressed="@(me.Cover?.MediaId is not null ? "true" : "false")" @onclick="PickCoverPhotoAsync">
+                            <span class="profile-look__tile profile-look__tile--photo" style="@CoverTileStyle(me)">
+                                @if (_coverBusy)
+                                {
+                                    <Spinner Size="20" />
+                                }
+                                else if (me.Cover?.MediaId is null)
+                                {
+                                    <Icon Name="@IconNames.ImagePlus" />
+                                }
+                            </span>
+                            <span class="profile-look__name">@L["customize.cover.photo"]</span>
+                        </button>
+                    </div>
+                    @if (me.Cover?.MediaId is not null)
+                    {
+                        <p class="profile-look__note">@L["customize.cover.photoHint"]</p>
+                    }
+                </div>
+            </Section>
+
+            <Section Title="@L["birthday.title"]" Footer="@BirthdayFooter(me)">
+                <ListItem Icon="@IconNames.Calendar" IconColor="@SettingsTones.Peach"
+                          Title="@(me.Birthday is { } birthday ? ProfileLook.BirthdayText(Format, birthday) : L["birthday.add"])"
+                          Meta="@(me.Birthday is null ? L["birthday.none"] : null)" Chevron="true" OnClick="EditBirthdayAsync" />
+                <ListItem Icon="@IconNames.Eye" IconColor="@SettingsTones.Violet" Title="@L["birthday.privacy.title"]"
+                          Meta="@LevelName(me.Privacy.Birthday ?? PrivacyLevel.Contacts)" Chevron="true" OnClick="OpenPrivacy" />
+            </Section>
+
             <Section Title="@L["settings.profile.link"]" Footer="@L["settings.profile.linkHint"]">
                 <ListItem Icon="@IconNames.Link" IconColor="@SettingsTones.Violet" Title="@Links.ProfileLink(me.Username)" Multiline="true" OnClick="CopyLinkAsync">
                     <Trailing>
@@ -103,6 +199,17 @@
     private string? _previewUrl;
     private CancellationTokenSource? _checkCts;
     private CancellationTokenSource? _uploadCts;
+    private List<LinkDraft> _links = [];
+    private bool _coverBusy;
+    private bool _lookBusy;
+
+    /// <summary>A link being edited (its own object, so rows keep their state while others are removed).</summary>
+    private sealed class LinkDraft
+    {
+        public string Url { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string? Error { get; set; }
+    }
 
     private bool CanSave
     {
@@ -110,9 +217,11 @@
         {
             if (Auth.Me is not { } me || _saving || _checking || !_usernameValid) return false;
             if (string.IsNullOrWhiteSpace(_name)) return false;
+            if (_links.Any(l => l.Error is not null)) return false;
             return _name.Trim() != me.DisplayName
                    || !string.Equals(_username.Trim().TrimStart('@'), me.Username, StringComparison.Ordinal)
-                   || (_bio ?? "").Trim() != (me.Bio ?? "");
+                   || (_bio ?? "").Trim() != (me.Bio ?? "")
+                   || LinksChanged(me);
         }
     }
 
@@ -122,6 +231,7 @@
         Auth.Changed += OnAuthChanged;
         OnDispose(() => Auth.Changed -= OnAuthChanged);
         RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        RenderOn(h => Theme.Changed += h, h => Theme.Changed -= h);
     }
 
     private void OnAuthChanged() => _ = InvokeAsync(() =>
@@ -137,6 +247,7 @@
         _name = me.DisplayName;
         _username = me.Username;
         _bio = me.Bio ?? "";
+        _links = me.Links.Select(l => new LinkDraft { Url = l.Url, Title = l.Title ?? "" }).ToList();
         _usernameError = null;
         _usernameOk = null;
         _usernameRefused = false;
@@ -225,6 +336,7 @@
             DisplayName = name != me.DisplayName ? name : null,
             Username = !string.Equals(username, me.Username, StringComparison.Ordinal) ? username : null,
             Bio = bio != (me.Bio ?? "") ? bio : null,
+            Links = LinksChanged(me) ? CleanLinks() : null,
         };
         _saving = true;
         try
@@ -251,12 +363,29 @@
         }
     }
 
+    /// <summary>The photo: my avatar history when I have photos, else a new one.</summary>
+    private async Task OpenPhotoAsync()
+    {
+        if (Auth.Me is { AvatarMediaId: not null } me) AvatarViewer.ViewMine(me.AvatarMediaId);
+        else await ChangePhotoAsync();
+    }
+
     private async Task ChangePhotoAsync()
     {
+        var options = AvatarSources.SourceOptions().ToList();
+        if (Auth.Me?.AvatarMediaId is not null)
+            options.Add(new ChoiceOption<string>("view", L["avatar.choose.view"]) { Icon = IconNames.Images });
+        var choice = await Dialogs.ChooseAsync(L["avatar.choose.title"], options);
+        if (choice is null) return;
+        if (choice.Value == "view")
+        {
+            AvatarViewer.ViewMine(Auth.Me?.AvatarMediaId);
+            return;
+        }
         PickedPhoto? photo;
         try
         {
-            photo = await Avatars.PickAsync();
+            photo = await AvatarSources.MakeAsync(choice.Value);
         }
         catch (Exception ex)
         {
@@ -323,6 +452,142 @@
     }
 
     private void OpenPhone() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Phone));
+
+    private void OpenPrivacy() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Privacy));
+
+    // ---- Links ----
+
+    private void AddLink()
+    {
+        if (_links.Count >= Limits.ProfileLinksMax) return;
+        _links.Add(new LinkDraft());
+        _dirty = true;
+    }
+
+    private void RemoveLink(int index)
+    {
+        if (index < 0 || index >= _links.Count) return;
+        _links.RemoveAt(index);
+        _dirty = true;
+    }
+
+    private void SetLinkUrl(int index, string value)
+    {
+        var link = _links[index];
+        link.Url = value;
+        link.Error = string.IsNullOrWhiteSpace(value) || ProfileStyle.NormalizeLinkUrl(value) is not null ? null : L["customize.links.invalid"];
+        _dirty = true;
+    }
+
+    private void SetLinkTitle(int index, string value)
+    {
+        _links[index].Title = value;
+        _dirty = true;
+    }
+
+    /// <summary>The links as they would be saved: normalized, empty rows left out.</summary>
+    private List<ProfileLinkDto> CleanLinks() => _links
+        .Select(l => (Url: ProfileStyle.NormalizeLinkUrl(l.Url), Title: ProfileStyle.NormalizeLinkTitle(l.Title)))
+        .Where(l => l.Url is not null)
+        .Select(l => new ProfileLinkDto { Url = l.Url!, Title = l.Title })
+        .ToList();
+
+    private bool LinksChanged(MeDto me) => !CleanLinks().SequenceEqual(me.Links);
+
+    // ---- Look: color and cover (saved at once) ----
+
+    private async Task SetColorAsync(string? key)
+    {
+        if (Auth.Me is not { } me || me.ProfileColor == key || _lookBusy) return;
+        _lookBusy = true;
+        try
+        {
+            Auth.UpdateMe(await Api.UpdateProfileAsync(new UpdateProfileRequest { ProfileColor = key ?? "" }));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _lookBusy = false;
+        }
+    }
+
+    private async Task SetCoverAsync(string? gradient)
+    {
+        if (Auth.Me is not { } me || _lookBusy) return;
+        if (gradient is null ? me.Cover is null : me.Cover?.Gradient == gradient) return;
+        _lookBusy = true;
+        try
+        {
+            var updated = gradient is null
+                ? await Api.RemoveCoverAsync()
+                : await Api.SetCoverAsync(new SetCoverRequest { Gradient = gradient });
+            Auth.UpdateMe(updated);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _lookBusy = false;
+        }
+    }
+
+    private async Task PickCoverPhotoAsync()
+    {
+        if (_coverBusy) return;
+        PickedPhoto? photo;
+        try
+        {
+            photo = await Avatars.PickAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return;
+        }
+        if (photo is null) return;
+        _coverBusy = true;
+        StateHasChanged();
+        try
+        {
+            var media = await Avatars.UploadAsync(photo);
+            Auth.UpdateMe(await Api.SetCoverAsync(new SetCoverRequest { MediaId = media.Id }));
+            Toasts.Success(L["customize.cover.saved"]);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _coverBusy = false;
+        }
+    }
+
+    /// <summary>The cover band of the photo block (as others see it in my profile); null without color or cover.</summary>
+    private string? CoverStyle(MeDto me)
+    {
+        if (me.Cover?.MediaId is { } photo) return $"background-image:url('{MediaUrls.ContentUrl(photo)}')";
+        if (ProfileLook.CoverCss(me.Cover?.Gradient, Theme.IsDark) is { } sky) return $"background:{sky}";
+        return ProfileLook.Accent(me.ProfileColor) is null ? null : "";
+    }
+
+    private string? CoverTileStyle(MeDto me) =>
+        me.Cover?.MediaId is { } photo ? $"background-image:url('{MediaUrls.ThumbnailUrl(photo)}')" : null;
+
+    // ---- Birthday ----
+
+    private async Task EditBirthdayAsync() =>
+        await Dialogs.ShowAsync<BirthdayDialog>(L["birthday.title"], null, new DialogOptions { Size = DialogSize.Small, Presentation = OverlayPresentation.Sheet });
+
+    private string? BirthdayFooter(MeDto me) =>
+        me.Birthday?.Year is null && me.Birthday is not null ? L["birthday.yearHint"] : null;
+
+    private string LevelName(PrivacyLevel level) => L[$"settings.privacy.level.{level.ToString().ToLowerInvariant()}"];
 
     public ValueTask DisposeAsync()
     {

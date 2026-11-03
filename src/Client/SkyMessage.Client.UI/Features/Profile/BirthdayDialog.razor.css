@@ -1,0 +1,27 @@
+.bday__row {
+    display: flex;
+    gap: 10px;
+}
+
+.bday__row ::deep .bday__day {
+    flex: 0 0 6.5rem;
+}
+
+.bday__row ::deep .bday__month {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.bday__privacy {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--sm-text-2);
+}
+
+.bday__privacy ::deep .sm-icon {
+    flex-shrink: 0;
+    color: var(--sm-accent);
+}

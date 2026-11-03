@@ -1,0 +1,40 @@
+/* The preview is the avatar itself: a squircle with the emoji, popping softly when the emoji changes. */
+.emoji-avatar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.emoji-avatar__preview {
+    align-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 7.5rem;
+    height: 7.5rem;
+    margin: 4px 0 6px;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    transition: background var(--sm-dur) ease;
+}
+
+.emoji-avatar__glyph {
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--sm-font);
+    font-size: 4rem;
+    line-height: 1;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring);
+}
+
+.emoji-avatar__label {
+    margin-top: 4px;
+    color: var(--sm-text-3);
+}
+
+.emoji-avatar__swatches {
+    gap: 12px;
+    padding: 2px;
+}
+
+.emoji-avatar ::deep .emoji-avatar__picker {
+    border-radius: var(--sm-radius-l);
+}

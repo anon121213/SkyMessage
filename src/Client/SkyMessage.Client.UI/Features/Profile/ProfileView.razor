@@ -2,7 +2,9 @@
    name in the display font, presence; actions as glass circles with labels (message is a solid accent circle); info
    and contact actions on glass cards with pastel tiles. Scrolling tucks the large header away (CSS
    scroll-driven animation); OnHeaderHidden tells the page when to show the compact title in its app bar
-   (InfoBarTitle). *@
+   (InfoBarTitle). The person's look: their profile color tints the ring, the main action and a soft cover band;
+   a cover (a piece of sky or their photo) sits behind the portrait; links and the birthday (🎂 next to the name on
+   the day) are info rows. Tapping the photo opens the avatar viewer with their earlier photos. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IUserStore Users
@@ -19,6 +21,10 @@
 @inject ShareHelper Share
 @inject LinkService LinkOpener
 @inject IRealtimeService Realtime
+@inject IBirthdayService Celebrations
+@inject AvatarOverlays Avatars
+@inject ThemeService Theme
+@inject FormatService Format
 @inject AppJs Js
 
 @if (_profile is null)
@@ -42,7 +48,12 @@ else
 {
     var user = User!;
     var isMe = user.Id == Auth.UserId;
-    <div class="profile sm-stagger">
+    var cover = CoverStyle(user);
+    <div class="profile sm-stagger @(cover is null ? null : "profile--cover")" style="@ProfileLook.TintStyle(user.IsDeleted ? null : user.ProfileColor)">
+        @if (cover is not null)
+        {
+            <div class="profile__cover @(_profile.Cover?.MediaId is not null ? "profile__cover--photo" : null)" style="@cover" aria-hidden="true"></div>
+        }
         <div class="profile__head">
             <div class="profile__portrait">
                 <span class="profile__ring" aria-hidden="true"></span>
@@ -50,7 +61,8 @@ else
             </div>
             @* The mark one header height above the name's bottom drives the app bar's compact title (HeaderTitleWatcher):
                the name counts as gone once it has slid under the floating header, not when it leaves the screen. *@
-            <h2 class="profile__name" dir="auto">@user.NameOf(L)<span @ref="_nameEl" class="profile__title-mark" aria-hidden="true"></span></h2>
+            <h2 class="profile__name" dir="auto">@user.NameOf(L)@if (Celebrations.IsBirthdayToday(user))
+                {<span class="profile__cake" role="img" aria-label="@L["birthday.mark"]" title="@L["birthday.mark"]">🎂</span>}<span @ref="_nameEl" class="profile__title-mark" aria-hidden="true"></span></h2>
             @if (!user.IsDeleted)
             {
                 @if (isMe)
@@ -128,6 +140,15 @@ else
                     {
                         <ListItem Icon="@IconNames.Phone" IconColor="@SettingsTones.Mint" Title="@_profile.PhoneNumber" Subtitle="@L["profile.phone"]" OnClick="PhoneAsync" />
                     }
+                    @if (user.Birthday is { } birthday)
+                    {
+                        <ListItem Icon="@IconNames.Calendar" IconColor="@SettingsTones.Peach" Title="@BirthdayTitle(birthday)" Subtitle="@BirthdaySubtitle(user)" />
+                    }
+                    @foreach (var link in _profile.Links)
+                    {
+                        <ListItem @key="link.Url" Icon="@IconNames.ExternalLink" IconColor="@SettingsTones.Periwinkle" Title="@LinkTitle(link)"
+                                  Subtitle="@LinkSubtitle(link)" OnClick="() => OpenLinkAsync(link)" />
+                    }
                     <ListItem Icon="@IconNames.Link" IconColor="@SettingsTones.Sky" Title="@ProfileLink" Subtitle="@L["profile.link"]" OnClick="CopyLinkAsync">
                         <Trailing>
                             <IconButton Icon="@IconNames.QrCode" Label="@L["profile.qr"]" Variant="IconButtonVariant.Tonal" StopPropagation="true" OnClick="ShowQrAsync" />
@@ -199,6 +220,8 @@ else
         // when the server says the user changed, when contacts change, and after a resync.
         RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == _profile?.User.Id);
         RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        RenderOn(h => Celebrations.Changed += h, h => Celebrations.Changed -= h);
+        RenderOn(h => Theme.Changed += h, h => Theme.Changed -= h);
         Action<UserRefEvent> userChanged = e =>
         {
             if (e.UserId == _profile?.User.Id) Refetch();
@@ -341,14 +364,38 @@ else
         else if (choice?.Value == "copy") await Share.CopyAsync(phone);
     }
 
-    private async Task ViewPhotoAsync()
+    private void ViewPhotoAsync()
     {
-        if (User is not { AvatarMediaId: { } mediaId } user) return;
-        await Dialogs.ShowAsync<AvatarViewerDialog>(user.NameOf(L), new Dictionary<string, object?>
-        {
-            [nameof(AvatarViewerDialog.MediaId)] = mediaId,
-        }, new DialogOptions { Size = DialogSize.Medium, Flush = true });
+        if (User is { AvatarMediaId: not null } user) Avatars.ViewUser(user);
     }
+
+    /// <summary>The cover band: their photo, a piece of sky, or a soft wash of their profile color; null for none.</summary>
+    private string? CoverStyle(UserSummaryDto user)
+    {
+        if (user.IsDeleted || _profile is null) return null;
+        if (_profile.Cover?.MediaId is { } photo) return $"background-image:url('{MediaUrls.ContentUrl(photo)}')";
+        if (ProfileLook.CoverCss(_profile.Cover?.Gradient, Theme.IsDark) is { } sky) return $"background:{sky}";
+        return ProfileLook.Accent(user.ProfileColor) is null ? null : "";
+    }
+
+    private string BirthdayTitle(BirthdayDto birthday)
+    {
+        var text = ProfileLook.BirthdayText(Format, birthday);
+        return SkyMessage.Contracts.Birthdays.AgeOn(birthday, Celebrations.Today) is { } age
+            ? $"{text} · {L.Plural("birthday.age", age)}"
+            : text;
+    }
+
+    private string BirthdaySubtitle(UserSummaryDto user) =>
+        Celebrations.IsBirthdayToday(user) ? $"{L["birthday.title"]} · {L["birthday.today"]}" : L["birthday.title"];
+
+    private static string LinkTitle(ProfileLinkDto link) =>
+        link.Title ?? (Uri.TryCreate(link.Url, UriKind.Absolute, out var uri) ? LinkService.Display(uri) : link.Url);
+
+    private string LinkSubtitle(ProfileLinkDto link) =>
+        link.Title is not null && Uri.TryCreate(link.Url, UriKind.Absolute, out var uri) ? LinkService.Display(uri) : L["customize.links.item"];
+
+    private Task OpenLinkAsync(ProfileLinkDto link) => LinkOpener.OpenAsync(link.Url, link.Title ?? link.Url);
 
     private async Task AddContactAsync()
     {

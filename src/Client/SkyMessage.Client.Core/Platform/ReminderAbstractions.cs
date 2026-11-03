@@ -36,3 +36,29 @@ public interface IDeviceContactsWatcher
     void SetEnabled(bool enabled);
     event Action? Changed;
 }
+
+/// <summary>Hosts without OS reminders (browser, iOS/Mac for now): the UI reminds in the app.</summary>
+public sealed class UnsupportedReminderNotificationService : IReminderNotificationService
+{
+    public bool IsSupported => false;
+
+    public Task ShowAsync(ReminderNotification notification) => Task.CompletedTask;
+
+    public Task ScheduleAsync(string group, IReadOnlyList<ScheduledReminder> reminders) => Task.CompletedTask;
+}
+
+/// <summary>Hosts that cannot watch the phone book: contact sync runs at app start only.</summary>
+public sealed class UnsupportedDeviceContactsWatcher : IDeviceContactsWatcher
+{
+    public bool IsSupported => false;
+
+    public void SetEnabled(bool enabled)
+    {
+    }
+
+    public event Action? Changed
+    {
+        add { }
+        remove { }
+    }
+}

@@ -85,3 +85,11 @@
     align-items: center;
     gap: 12px;
 }
+
+/* The sync card under the intro or the results: a regular settings card. */
+.import__sync {
+    width: 100%;
+    max-width: 720px;
+    margin: 8px auto 0;
+    padding: 0 12px 12px;
+}

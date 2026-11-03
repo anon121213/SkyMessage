@@ -16,7 +16,7 @@
 .profile-photo__ring {
     position: absolute;
     inset: -7px;
-    background: var(--sm-accent);
+    background: var(--pc, var(--sm-accent));
     -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
     -webkit-mask-composite: xor;
     mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
@@ -24,6 +24,164 @@
 
 .profile-photo__frame ::deep .sm-avatar {
     position: relative;
+}
+
+/* My look, as others see it: the cover band behind the photo (a piece of sky, my photo, or a wash of my color). */
+.profile-photo--cover {
+    position: relative;
+    margin-top: 6px;
+}
+
+.profile-photo__cover {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 8.25rem;
+    border-radius: var(--sm-radius-xl);
+    background: linear-gradient(160deg,
+        color-mix(in srgb, var(--pc, var(--sm-accent)) 36%, var(--sm-bg)) 0%,
+        color-mix(in srgb, var(--pc2, var(--sm-accent-2)) 20%, var(--sm-bg)) 100%);
+    background-size: cover;
+    background-position: center;
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+}
+
+.profile-photo--cover .profile-photo__frame {
+    margin-top: 4.25rem;
+}
+
+.profile-photo--cover .profile-photo__frame::before {
+    content: "";
+    position: absolute;
+    inset: -12px;
+    background: var(--sm-bg);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+/* ---- Links: address and title side by side on wide screens, stacked on phones ---- */
+
+.profile-links__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.profile-links__fields {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 10px;
+}
+
+@media (max-width: 560px) {
+    .profile-links__fields {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+}
+
+.profile-links__item ::deep .profile-links__remove {
+    flex-shrink: 0;
+    margin-top: 8px;
+    color: var(--sm-text-3);
+}
+
+.profile-links__item + .profile-links__item {
+    padding-top: 14px;
+    border-top: 1px dashed var(--sm-divider);
+}
+
+.profile-links ::deep .profile-links__add {
+    align-self: flex-start;
+}
+
+/* ---- Look: color swatches and cover tiles ---- */
+
+.profile-look__label {
+    margin: 4px 0 8px;
+    color: var(--sm-text-3);
+}
+
+.profile-look__label + .profile-look__swatches {
+    margin-bottom: 14px;
+}
+
+.profile-look ::deep .profile-look__none {
+    box-shadow: inset 0 0 0 1.5px var(--sm-border);
+}
+
+/* Cover tiles: small pieces of sky in a row that scrolls sideways on narrow screens. */
+.profile-look__covers {
+    display: flex;
+    gap: 12px;
+    margin: 0 -16px;
+    padding: 4px 16px 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    touch-action: pan-x pan-y;
+}
+
+.profile-look__covers::-webkit-scrollbar {
+    display: none;
+}
+
+.profile-look__cover {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 4.75rem;
+    padding: 0;
+    color: var(--sm-text-2);
+}
+
+.profile-look__tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.75rem;
+    height: 3.25rem;
+    border-radius: var(--sm-radius-m);
+    background: var(--sm-surface-2);
+    background-size: cover;
+    background-position: center;
+    color: var(--sm-text-3);
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+    transition: transform var(--sm-dur) var(--sm-spring), box-shadow var(--sm-dur-fast) ease;
+}
+
+.profile-look__cover:active:not(:disabled) .profile-look__tile {
+    transform: scale(0.93);
+    transition-duration: 90ms;
+}
+
+.profile-look__cover.is-selected .profile-look__tile {
+    box-shadow: 0 0 0 2.5px var(--sm-surface), 0 0 0 4.5px var(--pc, var(--sm-accent));
+}
+
+.profile-look__cover.is-selected {
+    color: var(--sm-text);
+}
+
+.profile-look__name {
+    max-width: 100%;
+    overflow: hidden;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profile-look__note {
+    margin: 10px 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--sm-text-3);
 }
 
 /* Upload in progress: the photo dims in its own squircle shape, a white ring and a calm cancel button over it. */

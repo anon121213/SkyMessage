@@ -1,0 +1,282 @@
+/* The crop editor: the media viewer's night (always dark), the photo under a dimmed veil with a squircle window — the
+   avatar exactly as it will look — a glass top bar with Done, and the zoom slider with three tool orbs below. */
+.aeditor {
+    --crop: min(86vw, calc(100dvh - 21rem), 28rem);
+    position: fixed;
+    inset: 0;
+    z-index: 890;
+    display: flex;
+    flex-direction: column;
+    color: #FFFFFF;
+    background: linear-gradient(180deg, #0E1024 0%, #060712 100%);
+    animation: aeditor-in var(--sm-dur) var(--sm-ease-out) backwards;
+}
+
+@keyframes aeditor-in {
+    from {
+        opacity: 0;
+    }
+}
+
+/* ---- Top bar ---- */
+
+.aeditor__top {
+    position: relative;
+    z-index: 3;
+    padding: calc(8px + var(--sm-inset-top)) calc(10px + var(--sm-inset-right)) 0 calc(10px + var(--sm-inset-left));
+}
+
+.aeditor__bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 760px;
+    min-height: 3.5rem;
+    margin: 0 auto;
+    padding: 6px;
+    border-radius: 999px;
+    background: rgba(16, 18, 40, 0.62);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.11), 0 16px 32px -20px rgba(0, 0, 0, 0.7);
+}
+
+html[data-fx="lite"] .aeditor__bar {
+    background: rgba(16, 18, 40, 0.94);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.aeditor ::deep .aeditor__btn {
+    color: #FFFFFF;
+}
+
+@media (hover: hover) {
+    .aeditor ::deep .aeditor__btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.12);
+    }
+}
+
+.aeditor__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-left: 4px;
+    overflow: hidden;
+    font-family: var(--sm-font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Done: the one primary control, an accent capsule. */
+.aeditor__done {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 2.75rem;
+    padding: 0 18px 0 14px;
+    border-radius: 999px;
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--sm-on-accent);
+    background: var(--sm-accent);
+    transition: transform var(--sm-dur) var(--sm-spring), opacity var(--sm-dur-fast) ease;
+}
+
+.aeditor__done:active:not(:disabled) {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+}
+
+.aeditor__done:disabled {
+    opacity: 0.55;
+}
+
+/* ---- The photo and the crop window ---- */
+
+.aeditor__stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+    cursor: grab;
+}
+
+.aeditor__stage[data-dragging] {
+    cursor: grabbing;
+}
+
+/* Centered at the stage's middle (avatar.js sets its size and position); only its transform changes. */
+.aeditor__img {
+    position: absolute;
+    max-width: none;
+    transform-origin: center center;
+    opacity: 0;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+}
+
+.aeditor__stage[data-ready] .aeditor__img {
+    opacity: 1;
+    transition: opacity var(--sm-dur) ease;
+}
+
+/* The veil outside the squircle: what the avatar will not show stays visible, dimmed. */
+.aeditor__mask {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 7, 18, 0.62);
+    pointer-events: none;
+    -webkit-mask: linear-gradient(#000 0 0), var(--sm-squircle) center / var(--crop) var(--crop) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) exclude, var(--sm-squircle) center / var(--crop) var(--crop) no-repeat;
+}
+
+.aeditor__crop {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--crop);
+    height: var(--crop);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.aeditor__outline {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.aeditor__outline path {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.85);
+    stroke-width: 1.5px;
+}
+
+.aeditor__wait {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: flex;
+    transform: translate(-50%, -50%);
+}
+
+/* ---- Below: hint, zoom, tools ---- */
+
+.aeditor__bottom {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 6px calc(16px + var(--sm-inset-right)) calc(16px + var(--sm-inset-bottom)) calc(16px + var(--sm-inset-left));
+}
+
+.aeditor__hint {
+    margin: 0;
+    max-width: 28rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.68);
+    text-align: center;
+}
+
+.aeditor__zoom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: min(100%, 26rem);
+}
+
+.aeditor__zoom ::deep .aeditor__slider {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* The kit slider sits on night here: its label stays for screen readers only, the track is a pale rail. */
+.aeditor__zoom ::deep .sm-slider__head {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.aeditor__zoom ::deep input[type="range"]::-webkit-slider-runnable-track {
+    background:
+        linear-gradient(90deg, var(--sm-accent) 0%, var(--sm-accent-2) 100%) 0 0 / var(--fill) 100% no-repeat,
+        rgba(255, 255, 255, 0.16);
+}
+
+.aeditor__zoom ::deep input[type="range"]::-moz-range-track {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.aeditor__tools {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+}
+
+.aeditor__tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 4.5rem;
+    font-family: var(--sm-font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.86);
+}
+
+.aeditor__tool-orb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 50%;
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+.aeditor__tool:active:not(:disabled) .aeditor__tool-orb {
+    transform: scale(0.9);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .aeditor__tool:hover:not(:disabled) .aeditor__tool-orb {
+        background: rgba(255, 255, 255, 0.16);
+    }
+}
+
+.aeditor__tool:disabled {
+    opacity: 0.45;
+}
+
+/* Short landscape phones: the hint gives its room to the photo. */
+@media (max-height: 560px) {
+    .aeditor {
+        --crop: min(60vw, calc(100dvh - 12rem), 28rem);
+    }
+
+    .aeditor__hint {
+        display: none;
+    }
+}

@@ -1,0 +1,126 @@
+@* My birthday: day and month (choice sheets), the year typed in or left out (then nobody sees my age). Closes with the
+   saved MeDto; "remove" is offered when a birthday is set. Who sees it is a privacy setting of its own (a hint here). *@
+@inherits UiComponentBase
+@inject ISkyApi Api
+@inject IAuthService Auth
+@inject ToastService Toasts
+
+<div class="bday sm-col sm-gap-m">
+    <div class="bday__row">
+        <Select TValue="int" Options="_days" Value="_day" ValueChanged="v => _day = v" Label="@L["birthday.day"]" Class="bday__day" />
+        <Select TValue="int" Options="_months" Value="_month" ValueChanged="SetMonth" Label="@L["birthday.month"]" Class="bday__month" />
+    </div>
+    <TextField Value="@_year" ValueChanged="v => { _year = v; _error = null; }" Label="@L["birthday.year"]" Placeholder="@L["birthday.noYear"]"
+               InputMode="numeric" MaxLength="4" Autocomplete="bday-year" Error="@_error" Hint="@(_error is null ? L["birthday.yearHint"] : null)" />
+    @if (PrivacyText is { } who)
+    {
+        <p class="bday__privacy"><Icon Name="@IconNames.Eye" Size="16" />@who</p>
+    }
+</div>
+<DialogActions>
+    @if (Auth.Me?.Birthday is not null)
+    {
+        <Button Variant="ButtonVariant.DangerGhost" Disabled="_saving" OnClick="RemoveAsync" Class="bday__remove">@L["birthday.remove"]</Button>
+    }
+    <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+    <Button Loading="_saving" OnClick="SaveAsync">@L["common.save"]</Button>
+</DialogActions>
+
+@code {
+    private int _day = 1;
+    private int _month = 1;
+    private string _year = "";
+    private string? _error;
+    private bool _saving;
+    private IReadOnlyList<ChoiceOption<int>> _months = [];
+    private IReadOnlyList<ChoiceOption<int>> _days = [];
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    private string? PrivacyText => Auth.Me?.Privacy.Birthday is { } level
+        ? L.Format("birthday.whoSees", L[$"settings.privacy.level.{level.ToString().ToLowerInvariant()}"])
+        : null;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.Me?.Birthday is { } current)
+        {
+            _day = current.Day;
+            _month = current.Month;
+            _year = current.Year?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        }
+        _months = Enumerable.Range(1, 12).Select(m => new ChoiceOption<int>(m, ProfileLook.MonthName(L, m))).ToList();
+        BuildDays();
+    }
+
+    private void SetMonth(int month)
+    {
+        _month = month;
+        BuildDays();
+    }
+
+    /// <summary>The days of the chosen month (February keeps the 29th: a year may come later or not at all).</summary>
+    private void BuildDays()
+    {
+        var last = _month == 2 ? 29 : DateTime.DaysInMonth(2001, _month);
+        _days = Enumerable.Range(1, last).Select(d => new ChoiceOption<int>(d, d.ToString(L.Culture))).ToList();
+        if (_day > last) _day = last;
+    }
+
+    private async Task SaveAsync()
+    {
+        int? year = null;
+        var typed = _year.Trim();
+        if (typed.Length > 0)
+        {
+            if (!int.TryParse(typed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var y))
+            {
+                _error = L["error.validation_failed"];
+                return;
+            }
+            year = y;
+        }
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (!Birthdays.IsValid(_day, _month, year, today))
+        {
+            _error = L["error.validation_failed"];
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var me = await Api.SetBirthdayAsync(new SetBirthdayRequest { Day = _day, Month = _month, Year = year });
+            Auth.UpdateMe(me);
+            Toasts.Success(L["birthday.saved"]);
+            Dialog.Close(me);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var me = await Api.RemoveBirthdayAsync();
+            Auth.UpdateMe(me);
+            Toasts.Success(L["birthday.removed"]);
+            Dialog.Close(me);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

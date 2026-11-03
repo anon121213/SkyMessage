@@ -222,3 +222,11 @@ html[data-fx="lite"] .chead {
 .chead__avatar ::deep .sm-avatar__dot {
     box-shadow: 0 0 0 2.5px var(--sm-dot-ring);
 }
+
+/* 🎂 after the peer's name on their birthday. */
+.chead__cake {
+    flex-shrink: 0;
+    font-size: 0.875rem;
+    line-height: 1;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) backwards;
+}

@@ -17,6 +17,8 @@
 @inject ILinkBuilder Links
 @inject IMediaUrlBuilder MediaUrls
 @inject AvatarUploader Avatars
+@inject AvatarFlows AvatarSources
+@inject AvatarOverlays AvatarViewer
 @inject ChatActions Actions
 @inject FormatService Format
 @inject NavigationService Nav
@@ -282,7 +284,11 @@
             <div class="ginfo__head">
                 <div class="ginfo__avatar">
                     @Portrait()
-                    <ChatAvatar Chat="chat" Size="116" />
+                    @* The photo opens the avatar viewer with the group's earlier photos (admins: set as main, delete). *@
+                    <button type="button" class="ginfo__avatar-view" aria-label="@L["avatar.choose.view"]" disabled="@(!AvatarViewer.HasPhoto(chat))"
+                            @onclick="() => AvatarViewer.ViewChat(chat)">
+                        <ChatAvatar Chat="chat" Size="116" />
+                    </button>
                     @if (chat.CanChangeInfo())
                     {
                         <button type="button" class="ginfo__avatar-edit" aria-label="@L["groups.photo.change"]" title="@L["groups.photo.change"]" @onclick="ChangePhotoAsync">
@@ -494,19 +500,29 @@
     private async Task ChangePhotoAsync()
     {
         if (Chat is not { } chat) return;
-        var options = new List<ChoiceOption<string>> { new("pick", L["groups.photo.choose"]) { Icon = IconNames.ImageUp } };
-        if (ChatList.AvatarOf(chat) is not null) options.Add(new ChoiceOption<string>("remove", L["groups.photo.remove"]) { Icon = IconNames.Trash2, Danger = true });
-        var choice = options.Count == 1 ? options[0] : await Dialogs.ChooseAsync(L["groups.photo.change"], options);
+        var options = AvatarSources.SourceOptions().ToList();
+        var hasPhoto = ChatList.AvatarOf(chat) is not null;
+        if (hasPhoto)
+        {
+            options.Add(new ChoiceOption<string>("view", L["avatar.choose.view"]) { Icon = IconNames.Images });
+            options.Add(new ChoiceOption<string>("remove", L["groups.photo.remove"]) { Icon = IconNames.Trash2, Danger = true });
+        }
+        var choice = await Dialogs.ChooseAsync(L["groups.photo.change"], options);
         if (choice is null) return;
         try
         {
+            if (choice.Value == "view")
+            {
+                AvatarViewer.ViewChat(chat);
+                return;
+            }
             if (choice.Value == "remove")
             {
                 await Api.RemoveChatAvatarAsync(chat.Id);
                 Toasts.Success(L["groups.photo.removed"]);
                 return;
             }
-            if (await Avatars.PickAsync() is not { } photo) return;
+            if (await AvatarSources.MakeAsync(choice.Value) is not { } photo) return;
             Toasts.Info(L["groups.photo.uploading"]);
             var media = await Avatars.UploadAsync(photo);
             await Api.SetChatAvatarAsync(chat.Id, media.Id);

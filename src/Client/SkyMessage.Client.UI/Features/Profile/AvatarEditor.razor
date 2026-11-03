@@ -1,0 +1,227 @@
+@* The crop editor for a new profile or group photo (an overlay: Back cancels it): the photo on the viewer's night with
+   the square crop shown through the squircle mask, as it will look as an avatar. Drag, pinch or wheel to frame it,
+   the slider zooms, rotate by quarter turns, flip (avatar.js). Done hands back a 1024 px JPEG drawn on the device. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Chat
+@inject NavigationService Nav
+@inject LayoutService Layout
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@inject ILogger<AvatarEditor> Logger
+
+<div class="aeditor" data-no-swipe-back role="dialog" aria-modal="true" aria-label="@L["avatar.editor.title"]">
+    <div class="aeditor__top">
+        <div class="aeditor__bar">
+            <IconButton Icon="@IconNames.X" Label="@L["common.cancel"]" Class="aeditor__btn" OnClick="CancelAsync" />
+            <div class="aeditor__title">@L["avatar.editor.title"]</div>
+            <button type="button" class="aeditor__done" disabled="@(!_ready || _exporting)" @onclick="DoneAsync">
+                @if (_exporting)
+                {
+                    <Spinner Size="18" Inherit="true" />
+                }
+                else
+                {
+                    <Icon Name="@IconNames.Check" Size="20" StrokeWidth="2.4" />
+                }
+                <span>@L["common.done"]</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="aeditor__stage" @ref="_stage">
+        <img class="aeditor__img" data-editor-img alt="" draggable="false" />
+        <div class="aeditor__mask" aria-hidden="true"></div>
+        <div class="aeditor__crop" data-editor-crop aria-hidden="true">
+            <svg class="aeditor__outline" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <path d="M50 0C88.6 0 100 11.4 100 50S88.6 100 50 100 0 88.6 0 50 11.4 0 50 0Z" vector-effect="non-scaling-stroke" />
+            </svg>
+        </div>
+        @if (!_ready && !_failed)
+        {
+            <span class="aeditor__wait"><Spinner Size="40" /></span>
+        }
+    </div>
+
+    <div class="aeditor__bottom">
+        <p class="aeditor__hint">@(Layout.IsTouch ? L["avatar.editor.hintTouch"] : L["avatar.editor.hintPointer"])</p>
+        <div class="aeditor__zoom" data-no-swipe-back>
+            <IconButton Icon="@IconNames.ZoomOut" Label="@L["avatar.editor.zoomOut"]" Size="38" Class="aeditor__btn" Disabled="!_ready" OnClick="() => StepZoomAsync(-50)" />
+            <Slider Value="_zoom" ValueChanged="SetZoomAsync" Min="100" Max="500" Step="5" Label="@L["avatar.editor.zoom"]" Class="aeditor__slider" Disabled="!_ready" />
+            <IconButton Icon="@IconNames.ZoomIn" Label="@L["avatar.editor.zoomIn"]" Size="38" Class="aeditor__btn" Disabled="!_ready" OnClick="() => StepZoomAsync(50)" />
+        </div>
+        <div class="aeditor__tools">
+            <button type="button" class="aeditor__tool" disabled="@(!_ready)" @onclick="RotateAsync">
+                <span class="aeditor__tool-orb"><Icon Name="@IconNames.RotateCcw" /></span><span>@L["avatar.editor.rotate"]</span>
+            </button>
+            <button type="button" class="aeditor__tool" disabled="@(!_ready)" @onclick="FlipAsync">
+                <span class="aeditor__tool-orb"><Icon Name="@IconNames.FlipHorizontal2" /></span><span>@L["avatar.editor.flip"]</span>
+            </button>
+            <button type="button" class="aeditor__tool" disabled="@(!_ready)" @onclick="ResetAsync">
+                <span class="aeditor__tool-orb"><Icon Name="@IconNames.RefreshCcw" /></span><span>@L["avatar.editor.reset"]</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Output side in px (the server keeps JPEGs this size as they are).</summary>
+    public const int OutputSize = 1024;
+    private const double Quality = 0.9;
+
+    private ElementReference _stage;
+    private JsModule? _module;
+    private IJSObjectReference? _editor;
+    private DotNetObjectReference<AvatarEditor>? _self;
+    private OverlayHandle? _overlay;
+    private bool _ready;
+    private bool _failed;
+    private bool _exporting;
+    private bool _done;
+    private double _zoom = 100;
+
+    [Parameter, EditorRequired] public PickedFile Source { get; set; } = default!;
+    /// <summary>The framed JPEG, or null when cancelled.</summary>
+    [Parameter] public EventCallback<byte[]?> OnDone { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _overlay = await Nav.OpenOverlayAsync(() => InvokeAsync(() =>
+        {
+            _overlay = null;
+            return FinishAsync(null);
+        }));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        _module = new JsModule(JS, "./_content/SkyMessage.Client.UI/js/avatar.js");
+        try
+        {
+            await using var stream = await Source.OpenReadAsync(CancellationToken.None);
+            using var reference = new DotNetStreamReference(stream, leaveOpen: true);
+            _editor = await _module.InvokeAsync<IJSObjectReference>("attachEditor", _stage, _self, reference,
+                new { type = Source.ContentType });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogInformation(ex, "Photo could not be read for the editor");
+            _editor = null;
+        }
+        if (_done)
+        {
+            await DisposeEditorAsync();
+            return;
+        }
+        if (_editor is null)
+        {
+            _failed = true;
+            Toasts.Show(L["avatar.editor.loadFailed"], ToastKind.Warning);
+            await CancelAsync();
+            return;
+        }
+        _ready = true;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnZoom(double zoom) => InvokeAsync(() =>
+    {
+        _zoom = Math.Clamp(Math.Round(zoom * 100), 100, 500);
+        StateHasChanged();
+    });
+
+    private async Task SetZoomAsync(double value)
+    {
+        _zoom = value;
+        if (_editor is not null) await SafeAsync(() => _editor.InvokeVoidAsync("setZoom", value / 100));
+    }
+
+    private Task StepZoomAsync(double delta) => SetZoomAsync(Math.Clamp(_zoom + delta, 100, 500));
+
+    private Task RotateAsync() => _editor is null ? Task.CompletedTask : SafeAsync(() => _editor.InvokeVoidAsync("rotate"));
+
+    private Task FlipAsync() => _editor is null ? Task.CompletedTask : SafeAsync(() => _editor.InvokeVoidAsync("flip"));
+
+    private async Task ResetAsync()
+    {
+        _zoom = 100;
+        if (_editor is not null) await SafeAsync(() => _editor.InvokeVoidAsync("reset"));
+    }
+
+    private async Task DoneAsync()
+    {
+        if (_editor is null || _exporting) return;
+        _exporting = true;
+        byte[]? jpeg = null;
+        try
+        {
+            jpeg = await _editor.InvokeAsync<byte[]?>("exportJpeg", OutputSize, Quality);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            Logger.LogInformation(ex, "Framed photo not exported");
+        }
+        _exporting = false;
+        if (jpeg is not { Length: > 0 })
+        {
+            Toasts.Show(L["avatar.editor.loadFailed"], ToastKind.Warning);
+            return;
+        }
+        await CloseOverlayAsync();
+        await FinishAsync(jpeg);
+    }
+
+    private async Task CancelAsync()
+    {
+        await CloseOverlayAsync();
+        await FinishAsync(null);
+    }
+
+    private async Task CloseOverlayAsync()
+    {
+        var overlay = _overlay;
+        _overlay = null;
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+    }
+
+    private async Task FinishAsync(byte[]? result)
+    {
+        if (_done) return;
+        _done = true;
+        await DisposeEditorAsync();
+        await OnDone.InvokeAsync(result);
+    }
+
+    private static async Task SafeAsync(Func<ValueTask> call)
+    {
+        try
+        {
+            await call();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task DisposeEditorAsync()
+    {
+        var editor = _editor;
+        _editor = null;
+        if (editor is null) return;
+        await SafeAsync(() => editor.InvokeVoidAsync("dispose"));
+        await SafeAsync(() => editor.DisposeAsync());
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _done = true;
+        await DisposeEditorAsync();
+        if (_overlay is { IsOpen: true } overlay) await overlay.CloseAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

@@ -1,0 +1,21 @@
+{
+  "contactSync.title": "Синхронизировать контакты",
+  "contactSync.hint": "При каждом запуске SkyMessage сам проверит телефонную книгу и добавит в контакты тех, кто уже здесь. Номера отправляются только для поиска и не сохраняются на сервере.",
+  "contactSync.denied": "Нет доступа к контактам. Разрешите его в настройках телефона, иначе синхронизация не сработает.",
+  "contactSync.syncing": "Проверяем телефонную книгу…",
+  "contactSync.on": "Синхронизация включена",
+  "contactSync.remove": "Удалить синхронизированные контакты",
+  "contactSync.removeTitle": "Удалить синхронизированные контакты?",
+  "contactSync.removeText": "Из ваших контактов уйдут люди, которых добавила синхронизация. Тех, кого вы добавили сами, это не коснётся. Синхронизация выключится.",
+  "contactSync.removed.one": "Удалён {0} контакт",
+  "contactSync.removed.few": "Удалено {0} контакта",
+  "contactSync.removed.many": "Удалено {0} контактов",
+  "contactSync.removed.other": "Удалено {0} контакта",
+  "contactSync.nothingToRemove": "Синхронизированных контактов нет",
+  "contactSync.count.one": "{0} синхронизированный контакт",
+  "contactSync.count.few": "{0} синхронизированных контакта",
+  "contactSync.count.many": "{0} синхронизированных контактов",
+  "contactSync.count.other": "{0} синхронизированных контакта",
+  "contactSync.joinedTitle": "{0} теперь в SkyMessage",
+  "contactSync.joinedBody": "Напишите привет!"
+}

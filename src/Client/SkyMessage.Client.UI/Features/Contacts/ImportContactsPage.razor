@@ -1,6 +1,8 @@
 @page "/contacts/import"
 @* Find friends from the phone book: explain (our phone-book illustration), ask permission, show matches (@username +
-   avatar) as airy rows with round checks, import the confirmed ones with the main button floating at the bottom. *@
+   avatar) as airy rows with round checks, import the confirmed ones with the main button floating at the bottom.
+   Where the device has a phone book, a card offers sync instead (IContactSyncService: checked at every start, new
+   people added and announced once) and removing the contacts it added. *@
 @inherits UiComponentBase
 @inject IContactStore Contacts
 @inject IDeviceContactsService DeviceContacts
@@ -10,6 +12,8 @@
 @inject ShareHelper Share
 @inject NavigationService Nav
 @inject ToastService Toasts
+@inject IContactSyncService ContactSync
+@inject DialogService Dialogs
 
 <AppPage Title="@L["contacts.import.title"]" BackFallback="/contacts">
     <ChildContent>
@@ -109,6 +113,20 @@
                 }
                 break;
         }
+        @if (ContactSync.IsSupported && _stage is Stage.Intro or Stage.Results)
+        {
+            <div class="import__sync">
+            <Section Footer="@L["contactSync.hint"]" DividerInset="64px">
+                <SwitchItem Icon="@IconNames.RefreshCw" IconColor="@SettingsTones.Mint" Title="@L["contactSync.title"]" Subtitle="@SyncSubtitle"
+                            Checked="ContactSync.IsEnabled" Disabled="_syncBusy" CheckedChanged="SetSyncAsync" />
+                @if (SyncedCount > 0)
+                {
+                    <ListItem Icon="@IconNames.UserMinus" IconColor="@SettingsTones.Rose" Title="@L["contactSync.remove"]"
+                              Subtitle="@L.Plural("contactSync.count", SyncedCount)" Danger="true" Disabled="_syncBusy" OnClick="RemoveSyncedAsync" />
+                }
+            </Section>
+            </div>
+        }
     </ChildContent>
     <Footer>
         @if (_stage == Stage.Results && _matches.Any(m => !m.AlreadyContact))
@@ -136,7 +154,60 @@
     private string? _error;
     private bool _importing;
 
+    private bool _syncBusy;
+
     private static string KeyOf(PhoneBookMatch match) => $"{match.User.Id:N}|{match.PhoneNumber}";
+
+    private int SyncedCount => Contacts.Contacts.Count(c => c.IsSynced);
+
+    private string? SyncSubtitle =>
+        !ContactSync.IsEnabled ? null
+        : ContactSync.IsBlocked ? L["contactSync.denied"]
+        : ContactSync.IsSyncing ? L["contactSync.syncing"]
+        : L["contactSync.on"];
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => ContactSync.Changed += h, h => ContactSync.Changed -= h);
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+    }
+
+    private async Task SetSyncAsync(bool enabled)
+    {
+        if (_syncBusy) return;
+        _syncBusy = true;
+        try
+        {
+            if (!await ContactSync.SetEnabledAsync(enabled) && enabled) _stage = Stage.Denied;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _syncBusy = false;
+        }
+    }
+
+    private async Task RemoveSyncedAsync()
+    {
+        if (!await Dialogs.ConfirmAsync(L["contactSync.removeTitle"], L["contactSync.removeText"], L["common.delete"], danger: true)) return;
+        _syncBusy = true;
+        try
+        {
+            var removed = await ContactSync.RemoveSyncedAsync();
+            Toasts.Success(removed > 0 ? L.Plural("contactSync.removed", removed) : L["contactSync.nothingToRemove"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _syncBusy = false;
+        }
+    }
 
     private async Task FindAsync()
     {

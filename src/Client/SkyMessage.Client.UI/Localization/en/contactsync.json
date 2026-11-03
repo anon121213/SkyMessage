@@ -1,0 +1,21 @@
+{
+  "contactSync.title": "Sync contacts",
+  "contactSync.hint": "At every start SkyMessage checks your phone book and adds the people who are already here. Numbers are sent only to search and are not stored on the server.",
+  "contactSync.denied": "No access to contacts. Allow it in the phone's settings, or sync cannot work.",
+  "contactSync.syncing": "Checking your phone book…",
+  "contactSync.on": "Sync is on",
+  "contactSync.remove": "Remove synced contacts",
+  "contactSync.removeTitle": "Remove synced contacts?",
+  "contactSync.removeText": "The people sync added leave your contacts. The ones you added yourself stay. Sync turns off.",
+  "contactSync.removed.one": "{0} contact removed",
+  "contactSync.removed.few": "{0} contacts removed",
+  "contactSync.removed.many": "{0} contacts removed",
+  "contactSync.removed.other": "{0} contacts removed",
+  "contactSync.nothingToRemove": "There are no synced contacts",
+  "contactSync.count.one": "{0} synced contact",
+  "contactSync.count.few": "{0} synced contacts",
+  "contactSync.count.many": "{0} synced contacts",
+  "contactSync.count.other": "{0} synced contacts",
+  "contactSync.joinedTitle": "{0} is now on SkyMessage",
+  "contactSync.joinedBody": "Say hello!"
+}

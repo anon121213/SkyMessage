@@ -25,7 +25,9 @@
     [Parameter] public EventCallback OnClick { get; set; }
     [Parameter] public string? Class { get; set; }
 
-    private string Color => Reply.SenderId is { } sender ? AvatarPalette.Color(sender) : "var(--sm-accent)";
+    private string Color => Reply.SenderId is { } sender
+        ? SkyMessage.Client.UI.Features.Profile.ProfileLook.NameColor(sender, Users.Get(sender)?.ProfileColor)
+        : "var(--sm-accent)";
 
     private string SenderName
     {
