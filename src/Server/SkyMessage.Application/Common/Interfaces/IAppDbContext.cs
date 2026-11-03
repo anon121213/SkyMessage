@@ -12,6 +12,7 @@ public interface IAppDbContext
     DbSet<Session> Sessions { get; }
     DbSet<Contact> Contacts { get; }
     DbSet<Block> Blocks { get; }
+    DbSet<AvatarPhoto> AvatarPhotos { get; }
 
     DbSet<Chat> Chats { get; }
     DbSet<ChatMember> ChatMembers { get; }

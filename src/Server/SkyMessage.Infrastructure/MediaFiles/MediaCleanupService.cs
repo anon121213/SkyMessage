@@ -84,8 +84,9 @@ internal sealed class MediaCleanupService(
             media => media.Where(m => m.Status == MediaStatus.Ready
                                       && m.CreatedAt < unreferencedCutoff
                                       && !db.MessageAttachments.Any(a => a.MediaId == m.Id)
-                                      && !db.Users.Any(u => u.AvatarMediaId == m.Id)
-                                      && !db.Chats.Any(c => c.AvatarMediaId == m.Id)),
+                                      && !db.Users.Any(u => u.AvatarMediaId == m.Id || u.CoverMediaId == m.Id)
+                                      && !db.Chats.Any(c => c.AvatarMediaId == m.Id)
+                                      && !db.AvatarPhotos.Any(a => a.MediaId == m.Id)),
             cancellationToken);
         var tempDirectories = temp.DeleteStaleJobs(TempRetention, now);
 

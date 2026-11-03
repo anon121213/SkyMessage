@@ -40,6 +40,12 @@ public sealed class ChatsController(IChatService chats, IChatMemberService membe
     [HttpDelete(ApiRoutes.Chats.Avatar)]
     public Task<ChatInfoDto> RemoveAvatar(Guid chatId, CancellationToken ct) => chats.RemoveAvatarAsync(chatId, ct);
 
+    [HttpGet(ApiRoutes.Chats.Avatars)]
+    public Task<IReadOnlyList<AvatarPhotoDto>> GetAvatars(Guid chatId, CancellationToken ct) => chats.GetAvatarsAsync(chatId, ct);
+
+    [HttpDelete(ApiRoutes.Chats.AvatarById)]
+    public Task<ChatInfoDto> DeleteAvatar(Guid chatId, Guid mediaId, CancellationToken ct) => chats.DeleteAvatarAsync(chatId, mediaId, ct);
+
     [HttpPost(ApiRoutes.Chats.Members)]
     public Task<AddMembersResultDto> AddMembers(Guid chatId, [FromBody] AddMembersRequest request, CancellationToken ct) =>
         members.AddMembersAsync(chatId, request, ct);

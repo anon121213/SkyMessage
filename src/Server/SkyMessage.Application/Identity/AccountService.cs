@@ -99,6 +99,7 @@ public sealed class AccountService(
             await db.Chats.Where(c => c.PrivateKey == savedKey).ExecuteDeleteAsync(ct);
             await db.Contacts.Where(c => c.OwnerId == userId || c.ContactUserId == userId).ExecuteDeleteAsync(ct);
             await db.Blocks.Where(b => b.BlockerId == userId).ExecuteDeleteAsync(ct);
+            await db.AvatarPhotos.Where(a => a.UserId == userId).ExecuteDeleteAsync(ct);
             revokedSessions = await revoker.MarkRevokedAsync(s => s.UserId == userId, ct);
 
             Tombstone(user, unusableHash, now);
@@ -195,6 +196,13 @@ public sealed class AccountService(
         user.AvatarMediaId = null;
         user.LastSeenAt = null;
         user.PasswordHash = unusablePasswordHash;
+        user.BirthDay = null;
+        user.BirthMonth = null;
+        user.BirthYear = null;
+        user.ProfileColor = null;
+        user.CoverGradient = null;
+        user.CoverMediaId = null;
+        user.Links = [];
 
         var privacy = user.Privacy;
         privacy.LastSeen = PrivacyLevel.Nobody;
@@ -204,6 +212,7 @@ public sealed class AccountService(
         privacy.Messages = PrivacyLevel.Nobody;
         privacy.Calls = PrivacyLevel.Nobody;
         privacy.GroupInvites = PrivacyLevel.Nobody;
+        privacy.Birthday = PrivacyLevel.Nobody;
     }
 
     private async Task AnnounceLeaveAsync(Guid chatId, Guid userId)

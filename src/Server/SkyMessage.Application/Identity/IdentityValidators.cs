@@ -14,6 +14,10 @@ internal static class IdentityRules
     public const int RegionMaxLength = 8;
     public const int InviteCodeMaxLength = 256;
     public const int PushKeyBytes = 32;
+    /// <summary>Profile color / cover gradient keys (<see cref="ProfileStyle"/>; the service checks the key itself).</summary>
+    public const int StyleKeyMaxLength = 24;
+    /// <summary>Loose cap for raw link titles; stored ones are cut at <see cref="Limits.ProfileLinkTitleMaxLength"/>.</summary>
+    public const int RawLinkTitleMaxLength = 128;
 
     public static bool IsDisplayName(string? name) =>
         name is not null && name.Trim().Length is >= 1 and <= Limits.DisplayNameMaxLength;
@@ -97,6 +101,36 @@ internal sealed class UpdateProfileRequestValidator : AbstractValidator<UpdatePr
         RuleFor(x => x.Bio).Must(b => IdentityRules.FitsTrimmed(b, Limits.BioMaxLength))
             .WithMessage($"Bio must be at most {Limits.BioMaxLength} characters.");
         RuleFor(x => x.Username).MaximumLength(IdentityRules.RawUsernameMaxLength);
+        RuleFor(x => x.ProfileColor).MaximumLength(IdentityRules.StyleKeyMaxLength);
+        RuleFor(x => x.Links)
+            .Must(links => links is null || links.Count <= Limits.ProfileLinksMax)
+            .WithMessage($"At most {Limits.ProfileLinksMax} links.");
+        RuleForEach(x => x.Links).NotNull().ChildRules(link =>
+        {
+            link.RuleFor(l => l.Url).NotEmpty().MaximumLength(Limits.ProfileLinkUrlMaxLength);
+            link.RuleFor(l => l.Title).MaximumLength(IdentityRules.RawLinkTitleMaxLength);
+        });
+    }
+}
+
+internal sealed class SetBirthdayRequestValidator : AbstractValidator<SetBirthdayRequest>
+{
+    public SetBirthdayRequestValidator()
+    {
+        RuleFor(x => x.Day).InclusiveBetween(1, 31);
+        RuleFor(x => x.Month).InclusiveBetween(1, 12);
+        RuleFor(x => x.Year).InclusiveBetween(Limits.BirthYearMin, 9999).When(x => x.Year is not null);
+    }
+}
+
+internal sealed class SetCoverRequestValidator : AbstractValidator<SetCoverRequest>
+{
+    public SetCoverRequestValidator()
+    {
+        RuleFor(x => x).Must(x => (x.MediaId is not null) != !string.IsNullOrWhiteSpace(x.Gradient))
+            .WithMessage("Give either a gradient or a photo.");
+        RuleFor(x => x.MediaId).NotEqual(Guid.Empty).When(x => x.MediaId is not null);
+        RuleFor(x => x.Gradient).MaximumLength(IdentityRules.StyleKeyMaxLength);
     }
 }
 
@@ -131,6 +165,7 @@ internal sealed class PrivacySettingsDtoValidator : AbstractValidator<PrivacySet
         RuleFor(x => x.Messages).IsInEnum();
         RuleFor(x => x.Calls).IsInEnum();
         RuleFor(x => x.GroupInvites).IsInEnum();
+        RuleFor(x => x.Birthday).IsInEnum();
     }
 }
 

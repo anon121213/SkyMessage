@@ -32,6 +32,26 @@ public sealed class UsersController(ProfileService profile, UserDirectoryService
     [HttpDelete(ApiRoutes.Users.MeAvatar)]
     public Task<MeDto> RemoveAvatar(CancellationToken ct) => profile.RemoveAvatarAsync(currentUser.UserId, ct);
 
+    [HttpDelete(ApiRoutes.Users.MeAvatarById)]
+    public Task<MeDto> DeleteAvatar(Guid mediaId, CancellationToken ct) => profile.DeleteAvatarAsync(currentUser.UserId, mediaId, ct);
+
+    [HttpGet(ApiRoutes.Users.Avatars)]
+    public Task<IReadOnlyList<AvatarPhotoDto>> GetAvatars(Guid userId, CancellationToken ct) =>
+        directory.GetAvatarsAsync(currentUser.UserId, userId, ct);
+
+    [HttpPut(ApiRoutes.Users.MeBirthday)]
+    public Task<MeDto> SetBirthday(SetBirthdayRequest request, CancellationToken ct) =>
+        profile.SetBirthdayAsync(currentUser.UserId, request, ct);
+
+    [HttpDelete(ApiRoutes.Users.MeBirthday)]
+    public Task<MeDto> RemoveBirthday(CancellationToken ct) => profile.RemoveBirthdayAsync(currentUser.UserId, ct);
+
+    [HttpPut(ApiRoutes.Users.MeCover)]
+    public Task<MeDto> SetCover(SetCoverRequest request, CancellationToken ct) => profile.SetCoverAsync(currentUser.UserId, request, ct);
+
+    [HttpDelete(ApiRoutes.Users.MeCover)]
+    public Task<MeDto> RemoveCover(CancellationToken ct) => profile.RemoveCoverAsync(currentUser.UserId, ct);
+
     [HttpPut(ApiRoutes.Users.MePhone)]
     public Task<MeDto> SetPhone(SetPhoneRequest request, CancellationToken ct) =>
         profile.SetPhoneAsync(currentUser.UserId, request, ct);
