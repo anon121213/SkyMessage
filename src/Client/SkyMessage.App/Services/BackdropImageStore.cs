@@ -39,21 +39,32 @@ public sealed class BackdropImageStore(ILogger<BackdropImageStore> logger) : IBa
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<StoredBackdropFile>> ListAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            IReadOnlyList<string> names = Directory.EnumerateFiles(AppPaths.Backdrops)
-                .Select(Path.GetFileName)
-                .OfType<string>()
-                .Where(name => PathOf(name) is not null)
+            IReadOnlyList<StoredBackdropFile> files = Directory.EnumerateFiles(AppPaths.Backdrops)
+                .Where(path => Path.GetFileName(path) is { } name && PathOf(name) is not null)
+                .Select(path => new StoredBackdropFile(Path.GetFileName(path), SavedAt(path)))
                 .ToList();
-            return Task.FromResult(names);
+            return Task.FromResult(files);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logger.LogDebug(ex, "Could not list the background pictures");
-            return Task.FromResult<IReadOnlyList<string>>([]);
+            return Task.FromResult<IReadOnlyList<StoredBackdropFile>>([]);
+        }
+    }
+
+    private static DateTimeOffset? SavedAt(string path)
+    {
+        try
+        {
+            return new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

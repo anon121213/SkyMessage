@@ -37,6 +37,11 @@ public interface IChatListStore
     event Action? Changed;
     /// <summary>Raised when <see cref="ActiveChatId"/> takes a different value (any thread).</summary>
     event Action? ActiveChatChanged;
+    /// <summary>
+    /// Raised after a full list arrived from the server, with the id of every chat of mine it holds (archived and hidden
+    /// ones too): a chat missing from it is gone for me (any thread).
+    /// </summary>
+    event Action<IReadOnlyCollection<Guid>>? Synced;
 
     Task LoadAsync(bool force = false, CancellationToken cancellationToken = default);
     ChatSummaryDto? Get(Guid chatId);

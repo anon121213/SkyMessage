@@ -498,13 +498,23 @@
         },
 
         backdrops: {
+            // savedAt: another tab's cleanup leaves a picture alone while it is new (an editor there may still hold it).
             put: (name, bytes, type) => backdropsTx('readwrite', store => {
-                store.put({ type: type || '', blob: new Blob([bytes], { type: type || 'application/octet-stream' }) }, name);
+                store.put({ type: type || '', blob: new Blob([bytes], { type: type || 'application/octet-stream' }), savedAt: Date.now() }, name);
             }),
             del: name => backdropsTx('readwrite', store => { store.delete(name); }),
+            // [{ name, savedAt }] — a cursor reads the records without loading their pictures.
             list: () => backdropsTx('readonly', (store, set) => {
-                const request = store.getAllKeys();
-                request.onsuccess = () => set((request.result || []).map(String));
+                const entries = [];
+                set(entries);
+                const request = store.openCursor();
+                request.onsuccess = () => {
+                    const cursor = request.result;
+                    if (!cursor) return;
+                    const value = cursor.value || {};
+                    entries.push({ name: String(cursor.key), savedAt: typeof value.savedAt === 'number' ? value.savedAt : null });
+                    cursor.continue();
+                };
             }),
         },
 

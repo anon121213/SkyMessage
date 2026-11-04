@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using SkyMessage.Client.Core.Infrastructure;
 using SkyMessage.Client.Core.Platform;
 using SkyMessage.Client.Core.Settings;
+using SkyMessage.Client.Core.Stores;
 using SkyMessage.Contracts;
 
 namespace SkyMessage.Client.Core.Services;
@@ -31,9 +32,11 @@ public sealed record BackdropPhotoImport(BackdropPhoto? Photo, BackdropPhotoProb
 /// Pictures for the backgrounds: picking one from the gallery, downscaling it to the screen (metadata stripped) and
 /// keeping it on this device (<see cref="IBackdropImageStore"/>), and forgetting pictures no setting refers to any
 /// more — whenever a background is replaced or reset, however the settings changed, and once after start for leftovers
-/// of an interrupted edit. A picture just picked belongs to the editor that picked it until a setting refers to it or
-/// the editor discards it. A chat that is gone for me (deleted, left, removed from) takes its background along.
-/// Singleton.
+/// of an interrupted edit (not ones stored in the last <see cref="FreshFor"/>: another tab's editor may hold them). A
+/// picture just picked belongs to the editor that picked it until a setting refers to it or the editor discards it.
+/// Backgrounds of single chats belong to the account: a chat that is gone for me (deleted, left, removed from, or
+/// missing from a full chat list) takes its background along, and signing out takes them all; the app's and the chats'
+/// backgrounds stay (they are the device's). Singleton.
 /// </summary>
 public sealed class BackdropPhotoService : IDisposable
 {
@@ -42,22 +45,30 @@ public sealed class BackdropPhotoService : IDisposable
     public const int MaxDimension = 4096;
     public const int Quality = 86;
 
+    /// <summary>A picture stored this recently is never taken by the startup cleanup: an editor of another tab may still hold it.</summary>
+    public static readonly TimeSpan FreshFor = TimeSpan.FromHours(1);
+
     private readonly IFilePickerService _picker;
     private readonly IMediaCompressor _compressor;
     private readonly IBackdropImageStore _store;
     private readonly ISettingsService _settings;
     private readonly IPreferencesStore _preferences;
     private readonly IRealtimeService _realtime;
+    private readonly IChatListStore _chats;
+    private readonly IAuthService _auth;
+    private readonly TimeProvider _time;
     private readonly ILogger<BackdropPhotoService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _lock = new();
     private readonly HashSet<string> _pending = new(StringComparer.Ordinal);
     private HashSet<string> _referenced;
+    private Guid? _account;
     private int _started;
     private bool _disposed;
 
     public BackdropPhotoService(IFilePickerService picker, IMediaCompressor compressor, IBackdropImageStore store, ISettingsService settings,
-        IPreferencesStore preferences, IRealtimeService realtime, ILogger<BackdropPhotoService> logger)
+        IPreferencesStore preferences, IRealtimeService realtime, IChatListStore chats, IAuthService auth, TimeProvider time,
+        ILogger<BackdropPhotoService> logger)
     {
         _picker = picker;
         _compressor = compressor;
@@ -65,10 +76,16 @@ public sealed class BackdropPhotoService : IDisposable
         _settings = settings;
         _preferences = preferences;
         _realtime = realtime;
+        _chats = chats;
+        _auth = auth;
+        _time = time;
         _logger = logger;
         _referenced = BackdropRules.FileNamesIn(settings.Current.Appearance);
+        _account = auth.State == AuthState.SignedIn ? auth.UserId : null;
         settings.Changed += OnSettingsChanged;
         realtime.ChatRemoved += OnChatRemoved;
+        chats.Synced += OnChatsSynced;
+        auth.Changed += OnAuthChanged;
     }
 
     public bool IsSupported => _store.IsSupported;
@@ -216,11 +233,16 @@ public sealed class BackdropPhotoService : IDisposable
             if (stored.Count == 0) return;
             var saved = await StoredFileNamesAsync().ConfigureAwait(false);
             if (saved is null) return;
+            var freshSince = _time.GetUtcNow() - FreshFor;
             List<string> orphans;
             lock (_lock)
             {
                 var keep = BackdropRules.FileNamesIn(_settings.Current.Appearance);
-                orphans = stored.Where(name => !keep.Contains(name) && !saved.Contains(name) && !_pending.Contains(name)).ToList();
+                orphans = stored
+                    .Where(file => file.SavedAt is not { } at || at < freshSince)
+                    .Select(file => file.FileName)
+                    .Where(name => !keep.Contains(name) && !saved.Contains(name) && !_pending.Contains(name))
+                    .ToList();
             }
             foreach (var name in orphans) await DeleteQuietlyAsync(name).ConfigureAwait(false);
             if (orphans.Count > 0) _logger.LogInformation("Removed {Count} unused background pictures", orphans.Count);
@@ -255,7 +277,10 @@ public sealed class BackdropPhotoService : IDisposable
     private async Task CleanupLaterAsync(TimeSpan delay)
     {
         if (delay > TimeSpan.Zero) await Task.Delay(delay).ConfigureAwait(false);
-        if (!_disposed) await CleanupAsync().ConfigureAwait(false);
+        if (_disposed) return;
+        // Started without an account (its session ended while the app was closed): its chats' backgrounds go too.
+        if (_auth.State == AuthState.SignedOut) await ForgetChatsAsync(_ => true).ConfigureAwait(false);
+        await CleanupAsync().ConfigureAwait(false);
     }
 
     private void OnSettingsChanged() => SyncAsync().Forget(_logger);
@@ -263,6 +288,37 @@ public sealed class BackdropPhotoService : IDisposable
     private void OnChatRemoved(ChatRefEvent e)
     {
         if (_settings.Current.Appearance.ChatBackgrounds.ContainsKey(e.ChatId)) SetChatAsync(e.ChatId, null).Forget(_logger);
+    }
+
+    /// <summary>A full chat list from the server: chats missing from it are gone for me (also while this device was offline).</summary>
+    private void OnChatsSynced(IReadOnlyCollection<Guid> chatIds)
+    {
+        var known = chatIds as IReadOnlySet<Guid> ?? chatIds.ToHashSet();
+        ForgetChatsAsync(chatId => !known.Contains(chatId)).Forget(_logger);
+    }
+
+    /// <summary>Signing out (or another account signing in) takes the backgrounds of the old account's chats along.</summary>
+    private void OnAuthChanged()
+    {
+        Guid? now = _auth.State == AuthState.SignedIn ? _auth.UserId : null;
+        Guid? before;
+        lock (_lock)
+        {
+            if (_auth.State == AuthState.Initializing || now == _account) return;
+            before = _account;
+            _account = now;
+        }
+        if (before is not null) ForgetChatsAsync(_ => true).Forget(_logger);
+    }
+
+    /// <summary>Drops the backgrounds of the single chats that match (their pictures go with the settings change).</summary>
+    private Task ForgetChatsAsync(Func<Guid, bool> gone)
+    {
+        if (!_settings.Current.Appearance.ChatBackgrounds.Keys.Any(gone)) return Task.CompletedTask;
+        return UpdateAsync(s =>
+        {
+            foreach (var chatId in s.Appearance.ChatBackgrounds.Keys.Where(gone).ToList()) s.Appearance.ChatBackgrounds.Remove(chatId);
+        });
     }
 
     /// <summary>Pictures the settings referred to and no longer do (replaced, reset) are deleted.</summary>
@@ -334,5 +390,7 @@ public sealed class BackdropPhotoService : IDisposable
         _disposed = true;
         _settings.Changed -= OnSettingsChanged;
         _realtime.ChatRemoved -= OnChatRemoved;
+        _chats.Synced -= OnChatsSynced;
+        _auth.Changed -= OnAuthChanged;
     }
 }
