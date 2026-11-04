@@ -18,7 +18,7 @@ public sealed record BirthdayPerson(UserSummaryDto User, BirthdayDto Birthday, i
 /// </summary>
 public interface IReminderTexts
 {
-    /// <summary>"Сегодня день рождения: Анна".</summary>
+    /// <summary>"Сегодня день рождения у Анны" (the name declined where the language needs it and it can be).</summary>
     string BirthdayTitle(string name);
     /// <summary>"Исполняется 36 — поздравьте!" (<paramref name="age"/> null: without the age).</summary>
     string BirthdayBody(int? age);
@@ -32,8 +32,9 @@ public interface IReminderTexts
 /// (the chat list's card, closable for the day), the 🎂 mark for anyone whose birthday shows, and the reminders at
 /// 10:00 local time on the day — scheduled for the next <see cref="BirthdayService.ScheduleDays"/> days through
 /// <see cref="IReminderNotificationService"/> and again at every start, whenever contacts, their birthdays or the
-/// setting change, and after midnight. With <see cref="NotificationSettings.BirthdayReminders"/> off there is no card
-/// and no reminder (the mark stays).
+/// setting change, and after midnight (handed to the OS again even when unchanged). With
+/// <see cref="NotificationSettings.BirthdayReminders"/> off there is no card and no reminder (the mark stays). People I
+/// blocked get none of it.
 /// </summary>
 public interface IBirthdayService
 {
@@ -122,7 +123,7 @@ internal sealed class BirthdayService : IBirthdayService, IAccountScoped
 
     public bool IsBirthdayToday(UserSummaryDto? user)
     {
-        if (user is null || user.IsDeleted) return false;
+        if (user is null || user.IsDeleted || _contacts.IsBlocked(user.Id)) return false;
         var birthday = (_users.Get(user.Id) ?? user).Birthday;
         return birthday is not null && Birthdays.IsOn(birthday, Today);
     }
@@ -199,7 +200,7 @@ internal sealed class BirthdayService : IBirthdayService, IAccountScoped
                 $"birthday:{user.Id:N}:{date:yyyyMMdd}",
                 texts.BirthdayTitle(name),
                 texts.BirthdayBody(Birthdays.AgeOn(birthday, date)),
-                LinkTo(user))));
+                LinkTo(user)), date));
         }
         reminders.Sort((a, b) => a.At.CompareTo(b.At));
 
@@ -218,7 +219,8 @@ internal sealed class BirthdayService : IBirthdayService, IAccountScoped
         foreach (var contact in _contacts.Contacts)
         {
             var user = _users.Get(contact.User.Id) ?? contact.User;
-            if (user.IsDeleted || user.Birthday is not { } birthday) continue;
+            // Blocking keeps the contact (and their privacy may still show the birthday): no card, reminder or mark.
+            if (user.IsDeleted || user.Birthday is not { } birthday || _contacts.IsBlocked(user.Id)) continue;
             yield return (user, birthday);
         }
     }
@@ -239,7 +241,10 @@ internal sealed class BirthdayService : IBirthdayService, IAccountScoped
         return new DateTimeOffset(local, zone.GetUtcOffset(local));
     }
 
-    /// <summary>After midnight the card, the marks and the reminders move on to the new day.</summary>
+    /// <summary>
+    /// After midnight the card, the marks and the reminders move on to the new day; the reminders go to the OS again even
+    /// when they did not change (an alarm the OS dropped or held back is set anew while the app keeps running).
+    /// </summary>
     private void WatchMidnight()
     {
         CancellationTokenSource cts;
@@ -266,6 +271,7 @@ internal sealed class BirthdayService : IBirthdayService, IAccountScoped
                 {
                     return;
                 }
+                lock (_lock) _scheduledSignature = null;
                 _refresh.Request();
             }
         }

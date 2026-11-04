@@ -137,11 +137,17 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
     public Task<MeDto> DeleteMyAvatarAsync(Guid mediaId, CancellationToken ct = default) =>
         sender.SendJsonAsync<MeDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Users.MeAvatarByIdPath(mediaId), idempotent: false), ct);
 
+    public Task<MeDto> DeleteAllMyAvatarsAsync(CancellationToken ct = default) =>
+        sender.SendJsonAsync<MeDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Users.MeAvatars, idempotent: true), ct);
+
     public Task<IReadOnlyList<AvatarPhotoDto>> GetChatAvatarsAsync(Guid chatId, CancellationToken ct = default) =>
         Get<IReadOnlyList<AvatarPhotoDto>>(ApiRoutes.Chats.AvatarsPath(chatId), ct);
 
     public Task<ChatInfoDto> DeleteChatAvatarAsync(Guid chatId, Guid mediaId, CancellationToken ct = default) =>
         sender.SendJsonAsync<ChatInfoDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Chats.AvatarByIdPath(chatId, mediaId), idempotent: false), ct);
+
+    public Task<ChatInfoDto> DeleteAllChatAvatarsAsync(Guid chatId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<ChatInfoDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Chats.AvatarsPath(chatId), idempotent: true), ct);
 
     public Task<MeDto> SetBirthdayAsync(SetBirthdayRequest request, CancellationToken ct = default) =>
         Json<MeDto>(HttpMethod.Put, ApiRoutes.Users.MeBirthday, request, idempotent: true, ct);

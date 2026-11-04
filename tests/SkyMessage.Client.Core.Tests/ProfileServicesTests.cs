@@ -23,6 +23,69 @@ internal sealed class ZonedClock(DateTimeOffset start) : TimeProvider
     public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
 }
 
+/// <summary>
+/// A frozen wall clock in the UTC+3 test zone whose timers (Task.Delay with this provider) fire only when the test moves
+/// it past them, in order.
+/// </summary>
+internal sealed class SteppingClock(DateTimeOffset start) : TimeProvider
+{
+    private readonly List<Entry> _timers = [];
+    private long _ticks = start.UtcTicks;
+
+    public override TimeZoneInfo LocalTimeZone => ZonedClock.Zone;
+
+    public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
+
+    /// <summary>When the timers still waiting are due.</summary>
+    public IReadOnlyList<DateTimeOffset> Pending
+    {
+        get
+        {
+            lock (_timers) return _timers.Where(t => !t.Disposed).Select(t => t.Due).Order().ToList();
+        }
+    }
+
+    public void Advance(TimeSpan by)
+    {
+        Interlocked.Add(ref _ticks, by.Ticks);
+        var now = GetUtcNow();
+        List<Entry> due;
+        lock (_timers)
+        {
+            due = _timers.Where(t => t.Due <= now).OrderBy(t => t.Due).ToList();
+            _timers.RemoveAll(t => t.Due <= now);
+        }
+        foreach (var timer in due)
+            if (!timer.Disposed) timer.Callback(timer.State);
+    }
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var entry = new Entry(GetUtcNow() + dueTime, callback, state);
+        if (dueTime != Timeout.InfiniteTimeSpan)
+            lock (_timers) _timers.Add(entry);
+        return entry;
+    }
+
+    private sealed class Entry(DateTimeOffset due, TimerCallback callback, object? state) : ITimer
+    {
+        public DateTimeOffset Due { get; } = due;
+        public TimerCallback Callback { get; } = callback;
+        public object? State { get; } = state;
+        public volatile bool Disposed;
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+        public void Dispose() => Disposed = true;
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+}
+
 /// <summary>Settings whose updates apply (and raise Changed) like the real service, without storage.</summary>
 internal sealed class LiveSettings(AppSettings? initial = null) : ISettingsService
 {
@@ -70,7 +133,7 @@ public sealed class BirthdayServiceTests
     private sealed class Harness
     {
         public Guid Me { get; } = Guid.CreateVersion7();
-        public ZonedClock Clock { get; }
+        public SteppingClock Clock { get; }
         public IContactStore Contacts { get; } = Substitute.For<IContactStore>();
         public IUserStore Users { get; } = Substitute.For<IUserStore>();
         public IChatListStore Chats { get; } = Substitute.For<IChatListStore>();
@@ -84,7 +147,7 @@ public sealed class BirthdayServiceTests
 
         public Harness(DateTimeOffset now)
         {
-            Clock = new ZonedClock(now);
+            Clock = new SteppingClock(now);
             Contacts.Contacts.Returns(_ => (IReadOnlyList<ContactDto>)_contacts.ToList());
             Contacts.IsContact(Arg.Any<Guid>()).Returns(c => _contacts.Any(x => x.User.Id == c.Arg<Guid>()));
             Chats.Chats.Returns(new List<ChatSummaryDto>());
@@ -114,6 +177,11 @@ public sealed class BirthdayServiceTests
         {
             lock (Scheduled) return Scheduled.Last(s => s.Group == BirthdayService.ReminderGroup).Reminders;
         }
+
+        public int HandedToOs()
+        {
+            lock (Scheduled) return Scheduled.Count(s => s.Group == BirthdayService.ReminderGroup && s.Reminders.Count > 0);
+        }
     }
 
     private static readonly DateTimeOffset MorningUtc = new(2026, 11, 4, 5, 0, 0, TimeSpan.Zero); // 08:00 at UTC+3
@@ -137,6 +205,7 @@ public sealed class BirthdayServiceTests
             new DateTimeOffset(2026, 11, 4, 10, 0, 0, TimeSpan.FromHours(3)),
             new DateTimeOffset(2026, 11, 10, 10, 0, 0, TimeSpan.FromHours(3)),
         ]);
+        reminders.Select(r => r.Day).ShouldBe([new DateOnly(2026, 11, 4), new DateOnly(2026, 11, 10)], "the OS drops a reminder that comes on another day");
         reminders[0].Notification.Title.ShouldBe("Birthday today: Anna");
         reminders[0].Notification.Body.ShouldBe("Turning 36. Send your wishes!");
         reminders[0].Notification.Link.ShouldBe(new Uri("skymessage://u/anna_x"));
@@ -210,6 +279,38 @@ public sealed class BirthdayServiceTests
     }
 
     [Fact]
+    public async Task People_i_blocked_get_no_card_reminder_or_mark()
+    {
+        var h = new Harness(MorningUtc);
+        var anna = h.Contact("Anna", new BirthdayDto { Day = 4, Month = 11 });
+        h.Contacts.IsBlocked(anna.Id).Returns(true);
+        await h.SignInAsync();
+
+        await h.Service.RefreshNowAsync();
+
+        h.Service.Celebrating.ShouldBeEmpty();
+        h.LastSchedule().ShouldBeEmpty();
+        h.Service.IsBirthdayToday(anna).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task After_midnight_the_reminders_go_to_the_os_again_even_when_unchanged()
+    {
+        var h = new Harness(MorningUtc); // 08:00 local
+        h.Contact("Anna", new BirthdayDto { Day = 6, Month = 11 });
+        await h.SignInAsync();
+        await h.Service.RefreshNowAsync();
+        await h.Service.RefreshNowAsync();
+        h.HandedToOs().ShouldBe(1);
+
+        h.Clock.Advance(TimeSpan.FromHours(16) + TimeSpan.FromSeconds(3)); // past local midnight
+        h.Clock.Advance(TimeSpan.FromSeconds(1)); // the debounced refresh
+
+        await Wait.UntilAsync(() => h.HandedToOs() == 2, "an alarm the OS dropped is set anew");
+        h.Service.Today.ShouldBe(new DateOnly(2026, 11, 5));
+    }
+
+    [Fact]
     public async Task A_leap_day_birthday_is_reminded_on_february_28_in_a_common_year()
     {
         var h = new Harness(new DateTimeOffset(2027, 2, 20, 5, 0, 0, TimeSpan.Zero));
@@ -242,9 +343,16 @@ public sealed class BirthdayServiceTests
 
 public sealed class ContactSyncServiceTests
 {
+    private static readonly DateTimeOffset Start = new(2026, 11, 4, 9, 0, 0, TimeSpan.Zero);
+
     private sealed class Harness
     {
+        private int _lookUps;
+        private int _reads;
+        private int _numbers;
+
         public Guid Me { get; } = Guid.CreateVersion7();
+        public SteppingClock Clock { get; } = new(Start);
         public IContactStore Contacts { get; } = Substitute.For<IContactStore>();
         public IDeviceContactsService Device { get; } = Substitute.For<IDeviceContactsService>();
         public IDeviceContactsWatcher Watcher { get; } = Substitute.For<IDeviceContactsWatcher>();
@@ -253,11 +361,19 @@ public sealed class ContactSyncServiceTests
         public MemoryLocalStore Local { get; } = new();
         public IReminderNotificationService Reminders { get; } = Substitute.For<IReminderNotificationService>();
         public List<ReminderNotification> Shown { get; } = [];
-        public List<IReadOnlyList<PhoneBookMatch>> AddedBatches { get; } = [];
-        public List<PhoneBookMatch> Matches { get; } = [];
-        public HashSet<Guid> InContacts { get; } = [];
+        /// <summary>The phone book, in its order.</summary>
+        public List<PhoneBookEntry> PhoneBook { get; } = [];
+        /// <summary>SkyMessage users findable by their number.</summary>
+        public Dictionary<string, UserSummaryDto> Registered { get; } = [];
+        /// <summary>My contacts on the server.</summary>
+        public Dictionary<Guid, ContactDto> Book { get; } = [];
+        public HashSet<Guid> Blocked { get; } = [];
+        public Func<Exception?> LookUpFails { get; set; } = () => null;
         public ContactSyncService Service { get; }
         private readonly SkyMessage.Client.Core.Infrastructure.AccountLifecycle _lifecycle;
+
+        public int LookUps => Volatile.Read(ref _lookUps);
+        public int Reads => Volatile.Read(ref _reads);
 
         public Harness(bool enabled = true)
         {
@@ -265,15 +381,59 @@ public sealed class ContactSyncServiceTests
             Device.RequestPermissionAsync().Returns(true);
             Watcher.IsSupported.Returns(true);
             Permissions.CheckAsync(AppPermission.Contacts).Returns(PermissionState.Granted);
-            Contacts.FindDeviceContactsAsync(Arg.Any<CancellationToken>()).Returns(_ => Matches
-                .Select(m => m with { AlreadyContact = InContacts.Contains(m.User.Id) }).ToList());
-            Contacts.IsContact(Arg.Any<Guid>()).Returns(c => InContacts.Contains(c.Arg<Guid>()));
+            Contacts.ReadPhoneBookAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                Interlocked.Increment(ref _reads);
+                lock (PhoneBook) return (IReadOnlyList<PhoneBookEntry>)PhoneBook.ToList();
+            });
+            Contacts.MatchPhoneBookAsync(Arg.Any<IReadOnlyList<PhoneBookEntry>>(), Arg.Any<CancellationToken>()).Returns(c =>
+            {
+                Interlocked.Increment(ref _lookUps);
+                if (LookUpFails() is { } error) throw error;
+                lock (Book)
+                {
+                    return (IReadOnlyList<PhoneBookMatch>)c.Arg<IReadOnlyList<PhoneBookEntry>>()
+                        .Where(e => Registered.ContainsKey(e.Number))
+                        .Select(e => new PhoneBookMatch(e.Name, e.Number, Registered[e.Number], Book.ContainsKey(Registered[e.Number].Id)))
+                        .ToList();
+                }
+            });
+            Contacts.Contacts.Returns(_ =>
+            {
+                lock (Book) return (IReadOnlyList<ContactDto>)Book.Values.ToList();
+            });
+            Contacts.IsContact(Arg.Any<Guid>()).Returns(c =>
+            {
+                lock (Book) return Book.ContainsKey(c.Arg<Guid>());
+            });
+            Contacts.IsBlocked(Arg.Any<Guid>()).Returns(c => Blocked.Contains(c.Arg<Guid>()));
+            // Like the store and the server: new people come in synced, synced ones take the new name, my own stay.
             Contacts.AddSyncedAsync(Arg.Any<IReadOnlyList<PhoneBookMatch>>()).Returns(c =>
             {
-                var batch = c.Arg<IReadOnlyList<PhoneBookMatch>>();
-                lock (AddedBatches) AddedBatches.Add(batch);
-                foreach (var m in batch) InContacts.Add(m.User.Id);
-                return Task.FromResult<IReadOnlyList<ContactDto>>(batch.Select(m => new ContactDto { User = m.User, IsSynced = true }).ToList());
+                var changed = new List<ContactDto>();
+                lock (Book)
+                {
+                    foreach (var match in c.Arg<IReadOnlyList<PhoneBookMatch>>())
+                    {
+                        if (!Book.TryGetValue(match.User.Id, out var contact))
+                            Book[match.User.Id] = contact = new ContactDto { User = match.User, CustomName = match.DeviceContactName, IsSynced = true };
+                        else if (contact.IsSynced && contact.CustomName != match.DeviceContactName)
+                            Book[match.User.Id] = contact = contact with { CustomName = match.DeviceContactName };
+                        else
+                            continue;
+                        changed.Add(contact);
+                    }
+                }
+                return Task.FromResult<IReadOnlyList<ContactDto>>(changed);
+            });
+            Contacts.RemoveSyncedAsync(Arg.Any<IReadOnlyCollection<Guid>>()).Returns(c =>
+            {
+                lock (Book)
+                {
+                    var removed = c.Arg<IReadOnlyCollection<Guid>>().Where(id => Book.TryGetValue(id, out var contact) && contact.IsSynced).ToList();
+                    foreach (var id in removed) Book.Remove(id);
+                    return Task.FromResult<IReadOnlyList<Guid>>(removed);
+                }
             });
             Reminders.IsSupported.Returns(true);
             Reminders.ShowAsync(Arg.Any<ReminderNotification>()).Returns(Task.CompletedTask).AndDoes(c =>
@@ -283,63 +443,236 @@ public sealed class ContactSyncServiceTests
             if (enabled) Settings.Current.Contacts.SyncPhoneContacts = true;
             (_, _lifecycle) = Fakes.Account();
             Service = new ContactSyncService(Contacts, Device, Watcher, Permissions, Settings, Local, Reminders, _lifecycle,
-                Substitute.For<IServiceProvider>(), TimeProvider.System, Log.For<ContactSyncService>());
+                Substitute.For<IServiceProvider>(), Clock, Log.For<ContactSyncService>());
         }
 
-        public PhoneBookMatch Found(string name, string? username = null)
+        /// <summary>A new number in the phone book; registered: someone on SkyMessage already.</summary>
+        public (string Number, UserSummaryDto? User) Save(string name, bool registered = true, string? username = null, string? number = null)
         {
-            var match = new PhoneBookMatch(name, "+7900" + Random.Shared.Next(1000000, 9999999),
-                new UserSummaryDto { Id = Guid.CreateVersion7(), Username = username ?? "friend" + Matches.Count, DisplayName = name }, false);
-            Matches.Add(match);
-            return match;
+            number ??= "+7900" + (1000000 + Interlocked.Increment(ref _numbers)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            lock (PhoneBook) PhoneBook.Add(new PhoneBookEntry(number, name));
+            var user = registered ? Join(number, username ?? "friend" + _numbers) : null;
+            return (number, user);
+        }
+
+        /// <summary>The person with this number signs up (or lets others find them by it).</summary>
+        public UserSummaryDto Join(string number, string username)
+        {
+            var name = PhoneBook.First(e => e.Number == number).Name;
+            var user = new UserSummaryDto { Id = Guid.CreateVersion7(), Username = username, DisplayName = name };
+            Registered[number] = user;
+            return user;
+        }
+
+        public void Rename(string number, string name)
+        {
+            lock (PhoneBook)
+            {
+                var i = PhoneBook.FindIndex(e => e.Number == number);
+                PhoneBook[i] = PhoneBook[i] with { Name = name };
+            }
+        }
+
+        public void Delete(string number)
+        {
+            lock (PhoneBook) PhoneBook.RemoveAll(e => e.Number == number);
         }
 
         public Task SignInAsync() => _lifecycle.ActivateAsync(Me);
+
+        /// <summary>The sign-in sync has finished.</summary>
+        public Task SettledAsync() =>
+            Wait.UntilAsync(() => Local.Values.ContainsKey(ContactSyncService.StateKey) && !Service.IsSyncing, "the sign-in sync");
+
+        public Task IdleAfterAsync(int lookUps, string because) => Wait.UntilAsync(() => LookUps == lookUps && !Service.IsSyncing, because);
     }
 
     [Fact]
-    public async Task The_first_sync_adds_everyone_quietly_and_later_ones_announce_newcomers_once()
+    public async Task The_first_sync_adds_everyone_quietly_and_later_ones_announce_only_people_who_really_joined()
     {
         var h = new Harness();
-        h.Found("Мама");
-        h.Found("Олег");
+        var mama = h.Save("Мама");
+        var oleg = h.Save("Олег");
+        var anna = h.Save("Анна", registered: false);
         await h.SignInAsync();
-        await Wait.UntilAsync(() => h.AddedBatches.Count == 1, "the sign-in sync");
+        await h.SettledAsync();
 
-        h.AddedBatches[0].Count.ShouldBe(2);
+        h.Book.Keys.ShouldBe([mama.User!.Id, oleg.User!.Id], ignoreOrder: true);
+        h.Book.Values.ShouldAllBe(c => c.IsSynced);
         h.Shown.ShouldBeEmpty("nobody is announced on the first sync");
 
-        var anna = h.Found("Анна", "anna_s");
-        var result = await h.Service.SyncNowAsync();
+        // Анна (her number was in the phone book already) signs up; the daily check finds her.
+        var annaUser = h.Join(anna.Number, "anna_s");
+        h.Clock.Advance(ContactSyncService.FullCheckEvery);
+        await Wait.UntilAsync(() => h.Shown.Count == 1, "the daily check announces Анна");
 
-        result.Added.ShouldBe(1);
-        result.Announced.Single().User.Id.ShouldBe(anna.User.Id);
         h.Shown.Single().Title.ShouldBe("Анна is now on SkyMessage");
         h.Shown.Single().Link.ShouldBe(new Uri("skymessage://u/anna_s"));
+        h.Book.ContainsKey(annaUser.Id).ShouldBeTrue();
+
+        // A number saved just now belongs to someone who may have been here for years: added quietly.
+        h.Save("Пётр");
+        var result = await h.Service.SyncNowAsync();
+
+        result.LookedUp.ShouldBeTrue();
+        result.Added.ShouldBe(1);
+        result.Announced.ShouldBeEmpty();
         (await h.Service.SyncNowAsync()).Added.ShouldBe(0);
         h.Shown.Count.ShouldBe(1, "announced once");
+    }
+
+    [Fact]
+    public async Task An_unchanged_phone_book_goes_to_the_server_once_a_day()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        await h.SignInAsync();
+        await h.SettledAsync();
+        h.LookUps.ShouldBe(1);
+
+        (await h.Service.SyncNowAsync()).LookedUp.ShouldBeFalse("the next start, same numbers");
+        h.Clock.Advance(TimeSpan.FromHours(23));
+        (await h.Service.SyncNowAsync()).LookedUp.ShouldBeFalse();
+        h.LookUps.ShouldBe(1);
+        h.Reads.ShouldBe(3, "the phone book itself is read every time");
+
+        h.Save("Олег");
+        (await h.Service.SyncNowAsync()).LookedUp.ShouldBeTrue("the numbers changed");
+        h.LookUps.ShouldBe(2);
+        h.Local.Values[ContactSyncService.StateKey].ShouldBeOfType<ContactSyncState>().Numbers.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Phone_book_changes_sync_at_most_every_half_hour()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        await h.SignInAsync();
+        await h.SettledAsync();
+
+        h.Save("Олег");
+        h.Watcher.Changed += Raise.Event<Action>();
+        h.Watcher.Changed += Raise.Event<Action>();
+
+        h.Clock.Pending.ShouldContain(Start + ContactSyncService.WatcherSpacing);
+        h.Clock.Advance(ContactSyncService.WatcherSpacing - TimeSpan.FromMinutes(1));
+        h.Reads.ShouldBe(1, "no sooner than half an hour after the last sync");
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        await h.IdleAfterAsync(2, "the change synced");
+        h.Book.Count.ShouldBe(2);
+        h.Reads.ShouldBe(2, "both changes in one sync");
+    }
+
+    [Fact]
+    public async Task A_rate_limited_look_up_waits_for_the_window_to_end()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        await h.SignInAsync();
+        await h.SettledAsync();
+        h.LookUpFails = () => new ApiException(429, ErrorCodes.RateLimited);
+
+        h.Save("Олег");
+        (await h.Service.SyncNowAsync()).LookedUp.ShouldBeFalse();
+        h.Save("Ира");
+        await h.Service.SyncNowAsync();
+
+        h.LookUps.ShouldBe(2, "no look-up while paused");
+        h.LookUpFails = () => null;
+        h.Clock.Advance(ContactSyncService.RateLimitPause);
+        await h.IdleAfterAsync(3, "the pause ended");
+        h.Book.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task Synced_contacts_follow_the_phone_book_and_the_users_own_stay_as_they_are()
+    {
+        var h = new Harness();
+        h.Save("Мама", registered: false);
+        var olya = h.Save("Оля");
+        var brother = h.Save("Брат");
+        h.Book[brother.User!.Id] = new ContactDto { User = brother.User, CustomName = "Саша" };
+        await h.SignInAsync();
+        await h.SettledAsync();
+        h.Book[olya.User!.Id].IsSynced.ShouldBeTrue();
+
+        h.Rename(olya.Number, "Ольга");
+        h.Rename(brother.Number, "Александр");
+        var renamed = await h.Service.SyncNowAsync();
+
+        renamed.LookedUp.ShouldBeFalse("names only: nothing to look up");
+        renamed.Renamed.ShouldBe(1);
+        h.Book[olya.User.Id].CustomName.ShouldBe("Ольга");
+        h.Book[brother.User.Id].CustomName.ShouldBe("Саша");
+
+        h.Delete(olya.Number);
+        h.Delete(brother.Number);
+        var removed = await h.Service.SyncNowAsync();
+
+        removed.Removed.ShouldBe(1);
+        h.Book.ContainsKey(olya.User.Id).ShouldBeFalse();
+        h.Book.ContainsKey(brother.User.Id).ShouldBeTrue("a contact added by hand stays");
+
+        // Her number comes back, and so does she — quietly: the number is new to the phone book.
+        h.Save("Оля", registered: false, number: olya.Number);
+        var back = await h.Service.SyncNowAsync();
+        back.Added.ShouldBe(1);
+        back.Announced.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_phone_book_that_reads_empty_removes_nobody()
+    {
+        var h = new Harness();
+        var olya = h.Save("Оля");
+        await h.SignInAsync();
+        await h.SettledAsync();
+
+        lock (h.PhoneBook) h.PhoneBook.Clear();
+
+        (await h.Service.SyncNowAsync()).Removed.ShouldBe(0);
+        h.Book.ContainsKey(olya.User!.Id).ShouldBeTrue();
     }
 
     [Fact]
     public async Task Someone_removed_by_hand_is_not_brought_back()
     {
         var h = new Harness();
-        var oleg = h.Found("Олег");
+        var oleg = h.Save("Олег");
         await h.SignInAsync();
-        await Wait.UntilAsync(() => h.AddedBatches.Count == 1, "the sign-in sync");
+        await h.SettledAsync();
 
-        h.InContacts.Remove(oleg.User.Id);
-        var result = await h.Service.SyncNowAsync();
+        lock (h.Book) h.Book.Remove(oleg.User!.Id);
+        h.Clock.Advance(ContactSyncService.FullCheckEvery);
+        await h.IdleAfterAsync(2, "the daily check");
 
-        result.Added.ShouldBe(0);
-        h.AddedBatches.Count.ShouldBe(1);
+        h.Book.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Turning_sync_on_again_adds_people_quietly()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        var anna = h.Save("Анна", registered: false);
+        await h.SignInAsync();
+        await h.SettledAsync();
+        await h.Service.SetEnabledAsync(false);
+
+        h.Join(anna.Number, "anna_s");
+        (await h.Service.SetEnabledAsync(true)).ShouldBeTrue();
+
+        await h.IdleAfterAsync(2, "turning it on looks up");
+        h.Book.Count.ShouldBe(2);
+        h.Shown.ShouldBeEmpty("she may have joined any time while sync was off");
     }
 
     [Fact]
     public async Task Sync_never_asks_for_the_permission_by_itself()
     {
         var h = new Harness();
-        h.Found("Олег");
+        h.Save("Олег");
         h.Permissions.CheckAsync(AppPermission.Contacts).Returns(PermissionState.Denied);
         await h.SignInAsync();
 
@@ -348,14 +681,14 @@ public sealed class ContactSyncServiceTests
         result.ShouldBe(ContactSyncResult.None);
         h.Service.IsBlocked.ShouldBeTrue();
         await h.Device.DidNotReceive().RequestPermissionAsync();
-        await h.Contacts.DidNotReceive().FindDeviceContactsAsync(Arg.Any<CancellationToken>());
+        await h.Contacts.DidNotReceive().ReadPhoneBookAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Off_means_no_reading_and_turning_on_asks_once_then_syncs_and_watches()
     {
         var h = new Harness(enabled: false);
-        h.Found("Олег");
+        h.Save("Олег");
         await h.SignInAsync();
 
         (await h.Service.SyncNowAsync()).ShouldBe(ContactSyncResult.None);
@@ -365,7 +698,8 @@ public sealed class ContactSyncServiceTests
 
         await h.Device.Received(1).RequestPermissionAsync();
         h.Settings.Current.Contacts.SyncPhoneContacts.ShouldBeTrue();
-        await Wait.UntilAsync(() => h.AddedBatches.Count == 1, "turning it on syncs");
+        await h.IdleAfterAsync(1, "turning it on syncs");
+        h.Book.Count.ShouldBe(1);
         h.Watcher.Received().SetEnabled(true);
 
         await h.Service.SetEnabledAsync(false);
@@ -388,33 +722,46 @@ public sealed class ContactSyncServiceTests
     public async Task Removing_synced_contacts_turns_sync_off_and_forgets_whom_it_found()
     {
         var h = new Harness();
-        h.Found("Олег");
+        h.Save("Олег");
         h.Contacts.RemoveSyncedAsync().Returns(1);
         await h.SignInAsync();
-        await Wait.UntilAsync(() => h.AddedBatches.Count == 1, "the sign-in sync");
+        await h.SettledAsync();
 
         (await h.Service.RemoveSyncedAsync()).ShouldBe(1);
 
         h.Settings.Current.Contacts.SyncPhoneContacts.ShouldBeFalse();
-        h.Local.Values.ContainsKey(ContactSyncService.KnownKey).ShouldBeFalse();
+        h.Local.Values.ContainsKey(ContactSyncService.StateKey).ShouldBeFalse();
         h.Service.IsEnabled.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Numbers_are_kept_as_short_hashes_of_their_digits()
+    {
+        var key = ContactSyncService.NumberKey("+7 (900) 123-45-67");
+
+        key.ShouldBe(ContactSyncService.NumberKey("+79001234567"));
+        key.ShouldNotBe(ContactSyncService.NumberKey("89001234567"));
+        key.Length.ShouldBe(16);
+        key.ShouldNotContain("9001234567");
     }
 }
 
 public sealed class SyncedContactsStoreTests
 {
     [Fact]
-    public async Task Sync_adds_marked_contacts_and_removing_them_keeps_the_ones_added_by_hand()
+    public async Task Sync_adds_and_renames_its_own_contacts_and_removing_them_keeps_the_ones_added_by_hand()
     {
         var me = Guid.CreateVersion7();
         var api = Substitute.For<ISkyApi>();
         var manual = new UserSummaryDto { Id = Guid.CreateVersion7(), Username = "anna", DisplayName = "Anna", IsContact = true };
         var found = new UserSummaryDto { Id = Guid.CreateVersion7(), Username = "oleg", DisplayName = "Oleg" };
-        api.GetContactsAsync(Arg.Any<CancellationToken>()).Returns(new List<ContactDto> { new() { User = manual } });
+        api.GetContactsAsync(Arg.Any<CancellationToken>()).Returns(new List<ContactDto> { new() { User = manual, CustomName = "Аня" } });
         api.GetBlockedAsync(Arg.Any<CancellationToken>()).Returns(new List<UserSummaryDto>());
-        AddContactsBulkRequest? sent = null;
-        api.AddContactsBulkAsync(Arg.Do<AddContactsBulkRequest>(r => sent = r), Arg.Any<CancellationToken>())
-            .Returns(new List<ContactDto> { new() { User = found with { IsContact = true }, IsSynced = true } });
+        var sent = new List<AddContactsBulkRequest>();
+        api.AddContactsBulkAsync(Arg.Do<AddContactsBulkRequest>(sent.Add), Arg.Any<CancellationToken>())
+            .Returns(c => c.Arg<AddContactsBulkRequest>().Contacts
+                .Select(r => new ContactDto { User = found with { IsContact = true, ContactName = r.CustomName }, CustomName = r.CustomName, IsSynced = true })
+                .ToList());
         api.RemoveSyncedContactsAsync(Arg.Any<CancellationToken>()).Returns(new RemoveSyncedContactsResultDto { Removed = 1 });
         var users = Substitute.For<IUserStore>();
         var (cache, lifecycle) = Fakes.Account();
@@ -425,15 +772,131 @@ public sealed class SyncedContactsStoreTests
 
         var added = await contacts.AddSyncedAsync([new PhoneBookMatch("Олег", "+79001234567", found, false)]);
 
-        sent!.Synced.ShouldBeTrue();
-        sent.Contacts.Single().CustomName.ShouldBe("Олег");
+        sent.Single().Synced.ShouldBeTrue();
+        sent.Single().Contacts.Single().CustomName.ShouldBe("Олег");
         added.Single().IsSynced.ShouldBeTrue();
         contacts.IsContact(found.Id).ShouldBeTrue();
+
+        // The phone book renamed both: the synced contact goes to the server with its new name, my own does not.
+        var renamed = await contacts.AddSyncedAsync([
+            new PhoneBookMatch("Олежка", "+79001234567", found, true),
+            new PhoneBookMatch("Анна Б.", "+79007654321", manual, true),
+        ]);
+        sent.Count.ShouldBe(2);
+        sent[1].Contacts.Select(r => (r.UserId, r.CustomName)).ShouldBe([(found.Id, (string?)"Олежка")]);
+        renamed.Single().CustomName.ShouldBe("Олежка");
+        contacts.Contacts.Single(c => c.User.Id == manual.Id).CustomName.ShouldBe("Аня");
+        (await contacts.AddSyncedAsync([new PhoneBookMatch("Олежка", "+79001234567", found, true)])).ShouldBeEmpty("nothing changed");
+        sent.Count.ShouldBe(2);
+
+        // Removing by id takes only synced contacts.
+        (await contacts.RemoveSyncedAsync([manual.Id])).ShouldBeEmpty();
+        await api.DidNotReceive().RemoveContactAsync(manual.Id, Arg.Any<CancellationToken>());
 
         (await contacts.RemoveSyncedAsync()).ShouldBe(1);
 
         contacts.IsContact(found.Id).ShouldBeFalse();
         contacts.IsContact(manual.Id).ShouldBeTrue();
         (await contacts.AddSyncedAsync([new PhoneBookMatch("Anna", "+79007654321", manual, true)])).ShouldBeEmpty("people already in contacts stay as they are");
+    }
+
+    [Fact]
+    public async Task Removing_synced_contacts_by_id_tells_the_server_about_each()
+    {
+        var me = Guid.CreateVersion7();
+        var api = Substitute.For<ISkyApi>();
+        var synced = new UserSummaryDto { Id = Guid.CreateVersion7(), Username = "olya", DisplayName = "Olya", IsContact = true };
+        api.GetContactsAsync(Arg.Any<CancellationToken>()).Returns(new List<ContactDto> { new() { User = synced, CustomName = "Оля", IsSynced = true } });
+        api.GetBlockedAsync(Arg.Any<CancellationToken>()).Returns(new List<UserSummaryDto>());
+        var (cache, lifecycle) = Fakes.Account();
+        var contacts = new ContactStore(api, Substitute.For<IRealtimeService>(), Fakes.Auth(me), Substitute.For<IUserStore>(),
+            Substitute.For<IDeviceContactsService>(), Substitute.For<IPlatformInfo>(), cache, lifecycle, Log.For<ContactStore>());
+        await lifecycle.ActivateAsync(me);
+        await contacts.LoadAsync(force: true);
+
+        (await contacts.RemoveSyncedAsync([synced.Id, Guid.CreateVersion7()])).ShouldBe([synced.Id]);
+
+        await api.Received(1).RemoveContactAsync(synced.Id, Arg.Any<CancellationToken>());
+        contacts.IsContact(synced.Id).ShouldBeFalse();
+    }
+}
+
+public sealed class RussianNamesTests
+{
+    [Theory]
+    [InlineData("Анна", "Анны")]
+    [InlineData("Мама", "Мамы")]
+    [InlineData("мама", "мамы")]
+    [InlineData("МАМА", "МАМЫ")]
+    [InlineData("Ольга", "Ольги")]
+    [InlineData("Саша", "Саши")]
+    [InlineData("Бабушка", "Бабушки")]
+    [InlineData("Таня", "Тани")]
+    [InlineData("Мария", "Марии")]
+    [InlineData("Илья", "Ильи")]
+    [InlineData("Ирина", "Ирины")]
+    [InlineData("Олег", "Олега")]
+    [InlineData("Андрей", "Андрея")]
+    [InlineData("Николай", "Николая")]
+    [InlineData("Юрий", "Юрия")]
+    [InlineData("Павел", "Павла")]
+    [InlineData("Лев", "Льва")]
+    [InlineData("Пётр", "Петра")]
+    [InlineData("Игорь", "Игоря")]
+    [InlineData("Любовь", "Любови")]
+    [InlineData("Дочь", "Дочери")]
+    [InlineData("Любимая", "Любимой")]
+    [InlineData("Крёстный", "Крёстного")]
+    [InlineData("Петрова", "Петровой")]
+    [InlineData("Ковальская", "Ковальской")]
+    [InlineData("Достоевский", "Достоевского")]
+    [InlineData("Иван Петров", "Ивана Петрова")]
+    [InlineData("Анна Петрова", "Анны Петровой")]
+    [InlineData("Ирина Ильина", "Ирины Ильиной")]
+    [InlineData("Иванова Мария", "Ивановой Марии")]
+    [InlineData("Анна Сергеевна", "Анны Сергеевны")]
+    [InlineData("Иван Иванович Петров", "Ивана Ивановича Петрова")]
+    [InlineData("Петрова Анна Сергеевна", "Петровой Анны Сергеевны")]
+    [InlineData("Тётя Света", "Тёти Светы")]
+    [InlineData("Дядя Коля", "Дяди Коли")]
+    [InlineData("Константин Ильин", "Константина Ильина")]
+    [InlineData("John", "John")]
+    [InlineData("John Smith", "John Smith")]
+    public void Declines_names_it_is_sure_of(string name, string genitive) => RussianNames.Genitive(name).ShouldBe(genitive);
+
+    [Theory]
+    [InlineData("Саша работа")]
+    [InlineData("Саша Работа")]
+    [InlineData("Анна Ким")]
+    [InlineData("Олег Шевчук")]
+    [InlineData("Ильина")]
+    [InlineData("Нелли")]
+    [InlineData("Солнышко")]
+    [InlineData("Мама ❤️")]
+    [InlineData("Мама 2")]
+    [InlineData("Ирэн")]
+    [InlineData("Анна-Мария")]
+    [InlineData("Artur Петров")]
+    [InlineData("Старший")]
+    [InlineData("Один Два Три Четыре")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Leaves_names_it_is_unsure_of(string name) => RussianNames.Genitive(name).ShouldBeNull();
+}
+
+public sealed class ReminderRulesTests
+{
+    [Fact]
+    public void A_reminder_shows_on_its_own_day_and_not_hours_late()
+    {
+        var at = new DateTimeOffset(2026, 11, 4, 7, 0, 0, TimeSpan.Zero); // 10:00 at UTC+3
+        var day = new DateOnly(2026, 11, 4);
+
+        ReminderRules.IsDue(at, day, at, day).ShouldBeTrue();
+        ReminderRules.IsDue(at, day, at.AddHours(5), day).ShouldBeTrue("a little late is fine");
+        ReminderRules.IsDue(at, day, at + ReminderRules.MaxDelay + TimeSpan.FromMinutes(1), day).ShouldBeFalse("hours late");
+        ReminderRules.IsDue(at, day, at.AddMinutes(30), day.AddDays(1)).ShouldBeFalse("another day (the phone moved to another time zone)");
+        ReminderRules.IsDue(at, null, at.AddHours(1), day.AddDays(1)).ShouldBeTrue("a reminder without a day of its own");
+        ReminderRules.IsDue(at, day, at.AddHours(-2), day).ShouldBeFalse("not before its time");
     }
 }

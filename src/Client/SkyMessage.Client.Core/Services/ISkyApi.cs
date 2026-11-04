@@ -49,8 +49,12 @@ public interface ISkyApi
     Task<IReadOnlyList<AvatarPhotoDto>> GetUserAvatarsAsync(Guid userId, CancellationToken ct = default);
     /// <summary>Drops a photo from my history; the previous one takes over when it was the current.</summary>
     Task<MeDto> DeleteMyAvatarAsync(Guid mediaId, CancellationToken ct = default);
+    /// <summary>No photo and no avatar history left.</summary>
+    Task<MeDto> DeleteAllMyAvatarsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<AvatarPhotoDto>> GetChatAvatarsAsync(Guid chatId, CancellationToken ct = default);
     Task<ChatInfoDto> DeleteChatAvatarAsync(Guid chatId, Guid mediaId, CancellationToken ct = default);
+    /// <summary>The group keeps no photo and no avatar history (who may change its info).</summary>
+    Task<ChatInfoDto> DeleteAllChatAvatarsAsync(Guid chatId, CancellationToken ct = default);
     Task<MeDto> SetBirthdayAsync(SetBirthdayRequest request, CancellationToken ct = default);
     Task<MeDto> RemoveBirthdayAsync(CancellationToken ct = default);
     Task<MeDto> SetCoverAsync(SetCoverRequest request, CancellationToken ct = default);
