@@ -62,9 +62,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Our own artwork: soft violet to sky-blue gradient cloud, no speech-bubble tail. -->
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#3D2BD9" />
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1245" BaseSize="128,128" />
+    <!--
+      Our own artwork, «Горизонт» (docs/brand): an outgoing message bubble cut by the horizon, white sky over a peach
+      dawn band, on the Night-indigo ground. appicon.svg / appiconfg.svg are docs/brand/bg.svg / fg.svg; the themed
+      (monochrome) layer is Platforms/Android/Resources/drawable/appicon_monochrome.xml (docs/brand/mono.svg). The
+      splash shows the same mark on the ground color, 288 dp = the Android 12+ splash icon area (never clipped).
+    -->
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#2A1F86" />
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#2A1F86" BaseSize="288,288" />
     <!--
       Our synthesized sound packs, rendered by tools/tones. iOS/Mac: the IMA4 CAF copies at the bundle root,
       used as notification sounds (iOS plays no Ogg there); in-app playback uses Client.UI's wwwroot/sounds.

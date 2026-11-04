@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="colorPrimary">#6A4BFF</color>
-    <color name="colorPrimaryDark">#3D2BD9</color>
+    <!-- The brand ground (Night indigo): the status bar behind the splash, same as maui_splash_color. -->
+    <color name="colorPrimaryDark">#2A1F86</color>
     <color name="colorAccent">#9A48F0</color>
 </resources>

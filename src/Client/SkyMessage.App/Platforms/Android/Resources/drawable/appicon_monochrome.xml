@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SkyMessage themed icon (Android 13+): the monochrome layer of the adaptive icon, docs/brand/mono.svg converted
+     with exact paths (the 108dp canvas = 456 units, same geometry as the foreground). The system uses its alpha only. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="456"
+    android:viewportHeight="456">
+    <path android:fillColor="#FF000000" android:pathData="M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z" />
+    <path android:fillColor="#FF000000" android:pathData="M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z" />
+</vector>
