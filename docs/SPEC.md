@@ -501,7 +501,9 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   its day (`ScheduledReminder.Day`): one the OS delivers on another day or more than `ReminderRules.MaxDelay` (6 h)
   late is dropped. After midnight the reminders go to the OS again even when unchanged. Texts from the UI's
   `IReminderTexts`: "Сегодня день рождения у Анны" (`RussianNames.Genitive` declines given names, family words,
-  patronymics and common surnames; a name it cannot decline for sure follows a colon instead: "Сегодня день рождения:
+  patronymics and common surnames, and keeps names Russian does not decline as they are — "у Нелли", "у Седых", "у
+  Мариам Петровой"; a word in a consonant on its own only when it is a man's name or a word like "Брат", since
+  "Ковальчук" may be a woman's; a name it cannot decline for sure follows a colon instead: "Сегодня день рождения:
   Саша работа").
 - **IContactSyncService** (`Services/ContactSync.cs`, `ContactsSettings.SyncPhoneContacts`, per device): with the
   contacts permission (never asked for by itself — only when the user turns it on) it reads the phone book at sign-in
