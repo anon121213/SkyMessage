@@ -26,8 +26,6 @@ namespace SkyMessage.App.Droid;
 public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLifecycle lifecycle, NativeStrings strings,
     ILogger<AndroidCallPlatformService> logger) : ICallPlatformService
 {
-    private static readonly int AccentColor = unchecked((int)0xFF6A4BFF);
-
     private readonly object _gate = new();
     private Action<CallCommand>? _handlers;
     private ICallService? _callService;
@@ -243,7 +241,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
 
         return new NotificationCompat.Builder(context, NotificationChannels.OngoingCall)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-            .SetColor(AccentColor)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle(Title)!
             .SetContentText(strings[IsVideo ? "platform.call.ongoingVideo" : "platform.call.ongoing"])!
             .SetSubText(strings["platform.call.tapToReturn"])!
@@ -264,7 +262,7 @@ public sealed class AndroidCallPlatformService(IServiceProvider services, IAppLi
     internal Notification BuildEndedNotification(Context context) =>
         new NotificationCompat.Builder(context, NotificationChannels.OngoingCall)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-            .SetColor(AccentColor)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle(string.IsNullOrWhiteSpace(Title) ? "SkyMessage" : Title)!
             .SetOngoing(false)!
             .SetSilent(true)!

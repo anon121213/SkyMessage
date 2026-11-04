@@ -143,7 +143,7 @@ public sealed class BackgroundConnectionForegroundService : Service
             var content = AppIntents.ActivityPendingIntent(this, 41, AppIntents.ActivityIntent(this, null));
             var notification = new NotificationCompat.Builder(this, NotificationChannels.Background)
                 .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-                .SetColor(unchecked((int)0xFF6A4BFF))!
+                .SetColor(NotificationChannels.AccentColor)!
                 .SetContentTitle(strings?["platform.background.title"] ?? "SkyMessage")!
                 .SetContentText(strings?["platform.background.text"] ?? "")!
                 .SetContentIntent(content)!

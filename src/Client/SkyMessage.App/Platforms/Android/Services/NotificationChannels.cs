@@ -30,6 +30,12 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
     /// <summary>Matches the &lt;provider&gt; in AndroidManifest.xml (the application id is fixed: com.skymessage.messenger).</summary>
     public const string SoundAuthority = "com.skymessage.messenger.sounds";
 
+    /// <summary>
+    /// The one notification accent (ARGB): every notification's SetColor (the small icon and actions in the shade) and
+    /// the message channels' light. The UI accent violet #6A4BFF (Accent violet in docs/brand/palette.json).
+    /// </summary>
+    public const int AccentColor = unchecked((int)0xFF6A4BFF);
+
     private const string GroupMessages = "messages";
     private const string GroupCalls = "calls";
     private const string GroupService = "service";
@@ -70,7 +76,7 @@ public sealed class NotificationChannels(IServiceProvider services, NativeString
             };
             channel.SetShowBadge(true);
             channel.EnableLights(true);
-            channel.LightColor = unchecked((int)0xFF6A4BFF);
+            channel.LightColor = AccentColor;
             ApplySound(channel, uri, AudioUsageKind.Notification);
             channel.EnableVibration(settings.Vibrate);
             if (settings.Vibrate) channel.SetVibrationPattern(MessageVibration);
