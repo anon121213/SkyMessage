@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SkyMessage adaptive icon, foreground layer: a speech bubble cut by the horizon. Grid m = 3dp: circle R 7m at (52.5, 52.5)dp, outgoing corner bottom-right r m/2, gap m from 4m to 5m below the centre, dawn band 2m. All straight edges on the 1.5dp grid; max radius 26.8dp < 33dp safe zone -->
+<svg xmlns="http://www.w3.org/2000/svg" width="456" height="456" viewBox="0 0 456 456">
+  <path fill="#FFFFFF" d="M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z"/>
+  <path fill="#FFAE86" d="M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z"/>
+</svg>

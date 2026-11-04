@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SkyMessage notification icon (24dp): white silhouette, live area 2..22, every straight edge on a whole pixel, gap 17..19, band 19..22 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <path fill="#FFFFFF" d="M3.34,17 A10,10 0 0 1 12,2 A10,10 0 0 1 22,12 L22,17 Z"/>
+  <path fill="#FFFFFF" d="M22,19 L22,21.5 A0.5,0.5 0 0 1 21.5,22 L12,22 A10,10 0 0 1 4.86,19 Z"/>
+</svg>

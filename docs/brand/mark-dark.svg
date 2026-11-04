@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SkyMessage mark for dark surfaces (#0D0B1E): white sky, dawn peach band -->
+<svg xmlns="http://www.w3.org/2000/svg" width="177.33" height="177.33" viewBox="133 133 177.33 177.33">
+  <path fill="#FFFFFF" d="M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z"/>
+  <path fill="#FFAE86" d="M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z"/>
+</svg>

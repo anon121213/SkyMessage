@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SkyMessage adaptive icon, background layer (108dp = 456 units): Night indigo, one vertical two-stop gradient -->
+<svg xmlns="http://www.w3.org/2000/svg" width="456" height="456" viewBox="0 0 456 456">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A1F86"/>
+      <stop offset="1" stop-color="#4A35C8"/>
+    </linearGradient>
+  </defs>
+  <rect width="456" height="456" fill="url(#sky)"/>
+</svg>
