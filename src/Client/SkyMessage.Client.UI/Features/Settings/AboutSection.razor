@@ -1,5 +1,5 @@
-@* About: the logo, the name and version, app and server versions, updates (AboutUpdates) and the licenses of
-   everything third-party that ships in the apps. *@
+@* About: the lockup (the «Горизонт» mark and the name, its horizon opening once) and the version, app and server
+   versions, updates (AboutUpdates) and the licenses of everything third-party that ships in the apps. *@
 @inherits UiComponentBase
 @inject IPlatformInfo Platform
 @inject IServerEndpointService Endpoints
@@ -11,10 +11,9 @@
         var info = Endpoints.Info;
     }
     <div class="about-hero">
-        <div class="about-hero__logo" aria-hidden="true">
-            <Logo Size="96" Animated="true" />
+        <div class="about-hero__brand">
+            <Logo Size="52" Wordmark="true" Animated="true" />
         </div>
-        <div class="about-hero__name">SkyMessage</div>
         <div class="about-hero__version sm-nums">@L.Format("settings.about.version", Platform.AppVersion)</div>
         <div class="about-hero__tagline">@L["app.tagline"]</div>
     </div>

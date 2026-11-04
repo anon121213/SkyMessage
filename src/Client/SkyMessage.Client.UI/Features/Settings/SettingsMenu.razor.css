@@ -120,15 +120,20 @@
 
 /* ---------- Footer ---------- */
 
+/* The small lockup and the version on one baseline: the letters of the lockup stand on its horizon, 38/177.33 of its
+   height above its bottom edge, so the 18px lockup drops that much below the text baseline. */
 .settings-version {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
     margin: 6px 0 18px;
+    text-align: center;
     font-family: var(--sm-font-display);
     font-size: 0.75rem;
     font-weight: 700;
+    line-height: 1.5;
     letter-spacing: 0.04em;
     color: var(--sm-text-3);
+}
+
+.settings-version ::deep .sm-logo {
+    margin-right: 0.375rem;
+    vertical-align: calc(-1.125rem * 38 / 177.33);
 }
