@@ -453,26 +453,45 @@ per store, isolated event invocation, merge rules, buffered replay during resync
 - **INotificationCoordinator** per its doc; badge = `TotalUnread` via `SetBadgeCountAsync`; notification taps
   open `DeepLinks.AppChatUri(chatId)`. While the app passcode locks the app, messages notify through the system
   even in foreground (no in-app banner); with "hide notification text" the notification says only
-  "SkyMessage: New message" and replaces the chat's earlier one (its lines go too).
+  "SkyMessage: New message" (`LocalNotification.Hidden`: the chat's earlier lines go too), and the moment the lock
+  engages every message notification already on screen gets the same text (`ILocalNotificationService.RedactMessagesAsync`:
+  Android re-posts them silently, also those an earlier run of the process left in the shade, and the summary stops
+  naming chats; browsers re-show them by tag; iOS replaces them with one per chat).
 - **IAppLockService** (app passcode, "код-пароль"; rules in `AppLockRules`, per device and for the whole app): a 4-
   or 6-digit code; only a salted PBKDF2-HMAC-SHA256 hash is stored (`PasscodeHasher`: 16-byte salt, rounds calibrated
   when the code is set to ≈ 0.25 s per check on this device, 10,000–600,000, kept with the hash; the browser derives
   it with WebCrypto through `IAppLockPlatform.DeriveKeyAsync`, the same bytes as .NET's) in `ISecureStore`
-  ("passcode.v1" with the options, "passcode.attempts.v1"). With a passcode: every cold start is locked
-  (`ClientBootstrapper` reads it right after the session, before the first screen, also when restoring the session
-  failed); leaving the app (`IAppLifecycle`) for longer than the auto-lock delay locks it — immediately / 1 min
-  (default) / 5 min / 1 h / 5 h — measured with the wall, process and boot clock (`IAppLockPlatform.SinceBoot`): sleep
-  counts, a wall clock moved back locks (without a boot clock) and never helps; a check every 5 s while away locks
-  before the user is back, so returning never shows chats for a moment; "immediately" locks as the app leaves, except
-  for the app's own pickers/camera/system screens (`ExpectReturn`, `AppLockRules.OwnTripGrace` 2 min; the browser's
-  file pickers announce it too, since a phone browser hides the page while its picker or camera is up);
-  `LockNow`. Five wrong codes in a row pause the checks for 30 s, each further one doubles the pause up to 1 h
-  (boot clock when known: moving the clock or restarting does not shorten it); the count survives restarts, is shared
-  by browser tabs and starts over after a right code or fingerprint. While locked the window is secure
-  (`IScreenCaptureGuard`); while a passcode is set the recents picture shows no content. Change and turn off need the
-  current code; turned on/off in another tab is picked up when this one comes back. An unreadable record locks with no
-  code matching. Signing out of the device (also "Forgot the passcode?") removes the passcode; a passcode left on a
-  signed-out device is removed at start.
+  ("passcode.v1" with the options, "passcode.attempts.v1"), plus a plain marker that one is set ("passcode.set.v1" in
+  `IPreferencesStore`; written after the record, removed before it). Reads use `ISecureStore.TryGetAsync`, which
+  reports a failed read instead of wiping the store; a store that cannot be read, a damaged record, or a record gone
+  while the marker says one was set (Android's secure storage drops what it cannot decrypt) all lock with no code
+  matching — only signing out removes them. With a passcode: every cold start is locked (`ClientBootstrapper` reads it
+  before the first screen, also when loading the settings or restoring the session failed; the UI's start fallback
+  reads it too, and the shell stays covered until it has been read: `IsInitialized`); leaving the app
+  (`IAppLifecycle`) for longer than the auto-lock delay locks it — immediately / 1 min (default) / 5 min / 1 h / 5 h —
+  measured with the wall, process and boot clock (`IAppLockPlatform.SinceBoot`): sleep counts, a wall clock moved back
+  locks (without a boot clock) and never helps; a check every 5 s while away locks before the user is back, so
+  returning never shows chats for a moment; "immediately" locks as the app leaves, except for the app's own
+  pickers/camera/system screens (`ExpectReturn`: a trip announced within `AppLockRules.OwnTripWindow` (1 min) of
+  leaving gets `OwnTripGrace` (2 min); it covers one leave and ends when the app is back, so a picker result that
+  never came cannot soften the auto-lock later; the browser's file pickers announce it too, since a phone browser
+  hides the page while its picker or camera is up); `LockNow`. Five wrong codes in a row pause the checks for 30 s,
+  each further one doubles the pause up to 1 h; with a boot clock the wall clock is not used for the pause at all —
+  after a phone restart only the time since that restart counts (the pause is re-anchored to it) — so moving the clock,
+  restarting the app or the phone never shortens it; the count survives restarts, is shared by browser tabs and starts
+  over after a right code or fingerprint. While locked the window is secure (`IScreenCaptureGuard`); while a passcode
+  is set the recents picture shows no content. Change and turn off need the current code. Signing out by choice
+  ("Sign out", "Forgot the passcode?", switching to another server: `AccountLifecycle.OnBeforeSignOut`) removes the
+  passcode before the session goes, the app staying locked until it has; a sign-out the user did not ask for (the
+  session expired, was ended from another device or another server answered) keeps it, nothing locks while signed out,
+  and the next sign-in with the password opens the app (the count starts over) with the passcode on again. Browsers:
+  every tab is an instance of the app on the same storage (`IAppLockPlatform.Announce`/`Signaled`, web-platform.js
+  `skyPlatform.passcode`: a BroadcastChannel, storage events). "Lock now" locks every tab, a right code or fingerprint
+  in one opens all of them, turning it off opens them; turned on in another tab, a hidden tab locks at once and a
+  visible one stays open; changes to the stored passcode reach the others at once and are re-read before every check,
+  change and on the way back (a stale tab cannot set a second passcode over another's or write an old one back); a
+  passcode that vanished elsewhere leaves a locked tab locked (that could be a sign-out there). Each tab measures its
+  own time away; a new tab starts locked. Native apps have one instance and read the keystore at start only.
 - **IClientBootstrapper** per its doc (no network wait; owns sign-in/out cleanup; enables
   `IBackgroundConnectionService` according to `KeepConnectedInBackground`).
 - **ILinkBuilder**: `ServerInfoDto.PublicBaseUrl ?? BaseUri` + `DeepLinks.*Path`.
@@ -609,16 +628,19 @@ participants by `metadata.userId` (identity is per device), reports through a `D
 `devices.js` serves both settings and calls.
 
 **App passcode** (`Features/Passcode`): `LockScreen`, rendered once by `MainLayout`, covers the signed-in shell while
-`IAppLockService.IsLocked` (z-index 990: over dialogs, menus, banners and toasts). The shell stays mounted underneath,
-`inert`, and every `ShellContext` reports `IsCovered` (no read marks, autoplay or active chat; notifications go through
-the system). The calm sky, the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`; no
-system keyboard; on a computer digits and Backspace type through `js/passcode.js`, Escape does not reach the app
-underneath); wrong codes shake the dots (rose) with a haptic, the pause after five counts down on the hint line; the
-fingerprint key and a one-time automatic prompt per lock when allowed (not while a call rings or is live, where it
-would cover the call screen: it then waits for the next return to the app); "Forgot the passcode?" confirms in place and
-signs out of this device (`IAuthService.LogoutAsync`: local data cleared, passcode removed). An active call stays
-reachable: "Back to the call" expands the call screen, which goes above the lock while locked (an incoming call opens
-it by itself); minimizing it shows the lock again. Android Back on the lock screen moves the app to the background.
+`IAppLockService.IsLocked` (z-index 990: over dialogs, menus, banners and toasts), and — without a keypad — while the
+stored passcode is still being read. The shell stays mounted underneath, `inert` with its animations paused, and every
+`ShellContext` reports `IsCovered` (no read marks, autoplay or active chat; notifications go through the system). The
+calm sky, the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`, a fresh one for
+every lock; no system keyboard; on a computer digits and Backspace type through `js/passcode.js`, Escape does not reach
+the app underneath); wrong codes shake the dots (rose) with a haptic, the hint says how many tries are left before a
+pause, the pause after five counts down on the hint line; the fingerprint key and a one-time automatic prompt per lock
+when allowed (not while a call rings or is live, where it would cover the call screen: it then waits for the next
+return to the app); "Forgot the passcode?" confirms in place and signs out of this device (`IAuthService.LogoutAsync`:
+local data cleared, passcode removed); Android Back and Escape close that question (`LockUi.TryBack`). An active call
+stays reachable: "Back to the call" expands the call screen, which goes above the lock while locked (an incoming call
+opens it by itself), with the toasts it raises above it (`shell--call-over-lock`); minimizing it shows the lock again.
+Android Back on the lock screen otherwise moves the app to the background.
 
 **Localization**: `ILocalizer` reads embedded JSON `Localization/{lang}/{area}.json` (flat keys like
 `"chat.composer.placeholder"`); areas owned as in §4; error codes → `errors.json` (`"error.<code>"`).
@@ -693,9 +715,11 @@ it by itself); minimizing it shows the lock again. Android Back on the lock scre
   AppLockPlatform (app passcode: framework BiometricPrompt on Android 10+ with weak biometrics so face unlock counts,
   USE_BIOMETRIC; no recents picture while a passcode is set — `setRecentsScreenshotEnabled(false)` on Android 13+,
   FLAG_SECURE while the activity is paused below; `SystemClock.elapsedRealtime` as the boot clock; Back on the lock
-  screen leaves the app unless the call screen is over it; shown over the phone's own lock screen for a call, the app
-  locks (`LockNow`), so minimizing the call never shows chats there; `ActivityResults` launches, camera capture and
-  the own-sound picker announce `ExpectReturn`; iOS/Mac: keypad only),
+  screen closes its "Forgot the passcode?" question, else leaves the app unless the call screen is over it; shown over
+  the phone's own lock screen for a call, the app locks (`LockNow`) whenever the activity starts or resumes over a
+  locked keyguard — also for a call accepted while the phone was unlocked and locked during it — so minimizing the call
+  never shows chats there; `ActivityResults` launches, camera capture and the own-sound picker announce
+  `ExpectReturn`; iOS/Mac: keypad only),
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
   iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the

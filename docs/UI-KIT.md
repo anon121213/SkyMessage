@@ -175,14 +175,18 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
   areas and the selected icon bounces; the rail's avatar opens Settings. `TabBar Active="section"` shows another
   area as active (the shell passes the root screen's area).
 * `LockScreen` (Features/Passcode) — the app passcode's lock screen, rendered by MainLayout and shown while
-  `IAppLockService.IsLocked`: z-index 990, above dialogs (900), menus (950), banners (960) and toasts (980); while locked
-  the shell gets `.shell--locked` and the call screen moves above it (996). Everything underneath stays mounted but
-  `inert`, and every `ShellContext.IsCovered` is true (the ChatPage rule then stops read marks, autoplay and the active
-  chat). Its confirmation ("Forgot the passcode?") is drawn on the lock screen itself — a `DialogService` dialog would
-  open under it. `PasscodePad` (`Length`, `Disabled`, `OnComplete(code)`, optional `ExtraIcon`/`OnExtra` key left of 0,
-  `LockScreen`; `FailAsync()` = rose dots + shake + haptic, `Clear()`) is the keypad for any passcode step: no text
-  field, so phones never open the system keyboard; `js/passcode.js` sends a computer's digit keys and Backspace to the
-  pad in front (not inert, not covered at its center).
+  `IAppLockService.IsLocked` (and, without a keypad, until `IsInitialized`): z-index 990, above dialogs (900), menus
+  (950), banners (960) and toasts (980); while locked the shell gets `.shell--locked` and the call screen moves above it
+  (996); while that call screen covers the lock, `.shell--call-over-lock` lifts the toasts above it too (997) — other
+  toasts stay under the lock. Everything underneath stays mounted but `inert` with its animations paused, and every
+  `ShellContext.IsCovered` is true (the ChatPage rule then stops read marks, autoplay and the active chat). Its
+  confirmation ("Forgot the passcode?") is drawn on the lock screen itself — a `DialogService` dialog would open under
+  it; Android Back (`LockUi.TryBack()`, called by MainActivity first) and Escape (`js/passcode.js holdEscape`) close it.
+  `PasscodePad` (`Length`, `Disabled`, `OnComplete(code)`, optional `ExtraIcon`/`OnExtra` key left of 0, `LockScreen`;
+  `FailAsync()` = rose dots + shake + haptic, `Clear()`) is the keypad for any passcode step: no text field, so phones
+  never open the system keyboard; `js/passcode.js` sends a computer's digit keys and Backspace to the pad in front (not
+  inert, not covered at its center). The lock screen keys its pad by `IAppLockService.LockCount`: every lock starts
+  with an empty, working pad.
 * `BootSplash`, `CrashScreen` (`Compact` inside panes), `NotFoundView`, `RedirectTo`, `AuthLayout`.
 
 ---

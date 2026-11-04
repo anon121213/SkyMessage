@@ -86,4 +86,5 @@ Coexistence:
 - A wrong code turns the dots rose and shakes their row once (`sm-shake`, 360 ms) with a Warning haptic: an outcome,
   not a tap — key taps give no haptic (rule 6). Input waits for the shake (420 ms), then the dots clear.
 - The pause after five wrong codes counts down on the hint line once a second; the keys dim meanwhile.
+- Under the lock screen the shell stands still (its animations are paused until the app is unlocked).
 - Reduced motion: no pop and no shake; the rose dots and the hint line still tell what happened.
