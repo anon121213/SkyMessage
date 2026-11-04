@@ -15,11 +15,14 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
 {
     private const string CacheName = "folders";
     private static readonly TimeSpan PersistDelay = TimeSpan.FromSeconds(1);
+    // A load that failed while the connection came back is tried again after this pause.
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
     private readonly ISkyApi _api;
     private readonly LocalCache _cache;
     private readonly AccountLifecycle _lifecycle;
     private readonly ILogger<ChatFolderStore> _logger;
+    private readonly TimeProvider _time;
     private readonly CoalescingAction _persist;
     private readonly object _lock = new();
 
@@ -31,6 +34,9 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
     private readonly List<Func<ChatFoldersDto, ChatFoldersDto>> _pending = [];
     private Task? _load;
     private bool _reloadAfterLoad;
+    // The connection came back while a load was on its way: should that load fail (it may have run into the old
+    // connection's trouble), it runs once more.
+    private bool _retryIfFailed;
 
     private volatile ChatFoldersDto _state = new();
     private volatile bool _isLoaded;
@@ -44,12 +50,22 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
         _cache = cache;
         _lifecycle = lifecycle;
         _logger = logger;
+        _time = time;
         _persist = new CoalescingAction(PersistDelay, PersistAsync, time, logger);
         realtime.ChatFoldersChanged += state => Accept(state, _generation);
         // Every new connection: a refresh once the server state is known, else the first load again — the one at sign-in
         // may have failed (offline, a server restarting), and nothing else asks for folders.
-        realtime.Resynced += () => LoadAsync(force: _loadedFromServer).Forget(_logger);
+        realtime.Resynced += OnResynced;
         lifecycle.Register(this);
+    }
+
+    private void OnResynced()
+    {
+        lock (_lock)
+        {
+            if (_load is { IsCompleted: false }) _retryIfFailed = true;
+        }
+        LoadAsync(force: _loadedFromServer).Forget(_logger);
     }
 
     public ChatFoldersDto State => _state;
@@ -87,6 +103,7 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
         while (true)
         {
             lock (_lock) _reloadAfterLoad = false;
+            var failed = false;
             try
             {
                 var state = await _api.GetChatFoldersAsync(_lifecycle.AccountToken).ConfigureAwait(false);
@@ -97,12 +114,25 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
             catch (Exception ex) when (ex is ApiException or OperationCanceledException)
             {
                 _logger.LogInformation("Folders refresh failed ({Error})", (ex as ApiException)?.Code ?? "cancelled");
+                failed = true;
             }
 
+            bool again;
+            bool retry;
             lock (_lock)
             {
-                if (!_reloadAfterLoad) return;
+                again = _reloadAfterLoad;
+                retry = failed && _retryIfFailed && !again;
+                _retryIfFailed = false;
             }
+            if (generation != _generation) return;
+            if (retry)
+            {
+                await Task.Delay(RetryDelay, _time).ConfigureAwait(false);
+                if (generation != _generation) return;
+                continue;
+            }
+            if (!again) return;
         }
     }
 

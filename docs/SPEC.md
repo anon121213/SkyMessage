@@ -487,7 +487,8 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   current call. `IUserStore` batches misses (50 ms, `GetUsersAsync`). `IDraftStore`, `IAccountLocalStore`
   per account.
 - **IChatFolderStore** (folders): restored from the cache ("folders"), loaded at sign-in and on every resync (which also
-  retries a first load that failed: an offline start, a server restarting; Settings › Folders asks again too); keeps the
+  retries a first load that failed: an offline start, a server restarting; a load that fails while the connection comes
+  back runs once more; Settings › Folders asks again too); keeps the
   newest server state by revision (a first server state after a cache restore always wins: the server may have been
   reset) and lays the changes still on their way on top of it (`ChatFolderEdits`, the server's own edits), so another
   device's change never makes a pending one flicker; a refused change is put back and rethrown. `CreateAsync` makes a

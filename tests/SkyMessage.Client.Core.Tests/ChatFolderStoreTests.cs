@@ -20,13 +20,13 @@ public sealed class ChatFolderStoreTests
         public AccountLifecycle Lifecycle { get; }
         public ChatFolderStore Store { get; }
 
-        public Harness(InMemoryCacheStore? cacheStore = null, Guid? me = null)
+        public Harness(InMemoryCacheStore? cacheStore = null, Guid? me = null, TimeProvider? time = null)
         {
             Me = me ?? Guid.CreateVersion7();
             CacheStore = cacheStore ?? new InMemoryCacheStore();
             var (cache, lifecycle) = Fakes.Account(CacheStore);
             Lifecycle = lifecycle;
-            Store = new ChatFolderStore(Api, Realtime, cache, lifecycle, TimeProvider.System, Log.For<ChatFolderStore>());
+            Store = new ChatFolderStore(Api, Realtime, cache, lifecycle, time ?? TimeProvider.System, Log.For<ChatFolderStore>());
         }
 
         public async Task LoadAsync(ChatFoldersDto state)
@@ -178,6 +178,29 @@ public sealed class ChatFolderStoreTests
         await Wait.UntilAsync(() => h.Store.State.Revision == 4, "a resync refreshes the folders");
         h.Store.Folders.Single().Name.ShouldBe("Семья");
         await h.Api.Received(3).GetChatFoldersAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_load_that_fails_while_the_connection_comes_back_runs_once_more()
+    {
+        var h = new Harness(time: new InstantTime());
+        var first = new TaskCompletionSource<ChatFoldersDto>();
+        var calls = 0;
+        h.Api.GetChatFoldersAsync(Arg.Any<CancellationToken>()).Returns(_ => Interlocked.Increment(ref calls) == 1
+            ? first.Task
+            : Task.FromResult(State(2, Folder("Family"))));
+        await h.Lifecycle.ActivateAsync(h.Me);
+
+        // Sign-in's load is on its way when realtime connects (the resync joins it), then it fails.
+        var loading = h.Store.LoadAsync();
+        await Wait.UntilAsync(() => Volatile.Read(ref calls) == 1, "the first load started");
+        h.Resync();
+        first.SetException(new ApiException(503, ClientErrorCodes.Unknown, "starting"));
+        await loading;
+
+        await Wait.UntilAsync(() => h.Store.Folders.Count == 1, "the load runs once more");
+        h.Store.Folders.Single().Name.ShouldBe("Family");
+        Volatile.Read(ref calls).ShouldBe(2);
     }
 
     [Fact]
