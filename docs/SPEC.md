@@ -24,8 +24,9 @@ and ownership.
 1. **No third-party IP.** Never use the name, logo, icons, stickers, sounds, wallpapers or branding of
    Telegram or any other messenger, and **never port, translate or paraphrase code or layout algorithms
    from any messenger's client source** (several are GPL). Describe and build UX from first principles.
-   Our brand: **SkyMessage**, default accent violet `#6C5CE7`, logo = a soft gradient cloud (violet → sky
-   blue) without a speech-bubble tail, our own gradient/pattern wallpapers, sounds synthesized from
+   Our brand: **SkyMessage**, default accent violet `#6A4BFF`, logo «Горизонт» = an outgoing message bubble
+   (no tail: one tight square corner) cut by a horizon, flat, on a Night-indigo ground (`docs/brand`), our
+   own gradient/pattern wallpapers, sounds synthesized from
    first principles (`tools/tones`, no samples). Icons: Lucide (ISC) from the `lucide-static` npm package, license shipped in `wwwroot/licenses/`.
 2. **License policy.** Only MIT / Apache-2.0 / BSD / ISC / OFL dependencies. Do **not** add MediatR,
    AutoMapper, FluentAssertions, MassTransit, ImageSharp, Moq. Exception: Google Play services / Firebase
@@ -666,7 +667,7 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   `ProxyController` (androidx.webkit) for HTTP proxies, answer 407 in the wrapped WebViewClient; SOCKS with
   credentials cannot apply to the WebView — warn; WebRTC media never uses a proxy).
 - Native strings via `ILocalizer` with `Localization/*/platform.json`.
-- Replace the template icon/splash/titles with our own (gradient cloud, no tail).
+- Replace the template icon/splash/titles with our own («Горизонт» from `docs/brand`: adaptive + themed icon, splash, notification icon).
 - Web host (`SkyMessage.Web`): `UseHostOrigin`, optional `ServerUrl` in `wwwroot/appsettings.json` for
   standalone dev, platform implementations through `wwwroot/web-platform.js` (IndexedDB cache + outbox
   blobs, localStorage for preferences/secure store, hidden file input, canvas image compression,

@@ -26,7 +26,7 @@ Shared keyframes: `sm-fade-in`, `sm-pop-in`, `sm-pop` (0.6 → 1.08 → 1), `sm-
 `sm-msg-in` (incoming message), `sm-msg-out` (outgoing message), `sm-shake`, `sm-spin`, `sm-shimmer`, `sm-pulse`,
 `sm-dialog-in`, `sm-menu-in`, `sm-toast-in`, `sm-float`, `sm-ring` (pulsing ring), `sm-burst`
 (particles: set `--dx/--dy`), `sm-draw` (stroke drawing), the sky's `sm-orb-a/b/c`, `sm-cloud-drift`, `sm-twinkle`,
-`sm-comet`.
+`sm-comet`, and the logo's own `sm-logo-horizon-up/down` (below).
 
 Rules:
 1. **Only `transform` and `opacity` animate** in lists, pages and anything that runs during scroll. Never animate
@@ -43,9 +43,23 @@ Rules:
    reaction, a long-press menu. Never on plain taps.
 7. `will-change` only while a gesture or animation runs; remove it afterwards (the ambient sky layers are the
    exception: they animate for as long as they are visible).
-8. **Ambient decoration** (the sky, the animated logo, call rings) is slow (seconds, not milliseconds),
+8. **Ambient decoration** (the sky, call rings) is slow (seconds, not milliseconds),
    subtle, and never competes with content. No sparkles anywhere (DESIGN.md, "No AI clichés"). It pauses under `[inert]` (covered
    screens), stops with reduced motion and freezes in `html[data-fx="lite"]`.
+
+### The logo
+
+`<Logo Animated="true">` (boot splash, welcome, sign in / new account, About) plays **one** motion,
+once, when it appears: **the horizon opens**. The bubble shows whole for a beat — sky and dawn meeting, no cut — then
+the cut opens from the middle to its full width (1m) and the mark rests exactly as drawn. Delay 280 ms (the screen's
+own entrance comes first), `--sm-dur-xslow` (480 ms), `cubic-bezier(0.3, 0, 0.2, 1)`: a soft start, a long settle.
+
+- How: two seam strips in the bubble's silhouette (a clip path) fill the cut; `sm-logo-horizon-up/down` slide them
+  apart (transform only) until their edges meet the sky's bottom and the dawn band's top; at rest they lie outside the
+  clip, so the finished logo is pixel-identical to a static one. Nothing loops, nothing glows, no shimmer, nothing
+  rises like a sun.
+- Reduced motion (the setting or the OS) and `html[data-fx="lite"]` skip it: the logo is simply there, finished.
+- A re-render does not replay it; a newly created logo (another screen) plays it again.
 
 ## 2. Gesture map
 
