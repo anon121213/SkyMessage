@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Android.App;
 using Android.Content;
@@ -11,11 +12,14 @@ using AndroidUri = Android.Net.Uri;
 namespace SkyMessage.App.Droid;
 
 /// <summary>
-/// Birthday reminders and "joined SkyMessage" notices on the "Reminders" channel. Future reminders are inexact
-/// AlarmManager alarms (allowed while idle; no exact-alarm permission needed, a few minutes late is fine) that wake
+/// Birthday reminders and "joined SkyMessage" notices on the "Reminders" channel. Future reminders are AlarmManager
+/// alarms allowed while idle: exact on Android 8–11 (no permission needed there; an inexact alarm may come days late
+/// on those versions), inexact on 12+ (at most an hour late there; exact alarms would need a permission). They wake
 /// <see cref="ReminderReceiver"/>, which posts the notification from the alarm's own extras, so a reminder also
-/// arrives when the app is not running. Each group's reminders are stored, so the next schedule cancels the old alarms
-/// and <see cref="ReminderBootReceiver"/> sets them again after a reboot or an update (alarms do not survive those).
+/// arrives when the app is not running — unless it comes on another day than its own or more than
+/// <see cref="ReminderRules.MaxDelay"/> late (then it is dropped: "today" would be wrong). Each group's reminders are
+/// stored, so the next schedule cancels the old alarms and <see cref="ReminderBootReceiver"/> sets them again after a
+/// reboot or an update (alarms do not survive those), including one missed while the phone was off that is still due.
 /// Tapping a reminder opens its link (a chat or a profile) through MainActivity.
 /// </summary>
 public sealed class AndroidReminderService(NativeStrings strings, ILogger<AndroidReminderService> logger) : IReminderNotificationService
@@ -26,6 +30,9 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
     private const string ExtraTitle = "com.skymessage.extra.REMINDER_TITLE";
     private const string ExtraBody = "com.skymessage.extra.REMINDER_BODY";
     private const string ExtraLink = "com.skymessage.extra.REMINDER_LINK";
+    private const string ExtraAt = "com.skymessage.extra.REMINDER_AT";
+    private const string ExtraDay = "com.skymessage.extra.REMINDER_DAY";
+    private const string DayFormat = "yyyyMMdd";
     private const string StoreName = "sky.reminders";
     private const string GroupsKey = "groups";
     private static readonly int AccentColor = unchecked((int)0xFF6A4BFF);
@@ -54,7 +61,7 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
         {
             var entries = reminders
                 .Select(r => new StoredReminder(r.Notification.Key, r.At.ToUnixTimeMilliseconds(), r.Notification.Title, r.Notification.Body,
-                    r.Notification.Link?.ToString()))
+                    r.Notification.Link?.ToString(), r.Day?.ToString(DayFormat, CultureInfo.InvariantCulture)))
                 .ToList();
             lock (Gate)
             {
@@ -70,25 +77,45 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
         return Task.CompletedTask;
     }
 
-    /// <summary>After a reboot or an update: the stored reminders still to come are armed again.</summary>
+    /// <summary>
+    /// After a reboot or an update: the stored reminders still to come are armed again, and one that came due while the
+    /// phone was off fires now if it is still worth it (<see cref="OnAlarm"/> decides).
+    /// </summary>
     internal static void RearmAll(Context context)
     {
         lock (Gate)
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var oldest = DateTimeOffset.UtcNow.Subtract(ReminderRules.MaxDelay).ToUnixTimeMilliseconds();
             foreach (var group in Groups())
-                foreach (var entry in Load(group).Where(e => e.AtMs > now))
+                foreach (var entry in Load(group).Where(e => e.AtMs > oldest))
                     Arm(context, entry);
         }
     }
 
-    /// <summary>An alarm went off: the notification it carries.</summary>
+    /// <summary>An alarm went off: the notification it carries, unless it is late by hours or on another day.</summary>
     internal static void OnAlarm(Context context, Intent intent)
     {
         var key = intent.GetStringExtra(ExtraKey);
         if (string.IsNullOrEmpty(key)) return;
+        var at = intent.GetLongExtra(ExtraAt, 0);
+        var day = DateOnly.TryParseExact(intent.GetStringExtra(ExtraDay), DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+            ? d
+            : (DateOnly?)null;
+        if (at > 0)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (!ReminderRules.IsDue(DateTimeOffset.FromUnixTimeMilliseconds(at), day, now, LocalToday(now))) return;
+        }
         Post(context, key, intent.GetStringExtra(ExtraTitle) ?? "SkyMessage", intent.GetStringExtra(ExtraBody) ?? "",
             intent.GetStringExtra(ExtraLink), AppServices.Get<NativeStrings>());
+    }
+
+    /// <summary>The phone's date now, in its current time zone (Java's, which follows a zone change at once).</summary>
+    private static DateOnly LocalToday(DateTimeOffset now)
+    {
+        var ms = now.ToUnixTimeMilliseconds();
+        var offset = Java.Util.TimeZone.Default?.GetOffset(ms) ?? 0;
+        return DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(ms + offset).UtcDateTime);
     }
 
     private static void Post(Context context, string key, string title, string body, string? link, NativeStrings? strings)
@@ -133,7 +160,11 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
     private static void Arm(Context context, StoredReminder entry)
     {
         if (context.GetSystemService(Context.AlarmService) is not AlarmManager alarms) return;
-        alarms.SetAndAllowWhileIdle(AlarmType.RtcWakeup, entry.AtMs, AlarmIntent(context, entry));
+        var pending = AlarmIntent(context, entry);
+        // Before Android 12 an inexact alarm may come as late as 3/4 of the time until it (days, two weeks ahead), and an
+        // exact one needs no permission; from 12 on inexact alarms are at most an hour late and exact ones need one.
+        if (OperatingSystem.IsAndroidVersionAtLeast(31)) alarms.SetAndAllowWhileIdle(AlarmType.RtcWakeup, entry.AtMs, pending);
+        else alarms.SetExactAndAllowWhileIdle(AlarmType.RtcWakeup, entry.AtMs, pending);
     }
 
     private static void Cancel(Context context, StoredReminder entry)
@@ -153,7 +184,9 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
             .PutExtra(ExtraKey, entry.Key)!
             .PutExtra(ExtraTitle, entry.Title)!
             .PutExtra(ExtraBody, entry.Body)!
-            .PutExtra(ExtraLink, entry.Link)!;
+            .PutExtra(ExtraLink, entry.Link)!
+            .PutExtra(ExtraAt, entry.AtMs)!
+            .PutExtra(ExtraDay, entry.Day)!;
         return PendingIntent.GetBroadcast(context, CodeOf(entry.Key), intent, AppIntents.ImmutableUpdate)!;
     }
 
@@ -192,7 +225,8 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
         }
     }
 
-    private sealed record StoredReminder(string Key, long AtMs, string Title, string Body, string? Link);
+    /// <param name="Day">The local day it is about (<see cref="DayFormat"/>), null when any day will do.</param>
+    private sealed record StoredReminder(string Key, long AtMs, string Title, string Body, string? Link, string? Day = null);
 }
 
 /// <summary>A reminder's alarm: posts the notification it carries (works with the app closed).</summary>
