@@ -1,211 +1,14 @@
-/* The avatar viewer: the media viewer's night (always dark, both themes), a glass top bar, a counter chip and, for my
-   own photos or a group's I may change, the "set as main" capsule. viewer.js flies the picture between the avatar and
-   full size; the CSS intro below is the fallback it replaces after 60 ms. No glows: the photo is the only color. */
-.viewer {
-    position: fixed;
-    inset: 0;
-    z-index: 880;
-    color: #FFFFFF;
-}
-
-.viewer__stage {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    touch-action: none;
-}
-
-.viewer__backdrop {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(14, 16, 36, 0.92) 0%, rgba(6, 7, 18, 0.96) 100%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
-    backdrop-filter: blur(24px) saturate(140%);
-    animation: aviewer-fade-in var(--sm-dur) ease 60ms backwards;
-}
-
-html[data-fx="lite"] .viewer__backdrop {
-    background: linear-gradient(180deg, #0E1024 0%, #060712 100%);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-}
-
-.viewer__track {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
+/* The avatar viewer: the night viewer's chrome from app.css ("Night viewer": the night, the glass bar, the counter
+   chip, the side circles, the hidden chrome) with a square frame that leaves room for the bars and, for my own photos
+   or a group's I may change, the "set as main" capsule. */
 
 /* Square photos (every new avatar) fill the width on phones and stop short of the bars on wide screens. */
 .viewer__frame {
-    position: relative;
-    flex-shrink: 0;
     width: min(100vw, calc((100vh - 12.5rem) * var(--ar, 1)), 44rem);
-    aspect-ratio: var(--ar, 1);
-    animation: aviewer-in var(--sm-dur) var(--sm-ease-out) 60ms backwards;
 }
-
-.viewer__frame.is-flying {
-    overflow: hidden;
-    will-change: transform;
-}
-
-.viewer__photo {
-    position: absolute;
-    inset: 0;
-    transform-origin: center center;
-}
-
-.viewer__img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-user-drag: none;
-    -webkit-touch-callout: none;
-}
-
-@keyframes aviewer-in {
-    from {
-        opacity: 0;
-        transform: scale(0.94);
-    }
-}
-
-@keyframes aviewer-fade-in {
-    from {
-        opacity: 0;
-    }
-}
-
-/* ---- Top: close, whose photo and when, save / delete ---- */
-
-.viewer__top {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    z-index: 3;
-    padding: calc(8px + var(--sm-inset-top)) calc(10px + var(--sm-inset-right)) 0 calc(10px + var(--sm-inset-left));
-    pointer-events: none;
-    transition: opacity var(--sm-dur) ease;
-    animation: aviewer-top-in 420ms var(--sm-spring-soft) 60ms backwards;
-}
-
-@keyframes aviewer-top-in {
-    from {
-        opacity: 0;
-        transform: translateY(-14px);
-    }
-}
-
-.viewer__bar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 760px;
-    min-height: 3.5rem;
-    margin: 0 auto;
-    padding: 6px;
-    border-radius: 999px;
-    background: rgba(16, 18, 40, 0.52);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    backdrop-filter: blur(20px) saturate(160%);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.11), 0 16px 32px -20px rgba(0, 0, 0, 0.7);
-    pointer-events: auto;
-}
-
-.viewer__bar ::deep .viewer__btn {
-    color: #FFFFFF;
-}
-
-@media (hover: hover) {
-    .viewer__bar ::deep .viewer__btn:hover:not(:disabled) {
-        color: #FFFFFF;
-        background: rgba(255, 255, 255, 0.12);
-    }
-}
-
-.viewer__who {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding-left: 4px;
-    line-height: 1.25;
-}
-
-.viewer__name {
-    overflow: hidden;
-    font-family: var(--sm-font-display);
-    font-size: 0.9375rem;
-    font-weight: 700;
-    letter-spacing: -0.005em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.viewer__date {
-    overflow: hidden;
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.7);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.viewer__actions {
-    flex-shrink: 0;
-    display: flex;
-    gap: 2px;
-}
-
-/* ---- Bottom: the counter and "set as main" ---- */
 
 .viewer__bottom {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 3;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 0 calc(12px + var(--sm-inset-right)) calc(16px + var(--sm-inset-bottom)) calc(12px + var(--sm-inset-left));
-    pointer-events: none;
-    transition: opacity var(--sm-dur) ease;
-    animation: aviewer-bottom-in 420ms var(--sm-spring-soft) 90ms backwards;
-}
-
-@keyframes aviewer-bottom-in {
-    from {
-        opacity: 0;
-        transform: translateY(16px);
-    }
-}
-
-.viewer__bottom > * {
-    pointer-events: auto;
-}
-
-.viewer__count {
-    display: inline-flex;
-    align-items: center;
-    height: 1.75rem;
-    padding: 0 13px;
-    border-radius: 999px;
-    font-family: var(--sm-font-display);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: rgba(255, 255, 255, 0.92);
-    background: rgba(16, 18, 40, 0.52);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.11);
+    padding-bottom: calc(16px + var(--sm-inset-bottom));
 }
 
 /* A glass capsule: the one action that changes the profile, so it reads as a button and not as chrome. */
@@ -220,12 +23,12 @@ html[data-fx="lite"] .viewer__backdrop {
     font-size: 0.9375rem;
     font-weight: 700;
     color: #FFFFFF;
-    background: rgba(16, 18, 40, 0.52);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    backdrop-filter: blur(20px) saturate(160%);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), 0 16px 32px -20px rgba(0, 0, 0, 0.7);
+    background: var(--sm-viewer-glass);
+    -webkit-backdrop-filter: var(--sm-viewer-blur);
+    backdrop-filter: var(--sm-viewer-blur);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), var(--sm-viewer-lift);
     transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
-    animation: aviewer-fade-in var(--sm-dur) ease backwards;
+    animation: sm-viewer-fade-in var(--sm-dur) ease backwards;
 }
 
 .viewer__main:active:not(:disabled) {
@@ -239,80 +42,12 @@ html[data-fx="lite"] .viewer__backdrop {
 
 @media (hover: hover) {
     .viewer__main:hover:not(:disabled) {
-        background: rgba(40, 44, 80, 0.7);
+        background: var(--sm-viewer-glass-hover);
     }
 }
 
-html[data-fx="lite"] .viewer__bar,
-html[data-fx="lite"] .viewer__count,
 html[data-fx="lite"] .viewer__main {
-    background: rgba(16, 18, 40, 0.94);
+    background: var(--sm-viewer-glass-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-}
-
-/* ---- Hidden chrome (a tap toggles it) ---- */
-
-.viewer--bare .viewer__top,
-.viewer--bare .viewer__bottom,
-.viewer--bare .viewer__nav {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.viewer--bare .viewer__bottom > *,
-.viewer--bare .viewer__bar {
-    pointer-events: none;
-}
-
-/* ---- Previous / next (mouse): glass circles at the sides ---- */
-
-.viewer__nav {
-    position: absolute;
-    top: 50%;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    margin-top: -1.5rem;
-    border-radius: 50%;
-    color: #FFFFFF;
-    background: rgba(16, 18, 40, 0.52);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
-    transition: opacity var(--sm-dur) ease, background-color var(--sm-dur-fast) ease, transform var(--sm-dur) var(--sm-spring);
-    animation: aviewer-fade-in var(--sm-dur) ease 60ms backwards;
-}
-
-html[data-fx="lite"] .viewer__nav {
-    background: rgba(16, 18, 40, 0.94);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-}
-
-@media (hover: hover) {
-    .viewer__nav:hover {
-        background: rgba(40, 44, 80, 0.7);
-    }
-}
-
-.viewer__nav:active {
-    transform: scale(0.9);
-}
-
-.viewer__nav--prev {
-    left: calc(14px + var(--sm-inset-left));
-}
-
-.viewer__nav--next {
-    right: calc(14px + var(--sm-inset-right));
-}
-
-@media (pointer: coarse) {
-    .viewer__nav {
-        display: none;
-    }
 }

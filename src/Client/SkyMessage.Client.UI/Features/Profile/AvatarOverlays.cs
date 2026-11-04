@@ -37,15 +37,19 @@ public sealed class AvatarOverlays(IAuthService auth, IChatListStore chats, IUse
         Open(new AvatarSubject(shown.Id, null, shown.NameOf(l), current, shown.Id == auth.UserId));
     }
 
-    /// <summary>My own photos: also from Settings while I have no current photo but older ones are kept.</summary>
+    /// <summary>My own photos: also from Settings while I have no current photo but earlier ones are kept (<paramref name="current"/> null).</summary>
     public void ViewMine(Guid? current)
     {
         if (auth.Me is not { } me) return;
         Open(new AvatarSubject(me.Id, null, me.DisplayName, current, true));
     }
 
-    /// <summary>A chat's photos: the peer's for a private chat, the group's for a group (nothing for Saved Messages).</summary>
-    public void ViewChat(ChatSummaryDto chat)
+    /// <summary>
+    /// A chat's photos: the peer's for a private chat, the group's for a group (nothing for Saved Messages). A group
+    /// without a photo opens on its earlier ones for who may change it (<paramref name="earlierPhotos"/>, from
+    /// <see cref="ChatDetailsDto.EarlierAvatarCount"/>): they can set one again or delete them.
+    /// </summary>
+    public void ViewChat(ChatSummaryDto chat, int earlierPhotos = 0)
     {
         switch (chat.Type)
         {
@@ -55,14 +59,17 @@ public sealed class AvatarOverlays(IAuthService auth, IChatListStore chats, IUse
             case ChatType.Group when chats.AvatarOf(chat) is { } current:
                 Open(new AvatarSubject(null, chat.Id, chats.TitleOf(chat), current, chat.CanChangeInfo()));
                 break;
+            case ChatType.Group when earlierPhotos > 0 && chat.CanChangeInfo():
+                Open(new AvatarSubject(null, chat.Id, chats.TitleOf(chat), null, CanManage: true));
+                break;
         }
     }
 
     /// <summary>Can <see cref="ViewChat"/> show something for this chat?</summary>
-    public bool HasPhoto(ChatSummaryDto chat) => chat.Type switch
+    public bool HasPhoto(ChatSummaryDto chat, int earlierPhotos = 0) => chat.Type switch
     {
         ChatType.Private when chat.Peer is { } peer => (users.Get(peer.Id) ?? peer) is { IsDeleted: false, AvatarMediaId: not null },
-        ChatType.Group => chats.AvatarOf(chat) is not null,
+        ChatType.Group => chats.AvatarOf(chat) is not null || (earlierPhotos > 0 && chat.CanChangeInfo()),
         _ => false,
     };
 

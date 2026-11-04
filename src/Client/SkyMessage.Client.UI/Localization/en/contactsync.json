@@ -1,6 +1,6 @@
 {
   "contactSync.title": "Sync contacts",
-  "contactSync.hint": "At every start SkyMessage checks your phone book and adds the people who are already here. Numbers are sent only to search and are not stored on the server.",
+  "contactSync.hint": "At start and whenever your phone book changes, SkyMessage adds the people who are already here, removes those whose number you deleted and updates names. The people found become your contacts and see what you show contacts, such as your number and birthday. Numbers are used only to search and are not stored on the server.",
   "contactSync.denied": "No access to contacts. Allow it in the phone's settings, or sync cannot work.",
   "contactSync.syncing": "Checking your phone book…",
   "contactSync.on": "Sync is on",

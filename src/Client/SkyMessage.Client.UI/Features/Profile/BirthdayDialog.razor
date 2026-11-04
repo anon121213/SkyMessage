@@ -76,7 +76,7 @@
         {
             if (!int.TryParse(typed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var y))
             {
-                _error = L["error.validation_failed"];
+                _error = L["birthday.error.yearFormat"];
                 return;
             }
             year = y;
@@ -84,7 +84,7 @@
         var today = DateOnly.FromDateTime(DateTime.Now);
         if (!Birthdays.IsValid(_day, _month, year, today))
         {
-            _error = L["error.validation_failed"];
+            _error = ProblemText(year, today);
             return;
         }
         _saving = true;
@@ -103,6 +103,18 @@
         {
             _saving = false;
         }
+    }
+
+    /// <summary>What to fix when <see cref="Birthdays.IsValid"/> says no (the day and month lists only offer real days).</summary>
+    private string ProblemText(int? year, DateOnly today)
+    {
+        if (year is { } y)
+        {
+            if (y < Limits.BirthYearMin || y > today.Year) return L.Format("birthday.error.year", Limits.BirthYearMin, today.Year);
+            if (_month == 2 && _day == 29 && !DateTime.IsLeapYear(y)) return L.Format("birthday.error.leapDay", y);
+            return L["birthday.error.future"];
+        }
+        return L["error.validation_failed"];
     }
 
     private async Task RemoveAsync()

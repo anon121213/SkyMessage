@@ -1,12 +1,12 @@
 @* The birthday card at the top of the chat list on a contact's birthday (a glass card like the update notice): their
-   faces, "Сегодня день рождения: Анна", the age when it shows, and "Поздравить", which opens the chat with them (with
-   several people, one button each). Closing hides it until tomorrow. Off with Settings › Notifications › Birthdays. *@
+   faces, "Сегодня день рождения у Анны" (ReminderTexts.BirthdayTitle), the age when it shows, and "Поздравить", which
+   opens the chat with them (with several people, one button each). Closing hides it until tomorrow. Off with
+   Settings › Notifications › Birthdays. *@
 @inherits UiComponentBase
 @inject IBirthdayService Celebrations
 @inject IChatListStore ChatList
 @inject IUserStore Users
 @inject NavigationService Nav
-@inject FormatService Format
 @inject ToastService Toasts
 
 @if (Celebrations.Celebrating is { Count: > 0 } people && !Celebrations.IsCardDismissed)
@@ -20,7 +20,7 @@
             <span class="bday-card__cake">🎂</span>
         </div>
         <div class="bday-card__body">
-            <div class="bday-card__title">@L.Format("birthday.card.title", Format.JoinNames(people.Select(NameOf).ToList()))</div>
+            <div class="bday-card__title">@ReminderTexts.BirthdayTitle(L, people.Select(NameOf).ToList())</div>
             <div class="bday-card__text">@Text(people)</div>
             <div class="bday-card__actions">
                 @foreach (var person in people.Take(3))

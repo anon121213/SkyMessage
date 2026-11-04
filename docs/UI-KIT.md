@@ -367,14 +367,19 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
   `PickedPhoto? p = await AvatarSources.ChooseAsync()` (gallery / camera / emoji choice sheet) or
   `AvatarSources.MakeAsync(key)` with a key from `SourceOptions()` (add your own options to that list): gallery and
   camera picks open the crop editor, the emoji maker draws its own; both end as a 1024 px prepared JPEG.
-* `AvatarOverlays` (scoped, Features/Profile; hosted once by MainLayout): `ViewUser(summary)`, `ViewChat(chat)`
-  (peer or group, nothing for Saved), `ViewMine(currentId)`, `HasPhoto(chat)` — the full-screen avatar viewer with the
+* `AvatarOverlays` (scoped, Features/Profile; hosted once by MainLayout): `ViewUser(summary)`, `ViewChat(chat,
+  earlierPhotos)` (peer or group, nothing for Saved; a group without a photo opens on its earlier ones for who may
+  change it, `ChatDetailsDto.EarlierAvatarCount`), `ViewMine(currentId)` (null: my earlier photos while I have no
+  photo, `MeDto.EarlierAvatarCount`), `HasPhoto(chat, earlierPhotos)` — the full-screen avatar viewer with the
   history (set as main / delete when `CanManage`); `byte[]? jpeg = await AvatarOverlays.EditAsync(pickedFile)` opens
-  the crop editor directly.
+  the crop editor directly. Removing a profile or group photo asks with a checkbox "Удалить и прежние фото (N)"
+  (`ISkyApi.DeleteAllMyAvatarsAsync` / `DeleteAllChatAvatarsAsync`) and says that earlier photos stay otherwise.
 * `ProfileLook` (static, Features/Profile): `Accent(key)`, `TintStyle(key)` (`--pc/--pc2` for a profile's ring and
   main action), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
   Birthdays: Core's `IBirthdayService.IsBirthdayToday(user)` puts 🎂 after a name (profile, chat header);
-  `BirthdayCard` (Features/ChatList) is the chat list's card.
+  `BirthdayCard` (Features/ChatList) is the chat list's card; `ReminderTexts.BirthdayTitle(L, names)` words its title
+  and the reminder ("Сегодня день рождения у Анны": Core's `RussianNames.Genitive`, a colon when a name cannot be
+  declined for sure).
 * `ChatActions` (scoped, Features/ChatList): `TogglePinAsync`, `ToggleMuteAsync` (asks duration), `MuteOptions`,
   `ToggleArchiveAsync` (with Undo), `MarkReadAsync`, `ClearHistoryAsync`, `LeaveAsync`, `DeleteAsync` (per chat
   type), `DeleteGroupForEveryoneAsync`, `TitleOf(chat)` — reuse them in the chat header menu. The chat list's swipe
@@ -620,6 +625,13 @@ sm-msg-in sm-msg-out sm-shake`), exits that name only their end state so they co
 (`sm-fade-out sm-pop-out sm-sheet-out sm-toast-out`), `sm-sheet-spring` and `sm-skeleton-sweep` — all disabled by
 reduced motion (`prefers-reduced-motion` or the Animations setting) except spinners. `@property --row-x/--row-w`
 are registered for swipeable list rows (below).
+
+**Night viewer** (full-screen viewers: MediaViewer, AvatarViewer): app.css carries their shared chrome —
+`.viewer` (always dark; the night palette as `--sm-viewer-glass/-glass-solid/-glass-hover/-blur/-edge/-lift/-text-2`
+for a viewer's own pieces), `__stage __backdrop __track __frame __photo __img`, the glass `__top __bar __btn __who
+__name __date __actions`, `__bottom __count`, `__nav(--prev|--next)`, `.viewer--bare` (chrome hidden) and the
+`sm-viewer-*` intro keyframes. viewer.js relies on these names. A viewer's `.razor.css` sizes `.viewer__frame` and
+styles only what is its own (captions and video controls; the avatar's "set as main").
 
 **Scoped CSS**: put component styles in `Component.razor.css`. Scoping applies only to elements written in that
 `.razor` file — style child components' elements with `.my-wrapper ::deep .their-class` (a scoped ancestor is

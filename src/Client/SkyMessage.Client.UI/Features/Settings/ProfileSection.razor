@@ -1,7 +1,8 @@
 @* Edit my profile: photo (from the gallery or the camera framed in the crop editor, or an emoji on a color; the photo
-   opens my avatar history), name, username with a live availability check (free / taken icons pop in), bio, up to
-   three links; my look (profile color, cover — saved at once and previewed on the photo block), my birthday; my
-   shareable link. *@
+   opens my avatar history — also without a current photo while earlier ones are kept, "Прежние фото"), name, username
+   with a live availability check (free / taken icons pop in), bio, up to three links; my look (profile color, cover —
+   saved at once and previewed on the photo block), my birthday; my shareable link. Removing the photo says that the
+   earlier ones stay (only I see them until a new photo shows them again) and can take them along. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IAuthService Auth
@@ -50,6 +51,10 @@
                     @if (me.AvatarMediaId is not null && !_uploading)
                     {
                         <Button Variant="ButtonVariant.DangerGhost" Size="ButtonSize.Small" Icon="@IconNames.Trash2" OnClick="RemovePhotoAsync">@L["settings.profile.photo.remove"]</Button>
+                    }
+                    else if (me.EarlierAvatarCount > 0 && !_uploading)
+                    {
+                        <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" Icon="@IconNames.Images" OnClick="() => AvatarViewer.ViewMine(null)">@L["avatar.history"]</Button>
                     }
                 </div>
             </div>
@@ -368,18 +373,18 @@
         }
     }
 
-    /// <summary>The photo: my avatar history when I have photos, else a new one.</summary>
+    /// <summary>The photo: my avatar history when I have photos (the current one or earlier ones), else a new one.</summary>
     private async Task OpenPhotoAsync()
     {
-        if (Auth.Me is { AvatarMediaId: not null } me) AvatarViewer.ViewMine(me.AvatarMediaId);
+        if (Auth.Me is { } me && (me.AvatarMediaId is not null || me.EarlierAvatarCount > 0)) AvatarViewer.ViewMine(me.AvatarMediaId);
         else await ChangePhotoAsync();
     }
 
     private async Task ChangePhotoAsync()
     {
         var options = AvatarSources.SourceOptions().ToList();
-        if (Auth.Me?.AvatarMediaId is not null)
-            options.Add(new ChoiceOption<string>("view", L["avatar.choose.view"]) { Icon = IconNames.Images });
+        if (Auth.Me is { } current && (current.AvatarMediaId is not null || current.EarlierAvatarCount > 0))
+            options.Add(new ChoiceOption<string>("view", current.AvatarMediaId is null ? L["avatar.history"] : L["avatar.choose.view"]) { Icon = IconNames.Images });
         var choice = await Dialogs.ChooseAsync(L["avatar.choose.title"], options);
         if (choice is null) return;
         if (choice.Value == "view")
@@ -432,13 +437,28 @@
 
     private void CancelUpload() => _uploadCts?.Cancel();
 
+    /// <summary>
+    /// No photo from now on. Earlier photos stay in the history (only I see them, and a new photo shows them again), so
+    /// the dialog says it and can take them along.
+    /// </summary>
     private async Task RemovePhotoAsync()
     {
-        if (!await Dialogs.ConfirmAsync(L["settings.profile.photo.removeConfirm"], null, L["settings.profile.photo.remove"], danger: true)) return;
+        if (Auth.Me is not { } me) return;
+        var earlier = me.EarlierAvatarCount;
+        var answer = await Dialogs.ConfirmAsync(new ConfirmOptions
+        {
+            Title = L["settings.profile.photo.removeConfirm"],
+            Message = earlier > 0 ? L["avatar.remove.keepsHistory"] : null,
+            CheckboxLabel = earlier > 0 ? L.Format("avatar.remove.alsoEarlier", earlier) : null,
+            ConfirmText = L["settings.profile.photo.remove"],
+            Danger = true,
+        });
+        if (!answer.Confirmed) return;
         try
         {
-            var updated = await Api.RemoveAvatarAsync();
-            Auth.UpdateMe(updated);
+            var all = earlier > 0 && answer.Checked;
+            Auth.UpdateMe(all ? await Api.DeleteAllMyAvatarsAsync() : await Api.RemoveAvatarAsync());
+            if (all) Toasts.Success(L["avatar.remove.allDone"]);
         }
         catch (Exception ex)
         {

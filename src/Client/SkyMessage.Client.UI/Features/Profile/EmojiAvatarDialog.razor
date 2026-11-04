@@ -5,6 +5,7 @@
 @using SkyMessage.Client.UI.Features.Chat
 @inject IJSRuntime JS
 @inject ToastService Toasts
+@inject ILogger<EmojiAvatarDialog> Logger
 
 <div class="emoji-avatar">
     <div class="emoji-avatar__preview" style="@PreviewStyle" aria-label="@L["avatar.emoji.title"]" role="img">
@@ -51,22 +52,28 @@
     {
         if (_rendering) return;
         _rendering = true;
+        byte[]? jpeg = null;
         try
         {
             _module ??= new JsModule(JS, "./_content/SkyMessage.Client.UI/js/avatar.js");
             var (from, to) = AvatarPalette.Pairs[_palette];
-            var jpeg = await _module.InvokeAsync<byte[]?>("renderEmoji", _emoji, from, to, AvatarEditor.OutputSize, 0.92);
-            if (jpeg is not { Length: > 0 })
-            {
-                Toasts.Show(L["avatar.editor.loadFailed"], ToastKind.Warning);
-                return;
-            }
-            Dialog.Close(jpeg);
+            jpeg = await _module.InvokeAsync<byte[]?>("renderEmoji", _emoji, from, to, AvatarEditor.OutputSize, 0.92);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            // The canvas could not draw it (a WebView without the emoji font, a page going away): say so in a toast.
+            Logger.LogInformation(ex, "Emoji avatar not drawn");
         }
         finally
         {
             _rendering = false;
         }
+        if (jpeg is not { Length: > 0 })
+        {
+            Toasts.Show(L["avatar.editor.loadFailed"], ToastKind.Warning);
+            return;
+        }
+        Dialog.Close(jpeg);
     }
 
     public async ValueTask DisposeAsync()

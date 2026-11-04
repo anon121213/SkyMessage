@@ -1,8 +1,9 @@
 @page "/contacts/import"
 @* Find friends from the phone book: explain (our phone-book illustration), ask permission, show matches (@username +
    avatar) as airy rows with round checks, import the confirmed ones with the main button floating at the bottom.
-   Where the device has a phone book, a card offers sync instead (IContactSyncService: checked at every start, new
-   people added and announced once) and removing the contacts it added. *@
+   Where the device has a phone book, a card offers sync instead (IContactSyncService: checked at every start and on
+   phone-book changes; it adds people found, removes synced ones whose number went, follows renames, and the hint says
+   that the people found see what I show contacts) and removing the contacts it added. *@
 @inherits UiComponentBase
 @inject IContactStore Contacts
 @inject IDeviceContactsService DeviceContacts

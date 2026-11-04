@@ -2,8 +2,9 @@
    opens out of the avatar that was tapped and closes back into it, pinch / wheel / double-tap zoom with panning, swipe
    sideways through the avatar history (newest first, the current photo leads), swipe down to close (viewer.js, shared
    with the media viewer). The current photo shows at once; the history arrives a moment later. My own photos and the
-   photos of a group I may change: "set as main" and delete. What the server returns already follows privacy and
-   blocks (others' histories: only while they have a current photo they let me see). *@
+   photos of a group I may change: "set as main" and delete; those also open on the earlier photos alone, while there
+   is no current one. What the server returns already follows privacy and blocks (others' histories: only while they
+   have a current photo they let me see). *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @using SkyMessage.Client.UI.Features.Chat
@@ -155,6 +156,12 @@
             // The current photo stays viewable; the history simply is not there.
             _loaded = Subject.CurrentMediaId is not null;
             if (!_loaded) Toasts.Error(ex);
+            if (_items.Count == 0)
+            {
+                // Opened on earlier photos only (no current one): nothing to show.
+                await CloseAsync();
+                return;
+            }
             StateHasChanged();
         }
     }

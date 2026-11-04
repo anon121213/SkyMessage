@@ -178,6 +178,8 @@ export async function attachEditor(stage, ref, streamRef, options) {
 
   function onKey(e) {
     if (disposed) return;
+    // Keys meant for a control (the zoom slider moves with the arrows itself) do not also pan the photo.
+    if (e.defaultPrevented || (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]'))) return;
     const step = 24;
     switch (e.key) {
       case 'ArrowLeft': tx += step; break;
