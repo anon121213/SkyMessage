@@ -36,6 +36,7 @@ public static class UiSetup
         services.TryAddScoped<UiDispatcher>();
         services.TryAddScoped<LayoutService>();
         services.TryAddScoped<ThemeService>();
+        services.TryAddScoped<BackdropPainter>();
         services.TryAddScoped<NavigationService>();
         services.TryAddScoped<DialogService>();
         services.TryAddScoped<ToastService>();

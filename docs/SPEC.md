@@ -526,6 +526,49 @@ tails, radius from settings (default 16), consecutive messages from one sender g
 inside the bubble; outgoing accent-tinted, incoming surface color; avatars = image or initials on a color
 derived from the id. Respect `prefers-reduced-motion` and the Animations setting.
 
+**Colors and backgrounds of one's own** (Settings › Appearance; per device, in `AppearanceSettings`, repaired by
+`AppearanceRules`/`BackdropRules` on load and on every change):
+- My bubbles (`OutgoingBubble`): the accent's gradient (default, as before), the accent flat, or my own colors
+  (`OutgoingColors`: one = flat, two = a 135° gradient; `BubbleColorsDialog`). Their bubbles (`IncomingTint`): white/indigo
+  ("default", unchanged) or a calm tint (lavender, peach, mint, sky, sand) light by day and deep at night. The ink on
+  every bubble is derived and keeps **4.5:1** (WCAG AA; gradients are checked along their length): accent bubbles
+  (gradient or flat) carry white ink like every accent fill, their stops deepened toward black where that is enough
+  (at most 20%; `ThemeCatalog.ReadableFor`), and only an accent too light for that takes dark ink; my own colors take
+  white or dark (#1C1634), whichever reads better, nudged just enough (`ThemeCatalog.Readable`). A stop that already
+  reads well is left as it is. The time and ticks and a failed status on my bubble are solid colors that keep at least
+  **3:1** on every part of it (`--sm-bubble-out-meta`, `--sm-bubble-out-danger`). Text on accent fills (buttons, badges,
+  the send orb, the dock pill: `--sm-on-accent`) keeps the released rule: white unless the fill's middle is very light
+  (luminance above 0.42), so custom accents saved before look as they did.
+- The app's background (`Wallpaper`): a sky, or "custom" = `CustomBackground` — a gradient (2–3 colors, any angle,
+  ready-made ones offered) or a gallery photo with blur and dim (a veil of the theme's background color), one for
+  both themes or one for each (`SameForBoth`; a first one starts per theme). Kept while a sky is chosen. Behind every
+  screen that shows the app's sky (root screens, pushed pages, the wide layout, auth, boot splash).
+- **Readability floor**: root screens put text straight on the app's background, so one's own background is veiled
+  toward the theme's background (`--sm-bg`) as much as that text needs — titles and names (`--sm-text`) 7:1,
+  previews, times and footers (`--sm-text-2`) 4.5:1, checked everywhere on it (`ThemeCatalog.ScreenVeil`). A
+  gradient is veiled as a whole in the theme CSS (`ScreenGradient`; colors that suit the theme stay as they are); a
+  photo is measured by boot.js on the part the window shows (8×8 cells) and veiled row by row
+  (`--sm-sky-veil`, never less than the user's dim; `ScreenVeilRows`), so a light sky over dark hills keeps its sky.
+  Chats that follow the app look the same; a chat's own background has no floor (its text sits on bubbles and glass).
+  The editor says when the floor dims a theme ("Приглушить" puts a gradient's veiled colors into it) and lists the
+  ready-made gradients that suit the edited theme first. Over one's own backgrounds no sky lights, clouds or stars
+  are drawn (`html[data-sky-own]`, `SkyBackdrop Lights`). The system bars follow what lies under them: the top of
+  the app's background (the browser's theme-color too), or a chat's own background while it is on a phone's screen
+  (`ThemeService.HoldSystemBars`).
+- The chats' background (`ChatBackground`, null = the app's) and one chat's (`ChatBackgrounds[chatId]`, from the chat
+  header menu, "Фон чата"): a sky, a gradient or a photo; "reset" goes back to the default. Single chats' backgrounds
+  belong to the account: a chat that is gone for me (`ChatRemoved`, or missing from a full chat list after an offline
+  stretch: `IChatListStore.Synced`) drops its background, and signing out (or another account signing in) drops them
+  all; the app's and the chats' backgrounds stay with the device. Appearance › Reset keeps single chats' backgrounds.
+- Photos are downscaled to the screen (`IMediaCompressor`, metadata stripped) and kept per device by
+  `IBackdropImageStore` (MAUI: files in the app's data dir served at `/_sm/backdrops/{file}`; browser: IndexedDB
+  "skymessage-backdrops", records `{ type, blob, savedAt }`); `BackdropPhotoService` deletes a photo once no setting
+  refers to it (replace, reset, cancelled editor, leftovers after start — not ones stored within the last hour, which
+  another tab's open editor may hold). Pictures are always still (drawn once onto a canvas: a GIF shows its first
+  frame) with the blur baked in by boot.js, which shows the persisted theme's pictures (`ThemeState.Images`) right
+  after the first paint; gradients are in the theme CSS itself. Lite mode changes nothing about them (they never move).
+  Editors preview both themes side by side (`BackdropEditor`, `BackdropPreview`).
+
 **Design tokens** (CSS custom properties on `:root`, theme via `html[data-theme=light|dark]`, applied by
 `ThemeService` and early by `js/boot.js`): `--sm-accent --sm-accent-hover --sm-accent-soft --sm-on-accent
 --sm-bg --sm-surface --sm-surface-2 --sm-surface-3 --sm-text --sm-text-2 --sm-text-3 --sm-link --sm-border
@@ -544,7 +587,8 @@ with an icon rail + list, routed content on the right, third info column ≥ 128
 screen expanded) pushes a history entry and closes on `popstate`, so Android Back closes overlays first.
 `NavigationService` is the only consumer of `IDeepLinkSource` and `DeepLinks.TryParse`; signed-out users
 opening `/u/*` or `/join/*` go to `/welcome` and the pending link is opened after sign-in (no anonymous
-previews). `ThemeService` calls `ISystemUiService.SetSystemBarsStyleAsync` on theme changes; tap feedback
+previews). `ThemeService` calls `ISystemUiService.SetSystemBarsStyleAsync` on theme changes (dark or light icons
+for what lies under the bars; a chat with its own background holds them while on screen); tap feedback
 uses `IHapticsService` when `InAppVibrate`.
 
 **Routes**: `/`, `/welcome`, `/login`, `/register`, `/chat/{ChatId:guid}`, `/chat/{ChatId:guid}/info`,
@@ -622,8 +666,9 @@ name, username with availability, bio), phone (detect via `IPhoneNumberService` 
 region, unlink, "who can find me by number"), privacy & security (all levels, blocked users, active
 sessions, change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
 in background + battery exemption via `IBackgroundConnectionService`; on iOS a hint that the app must stay
-open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, wallpapers with live preview, font size, bubble radius,
-animations, compact list), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
+open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, message colors (my bubbles' style, their tint), the
+app's background (skies + "Свой": gradient or photo, per theme or both) and the chats' background with a live preview, font size, bubble radius,
+animations, compact list; see "Colors and backgrounds of one's own" above), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
 speed), **folders** (`/settings/folders`: my folders — "All chats" first, reorder by the handle, long-press menu —,
 recommended folders added with one tap, "Swipe on a chat", new chats from strangers, the archive; the editor
 `/settings/folder?id=`: name, icon or emoji, types, chats included/excluded through `ChatPickerDialog`, exclusions,
@@ -699,7 +744,8 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   the outbox under Library/Caches (excluded from backup).
 - Platform services (Android complete; iOS/Mac compiling with best-effort implementations;
   `IsSupported=false` where impossible): PlatformInfo (+ CountryCode from SIM/network/locale), SecureStore,
-  PreferencesStore, LocalCacheStore (files), OutboxFileStore, FilePicker (mixed photo+video selection
+  PreferencesStore, LocalCacheStore (files), OutboxFileStore, BackdropImageStore (background photos in the app's data
+  dir, answered on the app origin at `/_sm/backdrops/{file}` next to the media proxy), FilePicker (mixed photo+video selection
   natively: Android `PickMultipleVisualMedia(10)` ImageAndVideo via ActivityResultRegistry + persistable URI
   grants; iOS/Mac `PHPickerViewController` images+videos, copy files inside the completion handler; cap 10 in
   code; FilePicker for files; capture), MediaCompressor (**platform codecs, no SkiaSharp in the app**: Android
@@ -735,7 +781,7 @@ participants by `metadata.userId` (identity is per device), reports through a `D
 - Replace the template icon/splash/titles with our own (gradient cloud, no tail).
 - Web host (`SkyMessage.Web`): `UseHostOrigin`, optional `ServerUrl` in `wwwroot/appsettings.json` for
   standalone dev, platform implementations through `wwwroot/web-platform.js` (IndexedDB cache + outbox
-  blobs, localStorage for preferences/secure store, hidden file input, canvas image compression,
+  blobs, IndexedDB databases of their own for the user's sounds and background photos, localStorage for preferences/secure store, hidden file input, canvas image compression,
   notifications through a minimal no-cache `sw.js` + `registration.showNotification` (Chrome Android has no
   `new Notification()`), visibilitychange, navigator.onLine/connection, navigator.locks with a localStorage
   lease fallback, navigator.share/clipboard, anchor download, deep link = initial path), `SupportsProxy =

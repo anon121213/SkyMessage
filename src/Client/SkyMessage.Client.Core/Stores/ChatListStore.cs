@@ -144,6 +144,8 @@ internal sealed class ChatListStore : IChatListStore, IAccountScoped
 
     public event Action? ActiveChatChanged;
 
+    public event Action<IReadOnlyCollection<Guid>>? Synced;
+
     public Task LoadAsync(bool force = false, CancellationToken cancellationToken = default)
     {
         if (!force && _loadedFromServer) return Task.CompletedTask;
@@ -214,6 +216,7 @@ internal sealed class ChatListStore : IChatListStore, IAccountScoped
                 _loadedFromServer = true;
                 _users.Upsert(fresh.SelectMany(Embedded));
                 RetryUnsentReads();
+                EventRaiser.Raise(Synced, (IReadOnlyCollection<Guid>)fresh.Where(c => c is not null).Select(c => c.Id).ToHashSet(), _logger);
             }
 
             lock (_lock)

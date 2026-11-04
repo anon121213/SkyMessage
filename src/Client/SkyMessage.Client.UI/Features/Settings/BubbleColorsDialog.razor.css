@@ -1,0 +1,80 @@
+.bubble-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* A slice of a chat on the chats' own background. */
+.bubble-pick__preview {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 14px 14px;
+    border-radius: 22px;
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+    overflow: hidden;
+}
+
+.bubble-pick__sky,
+.bubble-pick__photo,
+.bubble-pick__veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.bubble-pick__sky {
+    z-index: -3;
+}
+
+.bubble-pick__photo {
+    z-index: -2;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.bubble-pick__veil {
+    z-index: -1;
+    background: var(--sm-bg);
+}
+
+.bubble-pick__bubble {
+    position: relative;
+    max-width: 86%;
+    padding: 8px 12px 7px;
+    border-radius: var(--sm-bubble-radius);
+    font-size: 0.9375rem;
+    line-height: 1.35;
+    box-shadow: var(--sm-shadow-1);
+    overflow-wrap: anywhere;
+}
+
+.bubble-pick__bubble--in {
+    align-self: flex-start;
+    background: var(--sm-bubble-in);
+    color: var(--sm-bubble-in-text);
+}
+
+.bubble-pick__bubble--out {
+    align-self: flex-end;
+}
+
+.bubble-pick__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    float: right;
+    margin: 7px 0 -3px 10px;
+    font-size: 0.75rem;
+}
+
+.bubble-pick__hint {
+    margin: 0;
+    padding: 0 4px;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--sm-text-2);
+}

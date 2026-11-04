@@ -23,6 +23,8 @@ public static class PlatformServices
         services.AddSingleton<IOutboxFileStore, OutboxFileStore>();
         services.AddSingleton<IMediaFileStore, MediaFileStore>();
         services.AddSingleton<ICustomSoundStore, CustomSoundStore>();
+        services.AddSingleton<BackdropImageStore>();
+        services.AddSingleton<IBackdropImageStore>(sp => sp.GetRequiredService<BackdropImageStore>());
         services.AddSingleton<IShareService, ShareService>();
         services.AddSingleton<IFileOpener, FileOpener>();
         services.AddSingleton<IExternalLauncher, ExternalLauncher>();

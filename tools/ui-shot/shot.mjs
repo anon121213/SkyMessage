@@ -7,8 +7,10 @@
 //    {"swipe": {"selector": ".chat", "dx": 220, "dy": 0, "ms": 260}}, {"eval": "document.title"},
 //    {"type": "hello"}, {"key": "Enter"}, {"waitFor": ".msg"}]
 // "swipe" drives real touch events (pointer type "touch") from the element's center (or "x"/"y"), "hold" keeps the
-// finger down (ms) before moving, "tap" accepts "x"/"y" instead of a selector. Logs in through the UI with the dev
-// account from tools/e2e/dev-accounts.json unless --user none. Screenshots: <out>/<n>-<name>.png.
+// finger down (ms) before moving, "tap" accepts "x"/"y" instead of a selector. {"file": "/abs/path.jpg"} (or a list)
+// answers the next file chooser the page opens with those files (give it before the tap that opens the picker). Logs in
+// through the UI with the dev account from tools/e2e/dev-accounts.json unless --user none. Screenshots:
+// <out>/<n>-<name>.png.
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -47,9 +49,14 @@ const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener('open', r, { once: true }));
 let seq = 0;
 const pending = new Map();
+let chooserFiles = null;
 ws.addEventListener('message', (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+  if (m.method === 'Page.fileChooserOpened' && chooserFiles) {
+    send('DOM.setFileInputFiles', { files: chooserFiles, backendNodeId: m.params.backendNodeId });
+    chooserFiles = null;
+  }
   if (m.method === 'Runtime.exceptionThrown') console.log('  [page error]', m.params.exceptionDetails?.exception?.description?.split('\n')[0]);
   if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') console.log('  [console.error]', m.params.args.map((a) => a.value ?? a.description).join(' ').slice(0, 300));
 });
@@ -96,6 +103,10 @@ for (const step of steps) {
     else if (step.waitFor) await waitFor(step.waitFor, step.ms);
     else if (step.eval) console.log('  eval:', JSON.stringify(await evaluate(step.eval))?.slice(0, 500));
     else if (step.type) await send('Input.insertText', { text: step.type });
+    else if (step.file) {
+      chooserFiles = (Array.isArray(step.file) ? step.file : [step.file]).map((f) => resolve(f));
+      await send('Page.setInterceptFileChooserDialog', { enabled: true });
+    }
     else if (step.key) {
       for (const t of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type: t, key: step.key, code: step.key, windowsVirtualKeyCode: step.key === 'Enter' ? 13 : 0 });
     } else if (step.tap) {

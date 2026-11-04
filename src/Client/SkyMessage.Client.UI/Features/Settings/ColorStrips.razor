@@ -1,0 +1,93 @@
+@* Our own color picker (no system color dialog): three wide, touch-friendly strips — hue over a rainbow, vividness,
+   lightness — whose tracks repaint for the current color, with a pearl knob holding it. Two-way: Hex in, HexChanged out
+   while dragging; a Hex set from outside (a swatch, a typed code) moves the knobs. Used by the custom accent, my
+   bubble colors and the gradient background editor. *@
+@using System.Globalization
+
+<div class="strips @Class" role="group" aria-label="@Label" data-no-swipe-back>
+    <label class="strips__strip">
+        <span class="strips__label">@L["settings.appearance.customHue"]</span>
+        <input type="range" class="strips__range" min="0" max="359" step="1" style="@ThumbStyle(HueTrack)"
+               @bind:get="_h" @bind:set="OnHue" @bind:event="oninput" @bind:culture="CultureInfo.InvariantCulture" />
+    </label>
+    <label class="strips__strip">
+        <span class="strips__label">@L["settings.appearance.customSaturation"]</span>
+        <input type="range" class="strips__range" min="0" max="100" step="1" style="@ThumbStyle(SaturationTrack)"
+               @bind:get="_s" @bind:set="OnSaturation" @bind:event="oninput" @bind:culture="CultureInfo.InvariantCulture" />
+    </label>
+    <label class="strips__strip">
+        <span class="strips__label">@L["settings.appearance.customLightness"]</span>
+        <input type="range" class="strips__range" min="@MinLightness" max="@MaxLightness" step="1" style="@ThumbStyle(LightnessTrack)"
+               @bind:get="_l" @bind:set="OnLightness" @bind:event="oninput" @bind:culture="CultureInfo.InvariantCulture" />
+    </label>
+</div>
+
+@code {
+    private double _h;
+    private double _s;
+    private double _l;
+    /// <summary>The color the knobs show (read from Hex or made by them): a Hex equal to it leaves the knobs where they are.</summary>
+    private string? _shown;
+
+    [Inject] private ILocalizer L { get; set; } = default!;
+
+    /// <summary>"#RRGGBB".</summary>
+    [Parameter] public string Hex { get; set; } = "#6A4BFF";
+    [Parameter] public EventCallback<string> HexChanged { get; set; }
+    /// <summary>The lightness strip's range in percent (accents keep away from white and black: white text must stay readable).</summary>
+    [Parameter] public int MinLightness { get; set; } = 18;
+    [Parameter] public int MaxLightness { get; set; } = 82;
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (ThemeCatalog.NormalizeHex(Hex) is not { } hex || string.Equals(hex, _shown, StringComparison.OrdinalIgnoreCase)) return;
+        _shown = hex;
+        var (h, s, l) = ThemeCatalog.Color.Parse(hex).ToHsl();
+        _h = Math.Round(h);
+        _s = Math.Round(s * 100);
+        _l = Math.Clamp(Math.Round(l * 100), MinLightness, MaxLightness);
+    }
+
+    private string CurrentHex => FromStrips(_h, _s, _l);
+
+    private string HueTrack =>
+        $"linear-gradient(90deg, {Hsl(0, 85, 55)}, {Hsl(45, 85, 55)}, {Hsl(90, 85, 50)}, {Hsl(150, 85, 45)}, {Hsl(200, 85, 50)}, " +
+        $"{Hsl(240, 85, 60)}, {Hsl(285, 85, 58)}, {Hsl(330, 85, 55)}, {Hsl(359, 85, 55)})";
+
+    private string SaturationTrack => $"linear-gradient(90deg, {Hsl(_h, 0, _l)}, {Hsl(_h, 100, _l)})";
+
+    private string LightnessTrack => $"linear-gradient(90deg, {Hsl(_h, _s, MinLightness)}, {Hsl(_h, _s, 50)}, {Hsl(_h, _s, MaxLightness)})";
+
+    private string ThumbStyle(string track) => $"--track:{track};--thumb:{CurrentHex}";
+
+    private static string Hsl(double h, double s, double l) =>
+        string.Create(CultureInfo.InvariantCulture, $"hsl({h:0} {s:0}% {l:0}%)");
+
+    private static string FromStrips(double h, double s, double l) => ThemeCatalog.Color.FromHsl(h, s / 100, l / 100).Hex;
+
+    private Task OnHue(double value)
+    {
+        _h = value;
+        return EmitAsync();
+    }
+
+    private Task OnSaturation(double value)
+    {
+        _s = value;
+        return EmitAsync();
+    }
+
+    private Task OnLightness(double value)
+    {
+        _l = value;
+        return EmitAsync();
+    }
+
+    private Task EmitAsync()
+    {
+        _shown = CurrentHex;
+        return HexChanged.InvokeAsync(_shown);
+    }
+}

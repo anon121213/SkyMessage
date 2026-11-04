@@ -1,15 +1,15 @@
 @* DialogService content: pick a custom accent — our own picker, no system color dialog. Three wide, touch-friendly
-   strips (hue over a rainbow, vividness, lightness; their tracks repaint for the current color), a row of ready-made
-   colors and the hex code. A small sky on top shows the result live: the outgoing bubble, the send orb and a button
-   in the accent's gradient pair. Result: "#RRGGBB". *@
-@using System.Globalization
+   strips (ColorStrips: hue over a rainbow, vividness, lightness), a row of ready-made colors and the hex code. A small
+   sky on top shows the result live: my bubble (as my bubble style paints it), the send orb and a button in the accent's
+   gradient pair. Result: "#RRGGBB". *@
 @inject ThemeService Theme
+@inject ISettingsService Settings
 
 <form class="accent-pick" @onsubmit="Save" @onsubmit:preventDefault="true">
     <div class="accent-pick__preview" aria-hidden="true">
-        <div class="accent-pick__bubble" style="@($"background:{BubbleCss};color:{OnAccent}")">
+        <div class="accent-pick__bubble" style="@($"background:{BubbleCss};color:{Bubble.Ink}")">
             @L["settings.appearance.preview.out"]
-            <span class="accent-pick__meta">09:42 <Icon Name="@IconNames.CheckCheck" Size="14" /></span>
+            <span class="accent-pick__meta" style="@($"color:{Bubble.Meta}")">09:42 <Icon Name="@IconNames.CheckCheck" Size="14" /></span>
         </div>
         <div class="accent-pick__row">
             <span class="accent-pick__button" style="@($"background:{GradientCss};color:{OnAccent}")">@L["common.ok"]</span>
@@ -17,30 +17,15 @@
         </div>
     </div>
 
-    <div class="accent-pick__strips" role="group" aria-label="@L["settings.appearance.customPick"]" data-no-swipe-back>
-        <label class="accent-pick__strip">
-            <span class="accent-pick__label">@L["settings.appearance.customHue"]</span>
-            <input type="range" class="accent-pick__range accent-pick__range--hue" min="0" max="359" step="1" style="@ThumbStyle(HueTrack)"
-                   @bind:get="_h" @bind:set="OnHue" @bind:event="oninput" @bind:culture="CultureInfo.InvariantCulture" />
-        </label>
-        <label class="accent-pick__strip">
-            <span class="accent-pick__label">@L["settings.appearance.customSaturation"]</span>
-            <input type="range" class="accent-pick__range" min="0" max="100" step="1" style="@ThumbStyle(SaturationTrack)"
-                   @bind:get="_s" @bind:set="OnSaturation" @bind:event="oninput" @bind:culture="CultureInfo.InvariantCulture" />
-        </label>
-        <label class="accent-pick__strip">
-            <span class="accent-pick__label">@L["settings.appearance.customLightness"]</span>
-            <input type="range" class="accent-pick__range" min="@MinLightness" max="@MaxLightness" step="1" style="@ThumbStyle(LightnessTrack)"
-                   @bind:get="_l" @bind:set="OnLightness" @bind:event="oninput" @bind:culture="CultureInfo.InvariantCulture" />
-        </label>
-    </div>
+    <ColorStrips Hex="@CurrentHex" HexChanged="OnStrips" Label="@L["settings.appearance.customPick"]" />
 
     <div class="accent-pick__palette">
         <span class="accent-pick__label">@L["settings.appearance.customPalette"]</span>
         <div class="accent-pick__swatches">
-            @foreach (var hex in Palette)
+            @foreach (var color in Theme.Catalog.AccentPalette)
             {
-                <ColorSwatch @key="hex" Color="@($"linear-gradient(135deg, {hex} 0%, {Theme.Catalog.SecondHexOf(hex)} 100%)")" RingColor="@hex" Size="34" Label="@hex"
+                var hex = color.Hex;
+                <ColorSwatch @key="hex" Color="@($"linear-gradient(135deg, {hex} 0%, {Theme.Catalog.SecondHexOf(hex)} 100%)")" RingColor="@hex" Size="34" Label="@L[color.NameKey]"
                              Selected="@string.Equals(hex, CurrentHex, StringComparison.OrdinalIgnoreCase)" OnClick="() => PickPalette(hex)" />
             }
         </div>
@@ -58,21 +43,10 @@
 </form>
 
 @code {
-    private const int MinLightness = 18;
-    private const int MaxLightness = 82;
-
-    // Deep, gradient-friendly colors that keep white text readable.
-    private static readonly string[] Palette =
-    [
-        "#6A4BFF", "#8E44EC", "#C2338F", "#E0457B", "#E5533D", "#D9480F",
-        "#B7791F", "#2F9E44", "#0F9488", "#0B84C6", "#3157E8", "#4C5FD5",
-    ];
-
     private string _hex = "";
+    /// <summary>The last valid color: what the preview and the strips show while a typed code is incomplete.</summary>
+    private string _valid = "#6A4BFF";
     private string? _error;
-    private double _h;
-    private double _s;
-    private double _l;
 
     [Inject] private ILocalizer L { get; set; } = default!;
     [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
@@ -81,80 +55,42 @@
 
     protected override void OnInitialized()
     {
-        _hex = ThemeCatalog.NormalizeHex(Initial) ?? "#6A4BFF";
-        ReadHsl(_hex);
+        _hex = _valid = ThemeCatalog.NormalizeHex(Initial) ?? "#6A4BFF";
     }
 
-    /// <summary>The color shown: the typed code when it is valid, else the last valid one from the strips.</summary>
-    private string CurrentHex => ThemeCatalog.NormalizeHex(_hex) ?? FromHsl(_h, _s, _l);
+    /// <summary>The color shown: the typed code when it is valid, else the last valid one.</summary>
+    private string CurrentHex => ThemeCatalog.NormalizeHex(_hex) ?? _valid;
 
     private string SecondHex => Theme.Catalog.SecondHexOf(CurrentHex);
 
     private string GradientCss => $"linear-gradient(135deg, {CurrentHex} 0%, {SecondHex} 100%)";
 
-    private string BubbleCss => Theme.Catalog.BubbleOutCss(CurrentHex, Theme.IsDark);
+    /// <summary>My bubble in this accent, painted as my bubble style does (my own colors ignore the accent: then the gradient).</summary>
+    private BubblePaint Bubble =>
+        Theme.Catalog.AccentBubble(CurrentHex, Settings.Current.Appearance.OutgoingBubble == OutgoingBubbleStyle.Solid ? OutgoingBubbleStyle.Solid : OutgoingBubbleStyle.Gradient, Theme.IsDark);
 
-    /// <summary>Text on the gradient: white unless the color is very light (as ThemeCatalog decides).</summary>
-    private string OnAccent =>
-        ThemeCatalog.Color.Mix(ThemeCatalog.Color.Parse(CurrentHex), ThemeCatalog.Color.Parse(SecondHex), 0.5).Luminance > 0.42 ? "#1C1634" : "#FFFFFF";
+    private string BubbleCss => Bubble.Background;
 
-    private string HueTrack =>
-        $"linear-gradient(90deg, {Hsl(0, 85, 55)}, {Hsl(45, 85, 55)}, {Hsl(90, 85, 50)}, {Hsl(150, 85, 45)}, {Hsl(200, 85, 50)}, " +
-        $"{Hsl(240, 85, 60)}, {Hsl(285, 85, 58)}, {Hsl(330, 85, 55)}, {Hsl(359, 85, 55)})";
+    /// <summary>Text on the accent gradient: white unless the color is very light (as ThemeCatalog decides for --sm-on-accent).</summary>
+    private string OnAccent => ThemeCatalog.OnAccentInk(ThemeCatalog.Color.Parse(CurrentHex), ThemeCatalog.Color.Parse(SecondHex)).Hex;
 
-    private string SaturationTrack => $"linear-gradient(90deg, {Hsl(_h, 0, _l)}, {Hsl(_h, 100, _l)})";
-
-    private string LightnessTrack => $"linear-gradient(90deg, {Hsl(_h, _s, MinLightness)}, {Hsl(_h, _s, 50)}, {Hsl(_h, _s, MaxLightness)})";
-
-    private string ThumbStyle(string track) => $"--track:{track};--thumb:{CurrentHex}";
-
-    private static string Hsl(double h, double s, double l) =>
-        string.Create(CultureInfo.InvariantCulture, $"hsl({h:0} {s:0}% {l:0}%)");
-
-    private void OnHue(double value)
+    private void OnStrips(string hex)
     {
-        _h = value;
-        FromStrips();
-    }
-
-    private void OnSaturation(double value)
-    {
-        _s = value;
-        FromStrips();
-    }
-
-    private void OnLightness(double value)
-    {
-        _l = value;
-        FromStrips();
-    }
-
-    private void FromStrips()
-    {
-        _hex = FromHsl(_h, _s, _l);
+        _hex = _valid = hex;
         _error = null;
     }
 
     private void PickPalette(string hex)
     {
-        _hex = hex;
+        _hex = _valid = hex;
         _error = null;
-        ReadHsl(hex);
     }
 
     private void OnHexChanged(string value)
     {
         _hex = value;
         _error = null;
-        if (ThemeCatalog.NormalizeHex(value) is { } hex) ReadHsl(hex);
-    }
-
-    private void ReadHsl(string hex)
-    {
-        var (h, s, l) = ToHsl(hex);
-        _h = Math.Round(h);
-        _s = Math.Round(s * 100);
-        _l = Math.Clamp(Math.Round(l * 100), MinLightness, MaxLightness);
+        if (ThemeCatalog.NormalizeHex(value) is { } hex) _valid = hex;
     }
 
     private void Save()
@@ -165,42 +101,5 @@
             return;
         }
         Dialog.Close(hex);
-    }
-
-    // ---- HSL ↔ hex ----
-
-    private static (double H, double S, double L) ToHsl(string hex)
-    {
-        var c = ThemeCatalog.Color.Parse(hex);
-        double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
-        double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
-        double h = 0, s = 0, l = (max + min) / 2, d = max - min;
-        if (d > 0)
-        {
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            h = max == r ? (g - b) / d + (g < b ? 6 : 0) : max == g ? (b - r) / d + 2 : (r - g) / d + 4;
-            h *= 60;
-        }
-        return (h, s, l);
-    }
-
-    private static string FromHsl(double h, double s, double l)
-    {
-        s = Math.Clamp(s / 100, 0, 1);
-        l = Math.Clamp(l / 100, 0, 1);
-        h = ((h % 360) + 360) % 360 / 360;
-        var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-        var p = 2 * l - q;
-        return new ThemeCatalog.Color(Channel(p, q, h + 1.0 / 3) * 255, Channel(p, q, h) * 255, Channel(p, q, h - 1.0 / 3) * 255).Hex;
-
-        static double Channel(double p, double q, double t)
-        {
-            if (t < 0) t += 1;
-            if (t > 1) t -= 1;
-            if (t < 1.0 / 6) return p + (q - p) * 6 * t;
-            if (t < 0.5) return q;
-            if (t < 2.0 / 3) return p + (q - p) * (2.0 / 3 - t) * 6;
-            return p;
-        }
     }
 }

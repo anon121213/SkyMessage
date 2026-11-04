@@ -21,6 +21,12 @@ public sealed record ScrollInfo(double Top, double Height, double ClientHeight)
     public double FromBottom => Math.Max(0, Height - ClientHeight - Top);
 }
 
+/// <summary>
+/// A background picture ready to show: its object URL, its average color ("#rrggbb", null when unknown) and the colors
+/// of its 8×8 cells (the readability floor is measured on them; null when unknown).
+/// </summary>
+public sealed record BackdropImage(string Url, string? Tone, IReadOnlyList<string>? Cells = null);
+
 /// <summary>One entry of a batched <see cref="AppJs.CreateIntersectionObserverAsync{T}"/> callback.</summary>
 public sealed record VisibilityChange(string Key, bool Visible, double Ratio);
 
@@ -233,6 +239,12 @@ public sealed class AppJs(IJSRuntime js, ILogger<AppJs> logger) : IAsyncDisposab
     /// <summary>OS light/dark changes → <c>method(bool dark)</c>.</summary>
     public ValueTask<JsHandle> ObserveSystemThemeAsync<T>(DotNetObjectReference<T> target, string method) where T : class =>
         AttachAsync("observeSystemTheme", target, method);
+
+    /// <summary>A background picture as the page shows it (blur baked in by boot.js), or null while it cannot be loaded.</summary>
+    public ValueTask<BackdropImage?> BackdropUrlAsync(string source, int blur) => InvokeAsync<BackdropImage?>("backdropUrl", source, blur);
+
+    /// <summary>The long side, in device pixels, a background picture needs on this screen.</summary>
+    public ValueTask<int> BackdropMaxSideAsync() => InvokeAsync<int>("backdropMaxSide");
 
     public ValueTask SetDocumentTitleAsync(string title) => InvokeVoidAsync("setTitle", title);
 
