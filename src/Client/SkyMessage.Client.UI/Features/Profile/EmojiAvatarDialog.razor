@@ -1,0 +1,84 @@
+@* An emoji on a color as an avatar: the squircle preview on top, the palette's gradients as background swatches, the
+   emoji picker below. Done draws it into a 1024 px JPEG on the device (avatar.js) and closes with the bytes. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Chat
+@inject IJSRuntime JS
+@inject ToastService Toasts
+@inject ILogger<EmojiAvatarDialog> Logger
+
+<div class="emoji-avatar">
+    <div class="emoji-avatar__preview" style="@PreviewStyle" aria-label="@L["avatar.emoji.title"]" role="img">
+        <span class="emoji-avatar__glyph" @key="_emoji">@_emoji</span>
+    </div>
+    <div class="sm-overline emoji-avatar__label">@L["avatar.emoji.background"]</div>
+    <div class="sm-swatches emoji-avatar__swatches">
+        @for (var i = 0; i < AvatarPalette.Pairs.Count; i++)
+        {
+            var index = i;
+            var (from, to) = AvatarPalette.Pairs[i];
+            <ColorSwatch Size="32" Color="@($"linear-gradient(145deg, {from} 0%, {to} 100%)")" RingColor="@to" Label="@($"{L["avatar.emoji.background"]} {index + 1}")"
+                         Selected="@(_palette == index)" OnClick="() => _palette = index" />
+        }
+    </div>
+    <div class="sm-overline emoji-avatar__label">@L["avatar.emoji.pick"]</div>
+    <EmojiPicker OnPick="Pick" Height="15rem" ShowRecent="true" Class="emoji-avatar__picker" />
+</div>
+<DialogActions>
+    <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+    <Button Icon="@IconNames.Check" Loading="_rendering" OnClick="DoneAsync">@L["common.done"]</Button>
+</DialogActions>
+
+@code {
+    private string _emoji = "🙂";
+    private int _palette;
+    private bool _rendering;
+    private JsModule? _module;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    private string PreviewStyle
+    {
+        get
+        {
+            var (from, to) = AvatarPalette.Pairs[_palette];
+            return $"background:linear-gradient(145deg, {from} 0%, {to} 100%)";
+        }
+    }
+
+    private void Pick(string emoji) => _emoji = emoji;
+
+    private async Task DoneAsync()
+    {
+        if (_rendering) return;
+        _rendering = true;
+        byte[]? jpeg = null;
+        try
+        {
+            _module ??= new JsModule(JS, "./_content/SkyMessage.Client.UI/js/avatar.js");
+            var (from, to) = AvatarPalette.Pairs[_palette];
+            jpeg = await _module.InvokeAsync<byte[]?>("renderEmoji", _emoji, from, to, AvatarEditor.OutputSize, 0.92);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            // The canvas could not draw it (a WebView without the emoji font, a page going away): say so in a toast.
+            Logger.LogInformation(ex, "Emoji avatar not drawn");
+        }
+        finally
+        {
+            _rendering = false;
+        }
+        if (jpeg is not { Length: > 0 })
+        {
+            Toasts.Show(L["avatar.editor.loadFailed"], ToastKind.Warning);
+            return;
+        }
+        Dialog.Close(jpeg);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null) await _module.DisposeAsync();
+        Dispose();
+    }
+}

@@ -1,7 +1,10 @@
 @* Chat header: a floating frosted capsule over the chat sky — back (phones), squircle avatar + name + status line
    (typing / presence / members; a bell or shield after the name for a muted or protected chat), call buttons, search
-   (wide) and the chat menu (info, shared media, select, mute, the chat's background, clear history, leave/delete). Tap on the avatar or the name opens the chat info. The back button carries data-shell-back: the phone
-   shell's swipe back (and its animated back tap) runs this very button (app.js attachSwipeBack). *@
+   (wide) and the chat menu (info, shared media, select, mute, the chat's background, clear history, leave/delete). Tap
+   on the name opens the chat info, on the avatar the photo viewer (the info when there is no photo; with a photo the
+   avatar is its own focusable button). A 🎂 follows the peer's name on their birthday.
+   The back button carries data-shell-back: the phone shell's swipe back (and its animated back tap) runs this very
+   button (app.js attachSwipeBack). *@
 @inherits UiComponentBase
 @inject IChatListStore ChatList
 @inject ITypingStore Typing
@@ -16,26 +19,44 @@
 @inject DialogService Dialogs
 @inject ISettingsService Settings
 @inject BackdropPhotoService Photos
+@inject AvatarOverlays Avatars
+@inject IBirthdayService Celebrations
 
 <header class="chead @(Back ? null : "chead--no-back") @Class">
     @if (Back)
     {
         <IconButton Icon="@IconNames.ArrowLeft" Label="@L["nav.back"]" Size="40" OnClick="BackAsync" Class="chead__back" data-shell-back="" />
     }
-    <div class="chead__title" role="button" tabindex="0" title="@InfoLabel" @onclick="OpenInfo" @onkeydown="OnTitleKey">
-        <span class="chead__avatar">
-            @if (Chat is { } chat)
-            {
-                <ChatAvatar Chat="chat" Size="40" />
-            }
-            else
-            {
-                <Skeleton Shape="SkeletonShape.Circle" Width="2.5rem" Height="2.5rem" />
-            }
-        </span>
-        <div class="chead__text">
+    @* A tap anywhere on the title opens the chat info; the photo is a button of its own (the avatar viewer), and the
+       keyboard reaches the info through the name. *@
+    <div class="chead__title" title="@InfoLabel" @onclick="OpenInfo">
+        @if (Chat is { } photoChat && HasPhoto)
+        {
+            <button type="button" class="chead__avatar chead__avatar--photo" aria-label="@L["avatar.choose.view"]" title="@L["avatar.choose.view"]"
+                    @onclick="OpenAvatar" @onclick:stopPropagation="true">
+                <ChatAvatar Chat="photoChat" Size="40" />
+            </button>
+        }
+        else
+        {
+            <span class="chead__avatar">
+                @if (Chat is { } chat)
+                {
+                    <ChatAvatar Chat="chat" Size="40" />
+                }
+                else
+                {
+                    <Skeleton Shape="SkeletonShape.Circle" Width="2.5rem" Height="2.5rem" />
+                }
+            </span>
+        }
+        <div class="chead__text" role="button" tabindex="0" @onkeydown="OnTitleKey">
             <div class="chead__name">
                 <span class="chead__name-text">@Title</span>
+                @if (Chat is { Type: ChatType.Private, Peer: { } birthdayPeer } && Celebrations.IsBirthdayToday(birthdayPeer))
+                {
+                    <span class="chead__cake" role="img" aria-label="@L["birthday.mark"]" title="@L["birthday.mark"]">🎂</span>
+                }
                 @if (Chat is { } c && c.IsMuted(DateTimeOffset.UtcNow))
                 {
                     <Icon Name="@IconNames.BellOff" Size="14" Class="chead__muted" Title="@L["chatlist.muted"]" />
@@ -163,6 +184,7 @@
         RenderOn<Guid>(h => Typing.Changed += h, h => Typing.Changed -= h, id => id == ChatId);
         RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => id == Chat?.Peer?.Id);
         RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
+        RenderOn(h => Celebrations.Changed += h, h => Celebrations.Changed -= h);
     }
 
     /// <summary>
@@ -180,6 +202,13 @@
     }
 
     private void OpenInfo() => Nav.OpenChatInfo(ChatId);
+
+    private bool HasPhoto => Chat is { } chat && Avatars.HasPhoto(chat);
+
+    private void OpenAvatar()
+    {
+        if (Chat is { } chat && Avatars.HasPhoto(chat)) Avatars.ViewChat(chat);
+    }
 
     private void OnTitleKey(KeyboardEventArgs e)
     {

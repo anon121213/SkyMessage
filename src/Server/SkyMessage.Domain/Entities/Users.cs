@@ -24,6 +24,18 @@ public sealed class User
     public bool IsDeleted { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
 
+    /// <summary>Birthday day 1..31 and month 1..12 (both or neither), year optional; visibility per <see cref="UserPrivacy.Birthday"/>.</summary>
+    public int? BirthDay { get; set; }
+    public int? BirthMonth { get; set; }
+    public int? BirthYear { get; set; }
+    /// <summary><see cref="ProfileStyle.Colors"/> key: tints the profile header and the name in groups.</summary>
+    public string? ProfileColor { get; set; }
+    /// <summary>Header cover: a <see cref="ProfileStyle.CoverGradients"/> key, or (taking precedence) the user's own photo.</summary>
+    public string? CoverGradient { get; set; }
+    public Guid? CoverMediaId { get; set; }
+    /// <summary>At most <see cref="Limits.ProfileLinksMax"/> links (jsonb).</summary>
+    public List<ProfileLink> Links { get; set; } = [];
+
     /// <summary>Display name stored for deleted accounts (clients may localize it when <see cref="IsDeleted"/>).</summary>
     public const string DeletedDisplayName = "Deleted Account";
 
@@ -39,6 +51,13 @@ public sealed class User
     public static string DeletedUsernameFor(Guid userId) => $"deleted_{userId:N}";
 }
 
+/// <summary>Owned by <see cref="User"/> (jsonb list).</summary>
+public sealed class ProfileLink
+{
+    public string Url { get; set; } = "";
+    public string? Title { get; set; }
+}
+
 /// <summary>Owned by <see cref="User"/> (stored as privacy_* columns).</summary>
 public sealed class UserPrivacy
 {
@@ -49,6 +68,7 @@ public sealed class UserPrivacy
     public PrivacyLevel Messages { get; set; } = PrivacyLevel.Everybody;
     public PrivacyLevel Calls { get; set; } = PrivacyLevel.Everybody;
     public PrivacyLevel GroupInvites { get; set; } = PrivacyLevel.Everybody;
+    public PrivacyLevel Birthday { get; set; } = PrivacyLevel.Contacts;
 }
 
 /// <summary>A signed-in device. Refresh tokens are stored only as SHA-256 hex hashes.</summary>
@@ -98,6 +118,7 @@ public sealed class Contact
     public User? ContactUser { get; set; }
     public string? CustomName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public ContactSource Source { get; set; }
 }
 
 public sealed class Block

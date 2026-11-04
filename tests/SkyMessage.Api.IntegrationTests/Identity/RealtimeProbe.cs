@@ -30,6 +30,7 @@ internal sealed class RealtimeProbe : IAsyncDisposable
         Record<UserRefEvent>(nameof(IRealtimeClient.UserChanged));
         Record<ContactsChangedEvent>(nameof(IRealtimeClient.ContactsChanged));
         Record<SessionRevokedEvent>(nameof(IRealtimeClient.SessionRevoked));
+        Record<ChatInfoDto>(nameof(IRealtimeClient.ChatUpdated));
         Hub.Closed += error =>
         {
             _closed.TrySetResult(error);

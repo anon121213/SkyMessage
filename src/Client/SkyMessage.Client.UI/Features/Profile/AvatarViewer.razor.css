@@ -1,0 +1,53 @@
+/* The avatar viewer: the night viewer's chrome from app.css ("Night viewer": the night, the glass bar, the counter
+   chip, the side circles, the hidden chrome) with a square frame that leaves room for the bars and, for my own photos
+   or a group's I may change, the "set as main" capsule. */
+
+/* Square photos (every new avatar) fill the width on phones and stop short of the bars on wide screens. */
+.viewer__frame {
+    width: min(100vw, calc((100vh - 12.5rem) * var(--ar, 1)), 44rem);
+}
+
+.viewer__bottom {
+    padding-bottom: calc(16px + var(--sm-inset-bottom));
+}
+
+/* A glass capsule: the one action that changes the profile, so it reads as a button and not as chrome. */
+.viewer__main {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 3rem;
+    padding: 0 20px 0 16px;
+    border-radius: 999px;
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    background: var(--sm-viewer-glass);
+    -webkit-backdrop-filter: var(--sm-viewer-blur);
+    backdrop-filter: var(--sm-viewer-blur);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), var(--sm-viewer-lift);
+    transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
+    animation: sm-viewer-fade-in var(--sm-dur) ease backwards;
+}
+
+.viewer__main:active:not(:disabled) {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+}
+
+.viewer__main:disabled {
+    opacity: 0.6;
+}
+
+@media (hover: hover) {
+    .viewer__main:hover:not(:disabled) {
+        background: var(--sm-viewer-glass-hover);
+    }
+}
+
+html[data-fx="lite"] .viewer__main {
+    background: var(--sm-viewer-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}

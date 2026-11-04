@@ -10,6 +10,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Contact> Contacts => Set<Contact>();
     public DbSet<Block> Blocks => Set<Block>();
+    public DbSet<AvatarPhoto> AvatarPhotos => Set<AvatarPhoto>();
 
     public DbSet<Chat> Chats => Set<Chat>();
     public DbSet<ChatMember> ChatMembers => Set<ChatMember>();

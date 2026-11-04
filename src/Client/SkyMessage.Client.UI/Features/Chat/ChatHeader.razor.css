@@ -86,6 +86,21 @@ html[data-fx="lite"] .chead {
     display: inline-flex;
 }
 
+/* With a photo the avatar is a button (the avatar viewer): the keyboard ring follows its squircle. */
+.chead__avatar--photo {
+    border-radius: 34%;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.chead__avatar--photo:active {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+}
+
+.chead__text:focus-visible {
+    border-radius: 10px;
+}
+
 .chead__text {
     flex: 1 1 auto;
     min-width: 0;
@@ -221,4 +236,12 @@ html[data-fx="lite"] .chead {
 /* The online dot: a plain mint dot ringed in the capsule's colour (the kit's dot also glows). */
 .chead__avatar ::deep .sm-avatar__dot {
     box-shadow: 0 0 0 2.5px var(--sm-dot-ring);
+}
+
+/* 🎂 after the peer's name on their birthday. */
+.chead__cake {
+    flex-shrink: 0;
+    font-size: 0.875rem;
+    line-height: 1;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) backwards;
 }

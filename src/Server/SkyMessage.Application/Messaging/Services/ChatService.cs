@@ -46,7 +46,7 @@ internal sealed class ChatService(
 
         var chat = await db.Chats.AsNoTracking()
             .Where(c => c.Id == chatId)
-            .Select(c => new { c.Description, c.CreatedById, c.CreatedAt, c.InviteToken })
+            .Select(c => new { c.Description, c.CreatedById, c.CreatedAt, c.InviteToken, c.AvatarMediaId })
             .FirstAsync(cancellationToken);
 
         var rows = await db.ChatMembers.AsNoTracking()
@@ -76,8 +76,18 @@ internal sealed class ChatService(
             PinnedMessages = await LoadPinnedAsync(member, cancellationToken),
             CreatedById = chat.CreatedById,
             CreatedAt = chat.CreatedAt,
+            EarlierAvatarCount = member.IsGroup && SeesAvatarHistory(member, chat.AvatarMediaId)
+                ? await AvatarHistory.CountEarlierAsync(db.OfChat(chatId), chat.AvatarMediaId, cancellationToken)
+                : 0,
         };
     }
+
+    /// <summary>
+    /// A group's earlier photos show like a profile's: while there is a current photo; without one only to who may
+    /// change the info (they can set one of them again or delete them).
+    /// </summary>
+    private static bool SeesAvatarHistory(MemberContext member, Guid? currentAvatar) =>
+        currentAvatar is not null || ChatPolicy.CanChangeInfo(member.Type, member.Role, member.Permissions);
 
     public async Task<IReadOnlyList<MessageDto>> GetPinnedAsync(Guid chatId, CancellationToken cancellationToken = default)
     {
@@ -274,6 +284,8 @@ internal sealed class ChatService(
             });
         }
         db.Chats.Add(chat);
+        if (request.AvatarMediaId is { } firstAvatar)
+            db.AvatarPhotos.Add(new AvatarPhoto { ChatId = chat.Id, MediaId = firstAvatar, SetById = me, SetAt = now });
         await db.SaveChangesAsync(cancellationToken);
         db.ChangeTracker.Clear();
 
@@ -355,13 +367,18 @@ internal sealed class ChatService(
         var member = (await db.RequireMemberAsync(chatId, me, cancellationToken)).RequireGroup();
         if (!ChatPolicy.CanChangeInfo(member.Type, member.Role, member.Permissions))
             throw new ForbiddenException(ErrorCodes.NotChatAdmin);
-        await MessagingChecks.RequireOwnReadyPhotoAsync(db, request.MediaId, me, cancellationToken);
-
         var mediaId = request.MediaId;
+        // A photo of the group's history may be set again by any admin, whoever uploaded it.
+        var fromHistory = await db.OfChat(chatId).AnyAsync(a => a.MediaId == mediaId, cancellationToken);
+        if (!fromHistory)
+            await MessagingChecks.RequireOwnReadyPhotoAsync(db, mediaId, me, cancellationToken);
+
         var now = clock.UtcNow;
         var changed = await db.Chats
             .Where(c => c.Id == chatId && (c.AvatarMediaId == null || c.AvatarMediaId != mediaId))
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.AvatarMediaId, mediaId).SetProperty(c => c.UpdatedAt, now), cancellationToken);
+        if (changed > 0 || !fromHistory)
+            await AvatarHistory.RecordForChatAsync(db, chatId, mediaId, me, now, cancellationToken);
 
         var info = await db.LoadChatInfoAsync(chatId, CancellationToken.None) ?? throw new NotFoundException(ErrorCodes.ChatNotFound);
         if (changed == 0) return info;
@@ -379,15 +396,78 @@ internal sealed class ChatService(
             throw new ForbiddenException(ErrorCodes.NotChatAdmin);
 
         var now = clock.UtcNow;
+        var current = await db.Chats.AsNoTracking().Where(c => c.Id == chatId).Select(c => c.AvatarMediaId).FirstOrDefaultAsync(cancellationToken);
         var changed = await db.Chats
             .Where(c => c.Id == chatId && c.AvatarMediaId != null)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.AvatarMediaId, (Guid?)null).SetProperty(c => c.UpdatedAt, now), cancellationToken);
+        if (changed > 0 && current is { } removedId)
+            await db.OfChat(chatId).Where(a => a.MediaId == removedId).ExecuteDeleteAsync(cancellationToken);
 
         var info = await db.LoadChatInfoAsync(chatId, CancellationToken.None) ?? throw new NotFoundException(ErrorCodes.ChatNotFound);
         if (changed == 0) return info;
 
         await PublishChatUpdatedAsync(info);
         await events.PostSystemEventAsync(chatId, new SystemEventDto { Type = SystemEventType.PhotoRemoved, ActorId = me });
+        return info;
+    }
+
+    public async Task<IReadOnlyList<AvatarPhotoDto>> GetAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default)
+    {
+        var member = (await db.RequireMemberAsync(chatId, currentUser.UserId, cancellationToken)).RequireGroup();
+        var current = await db.Chats.AsNoTracking().Where(c => c.Id == member.ChatId).Select(c => c.AvatarMediaId).FirstOrDefaultAsync(cancellationToken);
+        if (!SeesAvatarHistory(member, current)) return [];
+        return await AvatarHistory.ListAsync(db, db.OfChat(chatId), current, cancellationToken);
+    }
+
+    public async Task<ChatInfoDto> DeleteAllAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default)
+    {
+        var me = currentUser.UserId;
+        var member = (await db.RequireMemberAsync(chatId, me, cancellationToken)).RequireGroup();
+        if (!ChatPolicy.CanChangeInfo(member.Type, member.Role, member.Permissions))
+            throw new ForbiddenException(ErrorCodes.NotChatAdmin);
+
+        var now = clock.UtcNow;
+        var photoRemoved = await db.Chats
+            .Where(c => c.Id == chatId && c.AvatarMediaId != null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.AvatarMediaId, (Guid?)null).SetProperty(c => c.UpdatedAt, now), cancellationToken) > 0;
+        var historyRemoved = await db.OfChat(chatId).ExecuteDeleteAsync(cancellationToken) > 0;
+
+        var info = await db.LoadChatInfoAsync(chatId, CancellationToken.None) ?? throw new NotFoundException(ErrorCodes.ChatNotFound);
+        if (!photoRemoved && !historyRemoved) return info;
+
+        await PublishChatUpdatedAsync(info);
+        if (photoRemoved)
+            await events.PostSystemEventAsync(chatId, new SystemEventDto { Type = SystemEventType.PhotoRemoved, ActorId = me });
+        return info;
+    }
+
+    public async Task<ChatInfoDto> DeleteAvatarAsync(Guid chatId, Guid mediaId, CancellationToken cancellationToken = default)
+    {
+        var me = currentUser.UserId;
+        var member = (await db.RequireMemberAsync(chatId, me, cancellationToken)).RequireGroup();
+        if (!ChatPolicy.CanChangeInfo(member.Type, member.Role, member.Permissions))
+            throw new ForbiddenException(ErrorCodes.NotChatAdmin);
+
+        var current = await db.Chats.AsNoTracking().Where(c => c.Id == chatId).Select(c => c.AvatarMediaId).FirstOrDefaultAsync(cancellationToken);
+        var removed = await db.OfChat(chatId).Where(a => a.MediaId == mediaId).ExecuteDeleteAsync(cancellationToken);
+        if (removed == 0 && current != mediaId)
+            throw new NotFoundException(ErrorCodes.MediaNotFound);
+
+        Guid? next = null;
+        var currentChanged = false;
+        if (current == mediaId)
+        {
+            var now = clock.UtcNow;
+            next = await AvatarHistory.NewestAsync(db.OfChat(chatId), mediaId, cancellationToken);
+            currentChanged = await db.Chats
+                .Where(c => c.Id == chatId && c.AvatarMediaId == mediaId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.AvatarMediaId, next).SetProperty(c => c.UpdatedAt, now), cancellationToken) > 0;
+        }
+
+        var info = await db.LoadChatInfoAsync(chatId, CancellationToken.None) ?? throw new NotFoundException(ErrorCodes.ChatNotFound);
+        await PublishChatUpdatedAsync(info);
+        if (currentChanged)
+            await events.PostSystemEventAsync(chatId, new SystemEventDto { Type = next is null ? SystemEventType.PhotoRemoved : SystemEventType.PhotoChanged, ActorId = me });
         return info;
     }
 

@@ -158,7 +158,10 @@ internal sealed class ContactStore : IContactStore, IAccountScoped
         await MutateAsync(null, blocked => blocked.Where(b => b.Id != userId).ToList()).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<PhoneBookMatch>> FindDeviceContactsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<PhoneBookMatch>> FindDeviceContactsAsync(CancellationToken cancellationToken = default) =>
+        await MatchPhoneBookAsync(await ReadPhoneBookAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<PhoneBookEntry>> ReadPhoneBookAsync(CancellationToken cancellationToken = default)
     {
         if (!_deviceContacts.IsSupported || !await _deviceContacts.RequestPermissionAsync().ConfigureAwait(false)) return [];
         var deviceContacts = await _deviceContacts.GetContactsAsync(cancellationToken).ConfigureAwait(false);
@@ -175,6 +178,13 @@ internal sealed class ContactStore : IContactStore, IAccountScoped
                 names.TryAdd(number, string.IsNullOrWhiteSpace(contact.DisplayName) ? number : contact.DisplayName.Trim());
             }
         }
+        return names.Select(n => new PhoneBookEntry(n.Key, n.Value)).ToList();
+    }
+
+    public async Task<IReadOnlyList<PhoneBookMatch>> MatchPhoneBookAsync(IReadOnlyList<PhoneBookEntry> phoneBook, CancellationToken cancellationToken = default)
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in phoneBook) names.TryAdd(entry.Number, entry.Name);
         if (names.Count == 0) return [];
 
         var regions = DefaultRegions();
@@ -203,22 +213,61 @@ internal sealed class ContactStore : IContactStore, IAccountScoped
         return result.OrderBy(r => r.AlreadyContact).ThenBy(r => r.DeviceContactName, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
 
-    public async Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches)
+    public Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches) => AddMatchesAsync(confirmedMatches, synced: false);
+
+    public Task<IReadOnlyList<ContactDto>> AddSyncedAsync(IReadOnlyList<PhoneBookMatch> matches) => AddMatchesAsync(matches, synced: true);
+
+    public async Task<int> RemoveSyncedAsync()
     {
-        var requests = confirmedMatches
-            .Where(m => !m.AlreadyContact && !IsContact(m.User.Id))
+        var result = await _api.RemoveSyncedContactsAsync().ConfigureAwait(false);
+        var removed = _contacts.Where(c => c.IsSynced).Select(c => c.User.Id).ToHashSet();
+        foreach (var id in removed)
+            if (_users.Get(id) is { } user) _users.Upsert([user with { IsContact = false, ContactName = null }]);
+        await MutateAsync(list => list.Where(c => !c.IsSynced).ToList(), null).ConfigureAwait(false);
+        // The server may know of synced contacts this device has not loaded yet.
+        if (result.Removed != removed.Count) LoadAsync(force: true).Forget(_logger);
+        return result.Removed;
+    }
+
+    public async Task<IReadOnlyList<Guid>> RemoveSyncedAsync(IReadOnlyCollection<Guid> userIds)
+    {
+        var synced = _contacts.Where(c => c.IsSynced).Select(c => c.User.Id).ToHashSet();
+        var removed = new List<Guid>();
+        foreach (var userId in userIds.Distinct().Where(synced.Contains))
+        {
+            await _api.RemoveContactAsync(userId).ConfigureAwait(false);
+            removed.Add(userId);
+        }
+        if (removed.Count == 0) return removed;
+        foreach (var id in removed)
+            if (_users.Get(id) is { } user) _users.Upsert([user with { IsContact = false, ContactName = null }]);
+        var gone = removed.ToHashSet();
+        await MutateAsync(list => list.Where(c => !gone.Contains(c.User.Id)).ToList(), null).ConfigureAwait(false);
+        return removed;
+    }
+
+    private async Task<IReadOnlyList<ContactDto>> AddMatchesAsync(IReadOnlyList<PhoneBookMatch> matches, bool synced)
+    {
+        // A sync also sends the synced contacts whose phone-book name changed (the server renames only those).
+        var current = _contacts.ToDictionary(c => c.User.Id);
+        var requests = matches
+            .Where(m => !IsContact(m.User.Id)
+                        ? !m.AlreadyContact
+                        : synced && current.TryGetValue(m.User.Id, out var contact) && contact.IsSynced
+                          && Clean(m.DeviceContactName) is { } name && name != contact.CustomName)
             .GroupBy(m => m.User.Id)
             .Select(g => new AddContactRequest { UserId = g.Key, CustomName = Clean(g.First().DeviceContactName) })
             .ToList();
-        if (requests.Count == 0) return;
+        if (requests.Count == 0) return [];
 
         var added = new List<ContactDto>();
         foreach (var chunk in requests.Chunk(200))
-            added.AddRange(await _api.AddContactsBulkAsync(new AddContactsBulkRequest { Contacts = chunk }).ConfigureAwait(false));
+            added.AddRange(await _api.AddContactsBulkAsync(new AddContactsBulkRequest { Contacts = chunk, Synced = synced }).ConfigureAwait(false));
 
         _users.Upsert(added.Select(c => c.User));
         var ids = added.Select(c => c.User.Id).ToHashSet();
         await MutateAsync(list => list.Where(c => !ids.Contains(c.User.Id)).Concat(added).ToList(), null).ConfigureAwait(false);
+        return added;
     }
 
     async Task IAccountScoped.OnSignedInAsync(Guid userId)

@@ -222,6 +222,9 @@ public interface IUserStore
 /// <summary>A phone-book match. Only matches the user confirms are imported; the list shows @username and avatar.</summary>
 public sealed record PhoneBookMatch(string DeviceContactName, string PhoneNumber, UserSummaryDto User, bool AlreadyContact);
 
+/// <summary>A number of the phone book (E.164 from the OS when it has it, else as written) and the name it is saved under.</summary>
+public sealed record PhoneBookEntry(string Number, string Name);
+
 public interface IContactStore
 {
     /// <summary>Sorted by display name.</summary>
@@ -240,7 +243,23 @@ public interface IContactStore
     Task UnblockAsync(Guid userId);
     /// <summary>Reads the phone book (asks permission) and returns registered users found by number (DefaultRegion from IPlatformInfo.CountryCode).</summary>
     Task<IReadOnlyList<PhoneBookMatch>> FindDeviceContactsAsync(CancellationToken cancellationToken = default);
+    /// <summary>The phone book's numbers, one entry each (asks permission; empty without one).</summary>
+    Task<IReadOnlyList<PhoneBookEntry>> ReadPhoneBookAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Registered users among these numbers: find-by-phones in chunks of <see cref="Limits.FindByPhonesMax"/>, which the
+    /// server allows <see cref="Limits.PhoneLookupsPerWindow"/> times per window (429 after that).
+    /// </summary>
+    Task<IReadOnlyList<PhoneBookMatch>> MatchPhoneBookAsync(IReadOnlyList<PhoneBookEntry> phoneBook, CancellationToken cancellationToken = default);
     Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches);
+    /// <summary>
+    /// Contact sync: adds these matches marked as synced, and synced contacts among them take their phone-book name
+    /// (people added or renamed by hand stay as they are). Returns the contacts added or renamed.
+    /// </summary>
+    Task<IReadOnlyList<ContactDto>> AddSyncedAsync(IReadOnlyList<PhoneBookMatch> matches);
+    /// <summary>Removes the contacts sync added (<see cref="ContactDto.IsSynced"/>); returns how many went.</summary>
+    Task<int> RemoveSyncedAsync();
+    /// <summary>Removes these people while they are synced contacts (their number left the phone book); returns the ones removed.</summary>
+    Task<IReadOnlyList<Guid>> RemoveSyncedAsync(IReadOnlyCollection<Guid> userIds);
 }
 
 public interface ITypingStore

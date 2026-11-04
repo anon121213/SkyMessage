@@ -29,6 +29,15 @@ public enum PhoneSource
     Manual = 2,
 }
 
+/// <summary>How a contact got into someone's address book.</summary>
+public enum ContactSource
+{
+    /// <summary>Added (or confirmed, renamed) by the user.</summary>
+    Manual = 0,
+    /// <summary>Found in the phone book by contact sync; "remove synced contacts" deletes only these.</summary>
+    PhoneSync = 1,
+}
+
 /// <summary>What a viewer is allowed to know about someone's last-seen time.</summary>
 public enum LastSeenApprox
 {

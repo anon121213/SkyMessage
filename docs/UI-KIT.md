@@ -44,8 +44,8 @@ Reuse kit keys freely (e.g. `common.cancel`, `common.save`, `common.copy`, `comm
 
 | Lifetime | Services |
 |---|---|
-| Singleton (no JS) | `ILocalizer` (`Localizer`), `FormatService`, `MessagePreviewFormatter` (also as Core's `IMessagePreviewFormatter`), `ThemeCatalog`, `ToneCatalog`, `EmojiCatalog`, `EmojiRecents`, `RecentSearches`, `HapticFeedback`, `AvatarUploader` |
-| Scoped | `AppJs`, `UiDispatcher`, `LayoutService`, `ThemeService`, `NavigationService`, `DialogService`, `ToastService`, `SoundService` (= `ISoundService`), `LinkService`, `ShareHelper`, `ChatActions` |
+| Singleton (no JS) | `ILocalizer` (`Localizer`), `FormatService`, `MessagePreviewFormatter` (also as Core's `IMessagePreviewFormatter`), `ThemeCatalog`, `ToneCatalog`, `EmojiCatalog`, `EmojiRecents`, `RecentSearches`, `HapticFeedback`, `AvatarUploader`, `ReminderTexts` (as Core's `IReminderTexts`) |
+| Scoped | `AppJs`, `UiDispatcher`, `LayoutService`, `ThemeService`, `NavigationService`, `DialogService`, `ToastService`, `SoundService` (= `ISoundService`), `LinkService`, `ShareHelper`, `ChatActions`, `AvatarOverlays`, `AvatarFlows` |
 
 Host `index.html` (both hosts) must include, in this order:
 
@@ -395,9 +395,26 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
 * `HapticFeedback` (singleton): `Selection()`, `Tap()`, `LongPress()`, `Success()`, `Warning()` — only when
   supported and `Notifications.InAppVibrate`. Kit toggles/tabs already use it.
 * `AvatarUploader` (singleton): `PickedPhoto? p = await Avatars.PickAsync()` (with `p.PreviewUrl`) →
-  `MediaDto m = await Avatars.UploadAsync(p, progress)` (compressed to 1280 px, metadata stripped, Ready) → pass
-  `m.Id` to `ISkyApi.SetAvatarAsync` / `SetChatAvatarAsync` / `CreateGroupRequest.AvatarMediaId`; then
-  `Auth.UpdateMe(me)` for own profile edits.
+  `MediaDto m = await Avatars.UploadAsync(p, progress)` (compressed to 1280 px, metadata stripped, Ready; a
+  `PickedPhoto.FromJpeg(...)` made on the device — `Prepared` — goes up as it is) → pass `m.Id` to
+  `ISkyApi.SetAvatarAsync` / `SetChatAvatarAsync` / `CreateGroupRequest.AvatarMediaId`; then `Auth.UpdateMe(me)` for
+  own profile edits. **New avatars go through `AvatarFlows`** (scoped, Features/Profile):
+  `PickedPhoto? p = await AvatarSources.ChooseAsync()` (gallery / camera / emoji choice sheet) or
+  `AvatarSources.MakeAsync(key)` with a key from `SourceOptions()` (add your own options to that list): gallery and
+  camera picks open the crop editor, the emoji maker draws its own; both end as a 1024 px prepared JPEG.
+* `AvatarOverlays` (scoped, Features/Profile; hosted once by MainLayout): `ViewUser(summary)`, `ViewChat(chat,
+  earlierPhotos)` (peer or group, nothing for Saved; a group without a photo opens on its earlier ones for who may
+  change it, `ChatDetailsDto.EarlierAvatarCount`), `ViewMine(currentId)` (null: my earlier photos while I have no
+  photo, `MeDto.EarlierAvatarCount`), `HasPhoto(chat, earlierPhotos)` — the full-screen avatar viewer with the
+  history (set as main / delete when `CanManage`); `byte[]? jpeg = await AvatarOverlays.EditAsync(pickedFile)` opens
+  the crop editor directly. Removing a profile or group photo asks with a checkbox "Удалить и прежние фото (N)"
+  (`ISkyApi.DeleteAllMyAvatarsAsync` / `DeleteAllChatAvatarsAsync`) and says that earlier photos stay otherwise.
+* `ProfileLook` (static, Features/Profile): `Accent(key)`, `TintStyle(key)` (`--pc/--pc2` for a profile's ring and
+  main action), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
+  Birthdays: Core's `IBirthdayService.IsBirthdayToday(user)` puts 🎂 after a name (profile, chat header);
+  `BirthdayCard` (Features/ChatList) is the chat list's card; `ReminderTexts.BirthdayTitle(L, names)` words its title
+  and the reminder ("Сегодня день рождения у Анны": Core's `RussianNames.Genitive`, a colon when a name cannot be
+  declined for sure).
 * `ChatActions` (scoped, Features/ChatList): `TogglePinAsync`, `ToggleMuteAsync` (asks duration), `MuteOptions`,
   `ToggleArchiveAsync` (with Undo), `MarkReadAsync`, `ClearHistoryAsync`, `LeaveAsync`, `DeleteAsync` (per chat
   type), `DeleteGroupForEveryoneAsync`, `TitleOf(chat)` — reuse them in the chat header menu. The chat list's swipe
@@ -661,6 +678,13 @@ sm-msg-in sm-msg-out sm-shake`), exits that name only their end state so they co
 reduced motion (`prefers-reduced-motion` or the Animations setting) except spinners. `@property --row-x/--row-w`
 are registered for swipeable list rows (below).
 
+**Night viewer** (full-screen viewers: MediaViewer, AvatarViewer): app.css carries their shared chrome —
+`.viewer` (always dark; the night palette as `--sm-viewer-glass/-glass-solid/-glass-hover/-blur/-edge/-lift/-text-2`
+for a viewer's own pieces), `__stage __backdrop __track __frame __photo __img`, the glass `__top __bar __btn __who
+__name __date __actions`, `__bottom __count`, `__nav(--prev|--next)`, `.viewer--bare` (chrome hidden) and the
+`sm-viewer-*` intro keyframes. viewer.js relies on these names. A viewer's `.razor.css` sizes `.viewer__frame` and
+styles only what is its own (captions and video controls; the avatar's "set as main").
+
 **Scoped CSS**: put component styles in `Component.razor.css`. Scoping applies only to elements written in that
 `.razor` file — style child components' elements with `.my-wrapper ::deep .their-class` (a scoped ancestor is
 required; wrap in a div if the child component is your root). Use `html[data-theme="dark"] .x { … }` for
@@ -749,7 +773,8 @@ neighbouring folder during a swipe: no long-press menu binding).
 
 Reusable feature components: `UserPicker` / `UserPickerDialog` (Features/Contacts: single or multiple people,
 `Exclude`, result `UserSummaryDto` or `IReadOnlyList<UserSummaryDto>` — e.g. "Forward to…" can use the chat list
-instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarViewerDialog`, `InviteFailuresDialog`,
+instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarOverlays` (avatar viewer and crop editor),
+`AvatarFlows`, `EmojiAvatarDialog`, `BirthdayDialog`, `InviteFailuresDialog`,
 `ChatListItem`, `ChatActions`, `AddContactDialog`, `ServerPickerDialog` + `ServerStatus` (connection settings may
 reuse them; `ServerPickerDialog.Normalize(url)`). Features/Settings: `ColorStrips` (our hue/vividness/lightness picker,
 `@bind`-style `Hex`/`HexChanged`), `GradientEditor` (1–3 color chips + strips, optional presets, palette and

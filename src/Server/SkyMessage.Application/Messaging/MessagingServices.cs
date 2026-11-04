@@ -19,8 +19,22 @@ public interface IChatService
     Task<ChatSummaryDto> OpenPrivateChatAsync(CreatePrivateChatRequest request, CancellationToken cancellationToken = default);
     Task<CreateGroupResultDto> CreateGroupAsync(CreateGroupRequest request, CancellationToken cancellationToken = default);
     Task<ChatInfoDto> UpdateChatAsync(Guid chatId, UpdateChatRequest request, CancellationToken cancellationToken = default);
+    /// <summary>The caller's own processed photo, or one from the group's avatar history (it moves to the front).</summary>
     Task<ChatInfoDto> SetAvatarAsync(Guid chatId, SetChatAvatarRequest request, CancellationToken cancellationToken = default);
+    /// <summary>No photo from now on; the removed one leaves the history too.</summary>
     Task<ChatInfoDto> RemoveAvatarAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The group's avatar history (members only): the current photo first, then newest first. Without a current photo
+    /// only who may change the info gets it (others: empty).
+    /// </summary>
+    Task<IReadOnlyList<AvatarPhotoDto>> GetAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>No photo and no history left (who may change the group's info); ChatUpdated when anything went.</summary>
+    Task<ChatInfoDto> DeleteAllAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Drops a photo from the group's history (who may change the group's info); when it is the current one the newest
+    /// remaining photo takes over. ChatUpdated to the members either way.
+    /// </summary>
+    Task<ChatInfoDto> DeleteAvatarAsync(Guid chatId, Guid mediaId, CancellationToken cancellationToken = default);
 
     Task<ChatUserSettingsDto> UpdateSettingsAsync(Guid chatId, UpdateChatSettingsRequest request, CancellationToken cancellationToken = default);
     /// <summary>Rearranges my pinned chats (top first); returns every pinned chat's new order and tells all my devices.</summary>

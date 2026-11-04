@@ -52,10 +52,13 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         ILocalNotificationService notifications,
         IBackgroundConnectionService background,
         AppUpdateService updates,
+        IBirthdayService birthdays,
+        IContactSyncService contactSync,
         ILogger<ClientBootstrapper> logger)
     {
-        // messages, users, typing, drafts, calls, coordinators, urls, downloads: constructed for their subscriptions.
-        _ = (messages, users, typing, drafts, calls, notificationCoordinator, audioFocus, mediaUrls, downloads);
+        // messages, users, typing, drafts, calls, coordinators, urls, downloads, birthday reminders, contact sync:
+        // constructed for their subscriptions (the last two start with the account).
+        _ = (messages, users, typing, drafts, calls, notificationCoordinator, audioFocus, mediaUrls, downloads, birthdays, contactSync);
         _settings = settings;
         _auth = auth;
         _endpoints = endpoints;

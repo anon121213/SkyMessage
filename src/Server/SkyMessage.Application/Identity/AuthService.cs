@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SkyMessage.Application.Common.Exceptions;
 using SkyMessage.Application.Common.Interfaces;
 using SkyMessage.Application.Common.Options;
+using SkyMessage.Application.Common.Persistence;
 using SkyMessage.Contracts;
 using SkyMessage.Domain.Entities;
 
@@ -76,7 +77,7 @@ public sealed class AuthService(
 
         savedChats.Remember(user.Id, savedChat.Id);
         logger.LogInformation("User {UserId} registered, session {SessionId}", user.Id, session.Id);
-        return Respond(user, session.Id, session.MediaKey, refreshToken, session.RefreshTokenExpiresAt, savedChat.Id, now);
+        return Respond(user, session.Id, session.MediaKey, refreshToken, session.RefreshTokenExpiresAt, savedChat.Id, now, earlierAvatarCount: 0);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct)
@@ -130,8 +131,9 @@ public sealed class AuthService(
         await db.SaveChangesAsync(ct);
 
         var savedChatId = await savedChats.GetIdAsync(user.Id, ct);
+        var earlierAvatars = await EarlierAvatarsAsync(user, ct);
         logger.LogInformation("User {UserId} signed in, session {SessionId}", user.Id, session.Id);
-        return Respond(user, session.Id, session.MediaKey, refreshToken, session.RefreshTokenExpiresAt, savedChatId, now);
+        return Respond(user, session.Id, session.MediaKey, refreshToken, session.RefreshTokenExpiresAt, savedChatId, now, earlierAvatars);
     }
 
     public async Task<AuthResponse> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct)
@@ -221,7 +223,7 @@ public sealed class AuthService(
             }
 
             var savedChatId = await savedChats.GetIdAsync(user.Id, ct);
-            return Respond(user, session.Id, session.MediaKey, refreshToken, expiresAt, savedChatId, now);
+            return Respond(user, session.Id, session.MediaKey, refreshToken, expiresAt, savedChatId, now, await EarlierAvatarsAsync(user, ct));
         }
 
         throw InvalidRefreshToken();
@@ -332,7 +334,11 @@ public sealed class AuthService(
         return (session, refreshToken);
     }
 
-    private AuthResponse Respond(User user, Guid sessionId, byte[] mediaKey, string refreshToken, DateTimeOffset refreshExpiresAt, Guid savedChatId, DateTimeOffset now)
+    private Task<int> EarlierAvatarsAsync(User user, CancellationToken ct) =>
+        AvatarHistory.CountEarlierAsync(db.OfUser(user.Id), user.AvatarMediaId, ct);
+
+    private AuthResponse Respond(User user, Guid sessionId, byte[] mediaKey, string refreshToken, DateTimeOffset refreshExpiresAt, Guid savedChatId, DateTimeOffset now,
+        int earlierAvatarCount)
     {
         var access = accessTokens.Issue(user.Id, user.Username, sessionId, now, RefreshTokens.Binding(RefreshTokens.Hash(refreshToken)));
         return new AuthResponse
@@ -343,7 +349,7 @@ public sealed class AuthService(
             RefreshToken = refreshToken,
             RefreshTokenExpiresAt = refreshExpiresAt,
             MediaKey = MediaSignature.EncodeKey(mediaKey),
-            User = user.ToMeDto(savedChatId),
+            User = user.ToMeDto(savedChatId, earlierAvatarCount),
         };
     }
 

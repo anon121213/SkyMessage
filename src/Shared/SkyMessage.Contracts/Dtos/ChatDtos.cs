@@ -105,6 +105,11 @@ public sealed record ChatDetailsDto
     public IReadOnlyList<MessageDto> PinnedMessages { get; init; } = [];
     public Guid? CreatedById { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+    /// <summary>
+    /// Groups: earlier photos of the avatar history this viewer may open (the current one not counted). While the group
+    /// has no photo only those who may change its info see them (0 for everyone else).
+    /// </summary>
+    public int EarlierAvatarCount { get; init; }
 }
 
 public sealed record CreatePrivateChatRequest
