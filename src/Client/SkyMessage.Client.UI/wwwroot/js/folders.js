@@ -587,7 +587,8 @@ export function attachFolderSwipe(pane, scroller, head, track, ref) {
     const dir = g.dx < 0 ? 1 : -1;      // a drag to the left goes to the next folder
     const target = g.index + dir;
     const has = target >= 0 && target < g.count;
-    if (has) requestPeek(dir);
+    // (No side yet while the finger is back where the swipe was claimed.)
+    if (has && g.dx !== 0) requestPeek(dir);
     const offset = has ? g.dx : Math.sign(g.dx) * Math.min(RUBBER_MAX, Math.abs(g.dx) * RUBBER);
     pane.style.transform = `translate3d(${offset.toFixed(1)}px, 0, 0)`;
     // With the neighbour beside it both lists stay solid; alone, the leaving list fades a little.
