@@ -369,11 +369,16 @@ public sealed class ContactSyncServiceTests
         public Dictionary<Guid, ContactDto> Book { get; } = [];
         public HashSet<Guid> Blocked { get; } = [];
         public Func<Exception?> LookUpFails { get; set; } = () => null;
+        /// <summary>Requests the server still takes in its window (then 429, like the real one); null: no limit.</summary>
+        public int? QuotaLeft { get; set; }
+        /// <summary>How many numbers each look-up request carried.</summary>
+        public List<int> Sent { get; } = [];
         public ContactSyncService Service { get; }
         private readonly SkyMessage.Client.Core.Infrastructure.AccountLifecycle _lifecycle;
 
         public int LookUps => Volatile.Read(ref _lookUps);
         public int Reads => Volatile.Read(ref _reads);
+        public ContactSyncState State => Local.Values[ContactSyncService.StateKey].ShouldBeOfType<ContactSyncState>();
 
         public Harness(bool enabled = true)
         {
@@ -389,10 +394,17 @@ public sealed class ContactSyncServiceTests
             Contacts.MatchPhoneBookAsync(Arg.Any<IReadOnlyList<PhoneBookEntry>>(), Arg.Any<CancellationToken>()).Returns(c =>
             {
                 Interlocked.Increment(ref _lookUps);
+                var entries = c.Arg<IReadOnlyList<PhoneBookEntry>>();
+                lock (Sent) Sent.Add(entries.Count);
                 if (LookUpFails() is { } error) throw error;
                 lock (Book)
                 {
-                    return (IReadOnlyList<PhoneBookMatch>)c.Arg<IReadOnlyList<PhoneBookEntry>>()
+                    if (QuotaLeft is { } left)
+                    {
+                        if (left == 0) throw new ApiException(429, ErrorCodes.RateLimited);
+                        QuotaLeft = left - 1;
+                    }
+                    return (IReadOnlyList<PhoneBookMatch>)entries
                         .Where(e => Registered.ContainsKey(e.Number))
                         .Select(e => new PhoneBookMatch(e.Name, e.Number, Registered[e.Number], Book.ContainsKey(Registered[e.Number].Id)))
                         .ToList();
@@ -583,6 +595,72 @@ public sealed class ContactSyncServiceTests
         h.Clock.Advance(ContactSyncService.RateLimitPause);
         await h.IdleAfterAsync(3, "the pause ended");
         h.Book.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task A_sync_during_a_pause_with_the_daily_check_overdue_reads_the_phone_book_once_and_waits_for_the_pause()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        await h.SignInAsync();
+        await h.SettledAsync();
+        h.LookUpFails = () => new ApiException(429, ErrorCodes.RateLimited);
+        h.Clock.Advance(ContactSyncService.FullCheckEvery);
+        await h.IdleAfterAsync(2, "the daily check gets a 429");
+        var resume = Start + ContactSyncService.FullCheckEvery + ContactSyncService.RateLimitPause;
+        h.Clock.Pending.ShouldBe([resume]);
+
+        var reads = h.Reads;
+        (await h.Service.SyncNowAsync()).LookedUp.ShouldBeFalse("an app start during the pause");
+        await Task.Delay(200);
+
+        h.Reads.ShouldBe(reads + 1, "nothing is scheduled for a time already past, so nothing runs again at once");
+        h.LookUps.ShouldBe(2);
+        h.Clock.Pending.ShouldBe([resume], "the next sync comes when the pause ends");
+
+        h.LookUpFails = () => null;
+        h.Clock.Advance(ContactSyncService.RateLimitPause);
+        await h.IdleAfterAsync(3, "the look-up after the pause");
+        h.Clock.Pending.ShouldBe([resume + ContactSyncService.FullCheckEvery]);
+    }
+
+    [Fact]
+    public async Task A_phone_book_too_big_for_one_window_is_looked_up_over_several_and_keeps_what_each_part_found()
+    {
+        var h = new Harness();
+        // More numbers than one window takes (10 requests of 1000), a SkyMessage user every 500th.
+        const int count = Limits.PhoneLookupsPerWindow * Limits.FindByPhonesMax + 1500;
+        for (var i = 0; i < count; i++) h.Save("Контакт " + i, registered: i % 500 == 0);
+        // Sync sends the numbers in key order: who is among the first n requests.
+        var inOrder = h.PhoneBook.OrderBy(e => ContactSyncService.NumberKey(e.Number), StringComparer.Ordinal).ToList();
+        int FoundIn(int requests) => inOrder.Take(requests * Limits.FindByPhonesMax).Count(e => h.Registered.ContainsKey(e.Number));
+        h.QuotaLeft = 3; // the import used most of this window
+        const int perRun = ContactSyncService.LookUpsPerRun;
+
+        await h.SignInAsync();
+        await h.IdleAfterAsync(4, "three requests, then a 429");
+
+        h.Book.Count.ShouldBe(FoundIn(3), "the people found before the 429 stay");
+        h.State.Round.ShouldNotBeNull().Done.Count.ShouldBe(3 * Limits.FindByPhonesMax);
+
+        h.QuotaLeft = Limits.PhoneLookupsPerWindow; // the server's next window
+        h.Clock.Advance(ContactSyncService.RateLimitPause);
+        await h.IdleAfterAsync(4 + perRun, "the next part");
+
+        h.Book.Count.ShouldBe(FoundIn(3 + perRun));
+        h.QuotaLeft.ShouldBe(Limits.PhoneLookupsPerWindow - perRun, "half the window stays for the import");
+
+        h.QuotaLeft = Limits.PhoneLookupsPerWindow;
+        h.Clock.Advance(ContactSyncService.RateLimitPause);
+        await h.IdleAfterAsync(4 + perRun + 4, "the rest");
+
+        h.Book.Count.ShouldBe(h.Registered.Count);
+        h.State.Round.ShouldBeNull();
+        h.State.Numbers.Count.ShouldBe(count);
+        h.Sent.ShouldAllBe(n => n <= Limits.FindByPhonesMax);
+        h.Shown.ShouldBeEmpty("the first sync stays quiet, however long it takes");
+        (await h.Service.SyncNowAsync()).LookedUp.ShouldBeFalse("done until the daily check");
+        h.Clock.Pending.ShouldBe([Start + 2 * ContactSyncService.RateLimitPause + ContactSyncService.FullCheckEvery]);
     }
 
     [Fact]
