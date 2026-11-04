@@ -181,7 +181,8 @@ Logout revokes the current session. `GET api/auth/username-available` (anonymous
 Change password: wrong current → 400 `wrong_password`; optionally revoke other sessions.
 **Delete account** `POST api/users/me/delete {password}`: tombstone (`IsDeleted`, `DeletedAt`, username →
 `deleted_{id:N}`, display name "Deleted Account", clear bio/phone/avatar), revoke all sessions, leave groups
-(ownership transfer rules), keep messages (shown as from a deleted account).
+(ownership transfer rules), keep messages (shown as from a deleted account). Saved Messages, contacts, own blocks, chat
+folders and chat list settings are deleted explicitly (the tombstone row stays, so no cascade fires).
 
 **Sessions**: `GET api/sessions`, `DELETE api/sessions/{id}`, `DELETE api/sessions/others`,
 `PUT api/sessions/current/push` (stored; sending pushes is v2 — register a logging no-op
@@ -277,12 +278,22 @@ Folders and the archive (`IChatFolderService`, `ApiRoutes.Folders`):
   are one state (`ChatFoldersDto`) with a revision: every real change bumps it and sends the whole state to all my
   devices as `ChatFoldersChanged` (a change that changes nothing is silent); every call answers with that state. Changes
   run under a row lock of my `ChatListPreferences` (created by the first change with `INSERT … ON CONFLICT DO NOTHING`),
-  so devices apply one after another. `GET api/folders`; `PUT api/folders/{id}` creates the folder with that id (the app
-  picks it: a repeat is harmless) or replaces its name, icon and rules — someone else's id → 404 `folder_not_found`, a
-  21st folder → 400 `folder_limit`, ids that are not my chats are dropped; `DELETE`; `PUT api/folders/order` (the listed
-  folders take the places they held, like pinned chats); `PUT api/folders/settings`.
-- Which chats a folder shows is `Contracts.ChatFolderRules.Contains`, run by the server and every app on the viewer's
-  `ChatSummaryDto`: not excluded by id, included by id or by type (private chats by whether the other person is in my
+  so devices apply one after another (parallel creates stop exactly at the limit). `GET api/folders`;
+  `PUT api/folders/{id}` (`SaveChatFolderRequest`): with `Create` it creates the folder with that id (the app picks it: a
+  repeat is harmless), else it edits it — a folder that no longer exists (deleted on another device) or someone else's id
+  → 404 `folder_not_found`, never a new folder; a 21st folder → 400 `folder_limit`. Its fields are nullable: null keeps
+  what is stored (an app that does not know a newer field never resets it; fields added later are nullable too), and
+  the folder is checked whole once the edit is laid over it (it must take in something; no chat both included and
+  excluded). Names: line breaks become spaces, trimmed, something visible (`ChatFolderRules.NormalizeName/IsValidName`: no
+  control characters, not only spaces or zero-width characters). Icons: an app icon key or exactly one emoji
+  (`ChatFolderRules.IsOneEmoji`: one grapheme cluster with a non-ASCII code point; ASCII only as a keycap's 0–9 # *; no
+  bidi or other invisible format characters besides ZWJ and the tags of subdivision flags). Ids that are not (or no
+  longer) my chats are dropped from the folder's included, excluded and pinned lists on every write of that folder;
+  `DELETE`; `PUT api/folders/order` (the listed folders take the places they held, like pinned chats);
+  `PUT api/folders/settings` (`UpdateChatListSettingsRequest`: only the settings it sets change, so two devices switching
+  different settings both keep theirs).
+- Which chats a folder shows is `Contracts.ChatFolderRules.Contains` (`ChatFolderMatcher` for many chats: the same rules
+  with hash sets), run by the server and every app on the viewer's `ChatSummaryDto`: not excluded by id, included by id or by type (private chats by whether the other person is in my
   contacts; groups; channels once they exist; Saved Messages only by id), and not filtered out by the exclusions (muted,
   read = no unread messages or mentions, archived), which apply to the chats included by id too. Booleans, not a flags
   enum, so older apps read folders of a newer server.
@@ -292,12 +303,14 @@ Folders and the archive (`IChatFolderService`, `ApiRoutes.Folders`):
 - `POST api/folders/{id}/read` marks every unread chat of the folder read (`POST api/folders/all/read`: every chat outside
   the archive), only forward, with the usual `MessagesRead` per chat.
 - Where chats land (`ChatPlacement`, by the member's settings; no row = the defaults): with `ArchiveNewFromStrangers`
-  a chat from a stranger starts in the archive — a private chat that appears (or reappears after "delete for me") with a
-  message, a call log or a notice from someone not in my contacts, a group that someone not in my contacts creates
-  with me or adds me to (joining by a link is my own doing). `KeepArchived` (default on, the old behavior) keeps archived chats archived; off, a new message or
-  forward from someone else brings an archived chat back (`ChatSettingsChanged` to that member) unless it is muted for
-  them or it came from a stranger (still not a contact) while they send those to the archive. Service messages never
-  bring a chat back. `HideArchive` only tells the apps to drop the archive row.
+  a chat from a stranger starts in the archive, muted (`MutedUntil` = forever: spam neither shows nor rings) — a private
+  chat that appears (or reappears after "delete for me") with a message, a forward, a call log or a notice from someone
+  not in my contacts, a group that someone not in my contacts creates with me or adds me to (joining by a link is my own
+  doing). `KeepArchived` (default on, the old behavior) keeps archived chats archived; off, a new message, forward or
+  call log from someone else brings an archived chat back (`ChatSettingsChanged` to that member) unless it is muted for
+  them (a mute that ran out no longer counts) or it came from a stranger (still not a contact; for a group: whoever
+  added me) while they send those to the archive. Notices never bring a chat back. `HideArchive` only tells the apps to
+  drop the archive row.
 
 Messages:
 - `GET .../messages?beforeSeq|afterSeq|aroundSeq&limit` → `MessagesPageDto` (ascending, default 50/max 100,
@@ -473,13 +486,19 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   `/changes` from the stored cursor (apply tombstones, `HiddenMessageIds`, `ClearedUpToSeq`); verify the
   current call. `IUserStore` batches misses (50 ms, `GetUsersAsync`). `IDraftStore`, `IAccountLocalStore`
   per account.
-- **IChatFolderStore** (folders): restored from the cache ("folders"), loaded at sign-in and after a resync; keeps the
+- **IChatFolderStore** (folders): restored from the cache ("folders"), loaded at sign-in and on every resync (which also
+  retries a first load that failed: an offline start, a server restarting; Settings › Folders asks again too); keeps the
   newest server state by revision (a first server state after a cache restore always wins: the server may have been
   reset) and lays the changes still on their way on top of it (`ChatFolderEdits`, the server's own edits), so another
-  device's change never makes a pending one flicker; a refused change is put back and rethrown. `ChatFolderView` shows a
-  folder (its pins first, then by activity; the chat open next to the list stays in an "unread" folder), counts its
-  unread chats for the tab, and `ChatFolderPresets` are the recommended folders. `ChatBehaviorSettings.ChatSwipe`
-  (per device): Auto = switch folders once there are folders, else the chat actions.
+  device's change never makes a pending one flicker; a refused change is put back and rethrown. `CreateAsync` makes a
+  folder, `SaveAsync` edits one (a folder deleted elsewhere is not brought back, locally or on the server),
+  `UpdateSettingsAsync` sends only the settings it changes. `ChatFolderView` shows a folder (its pins first, then by
+  activity; an "unread" folder keeps the chat open next to the list, or on phones the one last opened from it, until
+  another is opened or the folder switched) and counts unread messages for the tabs (`BadgesOf`: every folder in one
+  pass), and `ChatFolderPresets` are the recommended folders. Counters on the chat list count unread messages like the
+  dock: the dock = everything not muted, "All chats" = the main list, the archive row = the archive, each folder = its
+  chats (muted ones only when nothing else, shown grey). `ChatBehaviorSettings.ChatSwipe` (per device): Auto = switch
+  folders once there are folders, else the chat actions.
 - **ICallService**: per its doc. Before starting/accepting request Microphone (and Camera for video) via
   `IPermissionService`; call `ICallPlatformService.OnCallStartedAsync` only while in foreground. Incoming
   while in a call → `DeclineCallAsync(busy: true)`. Outgoing gets `JoinInfo` immediately. Ended calls stay 2 s with `EndStatus`. `ICallPlatformService` start/media/end;
@@ -557,10 +576,13 @@ right-click), Toast, Tabs, SegmentedControl, ProgressRing, QrCode (QRCoder PNG d
 features: Auth (welcome with server picker + connection test, login, register with live username check
 and invite code when required), ChatList (avatar, title, preview incl. "Draft:", sender for groups, time,
 unread + mention badges, pinned/muted marks, typing preview, actions pin/mute/archive/delete, archived
-folder; chat folders: pill tabs under the header with a gliding pill and unread chats per folder, a long-press menu (mark
-all read, edit, reorder, delete; "All chats": mark all read, open the archive, set up folders), a sideways swipe on the
-list that follows the finger to the next folder when "Swipe on a chat" says so, each folder's own pins, an empty-folder
-state; the archive row lives in "All chats" or, hidden, behind a header button), Contacts (online first, add by username, phone-book import with confirmation list showing
+folder; chat folders: pill tabs under the header with a gliding pill and unread messages per folder (with them the
+scrolled header is one pane of glass), a long-press menu (mark all read, edit, move left / right, delete; "All chats":
+mark all read, open the archive, set up folders), a folder's tab lifted by the long-press (or dragged with the mouse)
+moves sideways to reorder the folders, arrow keys between the tabs, a vertical mouse wheel scrolls the strip, a sideways
+swipe on the list that follows the finger with the neighbouring folder beside it when "Swipe on a chat" says so, Back
+on phones returning to "All chats" first, each folder's own pins, an empty-folder state; the archive row lives in "All
+chats" or, hidden, behind a header button), Contacts (online first, add by username, phone-book import with confirmation list showing
 @username + avatar, share my profile link), Profile (avatar, name, @username, bio, phone, message/call/
 video, share link + QR, add/rename/remove contact, block), Groups (new group → `CreateGroupResultDto`
 failures offered as invite link; group info with members, roles, add, invite link copy/share/revoke, edit,
@@ -604,7 +626,8 @@ animations, compact list), chat settings (send by Enter, quick reaction via `Emo
 speed), **folders** (`/settings/folders`: my folders — "All chats" first, reorder by the handle, long-press menu —,
 recommended folders added with one tap, "Swipe on a chat", new chats from strangers, the archive; the editor
 `/settings/folder?id=`: name, icon or emoji, types, chats included/excluded through `ChatPickerDialog`, exclusions,
-a live count, delete), **devices** (mic select + live level meter + record/playback test; camera select + preview +
+a live count, delete; Save and delete wait for the server, so a refused save keeps the draft, and a folder deleted on
+another device meanwhile is not brought back — the editor offers to save the draft as a new folder), **devices** (mic select + live level meter + record/playback test; camera select + preview +
 mirror; speaker select + test tone (`setSinkId` where supported); echo cancellation / noise suppression /
 auto gain; call video quality; phones: default audio route via `IAudioRouteService`; Android: pause music in other
 apps during calls and note recordings via `IAudioFocusCoordinator`, default on), data & storage

@@ -53,11 +53,12 @@ Rules:
 | Where | Gesture | Result |
 |---|---|---|
 | Any phone page with a back target (chat, profile, group info, settings pages, media) | drag right (start ≥ 24px from the left edge) | page follows the finger, the page underneath shows through; release past 35% of the width or fast → Back, else springs back |
-| Chat list (with folders, "Swipe on a chat" = switch folders, the default once there are folders) | swipe left / right | the list follows the finger and the tabs' pill moves part of the way (a soft tint under dark labels); past 30% of the width or a flick → the list slides out and the next / previous folder slides in from that side; at the first/last folder it gives a little (rubber band) and springs back; a haptic tick at the commit point |
+| Chat list (with folders, "Swipe on a chat" = switch folders, the default once there are folders) | swipe left / right | the list follows the finger with the next / previous folder beside it (its first rows, from the top of what is visible) and the tabs' pill moves part of the way (a soft tint under dark labels); past 30% of the width or a flick → both slide on until the neighbour fills the screen and becomes the list without a jump (a shorter folder then scrolls up smoothly to where it ends); short of it they spring back; at the first/last folder it gives a little (rubber band); a haptic tick at the commit point. In `data-fx="lite"` and with reduced motion the list alone moves: it slides out and the next folder slides in from that side |
 | Chat list item ("Swipe on a chat" = chat actions, or no folders) | swipe left | reveals Mute and Archive; full swipe archives (Undo toast) |
 | Chat list item (as above) | swipe right | reveals Pin and Read (in a folder: the folder's own pin); full swipe toggles pin |
 | Folder tab | tap / long-press (right-click) | open the folder (the pill glides, the list slides in from its side) / its menu |
-| Folder tab strip | drag sideways | scrolls the tabs when they do not fit (its own pan: no folder swipe there) |
+| A folder's tab (not "All chats") | long-press, then drag sideways (mouse: drag) | the tab lifts, the others glide aside, the strip scrolls by itself near its ends; drop → new order of the folders (synced); letting go without moving (or resting) opens the menu instead |
+| Folder tab strip | drag sideways / vertical mouse wheel | scrolls the tabs when they do not fit (its own pan: no folder swipe there; the wheel goes on to the list at the strip's ends) |
 | Settings › Folders, a folder's handle | drag up/down (any pointer, no long-press) | the row follows, the others glide aside; drop → new order (synced) |
 | Chat list item | long-press | context menu (existing) |
 | Pinned chat list item (2+ pinned) | long-press, then drag up/down (mouse: drag) | lifts the row and reorders the pinned chats; letting go without moving (or resting) opens the menu |
@@ -78,8 +79,10 @@ Coexistence:
   claim both but live on a root page (no swipe-back there).
 - On the chat list either the folder swipe or the row swipe owns sideways pans, never both: the setting picks one
   (`data-folder-swipe` on the list pane, `data-row-swipe-off` on the scroller). The folder swipe is touch/pen only (mouse
-  users click the tabs), leaves a pinned row lifted for reordering alone, and is off in the archive. Folder pins drag
-  like global ones (long-press, then up/down).
+  users click the tabs, scroll the strip with the wheel and move between tabs with the arrow keys), leaves a pinned row
+  lifted for reordering alone, and is off in the archive. Folder pins drag like global ones (long-press, then up/down).
+- A folder's tab lifted by its long-press owns the touch like a lifted pinned row: the strip does not scroll under it.
+  Before the lift, sideways drags scroll the strip.
 - An element that owns horizontal drags itself (sliders, horizontal scrollers, the PiP window, the media viewer, the
   composer, the recorder) carries `data-no-swipe-back`; swipe-back never starts inside it.
 - A recognizer decides its axis after ~8px (`|dx| > 1.5·|dy|` for horizontal) and only then captures the pointer, so
