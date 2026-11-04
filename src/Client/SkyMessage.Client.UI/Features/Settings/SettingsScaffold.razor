@@ -1,7 +1,7 @@
 @* Page frame of a settings section: header with back (phones) or none (next to the menu on wide screens). The cards
    rise in one after another when the section opens (.sm-stagger, first render only). *@
 
-<AppPage Title="@Title" Subtitle="@Subtitle" Back="@(Context?.InSplit == true ? false : null)" BackFallback="@BackPath" Padded="true"
+<AppPage Title="@Title" Subtitle="@Subtitle" Back="@(Back ?? (Context?.InSplit == true ? false : null))" BackFallback="@BackPath" Padded="true"
          Actions="Actions" Footer="Footer">
     <div class="settings-stack sm-stagger">
         @ChildContent
@@ -13,6 +13,8 @@
 
     [Parameter] public string? Title { get; set; }
     [Parameter] public string? Subtitle { get; set; }
+    /// <summary>Null = automatic (none next to the menu); true for a sub-page that goes back to its parent there too.</summary>
+    [Parameter] public bool? Back { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
     [Parameter] public RenderFragment? Footer { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }

@@ -12,8 +12,8 @@ namespace SkyMessage.Application.Identity;
 /// <summary>
 /// Account deletion: the user row becomes an anonymous tombstone (messages stay, shown as from a deleted
 /// account), every session is revoked, groups are left with the usual ownership hand-over, Saved messages,
-/// contacts and own blocks are removed, and so is the user's part of a private chat's content protection (nobody
-/// else could ever take it back).
+/// contacts, own blocks, chat folders and chat list settings are removed, and so is the user's part of a private chat's
+/// content protection (nobody else could ever take it back).
 /// </summary>
 public sealed class AccountService(
     IAppDbContext db,
@@ -99,6 +99,9 @@ public sealed class AccountService(
             await db.Chats.Where(c => c.PrivateKey == savedKey).ExecuteDeleteAsync(ct);
             await db.Contacts.Where(c => c.OwnerId == userId || c.ContactUserId == userId).ExecuteDeleteAsync(ct);
             await db.Blocks.Where(b => b.BlockerId == userId).ExecuteDeleteAsync(ct);
+            // The user row stays (a tombstone), so its cascades never fire: folder names and chat lists go explicitly.
+            await db.ChatFolders.Where(f => f.UserId == userId).ExecuteDeleteAsync(ct);
+            await db.ChatListPreferences.Where(p => p.UserId == userId).ExecuteDeleteAsync(ct);
             revokedSessions = await revoker.MarkRevokedAsync(s => s.UserId == userId, ct);
 
             Tombstone(user, unusableHash, now);

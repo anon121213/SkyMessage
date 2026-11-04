@@ -275,6 +275,129 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                     b.ToTable("chat_bans", (string)null);
                 });
 
+            modelBuilder.Entity("SkyMessage.Domain.Entities.ChatFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("ExcludeArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("exclude_archived");
+
+                    b.Property<bool>("ExcludeMuted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("exclude_muted");
+
+                    b.Property<bool>("ExcludeRead")
+                        .HasColumnType("boolean")
+                        .HasColumnName("exclude_read");
+
+                    b.PrimitiveCollection<List<Guid>>("ExcludedChatIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("excluded_chat_ids")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("icon");
+
+                    b.Property<bool>("IncludeChannels")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_channels");
+
+                    b.Property<bool>("IncludeContacts")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_contacts");
+
+                    b.Property<bool>("IncludeGroups")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_groups");
+
+                    b.Property<bool>("IncludeNonContacts")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_non_contacts");
+
+                    b.PrimitiveCollection<List<Guid>>("IncludedChatIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("included_chat_ids")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("name");
+
+                    b.PrimitiveCollection<List<Guid>>("PinnedChatIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("pinned_chat_ids")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_chat_folders");
+
+                    b.HasIndex("UserId", "Position")
+                        .HasDatabaseName("ix_chat_folders_user_id_position");
+
+                    b.ToTable("chat_folders", (string)null);
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.ChatListPreferences", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<bool>("ArchiveNewFromStrangers")
+                        .HasColumnType("boolean")
+                        .HasColumnName("archive_new_from_strangers");
+
+                    b.Property<bool>("HideArchive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("hide_archive");
+
+                    b.Property<bool>("KeepArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("keep_archived");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_chat_list_preferences");
+
+                    b.ToTable("chat_list_preferences", (string)null);
+                });
+
             modelBuilder.Entity("SkyMessage.Domain.Entities.ChatMember", b =>
                 {
                     b.Property<Guid>("ChatId")
@@ -1104,6 +1227,26 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_chat_bans_users_user_id");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.ChatFolder", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_chat_folders_users_user_id");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.ChatListPreferences", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithOne()
+                        .HasForeignKey("SkyMessage.Domain.Entities.ChatListPreferences", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_chat_list_preferences_users_user_id");
                 });
 
             modelBuilder.Entity("SkyMessage.Domain.Entities.ChatMember", b =>

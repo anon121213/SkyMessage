@@ -351,3 +351,41 @@ public interface ICallService
     void RequestCommand(CallCommand command);
     Task<IReadOnlyList<CallHistoryItemDto>> GetHistoryAsync(DateTimeOffset? before = null, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// My chat folders and chat list settings, synced across my devices (SPEC §8.1 "Folders"). Starts from the per-account
+/// cache, then the server; a ChatFoldersChanged event replaces the state when its revision is newer, and every resync
+/// reloads it (or retries a first load that failed). Changes show at once and are put back (and rethrown) when the server refuses them; my pending changes
+/// stay on top of whatever newer state arrives meanwhile. Which chats a folder shows: <see cref="ChatFolderView"/> over
+/// <see cref="IChatListStore"/>, with the same <see cref="ChatFolderRules"/> the server runs.
+/// </summary>
+public interface IChatFolderStore
+{
+    /// <summary>The newest server state with my pending changes on top.</summary>
+    ChatFoldersDto State { get; }
+    /// <summary>In my order ("All chats" is not one of them: the UI shows it first).</summary>
+    IReadOnlyList<ChatFolderDto> Folders { get; }
+    ChatListSettingsDto Settings { get; }
+    bool IsLoaded { get; }
+    event Action? Changed;
+
+    Task LoadAsync(bool force = false, CancellationToken cancellationToken = default);
+    ChatFolderDto? Get(Guid folderId);
+    /// <summary>A new folder (a new id: Guid.CreateVersion7()); it goes last.</summary>
+    Task CreateAsync(ChatFolderDto folder);
+    /// <summary>
+    /// Saves an existing folder's name, icon and rules (its pins stay as they are). A folder deleted meanwhile (on another
+    /// device) is not brought back: the server answers 404 folder_not_found, which this rethrows.
+    /// </summary>
+    Task SaveAsync(ChatFolderDto folder);
+    Task DeleteAsync(Guid folderId);
+    /// <summary>My folders in the order I want them (the listed ones take the places they held, like pinned chats).</summary>
+    Task ReorderAsync(IReadOnlyList<Guid> folderIds);
+    /// <summary>A new pin goes on top of the folder's own pins (the global pins belong to "All chats").</summary>
+    Task SetPinnedAsync(Guid folderId, Guid chatId, bool pinned);
+    Task ReorderPinnedAsync(Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst);
+    /// <summary>Changes the settings the request sets (null keeps a setting, so another device's change of another one stays).</summary>
+    Task UpdateSettingsAsync(UpdateChatListSettingsRequest change);
+    /// <summary>Marks every chat of the folder read (null = "All chats"); the counters follow the server's MessagesRead events.</summary>
+    Task MarkReadAsync(Guid? folderId);
+}

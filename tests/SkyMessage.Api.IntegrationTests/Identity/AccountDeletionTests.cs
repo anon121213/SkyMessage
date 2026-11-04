@@ -36,6 +36,12 @@ public sealed class AccountDeletionTests(ApiFactory factory)
         var avatar = await factory.CreateMediaAsync(user.Id);
         await user.Client.PutAs<MeDto>(ApiRoutes.Users.MeAvatar, new SetAvatarRequest { MediaId = avatar });
         var viewer = await factory.NewUserAsync();
+        // Folder names the user typed and the chat list settings are theirs too.
+        await (await user.Client.Put(ApiRoutes.Folders.ByIdPath(Guid.CreateVersion7()),
+            new SaveChatFolderRequest { Create = true, Name = "Семья", IncludeGroups = true })).ShouldBeStatusAsync(HttpStatusCode.OK);
+        await (await user.Client.Put(ApiRoutes.Folders.Settings, new UpdateChatListSettingsRequest { HideArchive = true }))
+            .ShouldBeStatusAsync(HttpStatusCode.OK);
+        (await factory.WithDbAsync(db => db.ChatFolders.CountAsync(f => f.UserId == user.Id, Ct))).ShouldBe(1);
         await using var hub1 = await RealtimeProbe.ConnectAsync(user);
         await using var hub2 = await RealtimeProbe.ConnectAsync(secondDevice);
 
@@ -62,6 +68,8 @@ public sealed class AccountDeletionTests(ApiFactory factory)
         stored.AvatarMediaId.ShouldBeNull();
         (await factory.WithDbAsync(db => db.Sessions.CountAsync(s => s.UserId == user.Id && s.RevokedAt == null, Ct))).ShouldBe(0);
         (await factory.WithDbAsync(db => db.Chats.AnyAsync(c => c.PrivateKey == Chat.SavedKeyFor(user.Id), Ct))).ShouldBeFalse();
+        (await factory.WithDbAsync(db => db.ChatFolders.CountAsync(f => f.UserId == user.Id, Ct))).ShouldBe(0);
+        (await factory.WithDbAsync(db => db.ChatListPreferences.CountAsync(p => p.UserId == user.Id, Ct))).ShouldBe(0);
 
         var profile = await viewer.Client.GetAs<UserProfileDto>(ApiRoutes.Users.ByIdPath(user.Id));
         profile.User.IsDeleted.ShouldBeTrue();

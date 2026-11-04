@@ -1,0 +1,177 @@
+/* Folder pills in a frosted capsule under the chat list header; the gradient pill glides under the active one. */
+.folder-tabs {
+    position: relative;
+    flex-shrink: 0;
+    padding: 0 12px 8px;
+}
+
+.folder-tabs__track {
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    border-radius: 999px;
+    padding: 4px;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    /* The strip pans sideways itself (it owns those drags); vertical moves still scroll the list. */
+    touch-action: pan-x pan-y;
+    overscroll-behavior-x: contain;
+}
+
+.folder-tabs__track::-webkit-scrollbar {
+    display: none;
+}
+
+html[data-fx="lite"] .folder-tabs__track {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+/* Positioned: the tabs' offsets and the pill are measured against it (js/folders.js). */
+.folder-tabs__row {
+    position: relative;
+    display: flex;
+    gap: 2px;
+    width: max-content;
+    min-width: 100%;
+}
+
+/* One element, absolutely placed, alone in its layer: its width may glide with its position (docs/MOTION.md). A soft
+   tint underneath, the gradient on top: between two tabs (a swipe in progress) only the tint shows. */
+.folder-tabs__pill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--sm-accent-soft);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform var(--sm-dur-slow) var(--sm-spring-soft), width var(--sm-dur-slow) var(--sm-spring-soft), opacity var(--sm-dur-fast) ease;
+}
+
+.folder-tabs__pill::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    /* Flat: the screen's one glow belongs to the compose orb (docs/DESIGN.md, "No AI clichés"). */
+    background: var(--sm-grad);
+    transition: opacity var(--sm-dur-fast) ease;
+}
+
+.folder-tabs__track[data-previewing] .folder-tabs__pill::before {
+    opacity: 0;
+}
+
+.folder-tabs__track ::deep .folder-tabs__slot {
+    display: flex;
+    flex-shrink: 0;
+}
+
+/* A folder's tab lifted to be dragged sideways (js/folders.js): it rises a little above the others, which glide aside. */
+.folder-tabs__track ::deep .folder-tabs__slot[data-tab-lifted] .folder-tab {
+    transform: scale(1.06);
+    background: var(--sm-card-solid);
+    color: var(--sm-text);
+    box-shadow: var(--sm-shadow-2);
+}
+
+.folder-tabs__track ::deep .folder-tabs__slot[data-tab-lifted] .folder-tab[data-active] {
+    background: var(--sm-grad);
+    color: var(--sm-on-accent);
+}
+
+/* While tabs are rearranged nothing else lights up as pressed. */
+.folder-tabs__track[data-reordering] .folder-tab:active {
+    transform: none;
+}
+
+.folder-tab {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 2.25rem;
+    padding: 0 14px;
+    border-radius: 999px;
+    color: var(--sm-text-2);
+    font-family: var(--sm-font-display);
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: color var(--sm-dur) var(--sm-ease), transform var(--sm-dur) var(--sm-spring);
+}
+
+.folder-tab:active {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+}
+
+@media (hover: hover) {
+    .folder-tab:not([data-active]):hover {
+        color: var(--sm-text);
+    }
+}
+
+.folder-tab[data-active] {
+    color: var(--sm-on-accent);
+}
+
+/* A swipe in progress: dark labels over the soft pill. */
+.folder-tabs__track[data-previewing] .folder-tab[data-active] {
+    color: var(--sm-text-2);
+}
+
+html[data-input="keyboard"] .folder-tab:focus-visible {
+    outline: 2px solid var(--sm-accent);
+    outline-offset: -2px;
+}
+
+.folder-tab__emoji {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.folder-tab__name {
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The unread counter: an accent tint on a plain tab, a pale pill on the gradient one. */
+.folder-tab__count {
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.25rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.folder-tab__count--muted {
+    background: var(--sm-surface-3);
+    color: var(--sm-text-3);
+}
+
+.folder-tab[data-active] .folder-tab__count {
+    background: color-mix(in srgb, var(--sm-on-accent) 24%, transparent);
+    color: var(--sm-on-accent);
+}
+
+.folder-tabs__track[data-previewing] .folder-tab[data-active] .folder-tab__count {
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+}

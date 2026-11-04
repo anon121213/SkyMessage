@@ -18,6 +18,14 @@ public static class Limits
     /// <summary>Chat ids in one <see cref="ReorderPinnedChatsRequest"/>.</summary>
     public const int MaxPinnedChatsReorder = 1000;
 
+    /// <summary>Folders of one user (the built-in "All chats" not counted).</summary>
+    public const int MaxChatFolders = 20;
+    public const int ChatFolderNameMaxLength = 24;
+    /// <summary>UTF-16 units of <see cref="ChatFolderDto.Icon"/> (an emoji or an icon key).</summary>
+    public const int ChatFolderIconMaxLength = 32;
+    /// <summary>Chats a folder includes by id, excludes by id, or pins (each list).</summary>
+    public const int MaxChatFolderChats = 200;
+
     public const int GroupTitleMaxLength = 128;
     public const int GroupDescriptionMaxLength = 500;
     public const int MaxGroupMembers = 1000;

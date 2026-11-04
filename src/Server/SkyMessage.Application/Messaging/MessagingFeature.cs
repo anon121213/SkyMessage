@@ -18,6 +18,7 @@ public static class MessagingFeature
 
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IChatMemberService, ChatMemberService>();
+        services.AddScoped<IChatFolderService, ChatFolderService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<IMessageSearchService, MessageSearchService>();
         services.AddScoped<ISystemMessageService, SystemMessageService>();

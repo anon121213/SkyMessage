@@ -20,6 +20,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<MessageMention> MessageMentions => Set<MessageMention>();
     public DbSet<MessageHidden> HiddenMessages => Set<MessageHidden>();
     public DbSet<PinnedMessage> PinnedMessages => Set<PinnedMessage>();
+    public DbSet<ChatFolder> ChatFolders => Set<ChatFolder>();
+    public DbSet<ChatListPreferences> ChatListPreferences => Set<ChatListPreferences>();
 
     public DbSet<Media> Media => Set<Media>();
     public DbSet<MediaThumbnail> MediaThumbnails => Set<MediaThumbnail>();

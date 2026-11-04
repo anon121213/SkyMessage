@@ -55,7 +55,7 @@ public sealed class CompositionTests
         {
             typeof(IClientBootstrapper), typeof(IAuthService), typeof(ISkyApi), typeof(IServerEndpointService), typeof(IRealtimeService),
             typeof(ISettingsService), typeof(IMediaUrlBuilder), typeof(IMediaContentSource), typeof(IMediaUploader),
-            typeof(IMediaDownloadService), typeof(ILinkBuilder), typeof(INotificationCoordinator), typeof(IChatListStore),
+            typeof(IMediaDownloadService), typeof(ILinkBuilder), typeof(INotificationCoordinator), typeof(IChatListStore), typeof(IChatFolderStore),
             typeof(IMessageStore), typeof(IUserStore), typeof(IContactStore), typeof(ITypingStore), typeof(IDraftStore),
             typeof(IAccountLocalStore), typeof(ICallService), typeof(IScreenCaptureGuard), typeof(IAudioFocusCoordinator),
         };

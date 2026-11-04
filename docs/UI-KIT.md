@@ -191,7 +191,9 @@ Nav.OpenChat(chatId, seq);                     // "/chat/{id}?seq=123" → ChatP
 Nav.OpenChatInfo(chatId);  Nav.OpenUser(userId);  Nav.OpenUsername("anna");
 Nav.GoToSection(ShellSection.Settings);        // tab bar / rail semantics
 Nav.HandleDeepLink(uri);                       // skymessage://…, https://server/u|join|chat/…; false if not ours
-// State: CurrentUrl, CurrentPath, Section, LastDirection, CanGoBack, BackStack, HasOverlays, Changed (event)
+// State: CurrentUrl, CurrentPath, Section, LastDirection, CanGoBack, BackStack, HasOverlays, Changed (event),
+//        IsLeavingPage (overlays are being dismissed by a navigation, not by Back: read it inside the dismiss callback),
+//        IsNavigating (a navigation started here has not arrived: do not push an overlay entry for the current page now)
 // Helpers: NavigationService.ChatIdOf(path), ChatSubPageOf(path), IsTopLevel(path), SectionOf(path), PathOf(url)
 ```
 
@@ -220,7 +222,9 @@ private async Task CloseViewerAsync()                  // the overlay closes its
 ```
 
 `OverlayHandle.CloseAsync()` also closes overlays opened above it. Never call `NavigationManager` directly and
-don't use `NavigationLock` while overlays are open.
+don't use `NavigationLock` while overlays are open. An entry that stands for a state of its page rather than a layer on
+top (the chat list's folder on phones: Back returns to "All chats") keeps that state when `IsLeavingPage` says a
+navigation closed it, and registers again (never while `IsNavigating` or another overlay is open) once its page is back.
 
 ---
 
@@ -375,8 +379,16 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
   `user.IsOnline()`, `user.Handle()` ("@name").
 * `AvatarPalette`: `Background(id)` (gradient), `Color(id)` (sender name color), `Initials(name)`.
 * `SettingsRoutes`: section keys `profile, phone, privacy, blocked, sessions, notifications, appearance, chats,
-  devices, data, language, connection, about`; `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`. Other screens
-  link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them.
+  folders, folder, devices, data, language, connection, about` (`blocked` and `folder` are sub-pages of `privacy` and
+  `folders`; the folder editor reads `?id=`); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`. Other screens
+  link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them. A sub-page that should
+  keep its back button next to the menu passes `Back="true"` to `SettingsScaffold`.
+* `FolderUi` (static, Features/ChatList): the folder icons (`Icons`: our keys → Lucide glyphs; anything else non-empty
+  is the user's emoji: `GlyphOf`, `EmojiOf`; `IconLabelKeyOf(key)` = their ru/en names, "folders.icon.<key>", for
+  tooltips and screen readers), recommended folders' name keys (`NameKeyOf(preset)`), routes (`SettingsPath`,
+  `EditPath(id?)`) and `PeerIsContact(chat, contacts, users)` — the contact check the folder rules need (use it with
+  Core's `ChatFolderView` / Contracts' `ChatFolderMatcher`, never your own copy of the rules; validate names and icons
+  with `ChatFolderRules.NormalizeName/IsValidName/IsOneEmoji`, the server's own checks). `FolderJs.Path` is `js/folders.js`.
 * `UiDispatcher` (scoped): `Post(work)` / `InvokeAsync(work)` on the renderer from non-component services.
 * `AnonymousPageAttribute`: `@attribute [AnonymousPage]` for signed-out pages.
 * `EmojiCatalog` (singleton): `Categories` (Key, NameKey, Icon, Emoji), `All`, `QuickReactions`
@@ -648,7 +660,20 @@ swipeable rows `[data-swipe-row]` with buttons in `[data-swipe-actions="start|en
 `attachFlipList(container, keyAttr, { enter, viewport })` — keyed children glide when reordered (FLIP, transform
 only; not on first render, while covered, under reduced motion or for big changes; `suppress()` before swapping the
 whole list); `attachScrollHide(scroller, target, attr)` — sets `attr` while scrolling down (floating buttons);
-`animateStrip(el, show)` — a strip at the top of the shell slides in/out and the content follows.
+`animateStrip(el, show)` — a strip at the top of the shell slides in/out and the content follows. `attachRowSwipe` stays
+idle while its list carries `data-row-swipe-off` (the folder swipe owns sideways pans then).
+
+`js/folders.js` (import it through `JsModule(js, FolderJs.Path)`): `attachFolderTabs(track, ref)` — the pill under the tab
+marked `[data-active]` inside `[data-folder-row]` (`[data-folder-indicator]`), gliding on change, `preview(index, p)` /
+`settle()` while a swipe runs; a vertical wheel scrolls the strip while it overflows; arrow keys / Home / End move between
+the tabs (`[data-folder-tab]`, one with `tabindex="0"`); a slot `[data-folder-key]` lifted by its long-press (it claims
+the `sm-longpress` event) or dragged with the mouse reorders the folders → `OnTabLift()` / `OnTabsReorder(keys)`;
+`attachFolderSwipe(pane, scroller, head, track, ref)` — the sideways swipe between folders (only while the pane has
+`data-folder-swipe`; .NET gets `OnFolderSwipeThreshold()`, `OnFolderSwipePeek(dir)` — render that neighbour's first rows
+into a `[data-folder-peek="1|-1"]` child of the pane, which the CSS places a width to that side from `--folder-peek-top`
+— then `OnFolderSwipe(index)`, and calls `enter(dir)` once the next folder rendered, then `OnFolderSwipeDone()` when the
+peek panes may go); `attachHandleReorder(list, ref)` — rows `[data-reorder-key]` dragged by `[data-drag-handle]`,
+`OnReorderLift()` / `OnReorder(keys)`.
 
 Every `JsHandle` must be disposed (`await h.DisposeAsync()`), every `DotNetObjectReference` too. All calls
 swallow "page gone" errors. Your own feature JS (`chat.js`, `recorder.js`, `calls.js`, `devices.js`…) is a
@@ -672,6 +697,14 @@ separate ES module you import yourself (`IJSRuntime.InvokeAsync<IJSObjectReferen
 
 ui-kit pages you can link to: `/` (chat list), `/contacts`, `/contacts/import`, `/user/{id}`, `/u/{username}`,
 `/new-group`, `/chat/{id}/info`, `/join/{token}`, `/search` (`?q=` prefill), `/welcome`, `/login`, `/register`.
+Folder pieces (Features/ChatList): `<FolderTabs Items ActiveId OnSelect OnMenu OnReorder />` (pill tabs in a frosted
+capsule, `FolderTabs.Item(Id, Name, Icon, FolderBadge)` — the badge counts unread messages —, `Id` null = "All chats";
+`OnReorder` gets the folder ids after a tab was dragged; `Track` is the strip for the folder swipe),
+`<FolderIconTile Icon Large />` (a folder's icon as a pastel squircle tile), `ChatPickerDialog` (DialogService content:
+`Selected`, `Exclude`; closes with the chosen chat ids) and `FolderEmojiDialog` (one emoji). `ChatListItem.Pinned`
+shows a folder's own pin instead of the global one; `ChatListItem.Still` renders a row that is only looked at (the
+neighbouring folder during a swipe: no long-press menu binding).
+
 Reusable feature components: `UserPicker` / `UserPickerDialog` (Features/Contacts: single or multiple people,
 `Exclude`, result `UserSummaryDto` or `IReadOnlyList<UserSummaryDto>` — e.g. "Forward to…" can use the chat list
 instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarViewerDialog`, `InviteFailuresDialog`,

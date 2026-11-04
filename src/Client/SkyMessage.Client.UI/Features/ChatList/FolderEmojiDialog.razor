@@ -1,0 +1,11 @@
+@* DialogService content: one emoji as a folder's icon (recent ones first). Result: the emoji string. *@
+
+<div class="folder-emoji">
+    <EmojiPicker OnPick="Pick" Height="320px" ShowRecent="true" />
+</div>
+
+@code {
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+
+    private void Pick(string emoji) => Dialog.Close(emoji);
+}

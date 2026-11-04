@@ -62,6 +62,18 @@ public sealed class ChatBehaviorSettings
     public bool AutoplayVideos { get; set; } = true;
     public bool AutoplayVideoNotes { get; set; } = true;
     public double VoicePlaybackRate { get; set; } = 1.0;
+    /// <summary>What a sideways swipe on a chat in the list does (docs/MOTION.md): switch folders or reveal the chat's actions.</summary>
+    public ChatSwipeMode ChatSwipe { get; set; } = ChatSwipeMode.Auto;
+}
+
+public enum ChatSwipeMode
+{
+    /// <summary>Switch folders once I have folders, else the chat's actions.</summary>
+    Auto,
+    /// <summary>Swiping the list goes to the next or previous folder.</summary>
+    Folders,
+    /// <summary>Swiping a chat reveals its actions (pin, read, mute, archive).</summary>
+    Actions,
 }
 
 public sealed class NotificationSettings
