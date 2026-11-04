@@ -1733,6 +1733,9 @@ export function applyTheme(state) {
   let style = document.getElementById('sm-theme');
   if (!style) { style = document.createElement('style'); style.id = 'sm-theme'; document.head.appendChild(style); }
   style.textContent = state.css || '';
+  const scene = (state.scenes || []).find((s) => s && s.theme === (dark ? 'dark' : 'light'));
+  if (scene && scene.own) root.setAttribute('data-sky-own', scene.own);
+  else root.removeAttribute('data-sky-own');
   return dark;
 }
 

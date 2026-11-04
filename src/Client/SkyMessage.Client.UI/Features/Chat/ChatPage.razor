@@ -26,6 +26,7 @@
 @inject HapticFeedback Haptics
 @inject LayoutService Layout
 @inject BackdropPainter Backdrops
+@inject ThemeService Theme
 @inject EmojiCatalog Emoji
 @inject FormatService Format
 @inject AppJs AppJs
@@ -36,12 +37,14 @@
     @* Layers: the chat sky, the message list (full height), and the floating chrome over it: the top stack (header —
        or the selection / search capsule in its place —, the group call banner, the pinned strip) and the composer.
        chat.js attachChrome publishes the chrome's sizes (--chat-stack-h / --chat-bottom-h; ChatPage.razor.css derives
-       --chat-top-h from them), which the list pads itself by. *@
-    <div class="chat @(_selecting ? "chat--selecting" : null) @(Protected ? "chat--protected" : null)" @ref="_root" data-chat-root
-         style="@BackdropStyle()">
+       --chat-top-h from them) inline on the root, which the list pads itself by. The chat's own background ("Фон чата"
+       in the header menu, BackdropPainter) comes as tokens inline on a box-less wrapper around the root: they reach
+       everything inside, and Blazor rewriting that style never touches the sizes chat.js keeps on the root. *@
+    <div class="chat-tokens" style="display:contents;@BackdropStyle()">
+    <div class="chat @(_selecting ? "chat--selecting" : null) @(Protected ? "chat--protected" : null)" @ref="_root" data-chat-root>
         @* A calm sky to read over: the drifting light and (at night) the stars (the kit's defaults: no comet) — or the
-           chat's own background ("Фон чата" in the header menu: its tokens inline on this root, BackdropPainter). *@
-        <SkyBackdrop Variant="SkyVariant.Chat" Class="chat__sky" />
+           chat's own background, still (no lights over its own gradient or photo). *@
+        <SkyBackdrop Variant="SkyVariant.Chat" Class="chat__sky" Lights="@Backdrops.ChatLights(ChatId)" />
         <div class="chat__top" data-chat-top>
             @if (_selecting)
             {
@@ -115,6 +118,7 @@
                 <Composer @ref="_composer" ChatId="ChatId" Chat="_chat" OnSent="OnSentAsync" OnEditLast="EditLastAsync" OnJumpTo="JumpToSeqAsync" />
             }
         </div>
+    </div>
     </div>
 </CascadingValue>
 
@@ -231,6 +235,10 @@
     private readonly object _guardLock = new();
 
     private string? _backdropStyle;
+    /// <summary>Held while this chat is on a phone's screen over a background of one's own: the system bars follow it.</summary>
+    private IDisposable? _barsHold;
+    private string? _barsHex;
+    private bool _barsClosed;
 
     /// <summary>This chat's own background as inline tokens (null: the chats' one), remembered for change checks.</summary>
     private string? BackdropStyle() => _backdropStyle = Backdrops.ChatStyle(ChatId);
@@ -309,7 +317,11 @@
         OnDispose(() => Realtime.ChatRemoved -= removed);
         RenderOn(h => CallUi.CoveringChanged += h, h => CallUi.CoveringChanged -= h);
         // Only when this chat's own background looks different now (settings, theme, a photo that arrived).
-        Action backdrop = () => { if (Backdrops.ChatStyle(ChatId) != _backdropStyle) RequestRender(); };
+        Action backdrop = () =>
+        {
+            _ = InvokeAsync(UpdateSystemBars);
+            if (Backdrops.ChatStyle(ChatId) != _backdropStyle) RequestRender();
+        };
         Backdrops.Changed += backdrop;
         OnDispose(() => Backdrops.Changed -= backdrop);
     }
@@ -318,6 +330,7 @@
     {
         _controller.ChatId = ChatId;
         ApplyCovered();
+        UpdateSystemBars();
         if (ChatId != _openedFor)
         {
             _openedFor = ChatId;
@@ -464,6 +477,20 @@
         UpdateScreenGuard();
         if (_shortcuts is not null) _ = _shortcuts.InvokeVoidAsync("setActive", visible);
         if (_dropZone is not null) _ = _dropZone.InvokeVoidAsync("setEnabled", visible);
+    }
+
+    /// <summary>
+    /// On a phone the chat runs under the system bars: over a background of one's own (this chat's or the chats') they
+    /// follow its color while the chat is on screen; otherwise the app's background (ThemeService) decides.
+    /// </summary>
+    private void UpdateSystemBars()
+    {
+        if (_barsClosed) return;
+        var hex = _visible && Shell?.IsPhone != false ? Backdrops.ChatBase(ChatId) : null;
+        if (hex == _barsHex) return;
+        _barsHold?.Dispose();
+        _barsHold = hex is null ? null : Theme.HoldSystemBars(hex);
+        _barsHex = hex;
     }
 
     private void RecoverList() => _listBoundary?.Recover();
@@ -931,6 +958,9 @@
     public async ValueTask DisposeAsync()
     {
         if (ChatList.ActiveChatId == ChatId) ChatList.ActiveChatId = null;
+        _barsClosed = true;
+        _barsHold?.Dispose();
+        _barsHold = null;
         lock (_guardLock)
         {
             // Closed for good: a store event racing the dispose cannot take a new handle that nobody would release.

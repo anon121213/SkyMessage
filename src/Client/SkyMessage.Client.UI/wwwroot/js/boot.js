@@ -30,10 +30,13 @@
   // The user's own pictures behind the screens and the chats (Settings › Appearance, a chat's menu). The theme state's
   // "images" name them per slot ("sky": the app's, "chat": the chats' default) and theme. Each is loaded from its source
   // — an app-origin path the native host serves, or "idb:<name>" for the browser's IndexedDB "skymessage-backdrops"
-  // (store "files", { type, blob }, written by web-platform.js) — and drawn once onto a canvas: always a still, opaque
-  // picture (a GIF shows its first frame) with its blur baked in, so nothing is filtered while the page scrolls. The
-  // result stays an object URL for the session, with the picture's average color (its tone: the chat screen's edges
-  // fade into it); the page shows them through --sm-sky-photo / --sm-chat-photo and --sm-sky-tone / --sm-chat-tone.
+  // (store "files", { type, blob, savedAt }, written by web-platform.js) — and drawn once onto a canvas: always a still,
+  // opaque picture (a GIF shows its first frame) with its blur baked in, so nothing is filtered while the page scrolls.
+  // The result stays an object URL for the session, with the picture's average color (its tone: the chat screen's edges
+  // fade into it) and the colors of its 8×8 cells, measured on the sharp picture; the page shows them through
+  // --sm-sky-photo / --sm-chat-photo and --sm-sky-tone / --sm-chat-tone. The app's picture carries a readability floor
+  // ("floor": the theme's background color and the text that sits on the picture): the least veil under which that text
+  // reads on every cell becomes --sm-sky-dim-min, and the veil shows the larger of it and the user's dim.
   var PHOTO_BLUR_PX = 28;
   var photoJobs = {};
   var photoUrls = {};
@@ -105,34 +108,77 @@
 
   function hex2(v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }
 
-  // The average color of a picture (drawn down to 8×8 and averaged), "#rrggbb"; null when it cannot be read.
-  function toneOf(source) {
+  // The part of a picture the window shows (it covers the window, centered), drawn down to 8×8: { tone, cells } — its
+  // average color and the 64 cells' colors ("#rrggbb"), nulls when it cannot be read.
+  function measure(source) {
     try {
+      var w = source.naturalWidth || source.width, h = source.naturalHeight || source.height;
+      var aspect = Math.max(320, window.innerWidth || 0) / Math.max(320, window.innerHeight || 0);
+      var sw = w, sh = h;
+      if (w / h > aspect) sw = h * aspect;
+      else sh = w / aspect;
       var c = document.createElement('canvas');
       c.width = 8;
       c.height = 8;
       var g = c.getContext('2d');
       g.imageSmoothingEnabled = true;
       g.imageSmoothingQuality = 'high';
-      g.drawImage(source, 0, 0, 8, 8);
-      var d = g.getImageData(0, 0, 8, 8).data, r = 0, gr = 0, b = 0;
-      for (var i = 0; i < d.length; i += 4) { r += d[i]; gr += d[i + 1]; b += d[i + 2]; }
-      return '#' + hex2(r / 64) + hex2(gr / 64) + hex2(b / 64);
-    } catch (e) { return null; }
+      g.drawImage(source, (w - sw) / 2, (h - sh) / 2, sw, sh, 0, 0, 8, 8);
+      var d = g.getImageData(0, 0, 8, 8).data, r = 0, gr = 0, b = 0, cells = [];
+      for (var i = 0; i < d.length; i += 4) {
+        r += d[i]; gr += d[i + 1]; b += d[i + 2];
+        cells.push('#' + hex2(d[i]) + hex2(d[i + 1]) + hex2(d[i + 2]));
+      }
+      return { tone: '#' + hex2(r / 64) + hex2(gr / 64) + hex2(b / 64), cells: cells };
+    } catch (e) { return { tone: null, cells: null }; }
+  }
+
+  // ---- Readability floor (ThemeCatalog.ScreenVeil: keep the two in step) ----
+  function channel(v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+  function luminanceOf(c) { return 0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]); }
+  function rgbOf(hex) {
+    var v = parseInt(String(hex || '').replace('#', ''), 16) || 0;
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+
+  // The least veil (0..0.9, in hundredths) of floor.veil over which every ink of floor.inks keeps its contrast on every
+  // cell; 0 without cells or a floor.
+  function screenVeil(cells, floor) {
+    if (!cells || !cells.length || !floor || !floor.veil || !floor.inks || !floor.inks.length) return 0;
+    var veil = rgbOf(floor.veil);
+    var inks = floor.inks.map(function (ink) { return { lum: luminanceOf(rgbOf(ink.color)), min: ink.min || 0 }; });
+    var colors = cells.map(rgbOf);
+    for (var step = 0; step < 90; step++) {
+      var amount = step / 100, reads = true;
+      for (var i = 0; reads && i < colors.length; i++) {
+        var c = colors[i];
+        var lum = luminanceOf([
+          Math.round(c[0] + (veil[0] - c[0]) * amount),
+          Math.round(c[1] + (veil[1] - c[1]) * amount),
+          Math.round(c[2] + (veil[2] - c[2]) * amount)]);
+        for (var k = 0; k < inks.length; k++) {
+          var hi = Math.max(lum, inks[k].lum), lo = Math.min(lum, inks[k].lum);
+          if ((hi + 0.05) / (lo + 0.05) < inks[k].min) { reads = false; break; }
+        }
+      }
+      if (reads) return amount;
+    }
+    return 0.9;
   }
 
   // A sharp JPEG is shown as stored (it was downscaled to the screen when picked): only a small copy is decoded, for
-  // its tone.
+  // its tone and cells.
   function sharpPhoto(blob) {
     var url = URL.createObjectURL(blob);
+    // Only the width given: the small copy keeps the picture's proportions (measure crops it like the window does).
     var small = typeof window.createImageBitmap === 'function'
-      ? window.createImageBitmap(blob, { resizeWidth: 32, resizeHeight: 32, resizeQuality: 'medium' }).catch(function () { return imageOf(blob); })
+      ? window.createImageBitmap(blob, { resizeWidth: 48, resizeQuality: 'medium' }).catch(function () { return imageOf(blob); })
       : imageOf(blob);
     return small.then(function (image) {
-      var tone = toneOf(image);
+      var measured = measure(image);
       if (image.close) image.close();
-      return { url: url, tone: tone };
-    }, function () { return { url: url, tone: null }; });
+      return { url: url, tone: measured.tone, cells: measured.cells };
+    }, function () { return { url: url, tone: null, cells: null }; });
   }
 
   // The picture at the size it covers the window with (no more pixels than the screen shows; far fewer when blurred,
@@ -160,6 +206,8 @@
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(image, 0, 0, cw, ch);
+      // Measured sharp: the same cells whatever the blur (the editor's previews judge the floor on them too).
+      var measured = measure(canvas);
       if (blurPx > 0 && filter) {
         // In canvas pixels: the canvas covers the window at max(vw/cw, vh/ch) CSS px each. Drawn a little larger than
         // the canvas, so the blur has picture to take from at the edges too (the sharp copy underneath backs them).
@@ -170,17 +218,18 @@
         ctx.filter = 'none';
       }
       if (image.close) image.close();
-      var tone = toneOf(canvas);
       return new Promise(function (resolve) {
-        canvas.toBlob(function (out) { resolve(out ? { url: URL.createObjectURL(out), tone: tone } : null); }, 'image/jpeg', 0.9);
+        canvas.toBlob(function (out) {
+          resolve(out ? { url: URL.createObjectURL(out), tone: measured.tone, cells: measured.cells } : null);
+        }, 'image/jpeg', 0.9);
       });
     });
   }
 
   function photoLevel(level) { return Math.max(0, Math.min(100, Math.round(level || 0))); }
 
-  // { url, tone } of the picture at `src` with blur `level` (0..100): an object URL and its average color; null when
-  // it cannot be loaded (tried again next time).
+  // { url, tone, cells } of the picture at `src` with blur `level` (0..100): an object URL, its average color and its
+  // 8×8 cells; null when it cannot be loaded (tried again next time).
   function photo(src, level) {
     level = photoLevel(level);
     var key = src + '|' + level;
@@ -208,13 +257,16 @@
       }
       var prop = '--sm-' + slot + '-photo';
       var toneProp = '--sm-' + slot + '-tone';
+      var floorProp = '--sm-' + slot + '-dim-min';
       if (!item || !item.src) {
         photoApplied[slot] = null;
         root.style.removeProperty(prop);
         root.style.removeProperty(toneProp);
+        root.style.removeProperty(floorProp);
         return;
       }
-      var key = item.src + '|' + photoLevel(item.blur);
+      // Per theme: the same picture may need another floor by day than at night.
+      var key = item.src + '|' + photoLevel(item.blur) + '|' + theme;
       if (photoApplied[slot] === key && root.style.getPropertyValue(prop)) return;
       photo(item.src, item.blur).then(function (result) {
         if (seq !== photoSeq) return;
@@ -223,8 +275,20 @@
         else root.style.removeProperty(prop);
         if (result && result.tone) root.style.setProperty(toneProp, result.tone);
         else root.style.removeProperty(toneProp);
+        var floor = result && item.floor ? screenVeil(result.cells, item.floor) : 0;
+        if (floor > 0) root.style.setProperty(floorProp, String(floor));
+        else root.style.removeProperty(floorProp);
       });
     });
+  }
+
+  // What the state says about a theme beyond its CSS (ThemeCatalog's ThemeScene): { own, bar }, or null.
+  function sceneOf(state, theme) {
+    var scenes = (state && state.scenes) || [];
+    for (var i = 0; i < scenes.length; i++) {
+      if (scenes[i] && scenes[i].theme === theme) return scenes[i];
+    }
+    return null;
   }
 
   function apply(state) {
@@ -244,13 +308,18 @@
       }
       style.textContent = state.css || '';
     }
+    // Backgrounds of one's own (html[data-sky-own] = "app chat"): the sky's lights, clouds and stars are not drawn
+    // over them. The browser's bar takes the color at the top of the app's background.
+    var scene = sceneOf(lastState, theme);
+    if (scene && scene.own) root.setAttribute('data-sky-own', scene.own);
+    else root.removeAttribute('data-sky-own');
     var meta = document.querySelector('meta[name="theme-color"]');
     if (!meta && document.head) {
       meta = document.createElement('meta');
       meta.setAttribute('name', 'theme-color');
       document.head.appendChild(meta);
     }
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#150F38' : '#ECE6FF');
+    if (meta) meta.setAttribute('content', scene && scene.bar ? scene.bar : theme === 'dark' ? '#150F38' : '#ECE6FF');
     try { applyPhotos(lastState, theme); } catch (e) { /* the colors are applied; pictures are a bonus */ }
     return theme === 'dark';
   }

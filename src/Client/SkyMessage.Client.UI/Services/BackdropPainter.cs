@@ -49,6 +49,40 @@ public sealed class BackdropPainter : IDisposable
     }
 
     /// <summary>
+    /// The sky's lights in a chat (SkyBackdrop.Lights): off over its own gradient or photo, on over its own sky (even when
+    /// the chats' background is one of one's own), null when it shows the chats' background (the theme decides).
+    /// </summary>
+    public bool? ChatLights(Guid chatId) =>
+        _settings.Current.Appearance.ChatBackgrounds.TryGetValue(chatId, out var backdrop) ? backdrop.Kind == BackdropKind.Sky : null;
+
+    /// <summary>
+    /// The color under the system bars in a chat whose background is one of the user's own (the chat's, else the chats'):
+    /// what the screen's edges fade into. Null when the chat shows a sky or the app's background (both suit the theme), or
+    /// while a picture's tone is not known yet.
+    /// </summary>
+    public string? ChatBase(Guid chatId)
+    {
+        var appearance = _settings.Current.Appearance;
+        var backdrop = appearance.ChatBackgrounds.TryGetValue(chatId, out var own) ? own : BackdropRules.Normalize(appearance.ChatBackground);
+        if (backdrop is null || backdrop.Kind == BackdropKind.Sky) return null;
+        var tone = backdrop is { Kind: BackdropKind.Photo, Photo: { } photo } ? Image(photo, backdrop.Blur)?.Tone : null;
+        return _theme.Catalog.ChatBaseOf(backdrop, _theme.IsDark, tone);
+    }
+
+    /// <summary>
+    /// A still picture of a background with the veil a photo gets behind the root screens in that theme: the larger of
+    /// its own dim and the readability floor measured on the picture (its own dim until the picture is there). The cells
+    /// are measured on the sharp picture whatever its blur: <paramref name="blur"/> only says which copy to load (the one
+    /// the caller shows; the photo's own blur by default).
+    /// </summary>
+    public BackdropPaint OnScreen(BackdropPaint paint, bool dark, int? blur = null) =>
+        paint.Photo is { } photo && ScreenFloor(photo, dark, blur ?? paint.Blur) is { } floor && floor > paint.Dim ? paint with { Dim = floor } : paint;
+
+    /// <summary>The readability floor a photo needs behind the root screens in a theme (0..0.9), or null until its picture is there.</summary>
+    public double? ScreenFloor(BackdropPhoto photo, bool dark, int blur) =>
+        Image(photo, blur)?.Cells is { Count: > 0 } cells ? ThemeCatalog.ScreenVeil(cells.Select(ThemeCatalog.Color.Parse), dark) : null;
+
+    /// <summary>
     /// The picture's URL as the backgrounds show it (blur 0..100 baked in), or null while it loads or when it cannot be
     /// loaded; <see cref="Changed"/> fires once it is there.
     /// </summary>

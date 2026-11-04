@@ -8,8 +8,9 @@ namespace SkyMessage.Client.UI.Services;
 
 /// <summary>
 /// Applies the appearance settings to the page (CSS variables, light/dark, reduced motion, compact list, the pictures
-/// of the user's own backgrounds) and keeps the native system bars in sync. boot.js re-applies the last state before
-/// Blazor starts, so there is no flash on launch (pictures load right after). Scoped; Routes.razor calls
+/// of the user's own backgrounds) and keeps the native system bars in sync with what is drawn under them: the app's
+/// background, or a chat's own one while that chat holds them (<see cref="HoldSystemBars"/>). boot.js re-applies the last
+/// state before Blazor starts, so there is no flash on launch (pictures load right after). Scoped; Routes.razor calls
 /// <see cref="InitializeAsync"/> once, which also lets <see cref="BackdropPhotoService"/> tidy up unused pictures.
 /// </summary>
 public sealed class ThemeService : IAsyncDisposable
@@ -20,6 +21,10 @@ public sealed class ThemeService : IAsyncDisposable
     private readonly AppJs _js;
     private readonly ILogger<ThemeService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _barsLock = new();
+    private readonly List<BarsHold> _barHolds = [];
+    private (bool DarkContent, string Hex) _themeBars = (true, ThemeCatalog.SystemBarColor(false));
+    private (bool DarkContent, string Hex)? _shownBars;
     private DotNetObjectReference<ThemeService>? _self;
     private JsHandle? _systemWatch;
     private AppearanceSettings? _preview;
@@ -109,14 +114,12 @@ public sealed class ThemeService : IAsyncDisposable
             var changed = dark != IsDark || accent != AccentHex || force;
             IsDark = dark;
             AccentHex = accent;
-            try
+            lock (_barsLock)
             {
-                await _systemUi.SetSystemBarsStyleAsync(darkContent: !dark, ThemeCatalog.SystemBarColor(dark));
+                _themeBars = Catalog.SystemBars(appearance, dark);
+                if (force) _shownBars = null;
             }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "System bar style not applied");
-            }
+            await ApplyBarsAsync();
             if (changed) Raise();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -127,6 +130,56 @@ public sealed class ThemeService : IAsyncDisposable
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// A screen that runs under the system bars with a background of its own (a chat with its own background, on a
+    /// phone): the bars follow <paramref name="backgroundHex"/> (dark or light icons, whichever reads better) until the
+    /// handle is disposed. The newest hold wins; with none, the bars follow the app's background.
+    /// </summary>
+    public IDisposable HoldSystemBars(string backgroundHex)
+    {
+        var hold = new BarsHold(this, ThemeCatalog.NormalizeHex(backgroundHex) ?? ThemeCatalog.SystemBarColor(IsDark));
+        lock (_barsLock) _barHolds.Add(hold);
+        _ = ApplyBarsAsync();
+        return hold;
+    }
+
+    private void Release(BarsHold hold)
+    {
+        lock (_barsLock)
+        {
+            if (!_barHolds.Remove(hold)) return;
+        }
+        _ = ApplyBarsAsync();
+    }
+
+    private async Task ApplyBarsAsync()
+    {
+        (bool DarkContent, string Hex) bars;
+        lock (_barsLock)
+        {
+            bars = _barHolds.Count > 0
+                ? (ThemeCatalog.DarkContentOn(ThemeCatalog.Color.Parse(_barHolds[^1].Hex)), _barHolds[^1].Hex)
+                : _themeBars;
+            if (_shownBars == bars) return;
+            _shownBars = bars;
+        }
+        try
+        {
+            await _systemUi.SetSystemBarsStyleAsync(bars.DarkContent, bars.Hex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "System bar style not applied");
+        }
+    }
+
+    private sealed class BarsHold(ThemeService owner, string hex) : IDisposable
+    {
+        public string Hex { get; } = hex;
+
+        public void Dispose() => owner.Release(this);
     }
 
     private void Raise()

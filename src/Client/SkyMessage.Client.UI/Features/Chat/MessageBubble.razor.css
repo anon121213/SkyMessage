@@ -771,8 +771,14 @@ html[data-theme="dark"] .msg__sender {
     color: var(--sm-danger);
 }
 
-.msg--out .msg__bubble .msg__status--failed,
-.msg__meta--overlay .msg__status--failed {
+/* On my bubble: pale rose on a deep fill, deep rose on a light one of my own colors (ThemeCatalog keeps 3:1). */
+.msg--out .msg__bubble .msg__status--failed {
+    color: var(--sm-bubble-out-danger, #FFD3DC);
+}
+
+/* Over a picture the meta sits on a dark scrim, whoever's bubble it is. */
+.msg__meta--overlay .msg__status--failed,
+.msg--out .msg__bubble .msg__meta--overlay .msg__status--failed {
     color: #FFD3DC;
 }
 

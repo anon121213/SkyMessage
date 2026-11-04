@@ -41,23 +41,47 @@ public sealed record GradientPreset(string Key, string NameKey, IReadOnlyList<st
     public string Css => ThemeCatalog.GradientCss(Colors, Angle);
 }
 
+/// <summary>Text that sits right on a background (a "#RRGGBB" color) and the contrast it needs there.</summary>
+public sealed record ScreenInk(string Color, double Min);
+
+/// <summary>
+/// The readability floor of a background the root screens' text sits on: the least veil of <see cref="Veil"/> (the
+/// theme's background color) over which every one of <see cref="Inks"/> keeps its contrast (ThemeCatalog.ScreenVeil).
+/// </summary>
+public sealed record ScreenFloor(string Veil, IReadOnlyList<ScreenInk> Inks);
+
 /// <summary>
 /// A picture the theme shows: the app's ("sky") or the chats' default ("chat") background in the "light" or "dark"
 /// theme. <see cref="Src"/> is where the page loads it from (IBackdropImageStore.PageSource), <see cref="Blur"/> 0..100.
+/// <see cref="Floor"/> (the app's pictures): boot.js veils the picture at least as much as that floor needs, measured on
+/// the picture itself (--sm-sky-dim-min).
 /// </summary>
-public sealed record ThemeImage(string Slot, string Theme, string Src, int Blur);
+public sealed record ThemeImage(string Slot, string Theme, string Src, int Blur, ScreenFloor? Floor = null);
+
+/// <summary>
+/// What one theme shows beyond its CSS: <see cref="Own"/> lists the slots with a background of the user's own ("app",
+/// "chat"; html[data-sky-own] hides the sky's lights over them) and <see cref="Bar"/> is the color under the system bars
+/// (meta theme-color, the Android window).
+/// </summary>
+public sealed record ThemeScene(string Theme, string Own, string Bar);
 
 /// <summary>
 /// Everything the page needs to theme itself; persisted by JS so boot.js can apply it before Blazor starts (the pictures
 /// in <see cref="Images"/> load right after).
 /// </summary>
-public sealed record ThemeState(string Mode, string Css, bool ReduceMotion, bool Compact, IReadOnlyList<ThemeImage> Images)
+public sealed record ThemeState(string Mode, string Css, bool ReduceMotion, bool Compact, IReadOnlyList<ThemeImage> Images, IReadOnlyList<ThemeScene> Scenes)
 {
-    public ThemeState(string mode, string css, bool reduceMotion, bool compact) : this(mode, css, reduceMotion, compact, []) { }
+    public ThemeState(string mode, string css, bool reduceMotion, bool compact) : this(mode, css, reduceMotion, compact, [], []) { }
 }
 
-/// <summary>How a bubble is painted: its background (a color or a gradient), a solid color of it, the ink and the meta color.</summary>
-public sealed record BubblePaint(string Background, string Solid, string Ink, string Meta);
+/// <summary>
+/// How a bubble is painted: its background (a color or a gradient), a solid color of it, the ink, the meta color (time,
+/// ticks) and the color of a failed status, both solid and kept readable on every part of the fill.
+/// </summary>
+public sealed record BubblePaint(string Background, string Solid, string Ink, string Meta, string? Danger = null);
+
+/// <summary>A ready-made single color of a picker; <see cref="NameKey"/> names it for screen readers.</summary>
+public sealed record PaletteColor(string Hex, string NameKey);
 
 /// <summary>
 /// A still picture of a background for previews and tiles: <see cref="Css"/> over <see cref="Base"/>, star dots
@@ -80,6 +104,21 @@ public sealed class ThemeCatalog
     /// <summary>WCAG AA for normal text: what the ink on every bubble keeps against every part of it.</summary>
     public const double MinTextContrast = 4.5;
 
+    /// <summary>What the time, the ticks and a failed status on a bubble keep at least (WCAG for icons and large text).</summary>
+    public const double MinMetaContrast = 3;
+
+    /// <summary>Root screens' titles and names over the app's background (WCAG AAA for normal text).</summary>
+    public const double ScreenTextContrast = 7;
+
+    /// <summary>The most the readability floor veils a background (the dim slider's top too).</summary>
+    public const double MaxScreenVeil = 0.9;
+
+    /// <summary>
+    /// How far an accent's stops may be deepened toward black so that white ink reads on my accent bubbles; an accent
+    /// that needs more (a light one) gets dark ink instead.
+    /// </summary>
+    public const double MaxAccentDeepening = 0.2;
+
     // Light/dark neutrals; keep in sync with app.css.
     private const string LightBg = "#F6F3FF";
     private const string LightText = "#1C1634";
@@ -88,8 +127,14 @@ public sealed class ThemeCatalog
     private const string DarkText = "#F3F0FF";
     private const string DarkText2 = "#B4ACD5";
     private const string None = "rgba(0,0,0,0)";
-    private const string OutMetaOnLight = "rgba(255,255,255,0.72)";
-    private const string OutMetaOnDark = "rgba(28,22,52,0.62)";
+    /// <summary>A failed status on a deep bubble (white ink), as released.</summary>
+    private const string FailedOnDeep = "#FFD3DC";
+    /// <summary>The rose a failed status starts from on a light bubble (dark ink): app.css's --sm-danger.</summary>
+    private const string FailedOnLight = "#E2334D";
+    /// <summary>The phone a gradient's top is judged on (width : height), for the color under the status bar.</summary>
+    private const double ScreenWidth = 9;
+    private const double ScreenHeight = 19.5;
+    private const double ReadableStep = 0.025;
 
     /// <summary>Deep gradient pairs: white text stays readable on both ends (outgoing bubbles, buttons).</summary>
     public IReadOnlyList<AccentInfo> Accents { get; } =
@@ -165,6 +210,24 @@ public sealed class ThemeCatalog
         new("evening", "theme.gradient.evening", ["#4A2030", "#22122B", "#110D24"], 170),
     ];
 
+    /// <summary>Ready-made accents of the custom accent picker: deep, gradient-friendly colors that keep white text readable.</summary>
+    public IReadOnlyList<PaletteColor> AccentPalette { get; } =
+    [
+        new("#6A4BFF", "theme.color.violet"), new("#8E44EC", "theme.color.purple"), new("#C2338F", "theme.color.raspberry"),
+        new("#E0457B", "theme.color.pink"), new("#E5533D", "theme.color.coral"), new("#D9480F", "theme.color.orange"),
+        new("#B7791F", "theme.color.amber"), new("#2F9E44", "theme.color.green"), new("#0F9488", "theme.color.teal"),
+        new("#0B84C6", "theme.color.azure"), new("#3157E8", "theme.color.blue"), new("#4C5FD5", "theme.color.indigo"),
+    ];
+
+    /// <summary>Ready-made colors for my bubbles: deep ones for white text and a few light ones for dark text.</summary>
+    public IReadOnlyList<PaletteColor> BubblePalette { get; } =
+    [
+        new("#6A4BFF", "theme.color.violet"), new("#C2338F", "theme.color.raspberry"), new("#E5533D", "theme.color.coral"),
+        new("#2F9E44", "theme.color.green"), new("#0F9488", "theme.color.teal"), new("#3157E8", "theme.color.blue"),
+        new("#FFD8B8", "theme.color.peach"), new("#FFE08A", "theme.color.yellow"), new("#C7EFD3", "theme.color.mint"),
+        new("#CFE3FF", "theme.color.sky"), new("#E4D7FF", "theme.color.lavender"), new("#3F4A5C", "theme.color.graphite"),
+    ];
+
     public AccentInfo DefaultAccent => Accents[0];
 
     public AccentInfo? FindAccent(string? key) => Accents.FirstOrDefault(a => string.Equals(a.Key, key, StringComparison.OrdinalIgnoreCase));
@@ -202,6 +265,7 @@ public sealed class ThemeCatalog
         // The roundness setting (4..24, default 16) maps onto the softer shapes of this design (5..30 px, default 20).
         var radius = Math.Round(Math.Clamp(appearance.BubbleRadius, 4, 24) * 1.25);
         var images = new List<ThemeImage>();
+        var scenes = new List<ThemeScene>(2);
 
         var css = new StringBuilder(6144);
         css.Append("html:root{");
@@ -216,6 +280,7 @@ public sealed class ThemeCatalog
             AppendBubbles(css, appearance, dark);
             AppendBackgrounds(css, appearance, dark, images, photoSource);
             css.Append('}');
+            scenes.Add(new ThemeScene(dark ? "dark" : "light", OwnSlots(appearance, dark), SystemBars(appearance, dark).Hex));
         }
 
         var mode = appearance.Theme switch
@@ -224,7 +289,53 @@ public sealed class ThemeCatalog
             ThemeMode.Dark => "dark",
             _ => "system",
         };
-        return new ThemeState(mode, css.ToString(), !appearance.Animations, appearance.CompactChatList, images);
+        return new ThemeState(mode, css.ToString(), !appearance.Animations, appearance.CompactChatList, images, scenes);
+    }
+
+    /// <summary>
+    /// The slots that show a gradient or a photo of the user's own in a theme ("app", "chat", space-separated): the
+    /// chats count when their own background is one, or when they follow an app background of one's own.
+    /// </summary>
+    public static string OwnSlots(AppearanceSettings appearance, bool dark)
+    {
+        var app = AppBackdropOf(appearance, dark) is not null;
+        var chats = BackdropRules.Normalize(appearance.ChatBackground) is { } chat ? chat.Kind != BackdropKind.Sky : app;
+        return (app, chats) switch
+        {
+            (true, true) => "app chat",
+            (true, false) => "app",
+            (false, true) => "chat",
+            _ => "",
+        };
+    }
+
+    /// <summary>
+    /// The system bars over the app's background in a theme: whether their icons are dark, and the color under them (the
+    /// top of the background as the root screens show it). The readability floor keeps that color on the theme's side.
+    /// </summary>
+    public (bool DarkContent, string Hex) SystemBars(AppearanceSettings appearance, bool dark)
+    {
+        if (AppBackdropOf(appearance, dark) is not { } own) return (!dark, SystemBarColor(dark));
+        var top = own.Kind == BackdropKind.Gradient && CustomColors(own.Colors) is { Count: >= 2 } colors
+            ? TopOf(ScreenGradient(colors, dark).Select(Color.Parse).ToList(), own.Angle)
+            : Color.Parse(dark ? DarkBg : LightBg);
+        return (DarkContentOn(top), top.Hex);
+    }
+
+    /// <summary>Dark system-bar icons read better than white ones over <paramref name="background"/>.</summary>
+    public static bool DarkContentOn(Color background) => Contrast(Color.Parse(LightText), background) >= Contrast(Color.White, background);
+
+    /// <summary>The color at the top edge (its middle) of a phone screen filled with an even gradient at <paramref name="angle"/>.</summary>
+    public static Color TopOf(IReadOnlyList<Color> stops, int angle)
+    {
+        if (stops.Count == 0) return Color.Parse(LightBg);
+        if (stops.Count == 1) return stops[0];
+        var rad = BackdropRules.WrapAngle(angle) * Math.PI / 180;
+        // CSS: the gradient line runs through the center at the angle; the top edge's middle lies (h/2)·cos above it.
+        var length = Math.Abs(ScreenWidth * Math.Sin(rad)) + Math.Abs(ScreenHeight * Math.Cos(rad));
+        var t = Math.Clamp(0.5 + ScreenHeight / 2 * Math.Cos(rad) / length, 0, 1) * (stops.Count - 1);
+        var index = Math.Min((int)Math.Floor(t), stops.Count - 2);
+        return Rounded(Color.Mix(stops[index], stops[index + 1], t - index));
     }
 
     /// <summary>Still picture of a sky for previews (settings tiles).</summary>
@@ -245,13 +356,24 @@ public sealed class ThemeCatalog
     /// <summary>Outgoing bubble background (the accent gradient, kept readable) for an accent, as used in chats.</summary>
     public string BubbleOutCss(string accentHex, bool dark) => AccentBubble(accentHex, OutgoingBubbleStyle.Gradient, dark).Background;
 
-    /// <summary>My bubbles in the accent <paramref name="accentHex"/> painted as <paramref name="style"/> (Gradient or Solid).</summary>
+    /// <summary>
+    /// My bubbles in the accent <paramref name="accentHex"/> painted as <paramref name="style"/> (Gradient or Solid). They
+    /// carry white ink like every accent fill: the stops are deepened toward black where that is enough (at most
+    /// <see cref="MaxAccentDeepening"/>); only an accent too light for that gets the ink that reads better.
+    /// </summary>
     public BubblePaint AccentBubble(string accentHex, OutgoingBubbleStyle style, bool dark)
     {
         var hex = NormalizeHex(accentHex) ?? DefaultAccent.Hex;
         var (from, to) = BubbleStops(Color.Parse(hex), Color.Parse(SecondHexOf(hex)), dark);
-        return style == OutgoingBubbleStyle.Solid ? Bubble([Color.Mix(from, to, 0.5)]) : Bubble([from, to]);
+        IReadOnlyList<Color> stops = style == OutgoingBubbleStyle.Solid ? [Color.Mix(from, to, 0.5)] : [from, to];
+        return ReadableFor(stops, Color.White, MaxAccentDeepening) is { } deepened ? Painted(deepened, Color.White) : Bubble(stops);
     }
+
+    /// <summary>
+    /// Text on an accent fill (buttons, badges, the send orb, the dock pill; --sm-on-accent): white unless the fill's
+    /// middle is very light, as released.
+    /// </summary>
+    public static Color OnAccentInk(Color from, Color to) => Color.Mix(from, to, 0.5).Luminance > 0.42 ? Color.Parse(LightText) : Color.White;
 
     /// <summary>My bubbles as the appearance paints them in a theme (Gradient, Solid or my own colors).</summary>
     public BubblePaint OutgoingPaint(AppearanceSettings appearance, bool dark)
@@ -276,8 +398,7 @@ public sealed class ThemeCatalog
             return dark ? new("#231D45", "#231D45", DarkText, "rgba(243,240,255,0.5)") : new("#FFFFFF", "#FFFFFF", LightText, "#9A93B2");
         var (ink, stops) = Readable([Color.Parse(dark ? info.Dark : info.Light)], Color.Parse(DarkText), Color.Parse(LightText));
         var fill = stops[0].Hex;
-        var meta = ink.Hex == DarkText ? "rgba(243,240,255,0.5)" : "rgba(28,22,52,0.5)";
-        return new BubblePaint(fill, fill, ink.Hex, meta);
+        return new BubblePaint(fill, fill, ink.Hex, MetaOn(ink, stops, 0.5).Hex);
     }
 
     /// <summary>The app's background in a theme: its own (when chosen and valid), else null (a sky is in effect).</summary>
@@ -286,10 +407,13 @@ public sealed class ThemeCatalog
             ? BackdropRules.Normalize(custom.For(dark), allowSky: false)
             : null;
 
-    /// <summary>A still picture of the app's background in a theme (tiles, previews).</summary>
+    /// <summary>
+    /// A still picture of the app's background in a theme (tiles, previews), as the root screens show it: a gradient of
+    /// one's own under its readability floor. A photo's floor is measured on the picture (<see cref="ScreenVeil"/>).
+    /// </summary>
     public BackdropPaint AppPaint(AppearanceSettings appearance, bool dark)
     {
-        if (AppBackdropOf(appearance, dark) is { } own) return Paint(own, dark);
+        if (AppBackdropOf(appearance, dark) is { } own) return Paint(own, dark, screen: true);
         var sky = dark ? FindWallpaper(appearance.Wallpaper).Dark : FindWallpaper(appearance.Wallpaper).Light;
         return new BackdropPaint(sky.PreviewCss, sky.Base, sky.Stars);
     }
@@ -298,13 +422,17 @@ public sealed class ThemeCatalog
     public BackdropPaint ChatPaint(AppearanceSettings appearance, bool dark) =>
         BackdropRules.Normalize(appearance.ChatBackground) is { } chat ? Paint(chat, dark) : AppPaint(appearance, dark);
 
-    /// <summary>A still picture of a background in a theme.</summary>
-    public BackdropPaint Paint(Backdrop backdrop, bool dark)
+    /// <summary>
+    /// A still picture of a background in a theme. <paramref name="screen"/>: it is the app's, behind the root screens'
+    /// text — a gradient is veiled as its readability floor needs (<see cref="ScreenGradient"/>).
+    /// </summary>
+    public BackdropPaint Paint(Backdrop backdrop, bool dark, bool screen = false)
     {
         switch (backdrop.Kind)
         {
             case BackdropKind.Gradient when CustomColors(backdrop.Colors) is { Count: >= 2 } colors:
-                return new BackdropPaint(GradientCss(colors, backdrop.Angle), AverageHex(colors), 0);
+                var shown = screen ? ScreenGradient(colors, dark) : colors;
+                return new BackdropPaint(GradientCss(shown, backdrop.Angle), AverageHex(shown), 0);
             case BackdropKind.Photo when backdrop.Photo is { } photo:
                 var bg = dark ? DarkBg : LightBg;
                 return new BackdropPaint($"linear-gradient({bg}, {bg})", bg, 0, photo, backdrop.Blur, Level(backdrop.Dim));
@@ -336,6 +464,19 @@ public sealed class ThemeCatalog
         return css.ToString();
     }
 
+    /// <summary>
+    /// The color a chat's own background fades the screen's edges into (its --sm-chat-bg), which the system bars sit on
+    /// in a chat: a gradient's average, a photo's tone (once measured) under its veil; null for a sky (it suits the theme)
+    /// and for a photo whose tone is not known yet.
+    /// </summary>
+    public string? ChatBaseOf(Backdrop backdrop, bool dark, string? tone) => backdrop.Kind switch
+    {
+        BackdropKind.Gradient when CustomColors(backdrop.Colors) is { Count: >= 2 } colors => AverageHex(colors),
+        BackdropKind.Photo when NormalizeHex(tone) is { } toneHex =>
+            Color.Mix(Color.Parse(toneHex), Color.Parse(dark ? DarkBg : LightBg), Level(backdrop.Dim)).Hex,
+        _ => null,
+    };
+
     /// <summary>Tokens for a mock screen in one theme (background editor previews show both themes side by side).</summary>
     public PreviewPalette Palette(AppearanceSettings appearance, bool dark)
     {
@@ -350,6 +491,58 @@ public sealed class ThemeCatalog
 
     /// <summary>Hex background behind the system bars for the given theme (the top of the default sky).</summary>
     public static string SystemBarColor(bool dark) => dark ? "#150F38" : "#ECE6FF";
+
+    /// <summary>
+    /// The text root screens put straight on the app's background in a theme and what it needs there: titles and names
+    /// (--sm-text) 7:1, previews, times and footers (--sm-text-2) 4.5:1. The section overlines (--sm-text-3) follow.
+    /// </summary>
+    public static ScreenFloor ScreenFloorOf(bool dark) => dark
+        ? new ScreenFloor(DarkBg, [new ScreenInk(DarkText, ScreenTextContrast), new ScreenInk(DarkText2, MinTextContrast)])
+        : new ScreenFloor(LightBg, [new ScreenInk(LightText, ScreenTextContrast), new ScreenInk(LightText2, MinTextContrast)]);
+
+    /// <summary>
+    /// The readability floor over <paramref name="colors"/> (a gradient's samples, a picture's 8×8 cells) in a theme: the
+    /// least veil of the theme's background (0..<see cref="MaxScreenVeil"/>, in hundredths) under which every ink of
+    /// <see cref="ScreenFloorOf"/> keeps its contrast on every one of them. boot.js does the same for pictures.
+    /// </summary>
+    public static double ScreenVeil(IEnumerable<Color> colors, bool dark)
+    {
+        var veil = Color.Parse(dark ? DarkBg : LightBg);
+        var samples = colors.Select(Rounded).ToList();
+        for (var step = 0; step < MaxScreenVeil * 100; step++)
+        {
+            var amount = step / 100.0;
+            if (ReadsOnScreen(samples.Select(sample => Rounded(Color.Mix(sample, veil, amount))), dark)) return amount;
+        }
+        return MaxScreenVeil;
+    }
+
+    /// <summary>Every ink of <see cref="ScreenFloorOf"/> keeps its contrast on every one of <paramref name="backgrounds"/>.</summary>
+    public static bool ReadsOnScreen(IEnumerable<Color> backgrounds, bool dark)
+    {
+        var inks = ScreenFloorOf(dark).Inks.Select(i => (Ink: Color.Parse(i.Color), i.Min)).ToArray();
+        return backgrounds.All(background => inks.All(i => Contrast(i.Ink, background) >= i.Min));
+    }
+
+    /// <summary>
+    /// A gradient of one's own as the root screens show it in a theme: its stops veiled toward the theme's background as
+    /// much as its readability floor needs along its whole length (none for colors that already suit the theme), checked
+    /// once more on the colors as written out.
+    /// </summary>
+    public static IReadOnlyList<string> ScreenGradient(IReadOnlyList<string> colors, bool dark)
+    {
+        var stops = colors.Select(Color.Parse).ToList();
+        if (stops.Count == 0) return colors;
+        var amount = ScreenVeil(Samples(stops), dark);
+        if (amount <= 0) return colors;
+        var veil = Color.Parse(dark ? DarkBg : LightBg);
+        while (true)
+        {
+            var shown = stops.Select(stop => Rounded(Color.Mix(stop, veil, amount))).ToList();
+            if (amount >= MaxScreenVeil || ReadsOnScreen(Samples(shown), dark)) return shown.Select(c => c.Hex).ToList();
+            amount = Math.Min(MaxScreenVeil, amount + 0.01);
+        }
+    }
 
     /// <summary>A CSS linear gradient of evenly spaced stops at <paramref name="angle"/> degrees.</summary>
     public static string GradientCss(IReadOnlyList<string> colors, int angle)
@@ -388,16 +581,76 @@ public sealed class ThemeCatalog
         // Judged on the colors as written out (whole RGB values), which is what the page paints.
         stops = stops.Select(Rounded).ToList();
         var ink = WorstContrast(lightInk, stops) >= WorstContrast(darkInk, stops) ? lightInk : darkInk;
-        var away = ink == lightInk ? Color.Black : Color.White;
-        var adjusted = stops.Select(stop =>
+        return (ink, ReadableFor(stops, ink) ?? stops);
+    }
+
+    /// <summary>
+    /// The stops of a fill moved away from <paramref name="ink"/> (toward black under a light ink, toward white under a
+    /// dark one), each just enough, and the whole fill a little more while its middle falls short, until the ink reads
+    /// at <see cref="MinTextContrast"/> along all of it — never more than <paramref name="cap"/> (0..1) of the way.
+    /// Null when that is not enough.
+    /// </summary>
+    public static IReadOnlyList<Color>? ReadableFor(IReadOnlyList<Color> stops, Color ink, double cap = 1)
+    {
+        if (stops.Count == 0) return stops;
+        var rounded = stops.Select(Rounded).ToList();
+        var away = ink.Luminance >= 0.5 ? Color.Black : Color.White;
+        var most = (int)Math.Round(Math.Clamp(cap, 0, 1) / ReadableStep);
+        var steps = rounded.Select(stop =>
         {
-            var c = stop;
-            for (var step = 1; step <= 40 && Contrast(ink, c) < MinTextContrast; step++) c = Rounded(Color.Mix(stop, away, step * 0.025));
-            return c;
-        }).ToList();
-        for (var step = 1; step <= 40 && WorstContrast(ink, adjusted) < MinTextContrast; step++)
-            adjusted = adjusted.Select(c => Rounded(Color.Mix(c, away, 0.025))).ToList();
-        return (ink, adjusted);
+            var n = 0;
+            while (n < most && Contrast(ink, Moved(stop, n)) < MinTextContrast) n++;
+            return n;
+        }).ToArray();
+        var adjusted = rounded.Select((stop, i) => Moved(stop, steps[i])).ToList();
+        while (WorstContrast(ink, adjusted) < MinTextContrast)
+        {
+            var moved = false;
+            for (var i = 0; i < steps.Length; i++)
+            {
+                if (steps[i] >= most) continue;
+                steps[i]++;
+                moved = true;
+            }
+            if (!moved) return null;
+            adjusted = rounded.Select((stop, i) => Moved(stop, steps[i])).ToList();
+        }
+        return adjusted;
+
+        Color Moved(Color stop, int n) => n == 0 ? stop : Rounded(Color.Mix(stop, away, n * ReadableStep));
+    }
+
+    /// <summary>
+    /// The meta color (time, ticks) on a fill: the ink softened toward the fill by up to <paramref name="soften"/>, as long
+    /// as it keeps at least <see cref="MinMetaContrast"/> — up to <see cref="MinTextContrast"/> where the ink has room
+    /// for it — on every part of the fill. One solid color.
+    /// </summary>
+    public static Color MetaOn(Color ink, IReadOnlyList<Color> stops, double soften)
+    {
+        if (stops.Count == 0) return ink;
+        var target = Math.Clamp(WorstContrast(ink, stops) * 0.62, MinMetaContrast, MinTextContrast);
+        var fill = Color.Mix(stops[0], stops[^1], 0.5);
+        for (var amount = soften; amount > 0.001; amount -= 0.02)
+        {
+            var meta = Rounded(Color.Mix(ink, fill, amount));
+            if (WorstContrast(meta, stops) >= target) return meta;
+        }
+        return Rounded(ink);
+    }
+
+    /// <summary>
+    /// A failed status on a fill: the released pale rose on a deep bubble (white ink), a deep rose on a light one (dark
+    /// ink), moved away from the fill until it keeps <see cref="MinMetaContrast"/> on every part of it.
+    /// </summary>
+    public static Color FailedOn(Color ink, IReadOnlyList<Color> stops)
+    {
+        var light = ink.Luminance >= 0.5;
+        var start = Color.Parse(light ? FailedOnDeep : FailedOnLight);
+        var away = light ? Color.White : Color.Black;
+        var color = start;
+        for (var step = 1; step <= 40 && stops.Count > 0 && WorstContrast(color, stops) < MinMetaContrast; step++)
+            color = Rounded(Color.Mix(start, away, step * ReadableStep));
+        return color;
     }
 
     /// <summary>The lowest contrast of <paramref name="ink"/> along a fill of evenly spaced stops (sampled in eighths).</summary>
@@ -424,14 +677,23 @@ public sealed class ThemeCatalog
     private static IReadOnlyList<string> CustomColors(IReadOnlyList<string>? colors) =>
         (colors ?? []).Select(NormalizeHex).OfType<string>().ToList();
 
+    /// <summary>A bubble of my own colors: the ink that reads better, the fill nudged until it reads (<see cref="Readable"/>).</summary>
     private static BubblePaint Bubble(IReadOnlyList<Color> stops)
     {
         var (ink, readable) = Readable(stops, Color.White, Color.Parse(LightText));
-        var solid = Color.Mix(readable[0], readable[^1], 0.5);
-        var background = readable.Count == 1
-            ? readable[0].Hex
-            : $"linear-gradient(135deg, {string.Join(", ", readable.Select((c, i) => $"{c.Hex} {(i * 100 / (readable.Count - 1)).ToString(CultureInfo.InvariantCulture)}%"))})";
-        return new BubblePaint(background, solid.Hex, ink.Hex, ink == Color.White ? OutMetaOnLight : OutMetaOnDark);
+        return Painted(readable, ink);
+    }
+
+    /// <summary>A bubble of readable <paramref name="stops"/> with <paramref name="ink"/>: its background, solid, meta and failed colors.</summary>
+    private static BubblePaint Painted(IReadOnlyList<Color> stops, Color ink)
+    {
+        var solid = Color.Mix(stops[0], stops[^1], 0.5);
+        var background = stops.Count == 1
+            ? stops[0].Hex
+            : $"linear-gradient(135deg, {string.Join(", ", stops.Select((c, i) => $"{c.Hex} {(i * 100 / (stops.Count - 1)).ToString(CultureInfo.InvariantCulture)}%"))})";
+        // As soft as the released 72 % white / 62 % dark ink, where the fill leaves room for it.
+        var meta = MetaOn(ink, stops, ink == Color.White ? 0.28 : 0.38);
+        return new BubblePaint(background, solid.Hex, ink.Hex, meta.Hex, FailedOn(ink, stops).Hex);
     }
 
     private static (Color From, Color To) BubbleStops(Color accent, Color accent2, bool dark) =>
@@ -441,10 +703,8 @@ public sealed class ThemeCatalog
     {
         var (from, to) = BubbleStops(accent, accent2, dark);
         var gradient = $"linear-gradient(135deg, {from.Hex} 0%, {to.Hex} 100%)";
-        // Text on the gradient: white, or dark where that reads better (a light custom accent).
-        var onAccent = WorstContrast(Color.White, [from, to]) >= WorstContrast(Color.Parse(LightText), [from, to]) ? Color.White : Color.Parse(LightText);
         Var(css, "--sm-grad", gradient);
-        Var(css, "--sm-on-accent", onAccent.Hex);
+        Var(css, "--sm-on-accent", OnAccentInk(from, to).Hex);
         if (!dark)
         {
             Var(css, "--sm-accent", accent.Hex);
@@ -480,6 +740,7 @@ public sealed class ThemeCatalog
         Var(css, "--sm-bubble-out", mine.Solid);
         Var(css, "--sm-bubble-out-text", mine.Ink);
         Var(css, "--sm-bubble-out-meta", mine.Meta);
+        if (mine.Danger is { } danger) Var(css, "--sm-bubble-out-danger", danger);
         // The default tint keeps app.css's own values.
         if (FindTint(appearance.IncomingTint).Key == AppearanceRules.DefaultTint) return;
         var theirs = IncomingPaint(appearance.IncomingTint, dark);
@@ -490,27 +751,31 @@ public sealed class ThemeCatalog
 
     /// <summary>
     /// The sky behind the app's screens and the chats' default background. The chats follow the app unless they have a
-    /// background of their own; a photo's picture itself is set by boot.js (--sm-sky-photo / --sm-chat-photo).
+    /// background of their own; a photo's picture itself is set by boot.js (--sm-sky-photo / --sm-chat-photo). The app's
+    /// own background keeps the root screens' text readable: a gradient is veiled here as its floor needs, a picture by
+    /// boot.js once it measured it (--sm-sky-dim-min, the larger of it and the user's dim wins).
     /// </summary>
     private void AppendBackgrounds(StringBuilder css, AppearanceSettings appearance, bool dark, List<ThemeImage> images, Func<BackdropPhoto, string>? photoSource)
     {
         var theme = dark ? "dark" : "light";
         if (AppBackdropOf(appearance, dark) is { } own)
         {
-            var paint = Paint(own, dark);
-            var gradient = own.Kind == BackdropKind.Gradient ? GradientCss(own.Colors, own.Angle) : $"linear-gradient({paint.Base}, {paint.Base})";
+            var paint = Paint(own, dark, screen: true);
+            var gradient = own.Kind == BackdropKind.Gradient
+                ? GradientCss(ScreenGradient(own.Colors, dark), own.Angle)
+                : $"linear-gradient({paint.Base}, {paint.Base})";
             Var(css, "--sm-sky", gradient);
             Var(css, "--sm-orb-1", None);
             Var(css, "--sm-orb-2", None);
             Var(css, "--sm-orb-3", None);
             Var(css, "--sm-stars", "0");
             Var(css, "--sm-clouds", "0");
-            Var(css, "--sm-chat-bg", own.Kind == BackdropKind.Photo ? VeiledTone("--sm-sky-tone", paint) : paint.Base);
+            Var(css, "--sm-chat-bg", own.Kind == BackdropKind.Photo ? VeiledTone("--sm-sky-tone", paint, "--sm-sky-dim-min") : paint.Base);
             Var(css, "--sm-chat-wallpaper", gradient);
             if (own is { Kind: BackdropKind.Photo, Photo: { } photo })
             {
                 Var(css, "--sm-sky-dim", Num(paint.Dim));
-                if (photoSource is not null) images.Add(new ThemeImage("sky", theme, photoSource(photo), own.Blur));
+                if (photoSource is not null) images.Add(new ThemeImage("sky", theme, photoSource(photo), own.Blur, ScreenFloorOf(dark)));
             }
         }
         else
@@ -562,10 +827,16 @@ public sealed class ThemeCatalog
 
     /// <summary>
     /// A photo's base color: its tone (measured by boot.js once the picture loaded, <paramref name="toneVar"/>) under its
-    /// veil, else the theme's background. The chat screen's edges fade into it.
+    /// veil, else the theme's background. The chat screen's edges fade into it. <paramref name="floorVar"/>: the veil is
+    /// at least that readability floor (set by boot.js with the picture).
     /// </summary>
-    private static string VeiledTone(string toneVar, BackdropPaint paint) =>
-        $"color-mix(in srgb, var({toneVar}, {paint.Base}), {paint.Base} {Math.Round(paint.Dim * 100).ToString(CultureInfo.InvariantCulture)}%)";
+    private static string VeiledTone(string toneVar, BackdropPaint paint, string? floorVar = null)
+    {
+        var level = floorVar is null
+            ? $"{Math.Round(paint.Dim * 100).ToString(CultureInfo.InvariantCulture)}%"
+            : $"calc(max({Num(paint.Dim)}, var({floorVar}, 0)) * 100%)";
+        return $"color-mix(in srgb, var({toneVar}, {paint.Base}), {paint.Base} {level})";
+    }
 
     private static double Level(int value) => Math.Clamp(value, 0, BackdropRules.MaxLevel) / (double)BackdropRules.MaxLevel;
 

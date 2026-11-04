@@ -8,14 +8,29 @@ using Color = SkyMessage.Client.UI.Services.ThemeCatalog.Color;
 namespace SkyMessage.Client.Core.Tests;
 
 /// <summary>
-/// Building the theme (ThemeCatalog): bubble ink chosen and kept readable (WCAG 4.5:1) for any colors, the palette
-/// accents looking as they did, and the backgrounds — skies, gradients, photos per theme — in the CSS and the pictures
-/// boot.js shows.
+/// Building the theme (ThemeCatalog): bubble ink chosen and kept readable (WCAG 4.5:1) for any colors, the time and a
+/// failed status on them (3:1), the accents saved by 0.2.61 looking as they did (white text on their fills), the
+/// readability floor that keeps the root screens' text readable over a background of one's own, and the backgrounds —
+/// skies, gradients, photos per theme — in the CSS, the pictures boot.js shows and what each theme shows beyond its CSS.
 /// </summary>
 public sealed partial class ThemeCatalogTests
 {
     private static readonly ThemeCatalog Catalog = new();
     private static readonly Color DarkInk = Color.Parse("#1C1634");
+    private static readonly Color LightText = Color.Parse("#1C1634");
+    private static readonly Color LightText2 = Color.Parse("#615A7C");
+    private static readonly Color DarkText = Color.Parse("#F3F0FF");
+    private static readonly Color DarkText2 = Color.Parse("#B4ACD5");
+
+    /// <summary>Root-screen text reads on every part of a background in a theme: titles 7:1, secondary text 4.5:1.</summary>
+    private static void ShouldReadOnScreen(IReadOnlyList<Color> stops, bool dark, string because)
+    {
+        foreach (var sample in ThemeCatalog.Samples(stops))
+        {
+            ThemeCatalog.Contrast(dark ? DarkText : LightText, sample).ShouldBeGreaterThanOrEqualTo(7, because);
+            ThemeCatalog.Contrast(dark ? DarkText2 : LightText2, sample).ShouldBeGreaterThanOrEqualTo(4.5, because);
+        }
+    }
 
     private static string Block(ThemeState state, bool dark)
     {
@@ -145,7 +160,10 @@ public sealed partial class ThemeCatalogTests
         var light = Block(Catalog.BuildState(a), dark: false);
         VarOf(light, "--sm-bubble-out-bg").ShouldBe("linear-gradient(135deg, #FFD8B8 0%, #E4D7FF 100%)");
         VarOf(light, "--sm-bubble-out-text").ShouldBe("#1C1634");
-        VarOf(light, "--sm-bubble-out-meta").ShouldBe("rgba(28,22,52,0.62)");
+        var stops = StopsOf(VarOf(light, "--sm-bubble-out-bg")!);
+        ThemeCatalog.WorstContrast(Color.Parse(VarOf(light, "--sm-bubble-out-meta")!), stops).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinMetaContrast);
+        ThemeCatalog.WorstContrast(Color.Parse(VarOf(light, "--sm-bubble-out-danger")!), stops).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinMetaContrast,
+            "a failed status shows on a light bubble too");
         VarOf(light, "--sm-grad").ShouldBe("linear-gradient(135deg, #0B7F80 0%, #0B8A5F 100%)", "buttons keep the accent");
     }
 
@@ -204,11 +222,13 @@ public sealed partial class ThemeCatalogTests
         foreach (var dark in new[] { false, true })
         {
             var block = Block(state, dark);
-            VarOf(block, "--sm-sky").ShouldBe("linear-gradient(200deg, #FFE7D6 0%, #E4DCFF 100%)");
+            var sky = VarOf(block, "--sm-sky")!;
+            if (!dark) sky.ShouldBe("linear-gradient(200deg, #FFE7D6 0%, #E4DCFF 100%)", "colors that suit the theme are shown as they are");
+            sky.ShouldStartWith("linear-gradient(200deg, ");
             VarOf(block, "--sm-orb-2").ShouldBe("rgba(0,0,0,0)", "no drifting lights over one's own colors");
             VarOf(block, "--sm-stars").ShouldBe("0");
             VarOf(block, "--sm-clouds").ShouldBe("0");
-            VarOf(block, "--sm-chat-wallpaper").ShouldBe("linear-gradient(200deg, #FFE7D6 0%, #E4DCFF 100%)", "chats follow the app");
+            VarOf(block, "--sm-chat-wallpaper").ShouldBe(sky, "chats follow the app");
         }
         state.Images.ShouldBeEmpty();
 
@@ -238,7 +258,13 @@ public sealed partial class ThemeCatalogTests
         var night = Block(state, dark: true);
         VarOf(night, "--sm-sky-dim").ShouldBe("0.45");
         VarOf(night, "--sm-stars").ShouldBe("0");
-        state.Images.ShouldBe([new ThemeImage("sky", "dark", "/_sm/backdrops/0a1b2c3d4e5f.jpg", 30)]);
+        VarOf(night, "--sm-chat-bg").ShouldBe("color-mix(in srgb, var(--sm-sky-tone, #0D0B1E), #0D0B1E calc(max(0.45, var(--sm-sky-dim-min, 0)) * 100%))",
+            "the chats' edges fade into the picture under the veil it really gets (its dim, or the floor boot.js measured)");
+        var image = state.Images.ShouldHaveSingleItem();
+        (image.Slot, image.Theme, image.Src, image.Blur).ShouldBe(("sky", "dark", "/_sm/backdrops/0a1b2c3d4e5f.jpg", 30));
+        var floor = image.Floor.ShouldNotBeNull("boot.js veils the app's picture until the root screens' text reads on it");
+        floor.Veil.ShouldBe("#0D0B1E");
+        floor.Inks.ShouldBe([new ScreenInk("#F3F0FF", 7), new ScreenInk("#B4ACD5", 4.5)]);
 
         Catalog.BuildState(a).Images.ShouldBeEmpty("without a place for pictures there are none to show");
     }
@@ -310,6 +336,215 @@ public sealed partial class ThemeCatalogTests
         day.Incoming.Background.ShouldBe(Catalog.FindTint("sand").Light);
         night.Incoming.Background.ShouldBe(Catalog.FindTint("sand").Dark);
         night.Outgoing.ShouldBe(Catalog.OutgoingPaint(a, dark: true));
+    }
+
+    [Theory]
+    [InlineData("#7C6CF0")]
+    [InlineData("#B05AE0")]
+    [InlineData("#2FA36B")]
+    [InlineData("#5A9E3A")]
+    [InlineData("#C94B6D")]
+    public void Mid_tone_accents_saved_by_0_2_61_keep_white_text_on_buttons_and_bubbles(string hex)
+    {
+        // What sliding the hue strip from the default violet gives: white text on every accent fill in 0.2.61.
+        var state = Catalog.BuildState(new AppearanceSettings { CustomAccentHex = hex });
+        foreach (var dark in new[] { false, true })
+        {
+            var block = Block(state, dark);
+            VarOf(block, "--sm-on-accent").ShouldBe("#FFFFFF", $"{hex} dark={dark}: buttons, badges, the orb and the dock pill");
+            VarOf(block, "--sm-bubble-out-text").ShouldBe("#FFFFFF", $"{hex} dark={dark}");
+            foreach (var style in new[] { OutgoingBubbleStyle.Gradient, OutgoingBubbleStyle.Solid })
+            {
+                var paint = Catalog.AccentBubble(hex, style, dark);
+                paint.Ink.ShouldBe("#FFFFFF", $"{hex} {style} dark={dark}");
+                ShouldRead(paint, $"{hex} {style} dark={dark}");
+            }
+        }
+
+        // Deepened only a little: never more than a fifth of the way to black.
+        var accent = Color.Parse(hex);
+        var deepest = Color.Mix(accent, Color.Black, ThemeCatalog.MaxAccentDeepening + 0.001);
+        StopsOf(Catalog.AccentBubble(hex, OutgoingBubbleStyle.Gradient, dark: false).Background)[0].Luminance.ShouldBeGreaterThanOrEqualTo(deepest.Luminance);
+    }
+
+    [Fact]
+    public void Text_on_accent_fills_follows_the_released_rule()
+    {
+        // 0.2.61: white unless the gradient's middle is very light (luminance above 0.42).
+        var random = new Random(611);
+        for (var i = 0; i < 300; i++)
+        {
+            var hex = $"#{random.Next(0, 0x1000000):X6}";
+            var second = Color.Parse(Catalog.SecondHexOf(hex));
+            var expected = Color.Mix(Color.Parse(hex), second, 0.5).Luminance > 0.42 ? "#1C1634" : "#FFFFFF";
+            VarOf(Block(Catalog.BuildState(new AppearanceSettings { CustomAccentHex = hex }), dark: false), "--sm-on-accent").ShouldBe(expected, hex);
+        }
+
+        // A light accent keeps its dark text, and its bubbles take dark ink too.
+        var light = Block(Catalog.BuildState(new AppearanceSettings { CustomAccentHex = "#FFE08A" }), dark: false);
+        VarOf(light, "--sm-on-accent").ShouldBe("#1C1634");
+        VarOf(light, "--sm-bubble-out-text").ShouldBe("#1C1634");
+    }
+
+    [Fact]
+    public void The_time_and_a_failed_status_on_any_bubble_keep_3_to_1()
+    {
+        var random = new Random(3141);
+        var paints = new List<(string Name, BubblePaint Paint)>();
+        for (var i = 0; i < 200; i++)
+        {
+            var a = $"#{random.Next(0, 0x1000000):X6}";
+            var b = $"#{random.Next(0, 0x1000000):X6}";
+            foreach (var dark in new[] { false, true })
+            {
+                paints.Add(($"{a} dark={dark}", Catalog.CustomBubble([a], dark)));
+                paints.Add(($"{a} → {b} dark={dark}", Catalog.CustomBubble([a, b], dark)));
+                paints.Add(($"accent {a} dark={dark}", Catalog.AccentBubble(a, OutgoingBubbleStyle.Gradient, dark)));
+            }
+        }
+
+        foreach (var (name, paint) in paints)
+        {
+            var stops = StopsOf(paint.Background);
+            ThemeCatalog.WorstContrast(Color.Parse(paint.Meta), stops).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinMetaContrast, name);
+            ThemeCatalog.WorstContrast(Color.Parse(paint.Danger!), stops).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinMetaContrast, name);
+            paint.Meta.ShouldNotBe(paint.Ink, $"{name}: the time stays softer than the text where the fill leaves room") ;
+        }
+
+        // The released violet: a pale rose for a failed message, a time as soft as before.
+        var violet = Catalog.AccentBubble("#6A4BFF", OutgoingBubbleStyle.Gradient, dark: false);
+        violet.Danger.ShouldBe("#FFD3DC");
+        ThemeCatalog.WorstContrast(Color.Parse(violet.Meta), StopsOf(violet.Background)).ShouldBeInRange(3.0, 3.6);
+    }
+
+    [Fact]
+    public void An_own_gradient_that_does_not_suit_a_theme_is_veiled_until_the_root_screens_text_reads()
+    {
+        var night = Catalog.BackdropGradients.Single(g => g.Key == "night");
+        var a = new AppearanceSettings
+        {
+            Wallpaper = ThemeCatalog.CustomWallpaperKey,
+            CustomBackground = new AppBackground
+            {
+                SameForBoth = false,
+                Light = new Backdrop { Kind = BackdropKind.Gradient, Colors = [.. night.Colors], Angle = night.Angle },
+                Dark = new Backdrop { Kind = BackdropKind.Gradient, Colors = [.. night.Colors], Angle = night.Angle },
+            },
+        };
+        var state = Catalog.BuildState(a);
+
+        // By day the night gradient gets a light veil: dark text on it reads.
+        var day = StopsOf(VarOf(Block(state, dark: false), "--sm-sky")!);
+        ShouldReadOnScreen(day, dark: false, "night colors by day");
+        VarOf(Block(state, dark: false), "--sm-chat-wallpaper").ShouldBe(VarOf(Block(state, dark: false), "--sm-sky"), "chats that follow the app look like it");
+        // At night it suits: shown as it is.
+        VarOf(Block(state, dark: true), "--sm-sky").ShouldBe(night.Css);
+
+        // The default light gradient shared with the night: veiled toward the night, light text reads.
+        var shared = new AppearanceSettings
+        {
+            Wallpaper = ThemeCatalog.CustomWallpaperKey,
+            CustomBackground = new AppBackground { SameForBoth = true, Light = BackdropRules.DefaultGradient(dark: false) },
+        };
+        var sharedState = Catalog.BuildState(shared);
+        VarOf(Block(sharedState, dark: false), "--sm-sky").ShouldBe(ThemeCatalog.GradientCss(BackdropRules.DefaultGradient(dark: false).Colors, BackdropRules.DefaultAngle));
+        ShouldReadOnScreen(StopsOf(VarOf(Block(sharedState, dark: true), "--sm-sky")!), dark: true, "the light gradient at night");
+    }
+
+    [Fact]
+    public void The_floor_veils_just_as_much_as_needed_and_every_ready_made_gradient_reads_in_both_themes()
+    {
+        foreach (var preset in Catalog.BackdropGradients)
+        {
+            foreach (var dark in new[] { false, true })
+            {
+                var stops = preset.Colors.Select(Color.Parse).ToList();
+                var shown = ThemeCatalog.ScreenGradient(preset.Colors, dark).Select(Color.Parse).ToList();
+                ShouldReadOnScreen(shown, dark, $"{preset.Key} dark={dark}");
+
+                var veil = ThemeCatalog.ScreenVeil(ThemeCatalog.Samples(stops), dark);
+                if (veil <= 0) continue;
+                // A hundredth less would not do.
+                var bg = Color.Parse(dark ? "#0D0B1E" : "#F6F3FF");
+                var lessVeil = (Math.Round(veil * 100) - 1) / 100.0;
+                var less = ThemeCatalog.Samples(stops).Select(c => Color.Parse(Color.Mix(Color.Parse(c.Hex), bg, lessVeil).Hex)).ToList();
+                var reads = less.All(c => ThemeCatalog.Contrast(dark ? DarkText : LightText, c) >= 7 && ThemeCatalog.Contrast(dark ? DarkText2 : LightText2, c) >= 4.5);
+                reads.ShouldBeFalse($"{preset.Key} dark={dark}: {veil} is the least veil");
+            }
+        }
+
+        // The soft ones need nothing by day, the deep ones nothing at night.
+        foreach (var key in new[] { "dawn", "mint", "lagoon", "peach" })
+            ThemeCatalog.ScreenGradient(Catalog.BackdropGradients.Single(g => g.Key == key).Colors, dark: false).ShouldBe(Catalog.BackdropGradients.Single(g => g.Key == key).Colors);
+        foreach (var key in new[] { "dusk", "night", "forest", "evening" })
+            ThemeCatalog.ScreenGradient(Catalog.BackdropGradients.Single(g => g.Key == key).Colors, dark: true).ShouldBe(Catalog.BackdropGradients.Single(g => g.Key == key).Colors);
+    }
+
+    [Fact]
+    public void A_photos_floor_is_measured_on_its_cells()
+    {
+        // A light picture at night: veiled until light text reads on its lightest cell; a dark one needs nothing.
+        var light = Enumerable.Repeat(Color.Parse("#E8E4DA"), 63).Append(Color.Parse("#FFFFFF")).ToList();
+        var night = ThemeCatalog.ScreenVeil(light, dark: true);
+        night.ShouldBeInRange(0.6, ThemeCatalog.MaxScreenVeil);
+        var veiled = Color.Parse(Color.Mix(Color.White, Color.Parse("#0D0B1E"), night).Hex);
+        ThemeCatalog.Contrast(DarkText2, veiled).ShouldBeGreaterThanOrEqualTo(4.5, "the lightest cell decides");
+        ThemeCatalog.ScreenVeil(Enumerable.Repeat(Color.Parse("#14102A"), 64), dark: true).ShouldBe(0);
+
+        // By day a landscape with dark hills needs a light veil; a pale sky nothing.
+        ThemeCatalog.ScreenVeil([Color.Parse("#DDE8F5"), Color.Parse("#3B4A2E")], dark: false).ShouldBeGreaterThan(0.5);
+        ThemeCatalog.ScreenVeil([Color.Parse("#F1F4FA")], dark: false).ShouldBe(0);
+        ThemeCatalog.ScreenVeil([Color.Black], dark: false).ShouldBeLessThanOrEqualTo(ThemeCatalog.MaxScreenVeil);
+    }
+
+    [Fact]
+    public void Each_theme_says_which_backgrounds_are_ones_own_and_what_lies_under_the_system_bars()
+    {
+        var sky = Catalog.BuildState(new AppearanceSettings());
+        sky.Scenes.ShouldBe([new ThemeScene("light", "", "#ECE6FF"), new ThemeScene("dark", "", "#150F38")]);
+
+        var a = new AppearanceSettings
+        {
+            Wallpaper = ThemeCatalog.CustomWallpaperKey,
+            CustomBackground = new AppBackground
+            {
+                SameForBoth = false,
+                Light = new Backdrop { Kind = BackdropKind.Gradient, Colors = ["#FFE7D6", "#E4DCFF"], Angle = 180 },
+                Dark = new Backdrop { Kind = BackdropKind.Photo, Photo = new BackdropPhoto { Id = "0a1b2c3d4e5f" }, Dim = 40 },
+            },
+            ChatBackground = new Backdrop { Kind = BackdropKind.Sky, Sky = "sea" },
+        };
+        var state = Catalog.BuildState(a);
+        state.Scenes[0].ShouldBe(new ThemeScene("light", "app", "#FFE7D6"), "the gradient's top (180°: its first color) lies under the status bar");
+        state.Scenes[1].ShouldBe(new ThemeScene("dark", "app", "#0D0B1E"));
+        Catalog.SystemBars(a, dark: false).DarkContent.ShouldBeTrue();
+        Catalog.SystemBars(a, dark: true).DarkContent.ShouldBeFalse();
+
+        a.ChatBackground = new Backdrop { Kind = BackdropKind.Gradient, Colors = ["#161C40", "#0B0A1C"] };
+        ThemeCatalog.OwnSlots(a, dark: false).ShouldBe("app chat");
+        a.Wallpaper = "dawn";
+        ThemeCatalog.OwnSlots(a, dark: true).ShouldBe("chat");
+        a.ChatBackground = null;
+        ThemeCatalog.OwnSlots(a, dark: true).ShouldBe("", "chats follow a sky");
+    }
+
+    [Fact]
+    public void The_top_of_a_gradient_and_the_icons_over_it()
+    {
+        IReadOnlyList<Color> stops = [Color.Parse("#000000"), Color.Parse("#FFFFFF")];
+        ThemeCatalog.TopOf(stops, 180).ShouldBe(Color.Parse("#000000"), "180° runs top to bottom");
+        ThemeCatalog.TopOf(stops, 0).ShouldBe(Color.Parse("#FFFFFF"), "0° runs bottom to top");
+        ThemeCatalog.TopOf(stops, 90).Hex.ShouldBe("#808080", "90° runs across: the top edge's middle is the middle");
+
+        ThemeCatalog.DarkContentOn(Color.Parse("#ECE6FF")).ShouldBeTrue();
+        ThemeCatalog.DarkContentOn(Color.Parse("#150F38")).ShouldBeFalse();
+
+        // A chat's own background: its gradient's average, a photo's tone under its veil, nothing for a sky.
+        Catalog.ChatBaseOf(new Backdrop { Kind = BackdropKind.Gradient, Colors = ["#000000", "#FFFFFF"] }, dark: true, null).ShouldBe("#808080");
+        Catalog.ChatBaseOf(new Backdrop { Kind = BackdropKind.Photo, Photo = new BackdropPhoto(), Dim = 50 }, dark: false, "#000000")
+            .ShouldBe(Color.Mix(Color.Black, Color.Parse("#F6F3FF"), 0.5).Hex);
+        Catalog.ChatBaseOf(new Backdrop { Kind = BackdropKind.Photo, Photo = new BackdropPhoto() }, dark: false, null).ShouldBeNull("its tone is not known yet");
+        Catalog.ChatBaseOf(new Backdrop { Kind = BackdropKind.Sky, Sky = "sea" }, dark: false, null).ShouldBeNull();
     }
 
     [GeneratedRegex("#[0-9A-Fa-f]{6}")]

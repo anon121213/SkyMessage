@@ -21,8 +21,11 @@ public sealed record ScrollInfo(double Top, double Height, double ClientHeight)
     public double FromBottom => Math.Max(0, Height - ClientHeight - Top);
 }
 
-/// <summary>A background picture ready to show: its object URL and its average color ("#rrggbb", null when unknown).</summary>
-public sealed record BackdropImage(string Url, string? Tone);
+/// <summary>
+/// A background picture ready to show: its object URL, its average color ("#rrggbb", null when unknown) and the colors
+/// of its 8×8 cells (the readability floor is measured on them; null when unknown).
+/// </summary>
+public sealed record BackdropImage(string Url, string? Tone, IReadOnlyList<string>? Cells = null);
 
 /// <summary>One entry of a batched <see cref="AppJs.CreateIntersectionObserverAsync{T}"/> callback.</summary>
 public sealed record VisibilityChange(string Key, bool Visible, double Ratio);

@@ -2,9 +2,10 @@
    lights, soft clouds by day, twinkling stars and a rare shooting star by night. Pure decoration:
    transform/opacity animations only, paused under [inert] (covered screens), still in data-fx="lite" and with reduced
    motion. The user's own background replaces it through the same tokens: a gradient (--sm-sky, no lights), or a still
-   picture (--sm-sky-photo / --sm-chat-photo, set by boot.js) under a veil (--sm-sky-dim / --sm-chat-dim). Place it as
-   the first child of a positioned container (or Fixed for the whole viewport). *@
-<div class="sm-sky @VariantClass @(Fixed ? "sm-sky--fixed" : null) @(Still ? "sm-sky--still" : null) @(Plain ? "sm-sky--plain" : null) @Class"
+   picture (--sm-sky-photo / --sm-chat-photo, set by boot.js) under a veil (--sm-sky-dim / --sm-chat-dim). Over one's
+   own background the lights, clouds and stars are not drawn at all (html[data-sky-own], or Lights). Place it as the
+   first child of a positioned container (or Fixed for the whole viewport). *@
+<div class="sm-sky @VariantClass @(Fixed ? "sm-sky--fixed" : null) @(Still ? "sm-sky--still" : null) @(Plain ? "sm-sky--plain" : null) @LightsClass @Class"
      aria-hidden="true">
     <div class="sm-sky__photo"></div>
     <div class="sm-sky__veil"></div>
@@ -33,7 +34,19 @@
     [Parameter] public bool Sparkles { get; set; }
     /// <summary>The occasional shooting star (dark theme only); off unless a screen asks for it.</summary>
     [Parameter] public bool Comet { get; set; }
+    /// <summary>
+    /// The drifting lights, clouds and stars: null = as the theme says (none over a background of one's own), false =
+    /// none (a screen's own gradient or photo), true = drawn (a screen's own sky, whatever the theme's background).
+    /// </summary>
+    [Parameter] public bool? Lights { get; set; }
     [Parameter] public string? Class { get; set; }
 
     private string? VariantClass => Variant == SkyVariant.Chat ? "sm-sky--chat" : null;
+
+    private string? LightsClass => Lights switch
+    {
+        true => "sm-sky--lit",
+        false => "sm-sky--unlit",
+        null => null,
+    };
 }

@@ -531,13 +531,19 @@ html[data-fx="lite"] .sm-dialog, html[data-fx="lite"] .sm-menu { background: var
 .sm-sky--fixed { position: fixed; }
 .sm-sky--chat { background: var(--sm-chat-wallpaper, var(--sm-sky)); }
 /* A picture of the user's own (Settings › Appearance, a chat's menu): still, its blur baked in by boot.js, under a veil
-   of the theme's background color (the dim). Nothing paints while no picture is set. */
+   of the theme's background color (the dim; behind the root screens at least the readability floor boot.js measured on
+   the picture, --sm-sky-dim-min). Nothing paints while no picture is set. */
 .sm-sky__photo,
 .sm-sky__veil { position: absolute; inset: 0; }
 .sm-sky__photo { background: var(--sm-sky-photo, none) center / cover no-repeat; }
 .sm-sky--chat .sm-sky__photo { background-image: var(--sm-chat-photo, var(--sm-sky-photo, none)); }
-.sm-sky__veil { background: var(--sm-bg); opacity: var(--sm-sky-dim, 0); }
-.sm-sky--chat .sm-sky__veil { opacity: var(--sm-chat-dim, var(--sm-sky-dim, 0)); }
+.sm-sky__veil { background: var(--sm-bg); opacity: max(var(--sm-sky-dim, 0), var(--sm-sky-dim-min, 0)); }
+.sm-sky--chat .sm-sky__veil { opacity: var(--sm-chat-dim, max(var(--sm-sky-dim, 0), var(--sm-sky-dim-min, 0))); }
+/* Backgrounds of one's own are still: no lights, clouds or stars over them (html[data-sky-own], boot.js, per theme). A
+   chat's own background says so itself: SkyBackdrop Lights (sm-sky--lit over its own sky, sm-sky--unlit over the rest). */
+html[data-sky-own~="app"] .sm-sky:not(.sm-sky--chat):not(.sm-sky--lit) > :is(.sm-sky__orb, .sm-sky__cloud, .sm-sky__stars, .sm-sky__comet),
+html[data-sky-own~="chat"] .sm-sky--chat:not(.sm-sky--lit) > :is(.sm-sky__orb, .sm-sky__cloud, .sm-sky__stars, .sm-sky__comet),
+.sm-sky--unlit > :is(.sm-sky__orb, .sm-sky__cloud, .sm-sky__stars, .sm-sky__comet) { display: none; }
 .sm-sky__orb {
   position: absolute;
   width: 95vmax;

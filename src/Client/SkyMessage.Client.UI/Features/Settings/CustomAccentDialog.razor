@@ -9,7 +9,7 @@
     <div class="accent-pick__preview" aria-hidden="true">
         <div class="accent-pick__bubble" style="@($"background:{BubbleCss};color:{Bubble.Ink}")">
             @L["settings.appearance.preview.out"]
-            <span class="accent-pick__meta">09:42 <Icon Name="@IconNames.CheckCheck" Size="14" /></span>
+            <span class="accent-pick__meta" style="@($"color:{Bubble.Meta}")">09:42 <Icon Name="@IconNames.CheckCheck" Size="14" /></span>
         </div>
         <div class="accent-pick__row">
             <span class="accent-pick__button" style="@($"background:{GradientCss};color:{OnAccent}")">@L["common.ok"]</span>
@@ -22,9 +22,10 @@
     <div class="accent-pick__palette">
         <span class="accent-pick__label">@L["settings.appearance.customPalette"]</span>
         <div class="accent-pick__swatches">
-            @foreach (var hex in Palette)
+            @foreach (var color in Theme.Catalog.AccentPalette)
             {
-                <ColorSwatch @key="hex" Color="@($"linear-gradient(135deg, {hex} 0%, {Theme.Catalog.SecondHexOf(hex)} 100%)")" RingColor="@hex" Size="34" Label="@hex"
+                var hex = color.Hex;
+                <ColorSwatch @key="hex" Color="@($"linear-gradient(135deg, {hex} 0%, {Theme.Catalog.SecondHexOf(hex)} 100%)")" RingColor="@hex" Size="34" Label="@L[color.NameKey]"
                              Selected="@string.Equals(hex, CurrentHex, StringComparison.OrdinalIgnoreCase)" OnClick="() => PickPalette(hex)" />
             }
         </div>
@@ -42,13 +43,6 @@
 </form>
 
 @code {
-    // Deep, gradient-friendly colors that keep white text readable.
-    private static readonly string[] Palette =
-    [
-        "#6A4BFF", "#8E44EC", "#C2338F", "#E0457B", "#E5533D", "#D9480F",
-        "#B7791F", "#2F9E44", "#0F9488", "#0B84C6", "#3157E8", "#4C5FD5",
-    ];
-
     private string _hex = "";
     /// <summary>The last valid color: what the preview and the strips show while a typed code is incomplete.</summary>
     private string _valid = "#6A4BFF";
@@ -77,17 +71,8 @@
 
     private string BubbleCss => Bubble.Background;
 
-    /// <summary>Text on the accent gradient: white, or dark where that reads better (as ThemeCatalog decides for --sm-on-accent).</summary>
-    private string OnAccent
-    {
-        get
-        {
-            var stops = new[] { ThemeCatalog.Color.Parse(CurrentHex), ThemeCatalog.Color.Parse(SecondHex) };
-            return ThemeCatalog.WorstContrast(ThemeCatalog.Color.White, stops) >= ThemeCatalog.WorstContrast(ThemeCatalog.Color.Parse("#1C1634"), stops)
-                ? "#FFFFFF"
-                : "#1C1634";
-        }
-    }
+    /// <summary>Text on the accent gradient: white unless the color is very light (as ThemeCatalog decides for --sm-on-accent).</summary>
+    private string OnAccent => ThemeCatalog.OnAccentInk(ThemeCatalog.Color.Parse(CurrentHex), ThemeCatalog.Color.Parse(SecondHex)).Hex;
 
     private void OnStrips(string hex)
     {
