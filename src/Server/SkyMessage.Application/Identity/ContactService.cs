@@ -44,7 +44,7 @@ public sealed class ContactService(
 
     /// <summary>
     /// Phone-book import (confirmed by the user) or sync (<see cref="AddContactsBulkRequest.Synced"/>): unknown users
-    /// and self are skipped; existing custom names are kept.
+    /// and self are skipped; existing custom names are kept, except that a sync renames the contacts it added.
     /// </summary>
     public Task<IReadOnlyList<ContactDto>> AddBulkAsync(Guid ownerId, AddContactsBulkRequest request, CancellationToken ct) =>
         UpsertAsync(ownerId, request.Contacts ?? [], overwriteNames: false, request.Synced ? ContactSource.PhoneSync : ContactSource.Manual, ct);
@@ -98,7 +98,7 @@ public sealed class ContactService(
 
     /// <param name="source">
     /// How new contacts are marked. <see cref="ContactSource.Manual"/> also adopts existing synced contacts (the user
-    /// chose them); a sync leaves existing contacts as they are.
+    /// chose them); a sync leaves the user's own contacts as they are and gives synced ones their phone-book name.
     /// </param>
     private async Task<IReadOnlyList<ContactDto>> UpsertAsync(Guid ownerId, IReadOnlyList<AddContactRequest> requests, bool overwriteNames,
         ContactSource source, CancellationToken ct)
@@ -131,7 +131,9 @@ public sealed class ContactService(
                 if (!existingUsers.Contains(userId)) continue;
                 if (existing.TryGetValue(userId, out var contact))
                 {
-                    if (name is not null && contact.CustomName != name && (overwriteNames || contact.CustomName is null))
+                    // A sync renames the contacts it added: their names follow the phone book until the user adopts them.
+                    var syncOwnsName = source == ContactSource.PhoneSync && contact.Source == ContactSource.PhoneSync;
+                    if (name is not null && contact.CustomName != name && (overwriteNames || syncOwnsName || contact.CustomName is null))
                     {
                         contact.CustomName = name;
                         renamed = true;

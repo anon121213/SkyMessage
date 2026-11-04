@@ -1,3 +1,4 @@
+using SkyMessage.Application.Common.Persistence;
 using SkyMessage.Contracts;
 using SkyMessage.Domain.Entities;
 
@@ -45,7 +46,8 @@ internal static class IdentityMapping
         return changed;
     }
 
-    public static MeDto ToMeDto(this User u, Guid savedMessagesChatId) => new()
+    /// <param name="earlierAvatarCount">See <see cref="MeDto.EarlierAvatarCount"/> (<see cref="AvatarHistory.CountEarlierAsync"/>).</param>
+    public static MeDto ToMeDto(this User u, Guid savedMessagesChatId, int earlierAvatarCount) => new()
     {
         Id = u.Id,
         Username = u.Username,
@@ -61,6 +63,7 @@ internal static class IdentityMapping
         ProfileColor = u.ProfileColor,
         Cover = CoverOf(u.CoverGradient, u.CoverMediaId, photoVisible: true),
         Links = u.Links.ToDtos(),
+        EarlierAvatarCount = earlierAvatarCount,
     };
 
     public static BirthdayDto? BirthdayOf(int? day, int? month, int? year) =>

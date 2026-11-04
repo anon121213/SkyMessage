@@ -62,6 +62,10 @@ public static class AvatarHistory
             await history.Where(a => stale.Contains(a.Id)).ExecuteDeleteAsync(ct);
     }
 
+    /// <summary>Entries other than the current avatar (<paramref name="currentMediaId"/>; all of them without one).</summary>
+    public static Task<int> CountEarlierAsync(IQueryable<AvatarPhoto> history, Guid? currentMediaId, CancellationToken ct) =>
+        currentMediaId is { } current ? history.CountAsync(a => a.MediaId != current, ct) : history.CountAsync(ct);
+
     /// <summary>The newest entry other than <paramref name="exceptMediaId"/>: the avatar after that one is removed.</summary>
     public static Task<Guid?> NewestAsync(IQueryable<AvatarPhoto> history, Guid exceptMediaId, CancellationToken ct) =>
         history.AsNoTracking()

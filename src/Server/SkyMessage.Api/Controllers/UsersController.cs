@@ -32,6 +32,9 @@ public sealed class UsersController(ProfileService profile, UserDirectoryService
     [HttpDelete(ApiRoutes.Users.MeAvatar)]
     public Task<MeDto> RemoveAvatar(CancellationToken ct) => profile.RemoveAvatarAsync(currentUser.UserId, ct);
 
+    [HttpDelete(ApiRoutes.Users.MeAvatars)]
+    public Task<MeDto> DeleteAllAvatars(CancellationToken ct) => profile.DeleteAllAvatarsAsync(currentUser.UserId, ct);
+
     [HttpDelete(ApiRoutes.Users.MeAvatarById)]
     public Task<MeDto> DeleteAvatar(Guid mediaId, CancellationToken ct) => profile.DeleteAvatarAsync(currentUser.UserId, mediaId, ct);
 

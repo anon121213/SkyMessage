@@ -33,6 +33,31 @@ public sealed class ContactSyncTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task A_sync_renames_the_contacts_it_added_but_never_the_users_own()
+    {
+        var owner = await factory.NewUserAsync();
+        var (mine, synced) = (await factory.NewUserAsync(), await factory.NewUserAsync());
+        await owner.AddContactAsync(mine, "Брат");
+        await owner.Client.PostAs<IReadOnlyList<ContactDto>>(ApiRoutes.Contacts.Bulk, new AddContactsBulkRequest
+        {
+            Synced = true,
+            Contacts = [new AddContactRequest { UserId = synced.Id, CustomName = "Оля" }],
+        });
+
+        // The phone book renamed both people.
+        var result = await owner.Client.PostAs<IReadOnlyList<ContactDto>>(ApiRoutes.Contacts.Bulk, new AddContactsBulkRequest
+        {
+            Synced = true,
+            Contacts = [new AddContactRequest { UserId = mine.Id, CustomName = "Саша" }, new AddContactRequest { UserId = synced.Id, CustomName = "Ольга" }],
+        });
+
+        result.Single(c => c.User.Id == synced.Id).CustomName.ShouldBe("Ольга");
+        var contacts = await Contacts(owner);
+        contacts.Single(c => c.User.Id == synced.Id).ShouldSatisfyAllConditions(c => c.CustomName.ShouldBe("Ольга"), c => c.IsSynced.ShouldBeTrue());
+        contacts.Single(c => c.User.Id == mine.Id).ShouldSatisfyAllConditions(c => c.CustomName.ShouldBe("Брат"), c => c.IsSynced.ShouldBeFalse());
+    }
+
+    [Fact]
     public async Task Removing_synced_contacts_keeps_the_ones_added_by_hand()
     {
         var owner = await factory.NewUserAsync();

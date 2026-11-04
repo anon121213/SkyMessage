@@ -118,6 +118,11 @@ public sealed record MeDto
     public string? ProfileColor { get; init; }
     public ProfileCoverDto? Cover { get; init; }
     public IReadOnlyList<ProfileLinkDto> Links { get; init; } = [];
+    /// <summary>
+    /// Earlier photos kept in my avatar history (the current one not counted). Without a current photo only I see
+    /// them, and they show again with the next photo, so Settings offers them (and deleting them) even then.
+    /// </summary>
+    public int EarlierAvatarCount { get; init; }
 }
 
 /// <summary>PATCH semantics: null fields are left unchanged.</summary>
@@ -209,7 +214,10 @@ public sealed record AddContactRequest
 public sealed record AddContactsBulkRequest
 {
     public IReadOnlyList<AddContactRequest> Contacts { get; init; } = [];
-    /// <summary>Contact sync: new contacts are marked synced (people already in the address book stay as they are).</summary>
+    /// <summary>
+    /// Contact sync: new contacts are marked synced and synced ones take the given (phone-book) name; people the user
+    /// added or renamed by hand stay as they are.
+    /// </summary>
     public bool Synced { get; init; }
 }
 

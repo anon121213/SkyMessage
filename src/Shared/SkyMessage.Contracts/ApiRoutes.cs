@@ -74,6 +74,8 @@ public static class ApiRoutes
         public const string Avatars = "api/users/{userId:guid}/avatars";
         /// <summary>DELETE → <see cref="MeDto"/>: drops a photo from my avatar history (the previous one takes over if it was the current).</summary>
         public const string MeAvatarById = "api/users/me/avatars/{mediaId:guid}";
+        /// <summary>DELETE → <see cref="MeDto"/>: no photo and no avatar history left.</summary>
+        public const string MeAvatars = "api/users/me/avatars";
         /// <summary>PUT <see cref="SetBirthdayRequest"/> / DELETE → <see cref="MeDto"/>.</summary>
         public const string MeBirthday = "api/users/me/birthday";
         /// <summary>PUT <see cref="SetCoverRequest"/> / DELETE → <see cref="MeDto"/>.</summary>
@@ -130,7 +132,10 @@ public static class ApiRoutes
         public const string PinnedOrder = "api/chats/pinned-order";
         /// <summary>PUT <see cref="SetContentProtectionRequest"/> → <see cref="ChatInfoDto"/> (no forwarding/copying/saving).</summary>
         public const string ContentProtection = "api/chats/{chatId:guid}/content-protection";
-        /// <summary>GET → <see cref="AvatarPhotoDto"/>[]: the group's avatar history (members).</summary>
+        /// <summary>
+        /// GET → <see cref="AvatarPhotoDto"/>[]: the group's avatar history (members; without a current photo only who may
+        /// change the info). DELETE → <see cref="ChatInfoDto"/>: no photo and no history left (who may change the info).
+        /// </summary>
         public const string Avatars = "api/chats/{chatId:guid}/avatars";
         /// <summary>DELETE → <see cref="ChatInfoDto"/>: drops a photo from the group's history (who may change the group's info).</summary>
         public const string AvatarById = "api/chats/{chatId:guid}/avatars/{mediaId:guid}";

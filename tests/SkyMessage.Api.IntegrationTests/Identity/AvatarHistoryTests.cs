@@ -64,15 +64,60 @@ public sealed class AvatarHistoryTests(ApiFactory factory)
         var viewer = await factory.NewUserAsync();
         var (a, b) = (await PhotoAsync(owner), await PhotoAsync(owner));
         await SetAvatarAsync(owner, a);
-        await SetAvatarAsync(owner, b);
+        (await SetAvatarAsync(owner, b)).EarlierAvatarCount.ShouldBe(1);
 
-        (await owner.Client.DeleteAs<MeDto>(ApiRoutes.Users.MeAvatar)).AvatarMediaId.ShouldBeNull();
+        var me = await owner.Client.DeleteAs<MeDto>(ApiRoutes.Users.MeAvatar);
 
+        me.AvatarMediaId.ShouldBeNull();
+        me.EarlierAvatarCount.ShouldBe(1, "Settings still offers the earlier photo");
+        (await owner.Client.GetAs<MeDto>(ApiRoutes.Users.Me)).EarlierAvatarCount.ShouldBe(1);
         (await History(owner, owner)).Select(p => p.Media.Id).ShouldBe([a]);
         (await History(viewer, owner)).ShouldBeEmpty();
+        await MediaShouldBeVisibleAsync(viewer, a, false);
         // Back again from the history.
         (await SetAvatarAsync(owner, a)).AvatarMediaId.ShouldBe(a);
         (await History(viewer, owner)).Select(p => p.Media.Id).ShouldBe([a]);
+    }
+
+    [Fact]
+    public async Task Deleting_all_photos_leaves_no_photo_and_nothing_to_show_again_with_the_next_one()
+    {
+        var owner = await factory.NewUserAsync();
+        var friend = await factory.NewUserAsync();
+        await friend.AddContactAsync(owner);
+        var (a, b, c) = (await PhotoAsync(owner), await PhotoAsync(owner), await PhotoAsync(owner));
+        await SetAvatarAsync(owner, a);
+        await SetAvatarAsync(owner, b);
+        await using var probe = await RealtimeProbe.ConnectAsync(friend);
+
+        var me = await owner.Client.DeleteAs<MeDto>(ApiRoutes.Users.MeAvatars);
+
+        me.AvatarMediaId.ShouldBeNull();
+        me.EarlierAvatarCount.ShouldBe(0);
+        (await History(owner, owner)).ShouldBeEmpty();
+        await probe.WaitForAsync<UserRefEvent>(e => e.UserId == owner.Id);
+
+        (await SetAvatarAsync(owner, c)).EarlierAvatarCount.ShouldBe(0);
+        (await History(friend, owner)).Select(p => p.Media.Id).ShouldBe([c]);
+        await MediaShouldBeVisibleAsync(friend, a, false);
+        // Without photos it changes nothing.
+        await owner.Client.DeleteAs<MeDto>(ApiRoutes.Users.MeAvatars);
+        (await owner.Client.DeleteAs<MeDto>(ApiRoutes.Users.MeAvatars)).AvatarMediaId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_new_session_and_a_refresh_carry_the_count_of_earlier_photos()
+    {
+        var owner = await factory.NewUserAsync();
+        var (a, b) = (await PhotoAsync(owner), await PhotoAsync(owner));
+        await SetAvatarAsync(owner, a);
+        await SetAvatarAsync(owner, b);
+        await owner.Client.DeleteAs<MeDto>(ApiRoutes.Users.MeAvatar);
+
+        var second = await owner.SignInAgainAsync();
+        second.Auth.User.EarlierAvatarCount.ShouldBe(1);
+        var refreshed = await factory.NewClient().PostAs<AuthResponse>(ApiRoutes.Auth.Refresh, new RefreshRequest { RefreshToken = second.Auth.RefreshToken });
+        refreshed.User.EarlierAvatarCount.ShouldBe(1);
     }
 
     [Theory]
@@ -204,6 +249,51 @@ public sealed class AvatarHistoryTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Without_a_photo_a_groups_earlier_photos_are_only_for_who_may_change_it()
+    {
+        var owner = await factory.NewUserAsync();
+        var member = await factory.NewUserAsync();
+        var chatId = await owner.CreateGroupAsync(member);
+        var (first, second) = (await PhotoAsync(owner), await PhotoAsync(owner));
+        await owner.Client.PutAs<ChatInfoDto>(ApiRoutes.Chats.AvatarPath(chatId), new SetChatAvatarRequest { MediaId = first });
+        await owner.Client.PutAs<ChatInfoDto>(ApiRoutes.Chats.AvatarPath(chatId), new SetChatAvatarRequest { MediaId = second });
+        (await Details(member, chatId)).EarlierAvatarCount.ShouldBe(1);
+
+        (await owner.Client.DeleteAs<ChatInfoDto>(ApiRoutes.Chats.AvatarPath(chatId))).AvatarMediaId.ShouldBeNull();
+
+        (await GroupHistory(owner, chatId)).Select(p => p.Media.Id).ShouldBe([first]);
+        (await Details(owner, chatId)).EarlierAvatarCount.ShouldBe(1);
+        (await GroupHistory(member, chatId)).ShouldBeEmpty();
+        (await Details(member, chatId)).EarlierAvatarCount.ShouldBe(0);
+        await MediaShouldBeVisibleAsync(member, first, false);
+
+        // A photo again: the earlier one shows with it.
+        await owner.Client.PutAs<ChatInfoDto>(ApiRoutes.Chats.AvatarPath(chatId), new SetChatAvatarRequest { MediaId = first });
+        (await GroupHistory(member, chatId)).Select(p => p.Media.Id).ShouldBe([first]);
+    }
+
+    [Fact]
+    public async Task Deleting_all_of_a_groups_photos_leaves_no_photo_and_no_history()
+    {
+        var owner = await factory.NewUserAsync();
+        var member = await factory.NewUserAsync();
+        var chatId = await owner.CreateGroupAsync(member);
+        var (first, second) = (await PhotoAsync(owner), await PhotoAsync(owner));
+        await owner.Client.PutAs<ChatInfoDto>(ApiRoutes.Chats.AvatarPath(chatId), new SetChatAvatarRequest { MediaId = first });
+        await owner.Client.PutAs<ChatInfoDto>(ApiRoutes.Chats.AvatarPath(chatId), new SetChatAvatarRequest { MediaId = second });
+
+        await (await member.Client.Delete(ApiRoutes.Chats.AvatarsPath(chatId))).ShouldFailAsync(HttpStatusCode.Forbidden, ErrorCodes.NotChatAdmin);
+        await using var probe = await RealtimeProbe.ConnectAsync(member);
+        (await owner.Client.DeleteAs<ChatInfoDto>(ApiRoutes.Chats.AvatarsPath(chatId))).AvatarMediaId.ShouldBeNull();
+
+        await probe.WaitForAsync<ChatInfoDto>(e => e.Id == chatId && e.AvatarMediaId == null);
+        (await GroupHistory(owner, chatId)).ShouldBeEmpty();
+        (await Details(owner, chatId)).EarlierAvatarCount.ShouldBe(0);
+        // Without photos it changes nothing.
+        (await owner.Client.DeleteAs<ChatInfoDto>(ApiRoutes.Chats.AvatarsPath(chatId))).AvatarMediaId.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task A_group_created_with_a_photo_starts_its_history_and_removing_the_photo_drops_it()
     {
         var owner = await factory.NewUserAsync();
@@ -233,6 +323,9 @@ public sealed class AvatarHistoryTests(ApiFactory factory)
 
     private static Task<IReadOnlyList<AvatarPhotoDto>> GroupHistory(TestUser viewer, Guid chatId) =>
         viewer.Client.GetAs<IReadOnlyList<AvatarPhotoDto>>(ApiRoutes.Chats.AvatarsPath(chatId));
+
+    private static Task<ChatDetailsDto> Details(TestUser viewer, Guid chatId) =>
+        viewer.Client.GetAs<ChatDetailsDto>(ApiRoutes.Chats.DetailsPath(chatId));
 
     private static async Task MediaShouldBeVisibleAsync(TestUser viewer, Guid mediaId, bool visible)
     {

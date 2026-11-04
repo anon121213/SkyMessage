@@ -23,8 +23,13 @@ public interface IChatService
     Task<ChatInfoDto> SetAvatarAsync(Guid chatId, SetChatAvatarRequest request, CancellationToken cancellationToken = default);
     /// <summary>No photo from now on; the removed one leaves the history too.</summary>
     Task<ChatInfoDto> RemoveAvatarAsync(Guid chatId, CancellationToken cancellationToken = default);
-    /// <summary>The group's avatar history (members only): the current photo first, then newest first.</summary>
+    /// <summary>
+    /// The group's avatar history (members only): the current photo first, then newest first. Without a current photo
+    /// only who may change the info gets it (others: empty).
+    /// </summary>
     Task<IReadOnlyList<AvatarPhotoDto>> GetAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>No photo and no history left (who may change the group's info); ChatUpdated when anything went.</summary>
+    Task<ChatInfoDto> DeleteAllAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default);
     /// <summary>
     /// Drops a photo from the group's history (who may change the group's info); when it is the current one the newest
     /// remaining photo takes over. ChatUpdated to the members either way.

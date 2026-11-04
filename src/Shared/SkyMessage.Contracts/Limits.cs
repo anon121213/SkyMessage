@@ -55,6 +55,12 @@ public static class Limits
     public const int CallRingTimeoutSeconds = 45;
 
     public const int FindByPhonesMax = 1000;
+    /// <summary>
+    /// <c>find-by-phones</c> requests one user may make per <see cref="PhoneLookupWindowMinutes"/> (a fixed window shared
+    /// by the import and contact sync).
+    /// </summary>
+    public const int PhoneLookupsPerWindow = 10;
+    public const int PhoneLookupWindowMinutes = 10;
     public const int MaxBatchUsers = 200;
     public const int SearchQueryMinLength = 2;
     /// <summary>Global (non-contact) user search only matches username prefixes at least this long.</summary>

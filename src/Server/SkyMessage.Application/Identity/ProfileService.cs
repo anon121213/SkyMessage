@@ -147,6 +147,23 @@ public sealed class ProfileService(
         return await ToMeAsync(user, ct);
     }
 
+    /// <summary>No photo and no avatar history: every earlier photo goes too (nothing to show again with a new one).</summary>
+    public async Task<MeDto> DeleteAllAvatarsAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await LoadAsync(userId, ct);
+        var removed = await db.OfUser(userId).ExecuteDeleteAsync(ct);
+        var hadPhoto = user.AvatarMediaId is not null;
+        if (hadPhoto)
+        {
+            user.AvatarMediaId = null;
+            user.UpdatedAt = clock.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        if (hadPhoto || removed > 0)
+            await userChanges.NotifyAsync(userId);
+        return await ToMeAsync(user, ct);
+    }
+
     /// <summary>
     /// Drops a photo from my avatar history. When it is the current avatar, the newest remaining photo takes over
     /// (no photo when none is left). Unknown photos → 404.
@@ -354,7 +371,7 @@ public sealed class ProfileService(
         ?? throw new NotFoundException(ErrorCodes.UserNotFound);
 
     private async Task<MeDto> ToMeAsync(User user, CancellationToken ct) =>
-        user.ToMeDto(await savedChats.GetIdAsync(user.Id, ct));
+        user.ToMeDto(await savedChats.GetIdAsync(user.Id, ct), await AvatarHistory.CountEarlierAsync(db.OfUser(user.Id), user.AvatarMediaId, ct));
 
     /// <summary>Saves; a unique-index race is reported with the code <paramref name="conflictCode"/> finds.</summary>
     private async Task SaveAsync(Func<Task<string?>> conflictCode, CancellationToken ct)
