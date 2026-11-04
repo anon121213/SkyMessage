@@ -18,8 +18,9 @@ namespace SkyMessage.App.Droid;
 /// <see cref="ReminderReceiver"/>, which posts the notification from the alarm's own extras, so a reminder also
 /// arrives when the app is not running — unless it comes on another day than its own or more than
 /// <see cref="ReminderRules.MaxDelay"/> late (then it is dropped: "today" would be wrong). Each group's reminders are
-/// stored, so the next schedule cancels the old alarms and <see cref="ReminderBootReceiver"/> sets them again after a
-/// reboot or an update (alarms do not survive those), including one missed while the phone was off that is still due.
+/// stored until their alarm goes off, so the next schedule cancels the old alarms and <see cref="ReminderBootReceiver"/>
+/// sets the rest again after a reboot or an update (alarms do not survive those): the ones still to come and one missed
+/// while the phone was off that is still due — never one already shown or dropped.
 /// Tapping a reminder opens its link (a chat or a profile) through MainActivity.
 /// </summary>
 public sealed class AndroidReminderService(NativeStrings strings, ILogger<AndroidReminderService> logger) : IReminderNotificationService
@@ -78,8 +79,9 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
     }
 
     /// <summary>
-    /// After a reboot or an update: the stored reminders still to come are armed again, and one that came due while the
-    /// phone was off fires now if it is still worth it (<see cref="OnAlarm"/> decides).
+    /// After a reboot or an update. A reminder leaves the store when its alarm goes off (<see cref="OnAlarm"/>), so the
+    /// ones stored are still to come — armed again — or came due while the phone was off and never went off: armed for
+    /// now, and shown if still worth it. Ones too late for that are forgotten.
     /// </summary>
     internal static void RearmAll(Context context)
     {
@@ -87,16 +89,31 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
         {
             var oldest = DateTimeOffset.UtcNow.Subtract(ReminderRules.MaxDelay).ToUnixTimeMilliseconds();
             foreach (var group in Groups())
-                foreach (var entry in Load(group).Where(e => e.AtMs > oldest))
-                    Arm(context, entry);
+            {
+                var stored = Load(group);
+                var pending = stored.Where(e => e.AtMs > oldest).ToList();
+                if (pending.Count != stored.Count) Save(group, pending);
+                foreach (var entry in pending) Arm(context, entry);
+            }
         }
     }
 
-    /// <summary>An alarm went off: the notification it carries, unless it is late by hours or on another day.</summary>
+    /// <summary>
+    /// An alarm went off: the notification it carries, unless it is late by hours or on another day. Either way it
+    /// leaves the store, so a reboot or an update later that day does not bring it back.
+    /// </summary>
     internal static void OnAlarm(Context context, Intent intent)
     {
         var key = intent.GetStringExtra(ExtraKey);
         if (string.IsNullOrEmpty(key)) return;
+        try
+        {
+            Forget(key);
+        }
+        catch (Exception)
+        {
+            // The notification still comes; only a reboot today could bring it back.
+        }
         var at = intent.GetLongExtra(ExtraAt, 0);
         var day = DateOnly.TryParseExact(intent.GetStringExtra(ExtraDay), DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
             ? d
@@ -211,6 +228,19 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
         catch (JsonException)
         {
             return [];
+        }
+    }
+
+    /// <summary>Takes a reminder whose alarm went off out of its group.</summary>
+    private static void Forget(string key)
+    {
+        lock (Gate)
+        {
+            foreach (var group in Groups())
+            {
+                var entries = Load(group);
+                if (entries.RemoveAll(e => e.Key == key) > 0) Save(group, entries);
+            }
         }
     }
 

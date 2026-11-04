@@ -736,7 +736,8 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   `setExactAndAllowWhileIdle` on Android 8–11, where it needs no permission and an inexact alarm could come days late,
   `setAndAllowWhileIdle` on 12+, at most an hour late — whose receiver posts the stored text unless it is late by
   hours or on another day (`ReminderRules.IsDue`), re-armed after reboot/update by `ReminderBootReceiver`, a reminder
-  missed while the phone was off included; elsewhere unsupported — the app reminds on the chat list),
+  missed while the phone was off included — one whose alarm already went off leaves the store then and is not shown
+  again; elsewhere unsupported — the app reminds on the chat list),
   DeviceContactsWatcher (Android: a ContentObserver on the contacts provider while sync is on; elsewhere unsupported),
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
