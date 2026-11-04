@@ -54,8 +54,41 @@ internal sealed class LockClocks : TimeProvider
     }
 }
 
-internal sealed class FakeLockPlatform(LockClocks clocks) : IAppLockPlatform
+/// <summary>
+/// One browser's tabs on one storage: a write by any tab reaches the tabs as a storage event, an announcement reaches the
+/// others as a BroadcastChannel message (never the sender). A frozen tab misses both.
+/// </summary>
+internal sealed class FakeTabs
 {
+    private readonly List<FakeLockPlatform> _tabs = [];
+
+    public FakeTabs(InMemorySecureStore store) => store.Written += _ => Send(null, AppLockSignal.StoreChanged);
+
+    public void Join(FakeLockPlatform tab)
+    {
+        lock (_tabs) _tabs.Add(tab);
+    }
+
+    public void Send(FakeLockPlatform? from, AppLockSignal signal)
+    {
+        List<FakeLockPlatform> others;
+        lock (_tabs) others = _tabs.Where(t => t != from && !t.Frozen).ToList();
+        foreach (var tab in others) tab.Raise(signal);
+    }
+}
+
+internal sealed class FakeLockPlatform : IAppLockPlatform
+{
+    private readonly LockClocks _clocks;
+    private readonly FakeTabs? _tabs;
+
+    public FakeLockPlatform(LockClocks clocks, FakeTabs? tabs = null)
+    {
+        _clocks = clocks;
+        _tabs = tabs;
+        tabs?.Join(this);
+    }
+
     public bool SupportsBiometrics { get; set; } = true;
     public bool CanUseBiometrics { get; set; } = true;
     public BiometricOutcome NextOutcome { get; set; } = BiometricOutcome.Succeeded;
@@ -64,8 +97,21 @@ internal sealed class FakeLockPlatform(LockClocks clocks) : IAppLockPlatform
     /// <summary>A platform PBKDF2 (as browsers have); null = the platform has none and .NET's is used.</summary>
     public Func<string, byte[], int, int, Task<byte[]?>>? Kdf { get; set; }
     public int KdfCalls { get; private set; }
+    public List<AppLockSignal> Announced { get; } = [];
+    /// <summary>A frozen tab hears nothing from the others.</summary>
+    public bool Frozen { get; set; }
 
-    public TimeSpan? SinceBoot => clocks.Boot;
+    public TimeSpan? SinceBoot => _clocks.Boot;
+
+    public event Action<AppLockSignal>? Signaled;
+
+    public void Announce(AppLockSignal signal)
+    {
+        Announced.Add(signal);
+        _tabs?.Send(this, signal);
+    }
+
+    public void Raise(AppLockSignal signal) => Signaled?.Invoke(signal);
 
     public Task<BiometricOutcome> AuthenticateAsync(BiometricPromptText text, CancellationToken cancellationToken = default)
     {
@@ -79,6 +125,100 @@ internal sealed class FakeLockPlatform(LockClocks clocks) : IAppLockPlatform
     {
         KdfCalls++;
         return Kdf?.Invoke(passcode, salt, iterations, length) ?? Task.FromResult<byte[]?>(null);
+    }
+}
+
+/// <summary>
+/// An <see cref="AppLockService"/> on a test device: its storage, clocks and lifecycle; <see cref="Restart"/> starts the
+/// app again on the same device, <c>tabs</c> opens another browser tab next to it.
+/// </summary>
+internal sealed class LockHarness
+{
+    public const string Code = "2468";
+
+    public LockClocks Clocks { get; }
+    public InMemorySecureStore Store { get; }
+    public FakeLifecycle Lifecycle { get; } = new();
+    public FakeLockPlatform Platform { get; }
+    public IScreenSecurityService Screen { get; } = Substitute.For<IScreenSecurityService>();
+    public ScreenCaptureGuard Capture { get; }
+    public IAuthService Auth { get; }
+    public AccountLifecycle Accounts { get; }
+    public Guid UserId { get; } = Guid.CreateVersion7();
+    public AppLockService Lock { get; }
+    public bool Native { get; }
+    public FakeTabs? Tabs { get; }
+    public int Changes;
+
+    public LockHarness(InMemorySecureStore? store = null, bool signedIn = true, LockClocks? clocks = null, bool native = false, FakeTabs? tabs = null)
+    {
+        Store = store ?? new InMemorySecureStore();
+        Clocks = clocks ?? new LockClocks();
+        Native = native;
+        Tabs = tabs;
+        Platform = new FakeLockPlatform(Clocks, tabs);
+        Capture = new ScreenCaptureGuard(Screen, Log.For<ScreenCaptureGuard>());
+        Auth = Fakes.Auth(UserId);
+        if (!signedIn) Auth.State.Returns(AuthState.SignedOut);
+        var info = Substitute.For<IPlatformInfo>();
+        info.IsNativeApp.Returns(native);
+        (_, Accounts) = Fakes.Account();
+        Lock = new AppLockService(Store, Store, Lifecycle, Platform, Capture, Auth, info, Accounts, Clocks, Log.For<AppLockService>())
+        {
+            FixedIterations = 1_000,
+        };
+        Lock.Changed += () => Interlocked.Increment(ref Changes);
+    }
+
+    /// <summary>The app process starts over on the same device (same storage, same clocks).</summary>
+    public LockHarness Restart(bool signedIn = true) => new(Store, signedIn, Clocks, Native);
+
+    /// <summary>Another tab of the same browser (same storage, clocks and tabs).</summary>
+    public LockHarness OpenTab() => new(Store, signedIn: true, Clocks, native: false, Tabs);
+
+    public static async Task<LockHarness> WithPasscodeAsync(TimeSpan? boot = null, bool native = false)
+    {
+        var h = new LockHarness(clocks: new LockClocks { Boot = boot }, native: native);
+        await h.Lock.InitializeAsync();
+        await h.Lock.EnableAsync(Code);
+        return h;
+    }
+
+    /// <summary>Two tabs of one browser; the first one has the passcode set (when <paramref name="withPasscode"/>).</summary>
+    public static async Task<(LockHarness A, LockHarness B)> TwoTabsAsync(bool withPasscode = true)
+    {
+        var store = new InMemorySecureStore();
+        var a = new LockHarness(store, tabs: new FakeTabs(store));
+        await a.Lock.InitializeAsync();
+        if (withPasscode) await a.Lock.EnableAsync(Code);
+        var b = a.OpenTab();
+        await b.Lock.InitializeAsync();
+        return (a, b);
+    }
+
+    public void Leave() => Lifecycle.Set(false);
+
+    public void Return() => Lifecycle.Set(true);
+
+    /// <summary>The user signs out by choice: the session is still valid for the before-sign-out hooks.</summary>
+    public async Task SignOutByChoiceAsync()
+    {
+        await Accounts.BeforeSignOutAsync(UserId);
+        await SignedOutAsync();
+    }
+
+    /// <summary>The session ended without the user asking (expired, or ended from another device).</summary>
+    public async Task SignedOutAsync()
+    {
+        Auth.State.Returns(AuthState.SignedOut);
+        await Accounts.SignedOutAsync(UserId);
+    }
+
+    /// <summary>Signing in with the password (after a sign-out, or at a start without a session).</summary>
+    public async Task SignInAsync()
+    {
+        Auth.State.Returns(AuthState.SignedIn);
+        await Accounts.ActivateAsync(UserId);
     }
 }
 
@@ -168,9 +308,19 @@ public sealed class AppLockRulesTests
         AppLockRules.PauseRemaining(pause, TimeSpan.FromHours(-3), null, null).ShouldBe(pause, "a clock moved back never lengthens it");
         AppLockRules.PauseRemaining(pause, TimeSpan.FromSeconds(10), null, null).ShouldBe(TimeSpan.FromSeconds(20));
         AppLockRules.PauseRemaining(pause, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(12), null).ShouldBe(TimeSpan.FromSeconds(18));
-        AppLockRules.PauseRemaining(pause, TimeSpan.FromMinutes(5), null, TimeSpan.FromSeconds(-40))
-            .ShouldBe(TimeSpan.Zero, "after a reboot the boot clock is unknown and the wall clock decides");
         AppLockRules.PauseRemaining(TimeSpan.Zero, TimeSpan.Zero, null, null).ShouldBe(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void After_a_phone_restart_only_the_time_since_it_counts_never_the_wall_clock()
+    {
+        AppLockRules.BootServed(TimeSpan.FromHours(5), TimeSpan.FromHours(5) + TimeSpan.FromSeconds(10)).ShouldBe(TimeSpan.FromSeconds(10));
+        AppLockRules.BootServed(TimeSpan.FromHours(5), TimeSpan.FromSeconds(40))
+            .ShouldBe(TimeSpan.FromSeconds(40), "the boot clock started over: the time before the restart is not counted");
+
+        var hour = TimeSpan.FromHours(1);
+        AppLockRules.PauseRemaining(hour, TimeSpan.FromDays(1), null, AppLockRules.BootServed(TimeSpan.FromHours(5), TimeSpan.FromSeconds(40)))
+            .ShouldBe(hour - TimeSpan.FromSeconds(40), "a restart plus a clock moved a day ahead buys nothing");
     }
 }
 
@@ -227,57 +377,7 @@ public sealed class PasscodeHasherTests
 
 public sealed class AppLockServiceTests
 {
-    private const string Code = "2468";
-
-    private sealed class Harness
-    {
-        public LockClocks Clocks { get; }
-        public InMemorySecureStore Store { get; }
-        public FakeLifecycle Lifecycle { get; } = new();
-        public FakeLockPlatform Platform { get; }
-        public IScreenSecurityService Screen { get; } = Substitute.For<IScreenSecurityService>();
-        public ScreenCaptureGuard Capture { get; }
-        public IAuthService Auth { get; }
-        public AppLockService Lock { get; }
-        public int Changes;
-
-        public Harness(InMemorySecureStore? store = null, bool signedIn = true, LockClocks? clocks = null)
-        {
-            Store = store ?? new InMemorySecureStore();
-            Clocks = clocks ?? new LockClocks();
-            Platform = new FakeLockPlatform(Clocks);
-            Capture = new ScreenCaptureGuard(Screen, Log.For<ScreenCaptureGuard>());
-            Auth = signedIn ? Fakes.Auth(Guid.CreateVersion7()) : SignedOut();
-            var (_, accounts) = Fakes.Account();
-            Lock = new AppLockService(Store, Lifecycle, Platform, Capture, Auth, accounts, Clocks, Log.For<AppLockService>())
-            {
-                FixedIterations = 1_000,
-            };
-            Lock.Changed += () => Interlocked.Increment(ref Changes);
-        }
-
-        /// <summary>The app process starts over on the same device (same storage, same clocks).</summary>
-        public Harness Restart() => new(Store, signedIn: true, Clocks);
-
-        public static async Task<Harness> WithPasscodeAsync(TimeSpan? boot = null)
-        {
-            var h = new Harness(clocks: new LockClocks { Boot = boot });
-            await h.Lock.InitializeAsync();
-            await h.Lock.EnableAsync(Code);
-            return h;
-        }
-
-        private static IAuthService SignedOut()
-        {
-            var auth = Substitute.For<IAuthService>();
-            auth.State.Returns(AuthState.SignedOut);
-            return auth;
-        }
-
-        public void Leave() => Lifecycle.Set(false);
-
-        public void Return() => Lifecycle.Set(true);
-    }
+    private const string Code = LockHarness.Code;
 
     private static async Task FailAsync(AppLockService service, int times)
     {
@@ -287,7 +387,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task Turning_it_on_keeps_the_app_open_and_the_next_start_asks_for_the_passcode()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
 
         h.Lock.IsEnabled.ShouldBeTrue();
         h.Lock.IsLocked.ShouldBeFalse();
@@ -297,10 +397,13 @@ public sealed class AppLockServiceTests
         var stored = h.Store.Values[AppLockService.ConfigKey];
         stored.ShouldNotContain(Code);
         stored.ShouldContain("pbkdf2-sha256");
+        h.Store.Values.ContainsKey(AppLockService.MarkerKey).ShouldBeTrue("the plain marker says a passcode is set");
 
         var next = h.Restart();
-        next.Lock.IsLocked.ShouldBeFalse("nothing is known before the stored passcode is read");
+        next.Lock.IsInitialized.ShouldBeFalse("nothing is known before the stored passcode is read");
+        next.Lock.IsLocked.ShouldBeFalse();
         await next.Lock.InitializeAsync();
+        next.Lock.IsInitialized.ShouldBeTrue();
         next.Lock.IsLocked.ShouldBeTrue();
         next.Capture.IsSecure.ShouldBeTrue("the locked app is kept out of screenshots");
         next.Platform.HiddenInRecents.ShouldBeTrue();
@@ -311,9 +414,22 @@ public sealed class AppLockServiceTests
     }
 
     [Fact]
+    public async Task Without_a_passcode_the_first_read_still_reports_itself()
+    {
+        var h = new LockHarness();
+        await h.Lock.InitializeAsync();
+
+        h.Lock.IsInitialized.ShouldBeTrue();
+        h.Lock.IsLocked.ShouldBeFalse();
+        h.Changes.ShouldBe(1, "the shell waits for this to stop covering itself");
+        await h.Lock.InitializeAsync();
+        h.Changes.ShouldBe(1, "idempotent");
+    }
+
+    [Fact]
     public async Task Five_wrong_passcodes_pause_the_checks_and_every_further_one_doubles_the_pause()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         h.Lock.LockNow();
 
         await FailAsync(h.Lock, 3);
@@ -345,7 +461,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task Restarting_the_app_keeps_the_count_and_the_pause()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await FailAsync(h.Lock, 5);
 
         h.Clocks.Advance(TimeSpan.FromSeconds(10));
@@ -362,7 +478,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task With_a_boot_clock_moving_the_wall_clock_or_restarting_does_not_end_the_pause()
     {
-        var h = await Harness.WithPasscodeAsync(boot: TimeSpan.FromHours(5));
+        var h = await LockHarness.WithPasscodeAsync(boot: TimeSpan.FromHours(5), native: true);
         await FailAsync(h.Lock, 5);
 
         h.Clocks.MoveWallClock(TimeSpan.FromHours(2));
@@ -376,9 +492,41 @@ public sealed class AppLockServiceTests
     }
 
     [Fact]
+    public async Task Restarting_the_phone_and_moving_the_clock_forward_does_not_end_the_pause()
+    {
+        var h = await LockHarness.WithPasscodeAsync(boot: TimeSpan.FromHours(5), native: true);
+        // Twelve wrong passcodes: the hour-long pause.
+        await FailAsync(h.Lock, 5);
+        h.Clocks.Advance(TimeSpan.FromSeconds(30));
+        for (var i = 0; i < 7; i++)
+        {
+            h.Clocks.Advance(h.Lock.RetryIn);
+            await h.Lock.UnlockAsync("0000");
+        }
+        h.Lock.RetryIn.ShouldBe(TimeSpan.FromHours(1));
+
+        // The phone restarts (its boot clock starts over) and the wall clock is moved a day ahead.
+        h.Clocks.Boot = TimeSpan.FromSeconds(40);
+        h.Clocks.MoveWallClock(TimeSpan.FromDays(1));
+        var next = h.Restart();
+        await next.Lock.InitializeAsync();
+
+        next.Lock.RetryIn.ShouldBe(TimeSpan.FromHours(1) - TimeSpan.FromSeconds(40), "only the time since the restart counts");
+        (await next.Lock.UnlockAsync(Code)).Status.ShouldBe(PasscodeCheckStatus.Paused);
+
+        // Counting from that restart, also after the app restarts again.
+        next.Clocks.Advance(TimeSpan.FromMinutes(30));
+        var again = next.Restart();
+        await again.Lock.InitializeAsync();
+        again.Lock.RetryIn.ShouldBe(TimeSpan.FromMinutes(30) - TimeSpan.FromSeconds(40));
+        again.Clocks.Advance(TimeSpan.FromMinutes(30));
+        (await again.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Leaving_for_less_than_the_delay_keeps_the_app_open_and_longer_locks_it()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
 
         h.Leave();
         h.Clocks.Advance(TimeSpan.FromSeconds(40));
@@ -395,7 +543,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task Time_the_phone_spent_asleep_counts_as_time_away()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await h.Lock.SetAutoLockDelayAsync(TimeSpan.FromHours(1));
 
         h.Leave();
@@ -409,7 +557,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task The_lock_engages_while_the_app_is_away_so_coming_back_shows_it_at_once()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         h.Leave();
 
         h.Clocks.Advance(TimeSpan.FromSeconds(30));
@@ -425,7 +573,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task Immediately_locks_as_the_app_leaves_but_its_own_picker_gets_a_grace_period()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await h.Lock.SetAutoLockDelayAsync(TimeSpan.Zero);
 
         h.Leave();
@@ -451,9 +599,40 @@ public sealed class AppLockServiceTests
     }
 
     [Fact]
+    public async Task A_trip_whose_result_never_came_does_not_soften_immediately_for_good()
+    {
+        var h = await LockHarness.WithPasscodeAsync();
+        await h.Lock.SetAutoLockDelayAsync(TimeSpan.Zero);
+
+        // The picker's activity was recreated: its handle is never disposed.
+        _ = h.Lock.ExpectReturn();
+        h.Leave();
+        h.Lock.IsLocked.ShouldBeFalse("the trip itself still gets its grace");
+        h.Clocks.Advance(TimeSpan.FromSeconds(20));
+        h.Return();
+
+        h.Leave();
+        h.Lock.IsLocked.ShouldBeTrue("back in the app the trip is over: the next leave locks at once");
+    }
+
+    [Fact]
+    public async Task A_trip_announced_long_before_leaving_does_not_count()
+    {
+        var h = await LockHarness.WithPasscodeAsync();
+        await h.Lock.SetAutoLockDelayAsync(TimeSpan.Zero);
+
+        // Announced, but the picker never came up (and the handle leaked).
+        _ = h.Lock.ExpectReturn();
+        h.Clocks.Advance(TimeSpan.FromMinutes(2));
+        h.Leave();
+
+        h.Lock.IsLocked.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Unlocking_with_a_fingerprint_while_away_does_not_lock_again_on_the_way_back()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await h.Lock.SetAutoLockDelayAsync(TimeSpan.Zero);
         await h.Lock.SetUseBiometricsAsync(true);
         h.Lock.LockNow();
@@ -469,7 +648,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task A_fingerprint_unlocks_only_when_allowed_and_resets_the_count()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         var text = new BiometricPromptText("Unlock", null, "Passcode");
         h.Lock.LockNow();
 
@@ -495,7 +674,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task Changing_and_turning_off_need_the_current_passcode()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await h.Lock.SetHideNotificationTextAsync(true);
 
         (await h.Lock.DisableAsync("1357")).Status.ShouldBe(PasscodeCheckStatus.Wrong);
@@ -511,7 +690,7 @@ public sealed class AppLockServiceTests
 
         (await h.Lock.DisableAsync("975310")).IsCorrect.ShouldBeTrue();
         h.Lock.IsEnabled.ShouldBeFalse();
-        h.Store.Values.ShouldBeEmpty();
+        h.Store.Values.ShouldBeEmpty("the record, its marker and the count are gone");
         h.Platform.HiddenInRecents.ShouldBeFalse();
         (await h.Lock.UnlockAsync("975310")).Status.ShouldBe(PasscodeCheckStatus.NotSet);
         h.Lock.LockNow();
@@ -521,40 +700,76 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task A_second_passcode_cannot_replace_the_first_without_it()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await Should.ThrowAsync<InvalidOperationException>(() => h.Lock.EnableAsync("1111"));
-        await Should.ThrowAsync<ArgumentException>(() => new Harness().Lock.EnableAsync("123"));
+        await Should.ThrowAsync<ArgumentException>(() => new LockHarness().Lock.EnableAsync("123"));
         (await h.Lock.VerifyAsync(Code)).IsCorrect.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task Signing_out_of_the_device_removes_the_passcode()
+    public async Task Signing_out_by_choice_removes_the_passcode_but_keeps_the_app_locked_until_the_session_is_gone()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         h.Lock.LockNow();
         await FailAsync(h.Lock, 2);
 
-        await ((IAccountScoped)h.Lock).OnSignedOutAsync(Guid.CreateVersion7());
-
+        // "Forgot the passcode?": the session is still valid while calls hang up and the server is told.
+        await h.Accounts.BeforeSignOutAsync(h.UserId);
+        h.Store.Values.ShouldBeEmpty("removed first, so it is gone even if the app is closed halfway");
         h.Lock.IsEnabled.ShouldBeFalse();
+        h.Lock.IsLocked.ShouldBeTrue("the chats stay hidden until the session has gone");
+
+        await h.SignedOutAsync();
         h.Lock.IsLocked.ShouldBeFalse();
         h.Lock.FailedAttempts.ShouldBe(0);
-        h.Store.Values.ShouldBeEmpty();
         h.Capture.IsSecure.ShouldBeFalse();
         h.Platform.HiddenInRecents.ShouldBeFalse();
+
+        await h.SignInAsync();
+        h.Lock.IsEnabled.ShouldBeFalse("the next sign-in starts without a passcode");
     }
 
     [Fact]
-    public async Task A_passcode_left_on_a_signed_out_device_is_removed_at_start()
+    public async Task A_sign_out_the_user_did_not_ask_for_keeps_the_passcode_for_the_next_sign_in()
     {
-        var h = await Harness.WithPasscodeAsync();
-        var next = new Harness(h.Store, signedIn: false, h.Clocks);
+        var h = await LockHarness.WithPasscodeAsync();
+        h.Lock.LockNow();
+        await FailAsync(h.Lock, 3);
 
+        // The session expired (or was ended from another device).
+        await h.SignedOutAsync();
+        h.Lock.IsLocked.ShouldBeFalse("signed out there is nothing to open");
+        h.Lock.IsEnabled.ShouldBeTrue();
+        h.Store.Values.ContainsKey(AppLockService.ConfigKey).ShouldBeTrue();
+        h.Lock.LockNow();
+        h.Lock.IsLocked.ShouldBeFalse("nothing locks while signed out");
+
+        // The app restarts on the sign-in screen: still kept.
+        var next = h.Restart(signedIn: false);
+        await next.Lock.InitializeAsync();
+        next.Lock.IsEnabled.ShouldBeTrue();
+        next.Lock.IsLocked.ShouldBeFalse();
+
+        // Signing in with the password opens the app; the passcode applies from then on.
+        await next.SignInAsync();
+        next.Lock.IsLocked.ShouldBeFalse();
+        next.Lock.FailedAttempts.ShouldBe(0, "a password sign-in starts the count over");
+        next.Lock.LockNow();
+        next.Lock.IsLocked.ShouldBeTrue();
+        (await next.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task The_session_restored_at_start_is_not_a_fresh_sign_in()
+    {
+        var h = await LockHarness.WithPasscodeAsync();
+        var next = h.Restart();
         await next.Lock.InitializeAsync();
 
-        next.Lock.IsEnabled.ShouldBeFalse();
-        next.Lock.IsLocked.ShouldBeFalse();
-        next.Store.Values.ContainsKey(AppLockService.ConfigKey).ShouldBeFalse();
+        // The bootstrapper activates the restored session after reading the passcode.
+        await next.SignInAsync();
+
+        next.Lock.IsLocked.ShouldBeTrue("a cold start asks for the passcode");
     }
 
     [Fact]
@@ -562,7 +777,7 @@ public sealed class AppLockServiceTests
     {
         var store = new InMemorySecureStore();
         store.Values[AppLockService.ConfigKey] = "{ not json";
-        var h = new Harness(store);
+        var h = new LockHarness(store);
 
         await h.Lock.InitializeAsync();
 
@@ -572,9 +787,68 @@ public sealed class AppLockServiceTests
     }
 
     [Fact]
+    public async Task A_secure_store_that_cannot_be_read_keeps_the_app_locked_and_wipes_nothing()
+    {
+        var h = await LockHarness.WithPasscodeAsync(native: true);
+        h.Store.Unreadable.Add(AppLockService.ConfigKey);
+
+        var next = h.Restart();
+        await next.Lock.InitializeAsync();
+
+        next.Lock.IsLocked.ShouldBeTrue();
+        (await next.Lock.UnlockAsync(Code)).Status.ShouldBe(PasscodeCheckStatus.Wrong, "nothing to compare with");
+        next.Store.Values.ContainsKey(AppLockService.ConfigKey).ShouldBeTrue("the record is kept for a start that can read it");
+
+        h.Store.Unreadable.Clear();
+        var later = h.Restart();
+        await later.Lock.InitializeAsync();
+        (await later.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_record_the_secure_store_dropped_keeps_the_app_locked()
+    {
+        // Android's secure storage removes a value it cannot decrypt and reports nothing stored.
+        var h = await LockHarness.WithPasscodeAsync(native: true);
+        h.Store.Values.TryRemove(AppLockService.ConfigKey, out _);
+
+        var next = h.Restart();
+        await next.Lock.InitializeAsync();
+
+        next.Lock.IsEnabled.ShouldBeTrue();
+        next.Lock.IsLocked.ShouldBeTrue("the marker says a passcode was set");
+        (await next.Lock.UnlockAsync(Code)).Status.ShouldBe(PasscodeCheckStatus.Wrong);
+
+        // "Forgot the passcode?" is the way out.
+        await next.SignOutByChoiceAsync();
+        next.Store.Values.ShouldBeEmpty();
+        var after = next.Restart(signedIn: false);
+        await after.Lock.InitializeAsync();
+        after.Lock.IsEnabled.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_native_app_reads_the_keystore_at_start_only_and_a_browser_tab_on_every_return()
+    {
+        var native = await LockHarness.WithPasscodeAsync(native: true);
+        var reads = native.Store.Reads;
+        native.Leave();
+        native.Return();
+        (await native.Lock.VerifyAsync(Code)).IsCorrect.ShouldBeTrue();
+        await Task.Delay(50);
+        native.Store.Reads.ShouldBe(reads, "one instance: every extra keystore read is just one more chance for it to fail");
+
+        var tab = await LockHarness.WithPasscodeAsync();
+        reads = tab.Store.Reads;
+        tab.Leave();
+        tab.Return();
+        await Wait.UntilAsync(() => tab.Store.Reads > reads, "another tab may have changed it meanwhile");
+    }
+
+    [Fact]
     public async Task Notification_text_is_hidden_only_while_locked_and_only_when_asked()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         h.Lock.LockNow();
         h.Lock.ShouldHideNotificationText().ShouldBeFalse("off by default");
 
@@ -590,46 +864,135 @@ public sealed class AppLockServiceTests
         h.Lock.IsLocked.ShouldBeTrue();
     }
 
+    // ---- Browser tabs: one app ----------------------------------------------------------------------------------
+
     [Fact]
-    public async Task Another_tab_turning_the_passcode_on_or_off_is_picked_up_on_return()
+    public async Task Lock_now_in_one_tab_locks_every_tab_and_unlocking_one_opens_them_all()
     {
-        var a = new Harness();
-        await a.Lock.InitializeAsync();
-        var b = new Harness(a.Store, signedIn: true, a.Clocks);
-        await b.Lock.InitializeAsync();
+        var (a, b) = await LockHarness.TwoTabsAsync();
+        (await b.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
+        a.Lock.IsLocked.ShouldBeFalse();
+        b.Lock.IsLocked.ShouldBeFalse();
+
+        a.Lock.LockNow();
+
+        a.Lock.IsLocked.ShouldBeTrue();
+        await Wait.UntilAsync(() => b.Lock.IsLocked, "Lock now is for the whole app");
+
+        (await b.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
+        await Wait.UntilAsync(() => !a.Lock.IsLocked, "the right passcode in one tab opens the app");
+    }
+
+    [Fact]
+    public async Task A_passcode_turned_on_in_another_tab_locks_a_hidden_tab_at_once_and_a_visible_one_stays_open()
+    {
+        var (a, b) = await LockHarness.TwoTabsAsync(withPasscode: false);
+        var c = a.OpenTab();
+        await c.Lock.InitializeAsync();
+        b.Leave();
 
         await a.Lock.EnableAsync(Code);
-        b.Lock.IsEnabled.ShouldBeFalse("the other tab has not looked yet");
-        b.Leave();
-        b.Return();
-        await Wait.UntilAsync(() => b.Lock.IsLocked, "a passcode turned on elsewhere locks the tab that was away");
-        b.Lock.IsEnabled.ShouldBeTrue();
+
+        await Wait.UntilAsync(() => b.Lock.IsLocked, "a tab in the background locks without waiting to come back");
+        await Wait.UntilAsync(() => c.Lock.IsEnabled, "a visible tab learns it at once");
+        c.Lock.IsLocked.ShouldBeFalse("its user is right there");
+        a.Lock.IsLocked.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Turning_the_passcode_off_in_one_tab_opens_the_others_and_a_frozen_tab_catches_up_on_return()
+    {
+        var (a, b) = await LockHarness.TwoTabsAsync();
+        b.Lock.IsLocked.ShouldBeTrue();
+        b.Platform.Frozen = true;
+        var c = a.OpenTab();
+        await c.Lock.InitializeAsync();
+        c.Lock.IsLocked.ShouldBeTrue();
 
         (await a.Lock.DisableAsync(Code)).IsCorrect.ShouldBeTrue();
+
+        await Wait.UntilAsync(() => !c.Lock.IsEnabled && !c.Lock.IsLocked, "turned off with the passcode: every tab opens");
+        b.Lock.IsEnabled.ShouldBeTrue("a frozen tab heard nothing");
+
+        b.Platform.Frozen = false;
         b.Leave();
         b.Return();
-        await Wait.UntilAsync(() => !b.Lock.IsEnabled);
+        await Wait.UntilAsync(() => !b.Lock.IsEnabled, "coming back it reads the store again");
+        b.Lock.IsLocked.ShouldBeTrue("a passcode that just vanished could be another tab's sign-out: it stays locked");
+    }
+
+    [Fact]
+    public async Task A_sign_out_in_another_tab_never_opens_a_locked_tab()
+    {
+        var (a, b) = await LockHarness.TwoTabsAsync();
+        (await a.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
         b.Lock.IsLocked.ShouldBeFalse();
+        b.Lock.LockNow();
+        await Wait.UntilAsync(() => a.Lock.IsLocked);
+
+        // "Forgot the passcode?" in A: the session (shared by the tabs) ends.
+        await a.SignOutByChoiceAsync();
+
+        await Wait.UntilAsync(() => !b.Lock.IsEnabled);
+        b.Lock.IsLocked.ShouldBeTrue("B follows A out, it does not open its chats meanwhile");
+        await b.SignedOutAsync();
+        b.Lock.IsLocked.ShouldBeFalse();
+        b.Store.Values.ContainsKey(AppLockService.ConfigKey).ShouldBeFalse("B's own sign-out does not bring the passcode back");
+    }
+
+    [Fact]
+    public async Task A_stale_tab_cannot_replace_a_passcode_another_tab_just_set()
+    {
+        var (a, b) = await LockHarness.TwoTabsAsync(withPasscode: false);
+        b.Platform.Frozen = true;
+
+        await a.Lock.EnableAsync(Code);
+        b.Lock.IsEnabled.ShouldBeFalse("B missed the event");
+
+        await Should.ThrowAsync<InvalidOperationException>(() => b.Lock.EnableAsync("1357"));
+
+        b.Lock.IsEnabled.ShouldBeTrue("B adopted the passcode it found");
+        b.Lock.IsLocked.ShouldBeFalse("its user was setting one up right there");
+        (await a.Lock.VerifyAsync(Code)).IsCorrect.ShouldBeTrue();
+        (await b.Lock.VerifyAsync("1357")).Status.ShouldBe(PasscodeCheckStatus.Wrong);
+    }
+
+    [Fact]
+    public async Task A_stale_tab_checks_against_the_passcode_another_tab_changed()
+    {
+        var (a, b) = await LockHarness.TwoTabsAsync();
+        b.Platform.Frozen = true;
+
+        (await a.Lock.ChangeAsync(Code, "975310")).IsCorrect.ShouldBeTrue();
+        (await b.Lock.UnlockAsync(Code)).Status.ShouldBe(PasscodeCheckStatus.Wrong, "the old passcode is gone everywhere");
+        (await b.Lock.UnlockAsync("975310")).IsCorrect.ShouldBeTrue();
+
+        // An option changed in the stale tab does not bring the old passcode back.
+        b.Platform.Frozen = true;
+        (await a.Lock.ChangeAsync("975310", "1122")).IsCorrect.ShouldBeTrue();
+        await b.Lock.SetAutoLockDelayAsync(TimeSpan.FromHours(1));
+        (await a.Lock.VerifyAsync("1122")).IsCorrect.ShouldBeTrue();
+        a.Lock.AutoLockDelay.ShouldBe(TimeSpan.FromHours(1), "A read B's option change");
     }
 
     [Fact]
     public async Task Wrong_passcodes_in_another_tab_count_toward_the_same_pause()
     {
-        var a = await Harness.WithPasscodeAsync();
-        var b = new Harness(a.Store, signedIn: true, a.Clocks);
-        await b.Lock.InitializeAsync();
+        var (a, b) = await LockHarness.TwoTabsAsync();
+        a.Lock.LockNow();
 
         await FailAsync(a.Lock, 3);
         (await b.Lock.UnlockAsync("0000")).AttemptsLeft.ShouldBe(1);
         (await b.Lock.UnlockAsync("0000")).RetryIn.ShouldBe(TimeSpan.FromSeconds(30));
 
+        await Wait.UntilAsync(() => a.Lock.RetryIn > TimeSpan.Zero, "the pause shows in the other tab too");
         (await a.Lock.UnlockAsync(Code)).Status.ShouldBe(PasscodeCheckStatus.Paused, "opening more tabs gives no extra tries");
     }
 
     [Fact]
     public async Task A_faster_platform_hash_is_used_and_reads_the_same_as_dotnets()
     {
-        var h = new Harness();
+        var h = new LockHarness();
         h.Platform.Kdf = async (code, salt, rounds, length) => await PasscodeHasher.Managed(code, salt, rounds, length);
         await h.Lock.InitializeAsync();
         await h.Lock.EnableAsync(Code);
@@ -645,7 +1008,7 @@ public sealed class AppLockServiceTests
     [Fact]
     public async Task Options_are_stored_with_the_passcode_and_only_known_delays_are_kept()
     {
-        var h = await Harness.WithPasscodeAsync();
+        var h = await LockHarness.WithPasscodeAsync();
         await h.Lock.SetAutoLockDelayAsync(TimeSpan.FromHours(5));
         await h.Lock.SetUseBiometricsAsync(true);
 

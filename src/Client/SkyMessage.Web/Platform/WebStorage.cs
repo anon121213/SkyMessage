@@ -28,6 +28,20 @@ public sealed class WebSecureStore(WebBridge bridge) : ISecureStore
 {
     public Task<string?> GetAsync(string key) => Task.FromResult(bridge.Sync?.Invoke<string?>("skyPlatform.secure.get", key));
 
+    public Task<SecureStoreRead> TryGetAsync(string key)
+    {
+        try
+        {
+            return Task.FromResult(bridge.Sync is { } sync
+                ? new SecureStoreRead(true, sync.Invoke<string?>("skyPlatform.secure.get", key))
+                : new SecureStoreRead(false, null));
+        }
+        catch (JSException)
+        {
+            return Task.FromResult(new SecureStoreRead(false, null));
+        }
+    }
+
     public Task SetAsync(string key, string value)
     {
         bridge.Sync?.InvokeVoid("skyPlatform.secure.set", key, value);

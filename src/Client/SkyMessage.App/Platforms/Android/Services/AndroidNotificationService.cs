@@ -14,12 +14,17 @@ namespace SkyMessage.App.Droid;
 /// Message notifications (one per chat with the latest lines, bundled under a summary), the incoming-call
 /// notification (call style, full-screen intent, ringtone looped with FLAG_INSISTENT until answered,
 /// declined, cancelled or the app comes to the foreground) and call-action dispatch. Accept actions are
-/// Activity PendingIntents so the app is in the foreground before the call service starts.
+/// Activity PendingIntents so the app is in the foreground before the call service starts. With the app passcode's
+/// "hide notification text", a hidden message replaces its chat's lines with one neutral line, and
+/// <see cref="RedactMessagesAsync"/> does that to every message notification in the shade — read back from the
+/// system, so those posted by an earlier run of the process are redacted too.
 /// </summary>
 public sealed class AndroidNotificationService : ILocalNotificationService
 {
     private const string MessagesGroup = "com.skymessage.MESSAGES";
     private const int MaxLinesPerChat = 6;
+    /// <summary>A post this recent may not be listed by the system yet (posting is asynchronous there).</summary>
+    private const long RecentPostMs = 5_000;
     private static readonly int AccentColor = unchecked((int)0xFF6A4BFF);
 
     private readonly NotificationChannels _channels;
@@ -81,6 +86,9 @@ public sealed class AndroidNotificationService : ILocalNotificationService
             var channel = _channels.Messages(notification.Silent);
             ChatLines lines;
             int totalChats;
+            string title;
+            int count;
+            List<string> shown;
             lock (_gate)
             {
                 if (!_chats.TryGetValue(notification.ChatId, out lines!))
@@ -88,50 +96,84 @@ public sealed class AndroidNotificationService : ILocalNotificationService
                     lines = new ChatLines();
                     _chats[notification.ChatId] = lines;
                 }
-                lines.Title = notification.Title;
-                lines.Add(notification.Body);
+                if (notification.Hidden) lines.AddHidden(notification.Title, notification.Body);
+                else lines.Add(notification.Title, notification.Body);
                 totalChats = _chats.Count;
+                title = lines.Title;
+                count = lines.Count;
+                shown = [.. lines.Lines];
             }
 
             var id = AppIntents.CodeOf(notification.ChatId);
-            var content = AppIntents.ActivityPendingIntent(Context, id,
-                AppIntents.ActivityIntent(Context, Intent.ActionView, data: Android.Net.Uri.Parse(DeepLinks.AppChatUri(notification.ChatId).ToString())));
-
-            var builder = new NotificationCompat.Builder(Context, channel)
-                .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-                .SetColor(AccentColor)!
-                .SetContentTitle(notification.Title)!
-                .SetContentText(notification.Body)!
-                .SetContentIntent(content)!
-                .SetAutoCancel(true)!
-                .SetCategory(NotificationCompat.CategoryMessage)!
-                .SetGroup(MessagesGroup)!
-                .SetVisibility(NotificationCompat.VisibilityPrivate)!
-                .SetPublicVersion(PublicVersion(channel))!
-                .SetPriority(NotificationCompat.PriorityHigh)!
-                .SetNumber(lines.Count)!
+            var builder = MessageBuilder(channel, title, shown, count, ChatIntent(notification.ChatId))
                 .SetSilent(notification.Silent)!
                 .SetOnlyAlertOnce(false)!;
-
-            if (lines.Count > 1)
-            {
-                var style = new NotificationCompat.InboxStyle().SetBigContentTitle(notification.Title)!;
-                foreach (var line in lines.Lines) style.AddLine(line);
-                if (lines.Count > lines.Lines.Count)
-                    style.SetSummaryText(_strings.Format("platform.notification.moreMessages", lines.Count - lines.Lines.Count));
-                builder.SetStyle(style);
-            }
-            else
-            {
-                builder.SetStyle(new NotificationCompat.BigTextStyle().BigText(notification.Body));
-            }
-
             Manager.Notify(id, builder.Build()!);
             if (totalChats > 1) PostSummary(channel);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Message notification failed");
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Every message notification in the shade gets the neutral text, silently, keeping its chat (the tap still opens it)
+    /// and its count: chats this process posted from their own lines (also one posted a moment ago, which the system may
+    /// not list yet), the rest — an earlier run's — as the system lists them. Dismissed ones stay dismissed. The summary
+    /// is posted again without chat names.
+    /// </summary>
+    public Task RedactMessagesAsync(string title, string body)
+    {
+        try
+        {
+            var system = Context.GetSystemService(Context.NotificationService) as NotificationManager;
+            var active = system?.GetActiveNotifications() ?? [];
+            var activeIds = active.Where(n => n.Tag is null).Select(n => n.Id).ToHashSet();
+            var now = Environment.TickCount64;
+            List<(Guid ChatId, int Count)> own = [];
+            lock (_gate)
+            {
+                foreach (var (chatId, lines) in _chats)
+                {
+                    lines.Hide(title, body);
+                    if (activeIds.Contains(AppIntents.CodeOf(chatId)) || now - lines.PostedAt < RecentPostMs) own.Add((chatId, lines.Count));
+                }
+            }
+
+            var silent = _channels.Messages(silent: true);
+            var redacted = new HashSet<int>();
+            foreach (var (chatId, count) in own)
+            {
+                var id = AppIntents.CodeOf(chatId);
+                Manager.Notify(id, MessageBuilder(silent, title, [body], count, ChatIntent(chatId)).SetSilent(true)!.SetOnlyAlertOnce(true)!.Build()!);
+                redacted.Add(id);
+            }
+
+            var summaryShown = false;
+            foreach (var posted in active)
+            {
+                var shown = posted.Notification;
+                // Calls carry a tag; foreign groups (the background connection) are not a chat's notification.
+                if (shown is null || posted.Tag is not null || shown.Group != MessagesGroup) continue;
+                if (posted.Id == AppIntents.MessagesSummaryNotificationId || (shown.Flags & NotificationFlags.GroupSummary) != 0)
+                {
+                    summaryShown = true;
+                    continue;
+                }
+                if (!redacted.Add(posted.Id)) continue;
+                var builder = MessageBuilder(shown.ChannelId ?? silent, title, [body], Math.Max(1, shown.Number), shown.ContentIntent)
+                    .SetSilent(true)!
+                    .SetOnlyAlertOnce(true)!;
+                if (shown.When > 0) builder.SetWhen(shown.When);
+                Manager.Notify(posted.Id, builder.Build()!);
+            }
+            if (summaryShown || redacted.Count > 1) PostSummary(silent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Redacting message notifications failed");
         }
         return Task.CompletedTask;
     }
@@ -289,13 +331,49 @@ public sealed class AndroidNotificationService : ILocalNotificationService
         }
     }
 
+    /// <summary>A chat's notification: its title, its last lines (one: big text; more: inbox) and the message count.</summary>
+    private NotificationCompat.Builder MessageBuilder(string channel, string title, IReadOnlyList<string> lines, int count, PendingIntent? content)
+    {
+        var builder = new NotificationCompat.Builder(Context, channel)
+            .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
+            .SetColor(AccentColor)!
+            .SetContentTitle(title)!
+            .SetContentText(lines.Count > 0 ? lines[^1] : "")!
+            .SetContentIntent(content)!
+            .SetAutoCancel(true)!
+            .SetCategory(NotificationCompat.CategoryMessage)!
+            .SetGroup(MessagesGroup)!
+            .SetVisibility(NotificationCompat.VisibilityPrivate)!
+            .SetPublicVersion(PublicVersion(channel))!
+            .SetPriority(NotificationCompat.PriorityHigh)!
+            .SetNumber(count)!;
+        if (lines.Count > 1)
+        {
+            var style = new NotificationCompat.InboxStyle().SetBigContentTitle(title)!;
+            foreach (var line in lines) style.AddLine(line);
+            if (count > lines.Count)
+                style.SetSummaryText(_strings.Format("platform.notification.moreMessages", count - lines.Count));
+            builder.SetStyle(style);
+        }
+        else
+        {
+            builder.SetStyle(new NotificationCompat.BigTextStyle().BigText(lines.Count > 0 ? lines[0] : ""));
+        }
+        return builder;
+    }
+
+    private static PendingIntent ChatIntent(Guid chatId) =>
+        AppIntents.ActivityPendingIntent(Context, AppIntents.CodeOf(chatId),
+            AppIntents.ActivityIntent(Context, Intent.ActionView, data: Android.Net.Uri.Parse(DeepLinks.AppChatUri(chatId).ToString())));
+
+    /// <summary>The bundle's summary: chat names, except of chats whose text is hidden (the app passcode).</summary>
     private void PostSummary(string channel)
     {
         List<string> titles;
         int total;
         lock (_gate)
         {
-            titles = _chats.Values.Select(c => c.Title).Where(t => !string.IsNullOrEmpty(t)).Take(6).ToList();
+            titles = _chats.Values.Where(c => !c.Hidden).Select(c => c.Title).Where(t => !string.IsNullOrEmpty(t)).Take(6).ToList();
             total = _chats.Values.Sum(c => c.Count);
         }
         var style = new NotificationCompat.InboxStyle();
@@ -324,21 +402,52 @@ public sealed class AndroidNotificationService : ILocalNotificationService
             .SetContentText(_strings["platform.notification.newMessage"])!
             .Build()!;
 
+    /// <summary>A chat's shown lines. <see cref="Hidden"/>: one neutral line stands for all of them (the app passcode).</summary>
     private sealed class ChatLines
     {
         private readonly List<string> _lines = [];
 
-        public string Title { get; set; } = "";
+        public string Title { get; private set; } = "";
 
         public int Count { get; private set; }
 
+        public bool Hidden { get; private set; }
+
         public IReadOnlyList<string> Lines => _lines;
 
-        public void Add(string line)
+        /// <summary>When this process last posted the chat's notification (Environment.TickCount64).</summary>
+        public long PostedAt { get; private set; } = long.MinValue / 2;
+
+        /// <summary>A message with its text: the neutral line of a hidden chat goes (the app is open again).</summary>
+        public void Add(string title, string line)
         {
+            if (Hidden)
+            {
+                _lines.Clear();
+                Hidden = false;
+            }
+            Title = title;
             Count++;
             _lines.Add(line);
             if (_lines.Count > MaxLinesPerChat) _lines.RemoveAt(0);
+            PostedAt = Environment.TickCount64;
+        }
+
+        /// <summary>A message whose text is hidden: the chat shows the neutral line only.</summary>
+        public void AddHidden(string title, string line)
+        {
+            Hide(title, line);
+            Count++;
+            PostedAt = Environment.TickCount64;
+        }
+
+        /// <summary>The earlier lines are no longer shown (the count stays).</summary>
+        public void Hide(string title, string line)
+        {
+            Title = title;
+            _lines.Clear();
+            _lines.Add(line);
+            Hidden = true;
         }
     }
 }

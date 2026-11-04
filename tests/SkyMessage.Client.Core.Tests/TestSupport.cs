@@ -115,10 +115,28 @@ internal sealed class InMemorySecureStore : ISecureStore, IPreferencesStore
 
     public Task<string?> GetAsync(string key) => Task.FromResult(Values.TryGetValue(key, out var value) ? value : null);
 
+    /// <summary>Keys whose reads fail (a keystore that cannot be read right now).</summary>
+    public HashSet<string> Unreadable { get; } = [];
+
+    /// <summary>Raised after every write or removal (key), like a browser's storage event.</summary>
+    public event Action<string>? Written;
+
+    /// <summary>Reads through <see cref="TryGetAsync"/> so far.</summary>
+    public int Reads;
+
+    public Task<SecureStoreRead> TryGetAsync(string key)
+    {
+        Interlocked.Increment(ref Reads);
+        return Task.FromResult(Unreadable.Contains(key)
+            ? new SecureStoreRead(false, null)
+            : new SecureStoreRead(true, Values.TryGetValue(key, out var value) ? value : null));
+    }
+
     public Task SetAsync(string key, string? value)
     {
         if (value is null) Values.TryRemove(key, out _);
         else Values[key] = value;
+        Written?.Invoke(key);
         return Task.CompletedTask;
     }
 
@@ -127,6 +145,7 @@ internal sealed class InMemorySecureStore : ISecureStore, IPreferencesStore
     public Task RemoveAsync(string key)
     {
         Values.TryRemove(key, out _);
+        Written?.Invoke(key);
         return Task.CompletedTask;
     }
 }

@@ -24,7 +24,7 @@ public sealed record WebInitState
 
 /// <summary>
 /// The single JS → .NET channel: <c>wwwroot/web-platform.js</c> reports network, visibility, notification
-/// clicks and media-session actions here; platform services subscribe. WebAssembly is single-threaded and
+/// clicks, media-session actions and what other tabs say about the app passcode here; platform services subscribe. WebAssembly is single-threaded and
 /// IJSRuntime is a singleton there, so singletons may hold it.
 /// </summary>
 public sealed class WebBridge : IDisposable
@@ -63,6 +63,9 @@ public sealed class WebBridge : IDisposable
 
     public event Action<string>? MediaSessionAction;
 
+    /// <summary>Another tab: "locked", "unlocked" or "stored" (it changed the stored passcode).</summary>
+    public event Action<string>? PasscodeSignal;
+
     [JSInvokable]
     public void OnNetworkChanged(bool online, string type, bool metered) => Raise(NetworkChanged, h => h(online, type, metered));
 
@@ -74,6 +77,9 @@ public sealed class WebBridge : IDisposable
 
     [JSInvokable]
     public void OnMediaSessionAction(string action) => Raise(MediaSessionAction, h => h(action));
+
+    [JSInvokable]
+    public void OnPasscodeSignal(string signal) => Raise(PasscodeSignal, h => h(signal));
 
     private void Raise<T>(T? handlers, Action<T> invoke) where T : Delegate
     {

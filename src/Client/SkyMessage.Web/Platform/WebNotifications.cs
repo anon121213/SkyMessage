@@ -77,6 +77,19 @@ public sealed class WebNotificationService : ILocalNotificationService
 
     public Task CancelForChatAsync(Guid chatId) => CloseTagAsync(ChatTag(chatId));
 
+    /// <summary>Every message notification of this origin (all tabs) is shown again, silently, by its tag with the neutral text.</summary>
+    public async Task RedactMessagesAsync(string title, string body)
+    {
+        try
+        {
+            await _bridge.Js.InvokeVoidAsync("skyPlatform.notify.redact", title, body).ConfigureAwait(false);
+        }
+        catch (JSException ex)
+        {
+            _logger.LogDebug(ex, "Redacting notifications failed");
+        }
+    }
+
     public Task ShowIncomingCallAsync(CallDto call, string callerName)
     {
         var actions = new List<object> { new { action = "accept", title = Strings["platform.call.accept"] } };

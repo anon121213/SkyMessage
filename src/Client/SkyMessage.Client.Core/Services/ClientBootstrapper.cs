@@ -80,14 +80,15 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
 
     private async Task StartCoreAsync()
     {
-        await _settings.LoadAsync().ConfigureAwait(false);
         try
         {
+            await _settings.LoadAsync().ConfigureAwait(false);
             await _auth.InitializeAsync().ConfigureAwait(false);
         }
         finally
         {
-            // Before the first screen, even when restoring the session failed: with a passcode the app starts locked.
+            // Before the first screen, even when loading the settings or restoring the session failed: with a passcode
+            // the app starts locked (the UI's own fallback restores the session after a failed start).
             await _appLock.InitializeAsync().ConfigureAwait(false);
         }
         await _endpoints.InitializeAsync().ConfigureAwait(false);

@@ -26,6 +26,8 @@ public sealed class AppleNotificationService : ILocalNotificationService
     private const string KindKey = "kind";
     private const string ChatKey = "chatId";
     private const string CallKey = "callId";
+    /// <summary>Ends the identifier of a notification that replaced a chat's redacted ones (shown quietly).</summary>
+    internal const string RedactedSuffix = "-redacted";
 
     private readonly IServiceProvider _services;
     private readonly NativeStrings _strings;
@@ -83,6 +85,8 @@ public sealed class AppleNotificationService : ILocalNotificationService
     {
         try
         {
+            // Hidden text (the app passcode): the chat's earlier messages, text and all, leave the notification center.
+            if (notification.Hidden) await CancelForChatAsync(notification.ChatId).ConfigureAwait(false);
             var settings = _services.GetService<ISettingsService>()?.Current.Notifications;
             var content = new UNMutableNotificationContent
             {
@@ -101,6 +105,47 @@ public sealed class AppleNotificationService : ILocalNotificationService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Message notification failed");
+        }
+    }
+
+    /// <summary>
+    /// Every delivered message notification goes; each chat that had any gets one neutral notification instead, without
+    /// a sound (and no banner while the app is in front, see <see cref="AppleNotificationDelegate"/>).
+    /// </summary>
+    public async Task RedactMessagesAsync(string title, string body)
+    {
+        try
+        {
+            var delivered = await Center.GetDeliveredNotificationsAsync().ConfigureAwait(false);
+            var ids = new List<string>();
+            var chats = new List<Guid>();
+            foreach (var shown in delivered)
+            {
+                var info = shown.Request.Content.UserInfo;
+                if (info?[KindKey]?.ToString() != "message") continue;
+                ids.Add(shown.Request.Identifier);
+                if (Guid.TryParse(info?[ChatKey]?.ToString(), out var chatId) && !chats.Contains(chatId)) chats.Add(chatId);
+            }
+            if (ids.Count == 0) return;
+            Center.RemoveDeliveredNotifications([.. ids]);
+            foreach (var chatId in chats)
+            {
+                var content = new UNMutableNotificationContent
+                {
+                    Title = title,
+                    Body = body,
+                    ThreadIdentifier = chatId.ToString(),
+                    UserInfo = NSDictionary.FromObjectsAndKeys(
+                        [new NSString("message"), new NSString(chatId.ToString())],
+                        [new NSString(KindKey), new NSString(ChatKey)]),
+                };
+                await Center.AddNotificationRequestAsync(UNNotificationRequest.FromIdentifier($"msg-{chatId:N}{RedactedSuffix}", content, null))
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Redacting message notifications failed");
         }
     }
 
@@ -293,7 +338,10 @@ public sealed class AppleNotificationDelegate : UNUserNotificationCenterDelegate
 
     public override void WillPresentNotification(UNUserNotificationCenter center, UNNotification notification, Action<UNNotificationPresentationOptions> completionHandler)
     {
-        completionHandler(UNNotificationPresentationOptions.Banner | UNNotificationPresentationOptions.List | UNNotificationPresentationOptions.Sound);
+        // A redacted chat's replacement is no news: into the list, quietly.
+        completionHandler(notification.Request.Identifier.EndsWith(AppleNotificationService.RedactedSuffix, StringComparison.Ordinal)
+            ? UNNotificationPresentationOptions.List
+            : UNNotificationPresentationOptions.Banner | UNNotificationPresentationOptions.List | UNNotificationPresentationOptions.Sound);
     }
 
     public override void DidReceiveNotificationResponse(UNUserNotificationCenter center, UNNotificationResponse response, Action completionHandler)

@@ -25,6 +25,7 @@ public sealed class AppUpdateServiceTests : IDisposable
     private readonly FakeLifecycle _lifecycle = new() { IsForeground = true };
     private readonly ICallService _calls = Substitute.For<ICallService>();
     private readonly IPlatformInfo _platform = Substitute.For<IPlatformInfo>();
+    private readonly IAppLockService _appLock = Substitute.For<IAppLockService>();
     private readonly List<AppUpdateService> _services = [];
     private TimeProvider _time = new ManualClock(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
 
@@ -42,7 +43,7 @@ public sealed class AppUpdateServiceTests : IDisposable
     private AppUpdateService Service(IAppUpdateInstaller? installer = null)
     {
         var service = new AppUpdateService(_feed, installer ?? _installer, _platform, _preferences, Fakes.Settings(_settings), _network,
-            _lifecycle, Substitute.For<IRealtimeService>(), _calls, _time, Log.For<AppUpdateService>());
+            _lifecycle, Substitute.For<IRealtimeService>(), _calls, _appLock, _time, Log.For<AppUpdateService>());
         _services.Add(service);
         return service;
     }
@@ -565,6 +566,31 @@ public sealed class AppUpdateServiceTests : IDisposable
         await Task.Delay(200);
         again.ShouldBe(0);
         reloaded.Status.NewWebVersion.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_hidden_web_page_open_behind_the_passcode_reloads_only_once_it_locked()
+    {
+        // Every start is locked: reloading an open page would cut its auto-lock delay ("after 5 hours") short.
+        _time = new InstantTime();
+        _platform.IsNativeApp.Returns(false);
+        _platform.AppVersion.Returns("0.2.56");
+        _lifecycle.IsForeground = false;
+        _appLock.IsEnabled.Returns(true);
+        _feed.Version = new AppVersionDto { Web = new WebReleaseDto { Version = "0.2.57" }, ServerVersion = "0.2.57" };
+        var service = Service(new UnsupportedAppUpdateInstaller());
+        var reloads = 0;
+        service.ReloadRequested += () => Interlocked.Increment(ref reloads);
+        service.Start();
+
+        await Wait.UntilAsync(() => service.Status.NewWebVersion == "0.2.57", "the new build is known");
+        await Task.Delay(200);
+        reloads.ShouldBe(0, "the page is open behind the passcode");
+
+        // The auto-lock delay ran out while the page was hidden: the reload starts it as locked as it is now.
+        _appLock.IsLocked.Returns(true);
+        _appLock.Changed += Raise.Event<Action>();
+        await Wait.UntilAsync(() => Volatile.Read(ref reloads) == 1, "reload once locked");
     }
 
     [Fact]

@@ -13,8 +13,11 @@ namespace SkyMessage.Client.Core.Services;
 /// chats unless it mentions/replies to me and MentionsBypassMute is on. Missed calls notify too. Foreground raises
 /// <see cref="InAppNotificationRaised"/> (UI banner + tone); background shows an OS notification whose tap opens
 /// <see cref="DeepLinks.AppChatUri"/> (platform side). While the app passcode locks the app nothing of a chat is on
-/// screen: messages notify as in the background, and with "hide notification text" the OS notification only says
-/// "SkyMessage: New message" (the chat's earlier notification is replaced, so its text goes too).
+/// screen: messages notify as in the background. With "hide notification text" a locked app's notifications only say
+/// "SkyMessage: New message" (<see cref="LocalNotification.Hidden"/>: the chat's earlier lines go too), and the moment
+/// the lock engages every message notification already on screen is redacted the same way
+/// (<see cref="ILocalNotificationService.RedactMessagesAsync"/>) — also those of the minute before an auto-lock. Posting
+/// and redacting take turns, so a notification posted while the lock engages is redacted as well.
 /// </summary>
 internal sealed class NotificationCoordinator : INotificationCoordinator
 {
@@ -31,10 +34,14 @@ internal sealed class NotificationCoordinator : INotificationCoordinator
     private readonly TimeProvider _time;
     private readonly ILogger<NotificationCoordinator> _logger;
     private readonly object _lock = new();
+    /// <summary>Posting a notification and redacting them all take turns.</summary>
+    private readonly SemaphoreSlim _post = new(1, 1);
     private readonly HashSet<Guid> _seen = [];
     private readonly Queue<Guid> _seenOrder = new();
     private IMessagePreviewFormatter? _formatter;
     private bool _formatterResolved;
+    /// <summary>The lock (<see cref="IAppLockService.LockCount"/>) whose notifications were redacted already.</summary>
+    private int _redactedLock = -1;
 
     public NotificationCoordinator(
         IRealtimeService realtime,
@@ -60,6 +67,7 @@ internal sealed class NotificationCoordinator : INotificationCoordinator
         _time = time;
         _logger = logger;
         realtime.MessageCreated += message => HandleAsync(message).Forget(_logger);
+        appLock.Changed += OnLockChanged;
     }
 
     public event Action<InAppNotification>? InAppNotificationRaised;
@@ -125,14 +133,56 @@ internal sealed class NotificationCoordinator : INotificationCoordinator
             EventRaiser.Raise(InAppNotificationRaised, new InAppNotification(chat.Id, message.SenderId, title, body, avatar), _logger);
             return;
         }
-        if (_appLock.ShouldHideNotificationText())
+        await _post.WaitAsync().ConfigureAwait(false);
+        try
         {
-            title = CoreStrings.AppName;
-            body = CoreStrings.NewMessage(ru);
-            // The chat's notification may still show earlier lines: it starts over with the hidden text only.
-            await _notifications.CancelForChatAsync(chat.Id).ConfigureAwait(false);
+            // Decided here, in turn with the redaction: either this one is posted first and redacted with the rest, or
+            // the lock is on already and it hides its text itself.
+            var hidden = _appLock.ShouldHideNotificationText();
+            if (hidden)
+            {
+                title = CoreStrings.AppName;
+                body = CoreStrings.NewMessage(ru);
+            }
+            await _notifications.ShowMessageAsync(new LocalNotification(chat.Id, message.Id, title, body, Silent: !settings.Sound, Hidden: hidden))
+                .ConfigureAwait(false);
         }
-        await _notifications.ShowMessageAsync(new LocalNotification(chat.Id, message.Id, title, body, Silent: !settings.Sound)).ConfigureAwait(false);
+        finally
+        {
+            _post.Release();
+        }
+    }
+
+    /// <summary>The lock engaged with "hide notification text" on: once per lock, what the shade shows loses its text.</summary>
+    private void OnLockChanged()
+    {
+        if (!_appLock.IsLocked || !_appLock.HideNotificationText) return;
+        var lockCount = _appLock.LockCount;
+        lock (_lock)
+        {
+            if (_redactedLock == lockCount) return;
+            _redactedLock = lockCount;
+        }
+        RedactAsync().Forget(_logger);
+    }
+
+    private async Task RedactAsync()
+    {
+        await _post.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Unlocked again meanwhile (or the option went off): the text may stay.
+            if (!_appLock.IsLocked || !_appLock.HideNotificationText) return;
+            await _notifications.RedactMessagesAsync(CoreStrings.AppName, CoreStrings.NewMessage(CoreStrings.IsRussian(_settings))).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Notifications could not be redacted");
+        }
+        finally
+        {
+            _post.Release();
+        }
     }
 
     /// <summary>The app is in front and its chats are visible (not behind the passcode lock screen).</summary>

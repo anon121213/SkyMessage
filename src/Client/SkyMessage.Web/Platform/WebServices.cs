@@ -358,10 +358,51 @@ public sealed class WebScreenSecurityService : IScreenSecurityService
 /// The app passcode in a browser works with the keypad only: a page cannot show the system fingerprint prompt as a local
 /// unlock (the setting is hidden), cannot keep its tab out of the browser's tab previews, and has no boot clock (the
 /// auto-lock uses the wall and page clocks). The passcode hash is in localStorage (<see cref="WebSecureStore"/>); it is
-/// derived with WebCrypto, which is many times faster than .NET's interpreted PBKDF2 here.
+/// derived with WebCrypto, which is many times faster than .NET's interpreted PBKDF2 here. Every tab is an instance of the
+/// app: "Lock now" and unlocking go to the other tabs over a BroadcastChannel, and their changes to the stored passcode
+/// arrive as storage events (web-platform.js <c>skyPlatform.passcode</c>).
 /// </summary>
-public sealed class WebAppLockPlatform(WebBridge bridge) : IAppLockPlatform
+public sealed class WebAppLockPlatform : IAppLockPlatform
 {
+    private readonly WebBridge _bridge;
+
+    public WebAppLockPlatform(WebBridge bridge)
+    {
+        _bridge = bridge;
+        bridge.PasscodeSignal += signal =>
+        {
+            AppLockSignal? parsed = signal switch
+            {
+                "locked" => AppLockSignal.Locked,
+                "unlocked" => AppLockSignal.Unlocked,
+                "stored" => AppLockSignal.StoreChanged,
+                _ => null,
+            };
+            if (parsed is { } value) Signaled?.Invoke(value);
+        };
+    }
+
+    public event Action<AppLockSignal>? Signaled;
+
+    public void Announce(AppLockSignal signal)
+    {
+        var name = signal switch
+        {
+            AppLockSignal.Locked => "locked",
+            AppLockSignal.Unlocked => "unlocked",
+            _ => null,
+        };
+        if (name is null) return;
+        try
+        {
+            _bridge.Sync?.InvokeVoid("skyPlatform.passcode.announce", name);
+        }
+        catch (JSException)
+        {
+            // No other tab hears it; each still locks by itself.
+        }
+    }
+
     public bool SupportsBiometrics => false;
 
     public bool CanUseBiometrics => false;
@@ -379,7 +420,7 @@ public sealed class WebAppLockPlatform(WebBridge bridge) : IAppLockPlatform
     {
         try
         {
-            return await bridge.Js.InvokeAsync<byte[]?>("skyPlatform.crypto.pbkdf2", passcode, salt, iterations, length).ConfigureAwait(false);
+            return await _bridge.Js.InvokeAsync<byte[]?>("skyPlatform.crypto.pbkdf2", passcode, salt, iterations, length).ConfigureAwait(false);
         }
         catch (JSException)
         {

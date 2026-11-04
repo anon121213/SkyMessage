@@ -115,13 +115,15 @@ public sealed class NotificationCoordinatorTests
         public IChatListStore Chats { get; } = Substitute.For<IChatListStore>();
         public IAppLifecycle App { get; } = Substitute.For<IAppLifecycle>();
         public ILocalNotificationService Notifications { get; } = Substitute.For<ILocalNotificationService>();
-        public IAppLockService Lock { get; } = Substitute.For<IAppLockService>();
+        public IAppLockService Lock { get; }
         public AppSettings Settings { get; } = new();
         public NotificationCoordinator Coordinator { get; }
         public List<InAppNotification> InApp { get; } = [];
 
-        public Harness()
+        /// <param name="appLock">A real app passcode service; a substitute by default.</param>
+        public Harness(IAppLockService? appLock = null)
         {
+            Lock = appLock ?? Substitute.For<IAppLockService>();
             var users = Substitute.For<IUserStore>();
             users.DisplayNameOf(Arg.Any<Guid>()).Returns("Anna");
             Chats.TitleOf(Arg.Any<ChatSummaryDto>()).Returns(c => c.Arg<ChatSummaryDto>().Title);
@@ -215,8 +217,77 @@ public sealed class NotificationCoordinatorTests
 
         await h.Coordinator.HandleAsync(Fakes.Message(chat.Id, 1, Guid.CreateVersion7(), "секрет"));
 
-        await h.Notifications.Received(1).CancelForChatAsync(chat.Id);
+        // Hidden: the platform drops the chat's earlier lines itself (Android keeps the count, the web replaces by tag).
         await h.Notifications.Received(1).ShowMessageAsync(Arg.Is<LocalNotification>(n =>
-            n.ChatId == chat.Id && n.Title == "SkyMessage" && n.Body == "Новое сообщение"));
+            n.ChatId == chat.Id && n.Title == "SkyMessage" && n.Body == "Новое сообщение" && n.Hidden));
+    }
+
+    private static int Redactions(ILocalNotificationService notifications) =>
+        notifications.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(ILocalNotificationService.RedactMessagesAsync));
+
+    [Fact]
+    public async Task Locking_with_hidden_text_redacts_the_notifications_already_shown_once_per_lock()
+    {
+        var h = new Harness();
+        h.Settings.Language = "ru";
+        h.Lock.HideNotificationText.Returns(true);
+        h.Lock.IsLocked.Returns(true);
+        h.Lock.LockCount.Returns(1);
+
+        h.Lock.Changed += Raise.Event<Action>();
+        await Wait.UntilAsync(() => Redactions(h.Notifications) == 1, "the lock redacts what the shade shows");
+        await h.Notifications.Received(1).RedactMessagesAsync("SkyMessage", "Новое сообщение");
+
+        h.Lock.Changed += Raise.Event<Action>();
+        await Task.Delay(50);
+        Redactions(h.Notifications).ShouldBe(1, "the same lock redacts once");
+
+        h.Lock.LockCount.Returns(2);
+        h.Lock.Changed += Raise.Event<Action>();
+        await Wait.UntilAsync(() => Redactions(h.Notifications) == 2, "the next lock redacts again");
+    }
+
+    [Fact]
+    public async Task Locking_without_hidden_text_leaves_the_notifications_as_they_are()
+    {
+        var h = new Harness();
+        h.Lock.IsLocked.Returns(true);
+        h.Lock.LockCount.Returns(1);
+
+        h.Lock.Changed += Raise.Event<Action>();
+        h.Lock.IsLocked.Returns(false);
+        h.Lock.HideNotificationText.Returns(true);
+        h.Lock.Changed += Raise.Event<Action>();
+        await Task.Delay(50);
+
+        Redactions(h.Notifications).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_message_shown_before_the_auto_lock_loses_its_text_when_the_lock_engages()
+    {
+        // You leave the app, Mama writes 30 s later, the app locks at 1 min: the shade must not show "Mama: ..." any more.
+        var device = await LockHarness.WithPasscodeAsync();
+        await device.Lock.SetHideNotificationTextAsync(true);
+        var h = new Harness(device.Lock);
+        h.App.IsForeground.Returns(false);
+        h.Settings.Language = "en";
+        var chat = h.AddChat();
+
+        device.Leave();
+        device.Clocks.Advance(TimeSpan.FromSeconds(30));
+        await h.Coordinator.HandleAsync(Fakes.Message(chat.Id, 1, Guid.CreateVersion7(), "call me back"));
+        await h.Notifications.Received(1).ShowMessageAsync(Arg.Is<LocalNotification>(n => n.Body == "call me back" && !n.Hidden));
+        Redactions(h.Notifications).ShouldBe(0);
+
+        device.Clocks.Advance(TimeSpan.FromSeconds(31));
+        device.Lock.CheckAway();
+
+        device.Lock.IsLocked.ShouldBeTrue();
+        await Wait.UntilAsync(() => Redactions(h.Notifications) == 1, "the notification from before the lock is redacted");
+        await h.Notifications.Received(1).RedactMessagesAsync("SkyMessage", "New message");
+
+        await h.Coordinator.HandleAsync(Fakes.Message(chat.Id, 2, Guid.CreateVersion7(), "still there?"));
+        await h.Notifications.Received(1).ShowMessageAsync(Arg.Is<LocalNotification>(n => n.Body == "New message" && n.Hidden));
     }
 }

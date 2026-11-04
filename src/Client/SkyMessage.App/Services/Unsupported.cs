@@ -63,6 +63,16 @@ public sealed class UnsupportedScreenSecurityService : IScreenSecurityService
 /// </summary>
 public sealed class UnsupportedAppLockPlatform : IAppLockPlatform
 {
+    public void Announce(AppLockSignal signal)
+    {
+    }
+
+    public event Action<AppLockSignal>? Signaled
+    {
+        add { }
+        remove { }
+    }
+
     public bool SupportsBiometrics => false;
 
     public bool CanUseBiometrics => false;

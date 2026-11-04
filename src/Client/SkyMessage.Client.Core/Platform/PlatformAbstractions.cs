@@ -26,9 +26,18 @@ public interface IPlatformInfo
 public interface ISecureStore
 {
     Task<string?> GetAsync(string key);
+    /// <summary>
+    /// Like <see cref="GetAsync"/>, but a store that cannot be read comes back as not <see cref="SecureStoreRead.Ok"/>
+    /// instead of "nothing stored", and nothing is wiped to recover from it (Android's <see cref="GetAsync"/> resets an
+    /// unusable keystore). For values whose absence would open something: the app passcode.
+    /// </summary>
+    Task<SecureStoreRead> TryGetAsync(string key);
     Task SetAsync(string key, string value);
     Task RemoveAsync(string key);
 }
+
+/// <summary>A secure-store read: <see cref="Ok"/> with a null <see cref="Value"/> is "nothing stored".</summary>
+public readonly record struct SecureStoreRead(bool Ok, string? Value);
 
 public interface IPreferencesStore
 {
@@ -191,7 +200,11 @@ public interface IPermissionService
     Task OpenAppSettingsAsync();
 }
 
-public sealed record LocalNotification(Guid ChatId, Guid? MessageId, string Title, string Body, bool Silent);
+/// <summary>
+/// A message notification. <see cref="Hidden"/>: the app passcode hides who wrote what (the title and body are already
+/// neutral), so the chat's notification starts over with this one line — none of its earlier lines stay visible.
+/// </summary>
+public sealed record LocalNotification(Guid ChatId, Guid? MessageId, string Title, string Body, bool Silent, bool Hidden = false);
 
 public enum CallNotificationAction
 {
@@ -210,6 +223,13 @@ public interface ILocalNotificationService
     Task<bool> RequestPermissionAsync();
     Task ShowMessageAsync(LocalNotification notification);
     Task CancelForChatAsync(Guid chatId);
+    /// <summary>
+    /// The app passcode locked the app with "hide notification text" on: every message notification already on screen
+    /// (also those an earlier run of the app posted) is replaced, without a sound, by <paramref name="title"/> and
+    /// <paramref name="body"/> ("SkyMessage" / "New message") for its chat, and summaries stop naming chats. Tapping one
+    /// still opens its chat (behind the lock screen). Never throws.
+    /// </summary>
+    Task RedactMessagesAsync(string title, string body);
     Task ShowIncomingCallAsync(CallDto call, string callerName);
     Task CancelCallAsync(Guid callId);
     /// <summary>App icon badge (total unread); no-op where unsupported.</summary>
@@ -418,15 +438,32 @@ public enum BiometricOutcome
 /// <summary>Texts of the system biometric prompt, localized by the caller.</summary>
 public sealed record BiometricPromptText(string Title, string? Subtitle, string CancelText);
 
+/// <summary>What another instance of the app on this device (a browser tab) tells the others about the passcode.</summary>
+public enum AppLockSignal
+{
+    /// <summary>It was locked on request ("Lock now"): the whole app locks.</summary>
+    Locked,
+    /// <summary>The right passcode or a fingerprint opened it, or the passcode was turned off: the whole app opens.</summary>
+    Unlocked,
+    /// <summary>The stored passcode, its options or the attempt count changed: read them again.</summary>
+    StoreChanged,
+}
+
 /// <summary>
 /// Platform side of the app passcode (<see cref="Services.IAppLockService"/>). Android: fingerprint or face unlock
 /// through the system BiometricPrompt (Android 10+, weak biometrics allowed so face unlock counts), the recent-apps
 /// switcher kept free of the app's content while a passcode is set (Android 13+ without a recents screenshot, older
 /// versions with FLAG_SECURE while the app is in the background) and the boot clock. Browser, iOS, Mac: no
-/// biometrics (the setting is hidden), the rest does nothing. Implementations never throw.
+/// biometrics (the setting is hidden), the rest does nothing. Browsers run one instance of the app per tab, all on the
+/// same storage: <see cref="Announce"/> and <see cref="Signaled"/> keep them one app (BroadcastChannel and storage
+/// events); elsewhere there is one instance and both do nothing. Implementations never throw.
 /// </summary>
 public interface IAppLockPlatform
 {
+    /// <summary>Tells the app's other instances on this device (<see cref="AppLockSignal.Locked"/> or <see cref="AppLockSignal.Unlocked"/>).</summary>
+    void Announce(AppLockSignal signal);
+    /// <summary>Another instance locked or opened the app, or changed the stored passcode (any thread).</summary>
+    event Action<AppLockSignal>? Signaled;
     /// <summary>The platform can unlock with a fingerprint or face at all (the setting is shown).</summary>
     bool SupportsBiometrics { get; }
     /// <summary>A fingerprint or face is enrolled and the sensor can be used right now.</summary>

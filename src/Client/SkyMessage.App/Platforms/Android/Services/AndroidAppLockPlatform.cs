@@ -20,6 +20,17 @@ public sealed class AndroidAppLockPlatform(AndroidScreenSecurityService screen, 
 {
     private volatile bool _hiddenInRecents;
 
+    /// <summary>One process, one instance of the app: nobody else to tell or to hear from.</summary>
+    public void Announce(AppLockSignal signal)
+    {
+    }
+
+    public event Action<AppLockSignal>? Signaled
+    {
+        add { }
+        remove { }
+    }
+
     public bool SupportsBiometrics => OperatingSystem.IsAndroidVersionAtLeast(29);
 
     public bool CanUseBiometrics

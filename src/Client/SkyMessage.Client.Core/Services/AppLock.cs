@@ -41,6 +41,13 @@ public static class AppLockRules
     /// </summary>
     public static readonly TimeSpan OwnTripGrace = TimeSpan.FromMinutes(2);
 
+    /// <summary>
+    /// How soon after the app announced a trip (<see cref="IAppLockService.ExpectReturn"/>) it must leave for the trip to
+    /// count. A trip covers one leave and ends when the app is back, so one whose result never came (the activity was
+    /// recreated meanwhile) cannot soften the auto-lock later on.
+    /// </summary>
+    public static readonly TimeSpan OwnTripWindow = TimeSpan.FromMinutes(1);
+
     /// <summary>Wall-clock steps back smaller than this (time sync) are not taken for the clock being moved back.</summary>
     public static readonly TimeSpan ClockTolerance = TimeSpan.FromMinutes(1);
 
@@ -97,19 +104,29 @@ public static class AppLockRules
     /// <summary>
     /// What is left of a <paramref name="pause"/> that started <paramref name="wallServed"/> ago by the wall clock
     /// (<paramref name="steadyServed"/> by the process clock when it started in this run, <paramref name="bootServed"/> by
-    /// the boot clock when the device has not restarted since). The boot clock is trusted when known: neither moving the
-    /// wall clock nor restarting the app shortens the pause then; a wall clock moved back never makes it longer than it is.
+    /// the boot clock, see <see cref="BootServed"/>). Where the platform has a boot clock the wall clock is not used at
+    /// all — it can be moved forward — so neither moving it nor restarting the app or the phone shortens the pause; a
+    /// wall clock moved back never makes it longer than it is.
     /// </summary>
     public static TimeSpan PauseRemaining(TimeSpan pause, TimeSpan wallServed, TimeSpan? steadyServed, TimeSpan? bootServed)
     {
         if (pause <= TimeSpan.Zero) return TimeSpan.Zero;
-        var served = bootServed is { } boot && boot >= TimeSpan.Zero
-            ? boot
-            : Max(wallServed < TimeSpan.Zero ? TimeSpan.Zero : wallServed, steadyServed ?? TimeSpan.Zero);
+        var steady = steadyServed is { } s && s > TimeSpan.Zero ? s : TimeSpan.Zero;
+        var served = bootServed is { } boot
+            ? Max(boot < TimeSpan.Zero ? TimeSpan.Zero : boot, steady)
+            : Max(wallServed < TimeSpan.Zero ? TimeSpan.Zero : wallServed, steady);
         var left = pause - served;
         if (left <= TimeSpan.Zero) return TimeSpan.Zero;
         return left > pause ? pause : left;
     }
+
+    /// <summary>
+    /// Time served since <paramref name="pausedAtBoot"/> by the boot clock, which reads <paramref name="nowBoot"/> now. A
+    /// boot clock below the start means the phone restarted since: only the time since that restart is known for sure
+    /// (the time before it is not counted), never what the movable wall clock claims.
+    /// </summary>
+    public static TimeSpan BootServed(TimeSpan pausedAtBoot, TimeSpan nowBoot) =>
+        nowBoot >= pausedAtBoot ? nowBoot - pausedAtBoot : nowBoot;
 
     private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 }
@@ -122,10 +139,17 @@ public static class AppLockRules
 /// kept out of screenshots (Android) and notifications can hide their text; while a passcode is set the recent-apps
 /// switcher shows no content. Five wrong passcodes in a row pause the checks for 30 s, every further one doubles the
 /// pause (up to an hour); the count survives restarts and a right passcode (or fingerprint) starts it over. Signing out of
-/// this device removes the passcode ("Forgot the passcode?" signs out). Thread-safe; <see cref="Changed"/> fires on any thread.
+/// this device by choice removes the passcode ("Forgot the passcode?" signs out); a sign-out the user did not ask for (the
+/// session expired or was ended elsewhere) keeps it for the next sign-in. In a browser every tab of the app is one app:
+/// "Lock now", unlocking and the stored passcode apply to all of them. Thread-safe; <see cref="Changed"/> fires on any thread.
 /// </summary>
 public interface IAppLockService
 {
+    /// <summary>
+    /// The stored passcode has been read (<see cref="InitializeAsync"/>). Until then nobody can tell whether the app is
+    /// locked: the shell stays covered.
+    /// </summary>
+    bool IsInitialized { get; }
     /// <summary>A passcode is set on this device.</summary>
     bool IsEnabled { get; }
     /// <summary>The app content is behind the lock screen until the passcode or a fingerprint unlocks it.</summary>
@@ -150,13 +174,21 @@ public interface IAppLockService
     int LockCount { get; }
     event Action? Changed;
 
+    /// <summary>
+    /// Reads the stored passcode (with one the app starts locked). The bootstrapper runs it before the first screen, also
+    /// when the start failed; idempotent and never throws.
+    /// </summary>
+    Task InitializeAsync();
     /// <summary>Checks the passcode and unlocks the app when it is right (counted like every check).</summary>
     Task<PasscodeCheck> UnlockAsync(string passcode);
     /// <summary>Asks for a fingerprint/face (when allowed and possible) and unlocks the app on success.</summary>
     Task<BiometricOutcome> UnlockWithBiometricsAsync(BiometricPromptText text, CancellationToken cancellationToken = default);
     /// <summary>Checks the passcode without unlocking (settings flows); wrong ones count toward the pause too.</summary>
     Task<PasscodeCheck> VerifyAsync(string passcode);
-    /// <summary>Sets the first passcode (4 or 6 digits) with default options; the app stays unlocked.</summary>
+    /// <summary>
+    /// Sets the first passcode (4 or 6 digits) with default options; the app stays unlocked. Throws
+    /// <see cref="InvalidOperationException"/> when one is set already (also by another tab meanwhile: that one stays).
+    /// </summary>
     Task EnableAsync(string passcode);
     /// <summary>Replaces the passcode after checking the current one; the options stay.</summary>
     Task<PasscodeCheck> ChangeAsync(string currentPasscode, string newPasscode);
@@ -166,11 +198,12 @@ public interface IAppLockService
     Task SetAutoLockDelayAsync(TimeSpan delay);
     Task SetUseBiometricsAsync(bool enabled);
     Task SetHideNotificationTextAsync(bool hide);
-    /// <summary>Locks the app right away ("Lock now"); nothing happens without a passcode.</summary>
+    /// <summary>Locks the app right away ("Lock now", every tab of it); nothing happens without a passcode.</summary>
     void LockNow();
     /// <summary>
-    /// The app is about to open a picker, the camera or a system screen that returns to it: until the handle is disposed,
-    /// leaving for it locks only after <see cref="AppLockRules.OwnTripGrace"/> (or the delay, when longer).
+    /// The app is about to open a picker, the camera or a system screen that returns to it: leaving for it within
+    /// <see cref="AppLockRules.OwnTripWindow"/> locks only after <see cref="AppLockRules.OwnTripGrace"/> (or the delay, when
+    /// longer). The trip ends when the handle is disposed or the app is back, whichever comes first.
     /// </summary>
     IDisposable ExpectReturn();
     /// <summary>
