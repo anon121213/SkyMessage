@@ -1,7 +1,8 @@
 @* The app passcode's lock screen (docs/DESIGN.md "Lock screen"): rendered once by MainLayout and shown while
    IAppLockService.IsLocked, over every screen, dialog and toast of the shell. The calm sky, the logo mark, "Enter the
    passcode", the dots and our glass keypad (PasscodePad); the fingerprint key when the user allowed it (offered by
-   itself once per lock while the app is in front). Wrong codes shake the dots; after five a pause counts down.
+   itself once per lock while the app is in front, not during a call). Wrong codes shake the dots; after five a pause
+   counts down.
    "Forgot the passcode?" signs out of this device after a confirmation shown right here (dialogs live under the lock).
    An active call stays reachable: "Back to the call" opens the call screen, which shows above the lock (an incoming
    call opens it by itself). It appears at once, opaque (fading in would show the chats for a moment) and fades out
@@ -79,6 +80,8 @@
     private bool _signingOut;
     private bool _prompting;
     private int _promptedFor = -1;
+    /// <summary>A call rang or was live while locked: the automatic fingerprint prompt waits for the next return to the app.</summary>
+    private bool _waitForReturn;
     private int _tickVersion;
     private bool _ticking;
 
@@ -144,6 +147,7 @@
             _hintIsError = false;
             _confirmingForgot = false;
             _signingOut = false;
+            _waitForReturn = false;
         }
         else if (!locked && _shown && !_leaving)
         {
@@ -168,13 +172,24 @@
 
     private void OnForegroundChanged(bool foreground)
     {
-        if (foreground) _ = InvokeAsync(MaybeOfferBiometricsAsync);
+        if (!foreground) return;
+        _ = InvokeAsync(async () =>
+        {
+            _waitForReturn = false;
+            await MaybeOfferBiometricsAsync();
+        });
     }
 
-    /// <summary>Once per lock, while the app is in front: the fingerprint prompt comes up by itself.</summary>
+    /// <summary>
+    /// Once per lock, while the app is in front: the fingerprint prompt comes up by itself. Not while a call rings or is
+    /// live: the system prompt would cover the call screen (or come up as the call ends over the phone's own lock
+    /// screen), so it waits for the next return to the app; the fingerprint key works meanwhile.
+    /// </summary>
     private async Task MaybeOfferBiometricsAsync()
     {
         if (!_shown || _leaving || _confirmingForgot || !Lifecycle.IsForeground || !OffersBiometrics) return;
+        if (CallLive || CallUi.IsCovering) _waitForReturn = true;
+        if (_waitForReturn) return;
         var lockCount = AppLock.LockCount;
         if (_promptedFor == lockCount) return;
         _promptedFor = lockCount;

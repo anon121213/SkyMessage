@@ -613,7 +613,8 @@ participants by `metadata.userId` (identity is per device), reports through a `D
 the system). The calm sky, the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`; no
 system keyboard; on a computer digits and Backspace type through `js/passcode.js`, Escape does not reach the app
 underneath); wrong codes shake the dots (rose) with a haptic, the pause after five counts down on the hint line; the
-fingerprint key and a one-time automatic prompt per lock when allowed; "Forgot the passcode?" confirms in place and
+fingerprint key and a one-time automatic prompt per lock when allowed (not while a call rings or is live, where it
+would cover the call screen: it then waits for the next return to the app); "Forgot the passcode?" confirms in place and
 signs out of this device (`IAuthService.LogoutAsync`: local data cleared, passcode removed). An active call stays
 reachable: "Back to the call" expands the call screen, which goes above the lock while locked (an incoming call opens
 it by itself); minimizing it shows the lock again. Android Back on the lock screen moves the app to the background.
