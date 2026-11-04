@@ -2,13 +2,104 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    /* Columns and the mocks' size follow the room there is, in text widths (large text counts as less room). */
+    container-type: inline-size;
 }
 
-/* By day and at night, side by side. */
+/* By day and at night, side by side; they stay in view at the top of the sheet while the controls scroll under them
+   (a band of the dialog's own glass, edge to edge: the dialog body pads 8px 24px 22px). */
 .bd-edit__previews {
+    position: sticky;
+    top: -8px;
+    z-index: 3;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+    margin: -8px -24px 0;
+    padding: 8px 24px 10px;
+    background: var(--sm-glass-strong);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+}
+
+html[data-fx="lite"] .bd-edit__previews,
+html[data-fx="lite"] .bd-edit__actions {
+    background: var(--sm-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+/* Little room (large text on a phone, a short screen): smaller mocks, so the controls keep most of the sheet, and the
+   segmented choices take two lines rather than cut their names. */
+@container (max-width: 18em) {
+    .bd-edit__previews {
+        zoom: 0.76;
+    }
+
+    .bd-edit ::deep .sm-segmented__item {
+        height: auto;
+        min-height: 2.375rem;
+        padding: 6px 4px;
+        line-height: 1.15;
+        text-align: center;
+        white-space: normal;
+        overflow-wrap: normal;
+        -webkit-hyphens: auto;
+        hyphens: auto;
+    }
+}
+
+@media (max-height: 700px) {
+    .bd-edit__previews {
+        zoom: 0.8;
+    }
+}
+
+/* The readability floor dims the app's background in a theme: a quiet note with the one-tap fix. */
+.bd-edit__floor {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 12px;
+    border-radius: var(--sm-radius-m);
+    background: var(--sm-accent-soft);
+}
+
+.bd-edit__floor ::deep .bd-edit__floor-icon {
+    color: var(--sm-accent);
+}
+
+.bd-edit__floor-text {
+    flex: 1 1 12rem;
+    min-width: 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--sm-text);
+}
+
+/* Cancel and Save stay at the bottom of the sheet, on the same glass as the previews. */
+.bd-edit__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin: 0 -24px -22px;
+    padding: 10px 24px 22px;
+    background: var(--sm-glass-strong);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+}
+
+.bd-edit__actions ::deep .sm-dialog-actions {
+    padding: 0;
+}
+
+.bd-edit__missing {
+    margin: 0 0 10px;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    text-align: right;
+    color: var(--sm-text-2);
 }
 
 .bd-edit__scope {
@@ -32,6 +123,12 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px 8px;
     padding: 6px 2px 2px;
+}
+
+@container (max-width: 18em) {
+    .bd-edit__skies {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 .bd-edit__sky {
@@ -86,13 +183,14 @@
     transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
 }
 
+/* Whole words, on two lines when they need them (hyphenated by <html lang>, never cut). */
 .bd-edit__sky-name {
     font-size: 0.75rem;
     line-height: 1.2;
     text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: normal;
+    -webkit-hyphens: auto;
+    hyphens: auto;
 }
 
 .bd-edit__sky.is-selected .bd-edit__sky-name {

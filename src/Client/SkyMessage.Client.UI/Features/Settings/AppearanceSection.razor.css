@@ -262,11 +262,14 @@ html[data-fx="lite"] .look-preview__head {
     animation: sm-pop 320ms var(--sm-spring);
 }
 
+/* Names stay whole words: two lines when they need them, hyphenated by <html lang> rather than cut. */
 .look-mode__name {
     font-size: 0.8125rem;
     line-height: 1.25;
     text-align: center;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+    -webkit-hyphens: auto;
+    hyphens: auto;
 }
 
 .look-mode.is-selected .look-mode__name {
@@ -392,13 +395,16 @@ html[data-fx="lite"] .look-preview__head {
     outline: none;
 }
 
-/* A bit of the chats' background with one of my bubbles on it. */
+/* A bit of the chats' background with two of my bubbles on it, as in a chat (right-aligned, the long one first). */
 .look-style__tile {
     position: relative;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-end;
     justify-content: center;
-    height: 4.25rem;
+    gap: 4px;
+    height: 5rem;
+    padding: 0 9px;
     border-radius: 18px;
     box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
     transition: transform 260ms var(--sm-spring);
@@ -430,21 +436,37 @@ html[data-fx="lite"] .look-preview__head {
 }
 
 .look-style__bubble {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 3.5rem;
-    height: 1.875rem;
-    padding: 0 12px;
-    border-radius: var(--sm-bubble-radius);
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    height: 1.75rem;
+    padding: 0 10px;
+    border-radius: min(var(--sm-bubble-radius), 14px);
     font-family: var(--sm-font-display);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 700;
+    line-height: 1.75rem;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
     box-shadow: var(--sm-shadow-1);
+}
+
+.look-style__bubble--short {
+    width: 64%;
 }
 
 /* No colors of my own yet: an empty bubble with a plus. */
 .look-style__bubble--add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: auto;
+    min-width: 3.5rem;
+    height: 1.875rem;
     color: var(--sm-accent);
     background: var(--sm-card-solid);
     box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sm-accent) 40%, transparent);
@@ -454,7 +476,9 @@ html[data-fx="lite"] .look-preview__head {
     font-size: 0.8125rem;
     line-height: 1.25;
     text-align: center;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+    -webkit-hyphens: auto;
+    hyphens: auto;
 }
 
 .look-style.is-selected .look-style__name {
@@ -468,33 +492,82 @@ html[data-fx="lite"] .look-preview__head {
     animation: sm-pop 320ms var(--sm-spring);
 }
 
+/* Their bubbles in each tint on a strip of the chats' background: the tint and its ink read as in a chat. */
 .look-tints {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 14px 16px;
-    padding: 6px 0 2px;
+    gap: 12px 10px;
+    margin: 2px 2px 0;
+    padding: 14px 10px;
+    border-radius: 18px;
+    box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
 }
 
-/* Tints are light by day: a rim keeps them apart from the card, the check takes the accent. */
-.look-tints ::deep .sm-swatch {
-    color: var(--sm-accent);
-    box-shadow: inset 0 0 0 1px var(--sm-border);
+.look-tint {
+    position: relative;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    background: none;
+    cursor: pointer;
 }
 
-.look-tints ::deep .sm-swatch--selected {
-    box-shadow: inset 0 0 0 1px var(--sm-border), 0 0 0 2.5px var(--sm-surface), 0 0 0 4.5px var(--sm-swatch-color, var(--sm-accent));
+.look-tint:focus-visible {
+    outline: none;
 }
 
-.look-messages.is-live ::deep .sm-swatch--selected .sm-icon {
-    animation: sm-pop 320ms var(--sm-spring);
+.look-tint__bubble {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.25rem;
+    height: 2.25rem;
+    padding: 0 12px;
+    border-radius: min(var(--sm-bubble-radius), 16px);
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    /* A light rim: deep tints stay apart from a night sky. */
+    box-shadow: inset 0 0 0 1px rgba(80, 60, 170, 0.08), var(--sm-shadow-1);
+    transition: transform 260ms var(--sm-spring);
+}
+
+html[data-theme="dark"] .look-tint__bubble {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), var(--sm-shadow-1);
+}
+
+.look-tint:active .look-tint__bubble {
+    transform: scale(0.94);
+    transition-duration: 90ms;
+    transition-timing-function: ease-out;
+}
+
+.look-tint::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: calc(min(var(--sm-bubble-radius), 16px) + 5px);
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.92);
+    pointer-events: none;
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.look-tint.is-selected::after,
+.look-tint:focus-visible::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
 }
 
 /* ---------- The sky: mini skies ---------- */
 
+/* As many columns as fit tiles of a text-sized width: four on a phone, three with large text. */
 .look-skies {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
     gap: 14px 8px;
     padding: 12px 8px 10px;
 }
@@ -590,16 +663,6 @@ html[data-fx="lite"] .look-preview__head {
     box-shadow: 0 0 0 2.5px var(--sm-card-solid), inset 0 0 0 1px var(--sm-border);
 }
 
-/* Two tiles with longer names ("Как у приложения"): the names may take two lines. */
-.look-skies--chats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.look-skies--chats .look-sky__name {
-    margin: 0 -6px;
-    white-space: normal;
-    overflow-wrap: break-word;
-}
 
 .look-sky__stars {
     position: absolute;
@@ -659,9 +722,9 @@ html[data-fx="lite"] .look-preview__head {
     letter-spacing: -0.01em;
     line-height: 1.2;
     text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: normal;
+    -webkit-hyphens: auto;
+    hyphens: auto;
 }
 
 .look-sky.is-selected .look-sky__name {

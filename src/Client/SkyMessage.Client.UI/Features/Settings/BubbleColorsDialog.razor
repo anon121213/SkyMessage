@@ -31,7 +31,7 @@
 
     <p class="bubble-pick__hint">@L["settings.appearance.bubbleColorsHint"]</p>
 
-    <GradientEditor Colors="_colors" ColorsChanged="v => _colors = v" MinStops="1" MaxStops="AppearanceRules.MaxOutgoingColors" Palette="Palette"
+    <GradientEditor Colors="_colors" ColorsChanged="v => _colors = v" MinStops="1" MaxStops="AppearanceRules.MaxOutgoingColors" Palette="Theme.Catalog.BubblePalette"
                     MinLightness="8" MaxLightness="92" />
 
     <DialogActions>
@@ -41,13 +41,6 @@
 </div>
 
 @code {
-    // Deep colors for white text and a few light ones for dark text.
-    private static readonly string[] Palette =
-    [
-        "#6A4BFF", "#C2338F", "#E5533D", "#2F9E44", "#0F9488", "#3157E8",
-        "#FFD8B8", "#FFE08A", "#C7EFD3", "#CFE3FF", "#E4D7FF", "#3F4A5C",
-    ];
-
     private List<string> _colors = [];
 
     [CascadingParameter] public DialogReference Dialog { get; set; } = default!;

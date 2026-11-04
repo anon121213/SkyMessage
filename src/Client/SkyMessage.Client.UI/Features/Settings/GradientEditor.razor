@@ -23,9 +23,10 @@
         <div class="grad-edit__group">
             <span class="grad-edit__label">@L["settings.appearance.customPalette"]</span>
             <div class="grad-edit__palette">
-                @foreach (var hex in palette)
+                @foreach (var color in palette)
                 {
-                    <ColorSwatch @key="hex" Color="@hex" Size="34" Label="@hex" Selected="@string.Equals(hex, ActiveHex, StringComparison.OrdinalIgnoreCase)"
+                    var hex = color.Hex;
+                    <ColorSwatch @key="hex" Color="@hex" Size="34" Label="@L[color.NameKey]" Selected="@string.Equals(hex, ActiveHex, StringComparison.OrdinalIgnoreCase)"
                                  OnClick="() => SetActiveAsync(hex)" Class="grad-edit__swatch" />
                 }
             </div>
@@ -85,8 +86,8 @@
     [Parameter] public int? Angle { get; set; }
     [Parameter] public EventCallback<int> AngleChanged { get; set; }
     [Parameter] public IReadOnlyList<GradientPreset>? Presets { get; set; }
-    /// <summary>Single colors to give the chosen chip.</summary>
-    [Parameter] public IReadOnlyList<string>? Palette { get; set; }
+    /// <summary>Single colors to give the chosen chip (named for screen readers).</summary>
+    [Parameter] public IReadOnlyList<PaletteColor>? Palette { get; set; }
     [Parameter] public int MinLightness { get; set; } = 4;
     [Parameter] public int MaxLightness { get; set; } = 96;
 

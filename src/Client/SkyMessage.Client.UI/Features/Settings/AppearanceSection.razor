@@ -18,11 +18,12 @@
     @{
         var a = Settings.Current.Appearance;
         var accentKey = ThemeCatalog.NormalizeHex(a.CustomAccentHex) is null ? a.Accent : null;
-        var chatPaint = Theme.Catalog.ChatPaint(a, Theme.IsDark);
-        var chatPhoto = chatPaint.Photo is { } shownPhoto ? Painter.Url(shownPhoto, chatPaint.Blur) : null;
         var ownApp = a.CustomBackground;
         var ownAppSelected = string.Equals(a.Wallpaper, ThemeCatalog.CustomWallpaperKey, StringComparison.OrdinalIgnoreCase) && ownApp is not null;
         var ownChats = BackdropRules.Normalize(a.ChatBackground);
+        // Chats that follow the app show its background as the root screens do (under its readability floor).
+        var chatPaint = ownChats is null ? Painter.OnScreen(Theme.Catalog.ChatPaint(a, Theme.IsDark), Theme.IsDark) : Theme.Catalog.ChatPaint(a, Theme.IsDark);
+        var chatPhoto = chatPaint.Photo is { } shownPhoto ? Painter.Url(shownPhoto, chatPaint.Blur) : null;
     }
     @* Paint servers and clips of the theme scenes (an always-rendered, zero-size svg). *@
     <svg class="look-defs" width="0" height="0" aria-hidden="true" focusable="false">
@@ -128,7 +129,9 @@
                         <span class="look-style__tile" style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")">
                             @if (paint is { } p)
                             {
+                                @* Two of my bubbles, a long one and a short one: wide enough for a gradient to show as one. *@
                                 <span class="look-style__bubble" style="@($"background:{p.Background};color:{p.Ink}")">@L["settings.appearance.outgoing.sample"]</span>
+                                <span class="look-style__bubble look-style__bubble--short" style="@($"background:{p.Background};color:{p.Ink}")">@L["settings.appearance.outgoing.sample2"]</span>
                             }
                             else
                             {
@@ -149,12 +152,21 @@
             </div>
 
             <span class="look-messages__label">@L["settings.appearance.incoming"]</span>
-            <div class="look-tints">
+            @* Their bubbles as they will look: small bubbles with a sample of their ink, on a strip of the chats' background. *@
+            <div class="look-tints" role="radiogroup" aria-label="@L["settings.appearance.incoming"]"
+                 style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")">
                 @foreach (var tint in Theme.Catalog.IncomingTints)
                 {
                     var selected = string.Equals(tint.Key, a.IncomingTint, StringComparison.OrdinalIgnoreCase);
-                    <ColorSwatch @key="tint.Key" Color="@(Theme.IsDark ? tint.Dark : tint.Light)" RingColor="@Theme.AccentHex" Label="@L[tint.NameKey]" Size="40"
-                                 Selected="selected" OnClick="() => PickTintAsync(tint.Key)" />
+                    var tintPaint = Theme.Catalog.IncomingPaint(tint.Key, Theme.IsDark);
+                    <button @key="tint.Key" type="button" role="radio" aria-checked="@(selected ? "true" : "false")" aria-label="@L[tint.NameKey]" title="@L[tint.NameKey]"
+                            class="look-tint @(selected ? "is-selected" : null)" @onclick="() => PickTintAsync(tint.Key)">
+                        <span class="look-tint__bubble" style="@($"background:{tintPaint.Background};color:{tintPaint.Ink}")" aria-hidden="true">@L["settings.appearance.tintSample"]</span>
+                        @if (selected)
+                        {
+                            <span class="look-sky__check" aria-hidden="true"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                        }
+                    </button>
                 }
             </div>
             <div class="look-accents__name">
@@ -188,14 +200,15 @@
                     <span class="look-sky__name">@L[wallpaper.NameKey]</span>
                 </button>
             }
-            @OwnTile(ownApp is null ? null : Theme.Catalog.Paint(ownApp.For(Theme.IsDark), Theme.IsDark), ownAppSelected, L["settings.background.own"], PickOwnAppAsync)
+            @OwnTile(ownApp is null ? null : Painter.OnScreen(Theme.Catalog.Paint(ownApp.For(Theme.IsDark), Theme.IsDark, screen: true), Theme.IsDark), ownAppSelected,
+                     L["settings.background.own"], PickOwnAppAsync)
         </div>
     </Section>
 
     <Section Title="@L["settings.appearance.chatBackground"]" Footer="@L["settings.appearance.chatBackgroundHint"]">
         <div class="look-skies look-skies--chats @(_touched ? "is-live" : null)" role="radiogroup" aria-label="@L["settings.appearance.chatBackground"]">
             @{
-                var followPaint = Theme.Catalog.AppPaint(a, Theme.IsDark);
+                var followPaint = Painter.OnScreen(Theme.Catalog.AppPaint(a, Theme.IsDark), Theme.IsDark);
                 var follows = ownChats is null;
             }
             <button type="button" role="radio" aria-checked="@(follows ? "true" : "false")" class="look-sky @(follows ? "is-selected" : null)" @onclick="FollowAppAsync">

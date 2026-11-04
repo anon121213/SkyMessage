@@ -1,8 +1,12 @@
 @* DialogService content: a background of the user's own. For the app (Target App): one for both themes or one for each
-   (a switch, then the theme to edit), as a gradient (ready-made ones, 2–3 colors, the direction) or a photo from the
-   gallery (blur, dim). The chats' background (ChatDefault) and one chat's (Chat) can be a sky too, and go back to the
-   default. Two mocks on top, by day and at night, show the result live (BackdropPreview). Result: BackdropEditorResult;
-   photos picked here that end up unused are discarded when it closes. *@
+   (a switch, then the theme to edit), as a gradient (ready-made ones, those that suit the edited theme first; 2–3
+   colors, the direction) or a photo from the gallery (blur, dim). The chats' background (ChatDefault) and one chat's
+   (Chat) can be a sky too, and go back to the default. Two mocks on top, by day and at night, show the result live
+   (BackdropPreview) and stay in view while the controls scroll under them; Cancel and Save stay at the bottom. The
+   app's background is shown as the root screens show it, under its readability floor (ThemeCatalog.ScreenVeil): when
+   the floor dims it in a theme, a note says so and "Приглушить" puts that dim into the edited values (a background
+   shared by both themes gets one per theme). Result: BackdropEditorResult; photos picked here that end up unused are
+   discarded when it closes. *@
 @inherits UiComponentBase
 @inject ThemeService Theme
 @inject ISettingsService Settings
@@ -15,12 +19,21 @@
     <div class="bd-edit__previews" aria-hidden="true">
         @foreach (var dark in new[] { false, true })
         {
-            var paint = Theme.Catalog.Paint(ShownIn(dark), dark);
+            var paint = PaintIn(dark);
             <BackdropPreview @key="dark" Screen="@(Target == BackdropTarget.App)" Dark="dark" Paint="paint" Palette="@Theme.Catalog.Palette(Settings.Current.Appearance, dark)"
                              PhotoUrl="@(paint.Photo is { } photo ? Painter.Url(photo, 0) : null)" Active="@(!_sameForBoth && _editDark == dark)"
                              Label="@(dark ? L["theme.mode.dark"] : L["theme.mode.light"])" />
         }
     </div>
+
+    @if (DimmedThemes is { } dimmed)
+    {
+        <div class="bd-edit__floor" role="status">
+            <Icon Name="@IconNames.Info" Size="18" Class="bd-edit__floor-icon" />
+            <span class="bd-edit__floor-text">@L[dimmed switch { (true, true) => "settings.background.floor.both", (false, true) => "settings.background.floor.dark", _ => "settings.background.floor.light" }]</span>
+            <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" OnClick="ApplyFloor">@L["settings.background.floor.apply"]</Button>
+        </div>
+    }
 
     @if (Target == BackdropTarget.App)
     {
@@ -55,7 +68,7 @@
                 break;
             case BackdropKind.Gradient:
                 <GradientEditor @key="EditKey" Colors="Current.Colors" ColorsChanged="v => Current.Colors = v" Angle="Current.Angle" AngleChanged="v => Current.Angle = v"
-                                Presets="Theme.Catalog.BackdropGradients" MinStops="BackdropRules.MinColors" MaxStops="BackdropRules.MaxColors" />
+                                Presets="Presets" MinStops="BackdropRules.MinColors" MaxStops="BackdropRules.MaxColors" />
                 break;
             case BackdropKind.Photo:
                 <div class="bd-edit__photo">
@@ -67,7 +80,7 @@
                         </div>
                         <Slider Value="Current.Blur" ValueChanged="v => Current.Blur = (int)Math.Round(v)" Min="0" Max="100" Step="1" ShowValue="true"
                                 Label="@L["settings.background.blur"]" Format="@(v => $"{v:0}%")" />
-                        <Slider Value="Current.Dim" ValueChanged="v => Current.Dim = (int)Math.Round(v)" Min="0" Max="90" Step="1" ShowValue="true"
+                        <Slider Value="Current.Dim" ValueChanged="v => Current.Dim = (int)Math.Round(v)" Min="0" Max="MaxDim" Step="1" ShowValue="true"
                                 Label="@L["settings.background.dim"]" Format="@(v => $"{v:0}%")" />
                     }
                     else
@@ -99,13 +112,23 @@
         </div>
     }
 
-    <DialogActions>
-        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
-        <Button OnClick="Save" Disabled="@(!CanSave)">@L["common.save"]</Button>
-    </DialogActions>
+    <div class="bd-edit__actions">
+        @if (MissingPhotoSide != PhotoSide.None)
+        {
+            @* Why Save does not save yet: a photo side without its photo (Save takes the user there). *@
+            <p class="bd-edit__missing" role="status">@L[MissingPhotoSide switch { PhotoSide.Dark => "settings.background.needPhotoDark", PhotoSide.Light => "settings.background.needPhotoLight", _ => "settings.background.needPhoto" }]</p>
+        }
+        <DialogActions>
+            <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+            <Button OnClick="Save">@L["common.save"]</Button>
+        </DialogActions>
+    </div>
 </div>
 
 @code {
+    /// <summary>The dim slider's top (the readability floor never asks for more, ThemeCatalog.MaxScreenVeil).</summary>
+    private const int MaxDim = 90;
+
     private readonly List<BackdropPhoto> _picked = [];
     private readonly HashSet<string> _keep = new(StringComparer.Ordinal);
     private Backdrop _light = BackdropRules.DefaultGradient(dark: false);
@@ -133,14 +156,23 @@
     private bool EditingDark => Target == BackdropTarget.App ? (_sameForBoth ? Theme.IsDark : _editDark) : Theme.IsDark;
 
     /// <summary>A photo background needs its photo (both themes' sides when they differ).</summary>
-    private bool CanSave => Target == BackdropTarget.App && !_sameForBoth ? Complete(_light) && Complete(_dark) : Complete(Current);
+    private bool CanSave => MissingPhotoSide == PhotoSide.None;
+
+    /// <summary>Which side is set to a photo without one: none, the one background (both themes, a chat), or one theme's.</summary>
+    private enum PhotoSide { None, Single, Light, Dark }
+
+    private PhotoSide MissingPhotoSide =>
+        Target == BackdropTarget.App && !_sameForBoth
+            ? !Complete(_light) ? PhotoSide.Light : !Complete(_dark) ? PhotoSide.Dark : PhotoSide.None
+            : Complete(Current) ? PhotoSide.None : PhotoSide.Single;
 
     private static bool Complete(Backdrop backdrop) => backdrop.Kind != BackdropKind.Photo || backdrop.Photo is not null;
 
+    /// <summary>"Back to the default": only while there is something of its own to go back from.</summary>
     private string? ResetLabel => Target switch
     {
-        BackdropTarget.ChatDefault => L["settings.background.followApp"],
-        BackdropTarget.Chat => L["settings.background.default"],
+        BackdropTarget.ChatDefault when Initial is not null => L["settings.background.followApp"],
+        BackdropTarget.Chat when Initial is not null => L["settings.background.default"],
         _ => null,
     };
 
@@ -165,6 +197,8 @@
     protected override void OnInitialized()
     {
         RenderOn(h => Painter.Changed += h, h => Painter.Changed -= h);
+        _presetsLight = OrderPresets(dark: false);
+        _presetsDark = OrderPresets(dark: true);
         var appearance = Settings.Current.Appearance;
         if (Target == BackdropTarget.App)
         {
@@ -202,6 +236,85 @@
     /// <summary>The background a mock of <paramref name="dark"/> shows.</summary>
     private Backdrop ShownIn(bool dark) =>
         Target != BackdropTarget.App ? _single : _sameForBoth || !dark ? _light : _dark;
+
+    /// <summary>
+    /// The mock's picture: the app's background as the root screens show it (under its readability floor; a photo's
+    /// floor is measured on its sharp copy, the one the mocks load), a chat's as it is.
+    /// </summary>
+    private BackdropPaint PaintIn(bool dark)
+    {
+        var shown = ShownIn(dark);
+        return Target == BackdropTarget.App
+            ? Painter.OnScreen(Theme.Catalog.Paint(shown, dark, screen: true), dark, blur: 0)
+            : Theme.Catalog.Paint(shown, dark);
+    }
+
+    /// <summary>The themes in which the readability floor dims the app's background beyond what it asks for; null: none.</summary>
+    private (bool Light, bool Dark)? DimmedThemes
+    {
+        get
+        {
+            if (Target != BackdropTarget.App) return null;
+            var light = Dimmed(ShownIn(false), dark: false);
+            var dark = Dimmed(ShownIn(true), dark: true);
+            return light || dark ? (light, dark) : null;
+        }
+    }
+
+    /// <summary>More than a trace of veil (a gradient), or more than its own dim (a photo), is needed for the text to read.</summary>
+    private bool Dimmed(Backdrop backdrop, bool dark) => backdrop.Kind switch
+    {
+        BackdropKind.Gradient when backdrop.Colors.Count >= BackdropRules.MinColors =>
+            ThemeCatalog.ScreenVeil(ThemeCatalog.Samples(backdrop.Colors.Select(ThemeCatalog.Color.Parse).ToList()), dark) > FloorSlack,
+        BackdropKind.Photo when backdrop.Photo is { } photo && Painter.ScreenFloor(photo, dark, 0) is { } floor =>
+            floor - backdrop.Dim / 100.0 > FloorSlack,
+        _ => false,
+    };
+
+    /// <summary>A veil this light is not worth a note.</summary>
+    private const double FloorSlack = 0.02;
+
+    /// <summary>
+    /// "Приглушить": the floor's dim goes into the edited values — a photo's dim slider, a gradient's colors. One
+    /// background for both themes cannot carry both floors (the veil is the theme's own color): it becomes one per theme,
+    /// showing the theme that changed.
+    /// </summary>
+    private void ApplyFloor()
+    {
+        if (DimmedThemes is not { } dimmed) return;
+        var (light, dark) = dimmed;
+        if (_sameForBoth)
+        {
+            _sameForBoth = false;
+            _dark = _light.Clone();
+            _editDark = dark;
+        }
+        if (light) PutFloor(_light, dark: false);
+        if (dark) PutFloor(_dark, dark: true);
+    }
+
+    private void PutFloor(Backdrop backdrop, bool dark)
+    {
+        switch (backdrop.Kind)
+        {
+            case BackdropKind.Gradient:
+                backdrop.Colors = ThemeCatalog.ScreenGradient(backdrop.Colors, dark).ToList();
+                break;
+            case BackdropKind.Photo when backdrop.Photo is { } photo && Painter.ScreenFloor(photo, dark, 0) is { } floor:
+                backdrop.Dim = Math.Clamp((int)Math.Ceiling(floor * BackdropRules.MaxLevel), backdrop.Dim, MaxDim);
+                break;
+        }
+    }
+
+    /// <summary>The ready-made gradients, those that suit the edited theme first (soft ones by day, deep ones at night).</summary>
+    private IReadOnlyList<GradientPreset> Presets => EditingDark ? _presetsDark : _presetsLight;
+
+    private IReadOnlyList<GradientPreset> _presetsLight = [];
+    private IReadOnlyList<GradientPreset> _presetsDark = [];
+
+    private IReadOnlyList<GradientPreset> OrderPresets(bool dark) => Theme.Catalog.BackdropGradients
+        .OrderBy(p => ThemeCatalog.ScreenVeil(ThemeCatalog.Samples(p.Colors.Select(ThemeCatalog.Color.Parse).ToList()), dark) > FloorSlack ? 1 : 0)
+        .ToList();
 
     private void SetSameForBoth(bool value)
     {
@@ -261,7 +374,12 @@
 
     private void Save()
     {
-        if (!CanSave) return;
+        if (!CanSave)
+        {
+            // The note above says what is missing; the side that misses it comes into view.
+            if (MissingPhotoSide is PhotoSide.Light or PhotoSide.Dark) _editDark = MissingPhotoSide == PhotoSide.Dark;
+            return;
+        }
         if (Target == BackdropTarget.App)
         {
             var app = BackdropRules.Normalize(new AppBackground { SameForBoth = _sameForBoth, Light = _light, Dark = _dark });
