@@ -269,12 +269,18 @@ ThemeCatalog.NormalizeHex("#6c5ce7")    // "#6C5CE7" or null (custom accent vali
 await Theme.PreviewAsync(appearanceCopy); … await Theme.EndPreviewAsync();   // live preview without saving
 
 // Colors and backgrounds of one's own (SPEC §8.2): paints for previews and tiles, all per theme
-Theme.Catalog.OutgoingPaint(appearance, dark)   // BubblePaint(Background, Solid, Ink, Meta) of my bubbles as set
-Theme.Catalog.AccentBubble(hex, style, dark)    // my bubble in an accent, Gradient or Solid
+Theme.Catalog.OutgoingPaint(appearance, dark)   // BubblePaint(Background, Solid, Ink, Meta, Danger) of my bubbles as set
+Theme.Catalog.AccentBubble(hex, style, dark)    // my bubble in an accent, Gradient or Solid (white ink, stops deepened ≤ 20%)
+ThemeCatalog.OnAccentInk(from, to)              // text on an accent fill (--sm-on-accent): white unless the middle is very light
 Theme.Catalog.CustomBubble(colors, dark)        // my own 1–2 colors
 Theme.Catalog.IncomingPaint(tintKey, dark)      // their bubbles; Theme.Catalog.IncomingTints: default, lavender, peach, mint, sky, sand
-Theme.Catalog.AppPaint(appearance, dark) / ChatPaint(appearance, dark) / Paint(backdrop, dark)
-                                                // BackdropPaint(Css, Base, Stars, Photo, Blur, Dim): a still picture of a background
+Theme.Catalog.AppPaint(appearance, dark) / ChatPaint(appearance, dark) / Paint(backdrop, dark, screen)
+                                                // BackdropPaint(Css, Base, Stars, Photo, Blur, Dim, Veil): a still picture of a
+                                                // background; the app's (screen) under its readability floor
+ThemeCatalog.ScreenVeil(colors, dark) / ScreenGradient(colors, dark) / ScreenVeilRows(cells, dark) / ScreenVeilCss(rows, dim, dark)
+                                                // the floor that keeps root-screen text readable (titles 7:1, text-2 4.5:1)
+Theme.Catalog.SystemBars(appearance, dark)      // (DarkContent, Hex) of the system bars over the app's background
+Theme.Catalog.AccentPalette / BubblePalette     // PaletteColor(Hex, NameKey) ready-made colors, named for screen readers
 Theme.Catalog.Palette(appearance, dark)         // PreviewPalette: the tokens a mock screen needs to show one theme in the other
 Theme.Catalog.BackdropGradients                 // GradientPreset(Key, NameKey, Colors, Angle) for the gradient editor
 ThemeCatalog.Readable(stops, lightInk, darkInk) // the ink for a fill and the fill kept at ≥ 4.5:1 (Contrast, WorstContrast, Samples)
@@ -282,15 +288,21 @@ ThemeCatalog.Readable(stops, lightInk, darkInk) // the ink for a fill and the fi
 
 Saving appearance = `Settings.UpdateAsync(s => s.Appearance.X = …)`; ThemeService re-applies automatically
 (CSS variables, `data-theme`, reduced motion, compact list, system bars via `ISystemUiService`, the pictures of the
-user's own backgrounds through boot.js). Accent names: `L[accent.NameKey]`, custom: `theme.accent.custom`; modes:
+user's own backgrounds through boot.js, `ThemeState.Scenes`: per theme the slots with one's own background for
+`html[data-sky-own]` and the color under the system bars). A screen that runs under the system bars over a background
+of its own holds them with `using var hold = Theme.HoldSystemBars(hex)` (ChatPage on phones; the newest hold wins). Accent names: `L[accent.NameKey]`, custom: `theme.accent.custom`; modes:
 `theme.mode.system|light|dark`; tints `theme.tint.*`; gradients `theme.gradient.*`. Backgrounds with photos are saved
 through `BackdropPhotoService` (Core: `ImportAsync(maxSide)` picks and stores a photo, `SetAppBackgroundAsync`,
 `SetChatDefaultAsync`, `SetChatAsync(chatId, backdrop?)`, `DiscardAsync`; unused photos are deleted by it).
 
 `BackdropPainter` (scoped) paints what the theme CSS cannot: `ChatStyle(chatId)` — inline CSS custom properties for
-the root of a chat with a background of its own (ChatPage puts it on `.chat`); `Url(photo, blur)` / `Image(photo, blur)`
-— a photo as the backgrounds show it (blur 0..100 baked in by boot.js; null until loaded, then `Changed` fires; use
-blur 0 plus a CSS `filter: blur()` for small live previews). Subscribe with `RenderOn(h => Painter.Changed += h, …)`.
+a chat with a background of its own (ChatPage puts them on a `display: contents` wrapper around `.chat`, so they never
+touch the sizes chat.js keeps inline on `[data-chat-root]`), `ChatLights(chatId)` (SkyBackdrop `Lights` for it),
+`ChatBase(chatId)` (the color its edges fade into: the system bars' color in it); `Url(photo, blur)` /
+`Image(photo, blur)` — a photo as the backgrounds show it (blur 0..100 baked in by boot.js, with its tone and 8×8
+cells; null until loaded, then `Changed` fires; use blur 0 plus a CSS `filter: blur()` for small live previews);
+`OnScreen(paint, dark)` — a photo's paint with the row-by-row veil the root screens give it (`ScreenFloor` its
+strongest row). Subscribe with `RenderOn(h => Painter.Changed += h, …)`.
 
 ### `LayoutService` (scoped)
 
@@ -605,10 +617,14 @@ bubbles: `--sm-bubble-out-bg --sm-bubble-out --sm-bubble-out-text --sm-bubble-ou
 --sm-bubble-in-meta --sm-bubble-radius` (generated for the bubble style and tint in use; the ink keeps 4.5:1); chat
 background: `--sm-chat-bg` (base color; for a photo its tone under the veil) + `--sm-chat-wallpaper` (full `background`
 shorthand: `background: var(--sm-chat-wallpaper); background-color: var(--sm-chat-bg);`), and for SkyBackdrop's chat
-variant `--sm-chat-orb-1/2/3 --sm-chat-stars --sm-chat-clouds --sm-chat-photo --sm-chat-dim` (each falls back to the
-app sky's `--sm-orb-* --sm-stars --sm-clouds --sm-sky-photo --sm-sky-dim`); a photo background: `--sm-sky-photo` /
-`--sm-chat-photo` (a `url()`, set by boot.js on `<html>`, or inline for one chat), `--sm-sky-tone` / `--sm-chat-tone`
-(its average color), `--sm-sky-dim` / `--sm-chat-dim` (the veil, 0..1, over `--sm-bg`);
+variant `--sm-chat-orb-1/2/3 --sm-chat-stars --sm-chat-clouds --sm-chat-photo --sm-chat-dim --sm-chat-veil` (each falls
+back to the app sky's `--sm-orb-* --sm-stars --sm-clouds --sm-sky-photo --sm-sky-dim --sm-sky-veil`); a photo
+background: `--sm-sky-photo` / `--sm-chat-photo` (a `url()`, set by boot.js on `<html>`, or inline for one chat),
+`--sm-sky-tone` / `--sm-chat-tone` (its average color), `--sm-sky-dim` / `--sm-chat-dim` (the user's veil, 0..1, over
+`--sm-bg`), and behind the root screens the readability floor boot.js measured on the picture: `--sm-sky-veil` (the
+veil as a row-by-row gradient, with `--sm-sky-veil-opacity: 1`) and `--sm-sky-dim-min` (its strongest row);
+`--sm-bubble-out-danger` (a failed status on my bubble); `html[data-sky-own="app chat"]` lists the slots showing a
+background of one's own in the current theme (no sky lights over them);
 shape/motion: `--sm-radius-s/m/l/xl --sm-shadow-1 --sm-shadow-2 --sm-ease --sm-ease-out --sm-dur --sm-dur-fast`;
 type/layout: `--sm-font --sm-font-mono --sm-font-size --sm-header-h --sm-tabbar-h --sm-rail-w --sm-sidebar-w
 --sm-info-w`; insets: `--sm-safe-top/bottom/left/right` and `--sm-kb-inset` (set by the MAUI host; **use the
@@ -704,8 +720,10 @@ instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarViewerDialog
 `ChatListItem`, `ChatActions`, `AddContactDialog`, `ServerPickerDialog` + `ServerStatus` (connection settings may
 reuse them; `ServerPickerDialog.Normalize(url)`). Features/Settings: `ColorStrips` (our hue/vividness/lightness picker,
 `@bind`-style `Hex`/`HexChanged`), `GradientEditor` (1–3 color chips + strips, optional presets, palette and
-direction), `BackdropEditor` (DialogService content: `Target` App/ChatDefault/Chat, result `BackdropEditorResult`),
-`BackdropPreview` (a mock app screen or chat over a `BackdropPaint` in either theme), `BubbleColorsDialog`.
+direction), `BackdropEditor` (DialogService content: `Target` App/ChatDefault/Chat, result `BackdropEditorResult`; open
+it with `Class = "sm-dialog--solid"` — its previews and actions stay in view on bands of the dialog's own color; it
+notes when the readability floor dims a theme), `BackdropPreview` (a mock app screen or chat over a `BackdropPaint` in
+either theme), `BubbleColorsDialog`. Dialog modifier `sm-dialog--solid` (app.css): an opaque dialog.
 
 ---
 

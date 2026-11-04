@@ -46,7 +46,9 @@ Rules:
 8. **Ambient decoration** (the sky, the animated logo, call rings) is slow (seconds, not milliseconds),
    subtle, and never competes with content. No sparkles anywhere (DESIGN.md, "No AI clichés"). It pauses under `[inert]` (covered
    screens), stops with reduced motion and freezes in `html[data-fx="lite"]`. The user's own backgrounds (a gradient, a
-   photo) never move at all: a photo is a still picture with its blur baked in, not a filter.
+   photo) never move at all: a photo is a still picture with its blur baked in, not a filter, and the sky's lights,
+   clouds and stars are not drawn over them (`html[data-sky-own]`, `SkyBackdrop Lights`), so nothing composites
+   invisible animated layers.
 
 ## 2. Gesture map
 
