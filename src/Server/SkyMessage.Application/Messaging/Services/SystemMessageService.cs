@@ -11,7 +11,8 @@ namespace SkyMessage.Application.Messaging.Services;
 /// <summary>
 /// Posts service messages and call logs. Works in a fresh DI scope (own DbContext) so the caller's change
 /// tracker is never flushed or polluted, runs its own transaction (seq + insert + chat aggregate), commits and
-/// only then broadcasts MessageCreated (plus ChatAdded for members it unhides).
+/// only then broadcasts MessageCreated (plus ChatAdded for members it unhides, ChatSettingsChanged for members a call
+/// brought back from the archive).
 /// </summary>
 internal sealed class SystemMessageService(
     IAppDbContext callerDb,
@@ -71,6 +72,7 @@ internal sealed class SystemMessageService(
         var now = clock.UtcNow;
         Guid messageId;
         List<Guid> unhidden = [];
+        List<Guid> unarchived = [];
         var created = false;
 
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
@@ -119,13 +121,21 @@ internal sealed class SystemMessageService(
                         .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, seq), ct);
                 }
 
+                // A call from the other side brings an archived chat back like a message does (ChatPlacement: muted chats and
+                // strangers' stay); notices never do. Before the unhiding below: a chat that reappears is in no archive yet.
+                if (type == MessageType.Call && senderId is { } caller)
+                {
+                    var chatType = await db.Chats.Where(c => c.Id == chatId).Select(c => c.Type).FirstAsync(ct);
+                    unarchived = await ChatPlacement.UnarchiveForMessageAsync(db, chatId, chatType, caller, now, ct);
+                }
+
                 // Like any new message, a call log brings a hidden private chat back.
                 unhidden = await db.ChatMembers.Where(m => m.ChatId == chatId && m.IsHidden).Select(m => m.UserId).ToListAsync(ct);
                 if (unhidden.Count > 0)
                 {
                     await db.ChatMembers.Where(m => m.ChatId == chatId && m.IsHidden)
                         .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsHidden, false), ct);
-                    // The first sign of a stranger may be their call: such a chat may start in the archive (ChatPlacement).
+                    // The first sign of a stranger may be their call: such a chat may start in the archive, muted (ChatPlacement).
                     await ChatPlacement.ArchiveAsync(db, chatId, await ChatPlacement.ArchivedOnArrivalAsync(db, unhidden, senderId ?? readerId, ct), ct);
                 }
 
@@ -141,6 +151,8 @@ internal sealed class SystemMessageService(
         var memberIds = await db.ChatMembers.AsNoTracking().Where(m => m.ChatId == chatId).Select(m => m.UserId).ToListAsync(CancellationToken.None);
         await PublishAsync(memberIds, "MessageCreated", c => c.MessageCreated(dto));
         await PublishAsync(unhidden, "ChatAdded", c => c.ChatAdded(new ChatRefEvent { ChatId = chatId }));
+        await ChatPlacement.PublishSettingsAsync(db, (userId, e) => PublishAsync([userId], "ChatSettingsChanged", c => c.ChatSettingsChanged(e)),
+            chatId, unarchived);
         return dto;
     }
 

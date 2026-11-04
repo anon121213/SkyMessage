@@ -253,8 +253,8 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
         Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.PinnedOrderPath(folderId), new ReorderPinnedChatsRequest { ChatIds = chatIdsTopFirst },
             idempotent: true, ct);
 
-    public Task<ChatFoldersDto> UpdateChatListSettingsAsync(ChatListSettingsDto settings, CancellationToken ct = default) =>
-        Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.Settings, settings, idempotent: true, ct);
+    public Task<ChatFoldersDto> UpdateChatListSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken ct = default) =>
+        Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.Settings, request, idempotent: true, ct);
 
     // Read marks only move forward on the server: safe to repeat.
     public Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default) =>

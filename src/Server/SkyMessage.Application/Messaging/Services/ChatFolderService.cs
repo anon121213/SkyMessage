@@ -32,22 +32,28 @@ internal sealed class ChatFolderService(
 
     public Task<ChatFoldersDto> SaveFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (folderId == Guid.Empty) throw MessagingErrors.Validation("folderId", "Folder id is required.");
-        var draft = ChatFolderInput.Normalize(request);
+        // The fields alone first (every problem at once, before any lock); the whole folder once it is laid over the stored one.
+        ChatFolderInput.Validate(request);
         var me = currentUser.UserId;
         return MutateAsync(me, async (folders, now, ct) =>
         {
-            // Chats that are not (or no longer) mine are dropped; the rest keep the order they were sent in.
-            var mine = await MyChatIdsAsync(me, draft.IncludedChatIds.Concat(draft.ExcludedChatIds), ct);
-            var included = draft.IncludedChatIds.Where(mine.Contains).ToList();
-            var excluded = draft.ExcludedChatIds.Where(mine.Contains).ToList();
-
             var folder = folders.FirstOrDefault(f => f.Id == folderId);
             if (folder is null)
             {
-                // Someone else's folder id gets the same answer as one that does not exist.
-                if (await db.ChatFolders.AnyAsync(f => f.Id == folderId, ct)) throw new NotFoundException(ErrorCodes.FolderNotFound);
+                // Someone else's folder id gets the same answer as one that does not exist, and an edit of a folder that
+                // was deleted meanwhile (on another device) does not bring it back.
+                if (!request.Create || await db.ChatFolders.AnyAsync(f => f.Id == folderId, ct))
+                    throw new NotFoundException(ErrorCodes.FolderNotFound);
                 if (folders.Count >= Limits.MaxChatFolders) throw new BadRequestException(ErrorCodes.FolderLimit);
+            }
+            var draft = ChatFolderInput.Apply(request, folder is null ? null : ChatFolderDraft.Of(folder));
+            // Chats that are not (or no longer) mine are dropped from every list, the folder's pins too; the rest keep their order.
+            var mine = await MyChatIdsAsync(me, draft.IncludedChatIds.Concat(draft.ExcludedChatIds).Concat(folder?.PinnedChatIds ?? []), ct);
+
+            if (folder is null)
+            {
                 folder = new ChatFolder
                 {
                     Id = folderId,
@@ -61,15 +67,16 @@ internal sealed class ChatFolderService(
 
             folder.Name = draft.Name;
             folder.Icon = draft.Icon;
-            folder.IncludeContacts = request.IncludeContacts;
-            folder.IncludeNonContacts = request.IncludeNonContacts;
-            folder.IncludeGroups = request.IncludeGroups;
-            folder.IncludeChannels = request.IncludeChannels;
-            folder.ExcludeMuted = request.ExcludeMuted;
-            folder.ExcludeRead = request.ExcludeRead;
-            folder.ExcludeArchived = request.ExcludeArchived;
-            if (!folder.IncludedChatIds.SequenceEqual(included)) folder.IncludedChatIds = included;
-            if (!folder.ExcludedChatIds.SequenceEqual(excluded)) folder.ExcludedChatIds = excluded;
+            folder.IncludeContacts = draft.IncludeContacts;
+            folder.IncludeNonContacts = draft.IncludeNonContacts;
+            folder.IncludeGroups = draft.IncludeGroups;
+            folder.IncludeChannels = draft.IncludeChannels;
+            folder.ExcludeMuted = draft.ExcludeMuted;
+            folder.ExcludeRead = draft.ExcludeRead;
+            folder.ExcludeArchived = draft.ExcludeArchived;
+            if (Changed(folder.IncludedChatIds, draft.IncludedChatIds.Where(mine.Contains)) is { } included) folder.IncludedChatIds = included;
+            if (Changed(folder.ExcludedChatIds, draft.ExcludedChatIds.Where(mine.Contains)) is { } excluded) folder.ExcludedChatIds = excluded;
+            if (Changed(folder.PinnedChatIds, folder.PinnedChatIds.Where(mine.Contains)) is { } pins) folder.PinnedChatIds = pins;
         }, cancellationToken);
     }
 
@@ -107,6 +114,8 @@ internal sealed class ChatFolderService(
             var folder = Find(folders, folderId);
             if (!await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == me && !m.IsHidden && !m.Chat!.IsDeleted, ct))
                 throw new NotFoundException(ErrorCodes.ChatNotFound);
+            // Pins of chats I left or that were deleted do not take up room.
+            await PrunePinsAsync(me, folder, ct);
             if (folder.PinnedChatIds.Contains(chatId)) return;
             if (folder.PinnedChatIds.Count >= Limits.MaxChatFolderChats)
                 throw MessagingErrors.Validation("chatId", $"A folder pins at most {Limits.MaxChatFolderChats} chats.");
@@ -115,14 +124,17 @@ internal sealed class ChatFolderService(
         }, cancellationToken);
     }
 
-    public Task<ChatFoldersDto> UnpinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default) =>
-        MutateAsync(currentUser.UserId, (folders, _, _) =>
+    public Task<ChatFoldersDto> UnpinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default)
+    {
+        var me = currentUser.UserId;
+        return MutateAsync(me, async (folders, _, ct) =>
         {
             var folder = Find(folders, folderId);
             if (folder.PinnedChatIds.Contains(chatId))
                 folder.PinnedChatIds = folder.PinnedChatIds.Where(id => id != chatId).ToList();
-            return Task.CompletedTask;
+            await PrunePinsAsync(me, folder, ct);
         }, cancellationToken);
+    }
 
     public Task<ChatFoldersDto> ReorderPinnedAsync(Guid folderId, ReorderPinnedChatsRequest request, CancellationToken cancellationToken = default)
     {
@@ -131,24 +143,26 @@ internal sealed class ChatFolderService(
             throw MessagingErrors.Validation("chatIds", $"List 1 to {Limits.MaxPinnedChatsReorder} pinned chats.");
         if (requested.Contains(Guid.Empty) || requested.Distinct().Count() != requested.Count)
             throw MessagingErrors.Validation("chatIds", "Chat ids must be distinct and not empty.");
-        return MutateAsync(currentUser.UserId, (folders, _, _) =>
+        var me = currentUser.UserId;
+        return MutateAsync(me, async (folders, _, ct) =>
         {
             var folder = Find(folders, folderId);
+            await PrunePinsAsync(me, folder, ct);
             // The same arrangement as the global pins: the listed pinned chats take the places they held, in this order.
             var arranged = PinOrderRules.Arrange(folder.PinnedChatIds, requested);
             if (!arranged.SequenceEqual(folder.PinnedChatIds)) folder.PinnedChatIds = arranged.ToList();
-            return Task.CompletedTask;
         }, cancellationToken);
     }
 
-    public Task<ChatFoldersDto> UpdateSettingsAsync(ChatListSettingsDto settings, CancellationToken cancellationToken = default)
+    public Task<ChatFoldersDto> UpdateSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(request);
+        // Only the settings the request sets: another device switching another one at the same moment keeps its change.
         return MutateAsync(currentUser.UserId, (_, _, _) => Task.CompletedTask, cancellationToken, prefs =>
         {
-            prefs.ArchiveNewFromStrangers = settings.ArchiveNewFromStrangers;
-            prefs.KeepArchived = settings.KeepArchived;
-            prefs.HideArchive = settings.HideArchive;
+            if (request.ArchiveNewFromStrangers is { } strangers) prefs.ArchiveNewFromStrangers = strangers;
+            if (request.KeepArchived is { } keep) prefs.KeepArchived = keep;
+            if (request.HideArchive is { } hide) prefs.HideArchive = hide;
         });
     }
 
@@ -258,6 +272,21 @@ internal sealed class ChatFolderService(
             .Select(m => m.ChatId)
             .ToListAsync(ct);
         return mine.ToHashSet();
+    }
+
+    /// <summary>Drops the folder's pins of chats that are no longer mine (left, removed, deleted for everyone).</summary>
+    private async Task PrunePinsAsync(Guid me, ChatFolder folder, CancellationToken ct)
+    {
+        if (folder.PinnedChatIds.Count == 0) return;
+        var mine = await MyChatIdsAsync(me, folder.PinnedChatIds, ct);
+        if (Changed(folder.PinnedChatIds, folder.PinnedChatIds.Where(mine.Contains)) is { } pins) folder.PinnedChatIds = pins;
+    }
+
+    /// <summary>The new list when it differs, else null (an unchanged folder stays unchanged for the change tracker).</summary>
+    private static List<Guid>? Changed(List<Guid> current, IEnumerable<Guid> next)
+    {
+        var list = next.ToList();
+        return current.SequenceEqual(list) ? null : list;
     }
 
     private static ChatFolder Find(List<ChatFolder> folders, Guid folderId) =>

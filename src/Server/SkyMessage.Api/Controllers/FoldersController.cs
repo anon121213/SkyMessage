@@ -23,8 +23,8 @@ public sealed class FoldersController(IChatFolderService folders) : ControllerBa
         folders.ReorderFoldersAsync(request, ct);
 
     [HttpPut(ApiRoutes.Folders.Settings)]
-    public Task<ChatFoldersDto> UpdateSettings([FromBody] ChatListSettingsDto settings, CancellationToken ct) =>
-        folders.UpdateSettingsAsync(settings, ct);
+    public Task<ChatFoldersDto> UpdateSettings([FromBody] UpdateChatListSettingsRequest request, CancellationToken ct) =>
+        folders.UpdateSettingsAsync(request, ct);
 
     [HttpPut(ApiRoutes.Folders.Pin)]
     public Task<ChatFoldersDto> Pin(Guid folderId, Guid chatId, CancellationToken ct) => folders.PinAsync(folderId, chatId, ct);

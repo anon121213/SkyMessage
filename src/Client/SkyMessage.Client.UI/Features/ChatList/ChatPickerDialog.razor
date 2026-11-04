@@ -54,8 +54,13 @@
 
 @code {
     private string _query = "";
-    private readonly List<Guid> _selected = [];
+    private readonly HashSet<Guid> _selected = [];
+    // Picked first, kept in the order they were picked (the result keeps it).
+    private readonly List<Guid> _order = [];
     private ChatSummaryDto? _saved;
+    // Offered chats, built once per chat list change (the query only filters them).
+    private IReadOnlyList<ChatSummaryDto>? _offered;
+    private HashSet<Guid> _exclude = [];
 
     [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
     /// <summary>Chats chosen so far (they come checked).</summary>
@@ -67,11 +72,7 @@
     {
         get
         {
-            var all = new List<ChatSummaryDto>();
-            if (_saved is not null) all.Add(_saved);
-            foreach (var chat in ChatList.Chats.Concat(ChatList.ArchivedChats))
-                if (all.All(c => c.Id != chat.Id)) all.Add(chat);
-            var offered = all.Where(c => !Exclude.Contains(c.Id)).OrderByDescending(c => c.Type == ChatType.Saved).ToList();
+            var offered = _offered ??= Offered();
             var q = _query.Trim();
             return q.Length == 0
                 ? offered
@@ -79,16 +80,32 @@
         }
     }
 
+    private List<ChatSummaryDto> Offered()
+    {
+        var seen = new HashSet<Guid>();
+        var offered = new List<ChatSummaryDto>();
+        // Saved Messages first, then the list and the archive.
+        if (_saved is not null && !_exclude.Contains(_saved.Id) && seen.Add(_saved.Id)) offered.Add(_saved);
+        foreach (var chat in ChatList.Chats.Concat(ChatList.ArchivedChats))
+            if (!_exclude.Contains(chat.Id) && seen.Add(chat.Id)) offered.Add(chat);
+        return offered;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
-        _selected.AddRange(Selected.Distinct());
+        ChatList.Changed += OnChatsChanged;
+        OnDispose(() => ChatList.Changed -= OnChatsChanged);
+        _exclude = [.. Exclude];
+        foreach (var id in Selected)
+            if (_selected.Add(id)) _order.Add(id);
         _saved = ChatList.Chats.Concat(ChatList.ArchivedChats).FirstOrDefault(c => c.Type == ChatType.Saved);
         if (_saved is null)
         {
             try
             {
                 _saved = await ChatList.GetSavedMessagesAsync();
+                _offered = null;
             }
             catch (Exception ex)
             {
@@ -97,12 +114,15 @@
         }
     }
 
+    private void OnChatsChanged() => _offered = null;
+
     private string TitleOf(ChatSummaryDto chat) => chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat);
 
     private void Toggle(ChatSummaryDto chat)
     {
-        if (!_selected.Remove(chat.Id)) _selected.Add(chat.Id);
+        if (_selected.Remove(chat.Id)) _order.Remove(chat.Id);
+        else if (_selected.Add(chat.Id)) _order.Add(chat.Id);
     }
 
-    private void Done() => Dialog.Close(_selected.ToList());
+    private void Done() => Dialog.Close(_order.ToList());
 }

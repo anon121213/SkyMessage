@@ -2,57 +2,94 @@ using SkyMessage.Contracts;
 
 namespace SkyMessage.Client.Core.Stores;
 
-/// <summary>Unread counter of a folder tab: chats with something unread; <see cref="Muted"/> when only muted ones have (shown grey).</summary>
+/// <summary>
+/// Unread counter of a folder tab: unread messages, like the dock's badge (a chat with only an unread mention counts one);
+/// <see cref="Muted"/> when only muted chats have any (shown grey).
+/// </summary>
 public readonly record struct FolderBadge(int Count, bool Muted);
 
 /// <summary>
-/// A folder's chats on this device: <see cref="ChatFolderRules"/> (the server's evaluation) over the chat list, in the
-/// folder's own order — its pinned chats first, top first, then by last activity.
+/// A folder's chats on this device: <see cref="ChatFolderRules"/> (the server's evaluation, through a
+/// <see cref="ChatFolderMatcher"/>) over the chat list, in the folder's own order — its pinned chats first, top first, then
+/// by last activity.
 /// </summary>
 public static class ChatFolderView
 {
     /// <param name="chats">The chats to look at: the main list and the archive (a folder may take in archived chats).</param>
     /// <param name="peerIsContact">Private chats: whether the other person is in my contacts now.</param>
     /// <param name="keepChatId">
-    /// A chat kept in the folder although it was read since (the one open next to the list): an "unread" folder must not
-    /// pull the open chat from under the reader.
+    /// A chat kept in the folder although it was read since (the one open next to the list, or last opened from it): an
+    /// "unread" folder must not pull that chat from under the reader.
     /// </param>
     public static IReadOnlyList<ChatSummaryDto> ChatsOf(ChatFolderDto folder, IEnumerable<ChatSummaryDto> chats, Func<ChatSummaryDto, bool> peerIsContact,
+        DateTimeOffset now, Guid? keepChatId = null) =>
+        ChatsOf(new ChatFolderMatcher(folder), chats, peerIsContact, now, keepChatId);
+
+    /// <inheritdoc cref="ChatsOf(ChatFolderDto, IEnumerable{ChatSummaryDto}, Func{ChatSummaryDto, bool}, DateTimeOffset, Guid?)"/>
+    public static IReadOnlyList<ChatSummaryDto> ChatsOf(ChatFolderMatcher folder, IEnumerable<ChatSummaryDto> chats, Func<ChatSummaryDto, bool> peerIsContact,
         DateTimeOffset now, Guid? keepChatId = null)
     {
-        var pins = PinIndex(folder);
-        return chats
-            .Where(c => Shows(folder, c, peerIsContact(c), now, keepChatId))
-            .OrderBy(c => pins.TryGetValue(c.Id, out var index) ? index : int.MaxValue)
-            .ThenByDescending(c => c.LastActivityAt)
-            .ThenByDescending(c => c.Id)
-            .ToList();
+        var pins = PinIndex(folder.Folder);
+        var shown = new List<ChatSummaryDto>();
+        foreach (var chat in chats)
+            if (Shows(folder, chat, peerIsContact(chat), now, keepChatId)) shown.Add(chat);
+        shown.Sort((a, b) =>
+        {
+            var pa = pins.TryGetValue(a.Id, out var ia) ? ia : int.MaxValue;
+            var pb = pins.TryGetValue(b.Id, out var ib) ? ib : int.MaxValue;
+            if (pa != pb) return pa.CompareTo(pb);
+            var activity = b.LastActivityAt.CompareTo(a.LastActivityAt);
+            return activity != 0 ? activity : b.Id.CompareTo(a.Id);
+        });
+        return shown;
     }
 
     /// <summary>How many of <paramref name="chats"/> the folder takes in (the editor's live preview).</summary>
-    public static int Count(ChatFolderDto folder, IEnumerable<ChatSummaryDto> chats, Func<ChatSummaryDto, bool> peerIsContact, DateTimeOffset now) =>
-        chats.Count(c => ChatFolderRules.Contains(folder, c, peerIsContact(c), now));
+    public static int Count(ChatFolderDto folder, IEnumerable<ChatSummaryDto> chats, Func<ChatSummaryDto, bool> peerIsContact, DateTimeOffset now)
+    {
+        var matcher = new ChatFolderMatcher(folder);
+        var count = 0;
+        foreach (var chat in chats)
+            if (matcher.Contains(chat, peerIsContact(chat), now)) count++;
+        return count;
+    }
 
     public static bool IsPinned(ChatFolderDto folder, Guid chatId) => folder.PinnedChatIds.Contains(chatId);
 
-    /// <summary>Chats with unread messages or mentions; muted chats count only when no other chat has something unread.</summary>
+    /// <summary>Unread messages of these chats; the muted ones count only when no other chat has anything unread.</summary>
     public static FolderBadge BadgeOf(IEnumerable<ChatSummaryDto> chats, DateTimeOffset now)
     {
-        var loud = 0;
-        var quiet = 0;
-        foreach (var chat in chats)
-        {
-            if (!ChatFolderRules.IsUnread(chat)) continue;
-            if (ChatFolderRules.IsMuted(chat, now)) quiet++;
-            else loud++;
-        }
-        return loud > 0 ? new FolderBadge(loud, false) : new FolderBadge(quiet, quiet > 0);
+        var tally = new Tally();
+        foreach (var chat in chats) tally.Add(chat, now);
+        return tally.Badge;
     }
 
-    private static bool Shows(ChatFolderDto folder, ChatSummaryDto chat, bool peerIsContact, DateTimeOffset now, Guid? keepChatId)
+    /// <summary>
+    /// The badge of every folder (in the order given) over <paramref name="chats"/> — the main list and the archive — in
+    /// one pass: the contact check runs once per chat, the folder rules through matchers.
+    /// </summary>
+    public static IReadOnlyList<FolderBadge> BadgesOf(IReadOnlyList<ChatFolderDto> folders, IReadOnlyList<ChatSummaryDto> chats,
+        Func<ChatSummaryDto, bool> peerIsContact, DateTimeOffset now)
     {
-        if (ChatFolderRules.Contains(folder, chat, peerIsContact, now)) return true;
-        return chat.Id == keepChatId && folder.ExcludeRead && ChatFolderRules.Contains(folder with { ExcludeRead = false }, chat, peerIsContact, now);
+        if (folders.Count == 0) return [];
+        var matchers = folders.Select(f => new ChatFolderMatcher(f)).ToArray();
+        var tallies = new Tally[matchers.Length];
+        foreach (var chat in chats)
+        {
+            // Read chats change no counter: skip their rules (most of a long list).
+            if (!ChatFolderRules.IsUnread(chat)) continue;
+            var contact = peerIsContact(chat);
+            for (var i = 0; i < matchers.Length; i++)
+                if (matchers[i].Contains(chat, contact, now)) tallies[i].Add(chat, now);
+        }
+        return tallies.Select(t => t.Badge).ToArray();
+    }
+
+    private static bool Shows(ChatFolderMatcher folder, ChatSummaryDto chat, bool peerIsContact, DateTimeOffset now, Guid? keepChatId)
+    {
+        if (folder.Contains(chat, peerIsContact, now)) return true;
+        return chat.Id == keepChatId && folder.Folder.ExcludeRead
+               && ChatFolderRules.Contains(folder.Folder with { ExcludeRead = false }, chat, peerIsContact, now);
     }
 
     private static Dictionary<Guid, int> PinIndex(ChatFolderDto folder)
@@ -60,6 +97,23 @@ public static class ChatFolderView
         var index = new Dictionary<Guid, int>(folder.PinnedChatIds.Count);
         foreach (var id in folder.PinnedChatIds) index.TryAdd(id, index.Count);
         return index;
+    }
+
+    private struct Tally
+    {
+        private int _loud;
+        private int _quiet;
+
+        public void Add(ChatSummaryDto chat, DateTimeOffset now)
+        {
+            if (!ChatFolderRules.IsUnread(chat)) return;
+            // An unread mention in a chat whose messages are read still asks for a look.
+            var messages = Math.Max(Math.Max(0, chat.UnreadCount), chat.UnreadMentionCount > 0 ? 1 : 0);
+            if (ChatFolderRules.IsMuted(chat, now)) _quiet += messages;
+            else _loud += messages;
+        }
+
+        public readonly FolderBadge Badge => _loud > 0 ? new FolderBadge(_loud, false) : new FolderBadge(_quiet, _quiet > 0);
     }
 }
 
@@ -112,7 +166,11 @@ public static class ChatFolderPresets
 /// </summary>
 public static class ChatFolderEdits
 {
-    public static ChatFoldersDto Save(ChatFoldersDto state, ChatFolderDto folder)
+    /// <summary>
+    /// A folder saved: an existing one gets the new name, icon and rules (its pins stay); a missing one is added last only
+    /// when it is being created — an edit of a folder deleted meanwhile does not bring it back (the server refuses it too).
+    /// </summary>
+    public static ChatFoldersDto Save(ChatFoldersDto state, ChatFolderDto folder, bool create)
     {
         var list = state.Folders.ToList();
         var index = list.FindIndex(f => f.Id == folder.Id);
@@ -122,7 +180,7 @@ public static class ChatFolderEdits
         }
         else
         {
-            if (list.Count >= Limits.MaxChatFolders) return state;
+            if (!create || list.Count >= Limits.MaxChatFolders) return state;
             list.Add(folder);
         }
         return state with { Folders = list };
@@ -147,7 +205,9 @@ public static class ChatFolderEdits
     public static ChatFoldersDto ReorderPinned(ChatFoldersDto state, Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst) =>
         Change(state, folderId, f => f with { PinnedChatIds = PinnedOrderRules.Arrange(f.PinnedChatIds, chatIdsTopFirst) });
 
-    public static ChatFoldersDto UpdateSettings(ChatFoldersDto state, ChatListSettingsDto settings) => state with { Settings = settings };
+    /// <summary>Only the settings the change sets: a pending one never undoes another device's change of another setting.</summary>
+    public static ChatFoldersDto UpdateSettings(ChatFoldersDto state, UpdateChatListSettingsRequest change) =>
+        state with { Settings = change.ApplyTo(state.Settings) };
 
     private static ChatFoldersDto Change(ChatFoldersDto state, Guid folderId, Func<ChatFolderDto, ChatFolderDto> change)
     {

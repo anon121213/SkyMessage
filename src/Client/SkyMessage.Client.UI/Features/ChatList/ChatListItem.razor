@@ -39,7 +39,7 @@
             </div>
         }
     }
-    <ListItem Class="@($"chat-row {(Unread ? "chat-row--unread" : null)}")" Selected="Selected" OnClick="OpenAsync" OnContextMenu="MenuAsync"
+    <ListItem Class="@($"chat-row {(Unread ? "chat-row--unread" : null)}")" Selected="Selected" OnClick="OpenAsync" OnContextMenu="ContextMenu"
               Tooltip="@(Layout?.IsWide == true ? Title : null)" data-swipe-content="">
         <Leading>
             <span class="chat-row__avatar @(Unread ? "chat-row__avatar--ring" : null) @(Unread && Muted ? "chat-row__avatar--quiet" : null)">
@@ -133,6 +133,13 @@
     [Parameter] public EventCallback<(ChatSummaryDto Chat, MenuPosition Position)> OnMenu { get; set; }
     /// <summary>A swipe button was tapped.</summary>
     [Parameter] public EventCallback<(ChatSummaryDto Chat, string Action)> OnAction { get; set; }
+    /// <summary>
+    /// A copy that is only looked at (the neighbouring folder beside the list while a swipe follows the finger): the same
+    /// row, without the long-press menu binding.
+    /// </summary>
+    [Parameter] public bool Still { get; set; }
+
+    private EventCallback<MenuPosition> ContextMenu => Still ? default : EventCallback.Factory.Create<MenuPosition>(this, MenuAsync);
 
     private Guid? Me => Auth.UserId;
     private bool Compact => Settings.Current.Appearance.CompactChatList;

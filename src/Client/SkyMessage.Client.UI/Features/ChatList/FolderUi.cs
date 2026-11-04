@@ -54,6 +54,9 @@ public static class FolderUi
 
     private static bool IsKey(string icon) => icon[0] is >= 'a' and <= 'z';
 
+    /// <summary>The localized name of one of our icons ("folders.icon.pets"): its tooltip and accessible label.</summary>
+    public static string IconLabelKeyOf(string iconKey) => $"folders.icon.{iconKey}";
+
     public static string NameKeyOf(ChatFolderPreset preset) => $"folders.preset.{preset.Key}";
 
     public static string HintKeyOf(ChatFolderPreset preset) => $"folders.preset.{preset.Key}Hint";

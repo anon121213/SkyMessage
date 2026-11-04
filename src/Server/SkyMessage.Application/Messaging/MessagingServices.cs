@@ -46,7 +46,10 @@ public interface IChatService
 public interface IChatFolderService
 {
     Task<ChatFoldersDto> GetAsync(CancellationToken cancellationToken = default);
-    /// <summary>Creates the folder with this id (a new one goes last) or replaces its name, icon and rules; its pins stay.</summary>
+    /// <summary>
+    /// Creates the folder with this id (<see cref="SaveChatFolderRequest.Create"/>; a new one goes last) or changes the
+    /// fields the request sets (null keeps a field); its pins stay. An edit of a folder that no longer exists is 404.
+    /// </summary>
     Task<ChatFoldersDto> SaveFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken cancellationToken = default);
     Task<ChatFoldersDto> DeleteFolderAsync(Guid folderId, CancellationToken cancellationToken = default);
     Task<ChatFoldersDto> ReorderFoldersAsync(ReorderChatFoldersRequest request, CancellationToken cancellationToken = default);
@@ -55,7 +58,8 @@ public interface IChatFolderService
     Task<ChatFoldersDto> UnpinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default);
     /// <summary>Rearranges the folder's own pinned chats (top first), like <see cref="IChatService.ReorderPinnedAsync"/> does the global ones.</summary>
     Task<ChatFoldersDto> ReorderPinnedAsync(Guid folderId, ReorderPinnedChatsRequest request, CancellationToken cancellationToken = default);
-    Task<ChatFoldersDto> UpdateSettingsAsync(ChatListSettingsDto settings, CancellationToken cancellationToken = default);
+    /// <summary>Changes the chat list settings the request sets (null keeps a setting).</summary>
+    Task<ChatFoldersDto> UpdateSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken cancellationToken = default);
     /// <summary>
     /// Marks every unread chat of the folder read (<paramref name="folderId"/> null = "All chats": every chat outside the
     /// archive), evaluated with <see cref="ChatFolderRules"/> over my chat summaries; MessagesRead per chat as usual.

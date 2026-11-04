@@ -83,13 +83,13 @@ public interface ISkyApi
 
     // Folders (every change answers with the whole new state, see ApiRoutes.Folders)
     Task<ChatFoldersDto> GetChatFoldersAsync(CancellationToken ct = default);
-    /// <summary>Creates the folder with this id or replaces its name, icon and rules (its pins stay).</summary>
+    /// <summary>Creates the folder with this id (<see cref="SaveChatFolderRequest.Create"/>) or changes the fields set (its pins stay).</summary>
     Task<ChatFoldersDto> SaveChatFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken ct = default);
     Task<ChatFoldersDto> DeleteChatFolderAsync(Guid folderId, CancellationToken ct = default);
     Task<ChatFoldersDto> ReorderChatFoldersAsync(IReadOnlyList<Guid> folderIds, CancellationToken ct = default);
     Task<ChatFoldersDto> SetFolderPinAsync(Guid folderId, Guid chatId, bool pinned, CancellationToken ct = default);
     Task<ChatFoldersDto> ReorderFolderPinsAsync(Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst, CancellationToken ct = default);
-    Task<ChatFoldersDto> UpdateChatListSettingsAsync(ChatListSettingsDto settings, CancellationToken ct = default);
+    Task<ChatFoldersDto> UpdateChatListSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken ct = default);
     /// <summary>Marks every chat of the folder read; null = "All chats" (everything outside the archive).</summary>
     Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default);
 

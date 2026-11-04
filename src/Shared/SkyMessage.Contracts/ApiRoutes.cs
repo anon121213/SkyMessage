@@ -144,11 +144,11 @@ public static class ApiRoutes
     public static class Folders
     {
         public const string Root = "api/folders";
-        /// <summary>PUT <see cref="SaveChatFolderRequest"/> creates or replaces that folder; DELETE removes it.</summary>
+        /// <summary>PUT <see cref="SaveChatFolderRequest"/> creates that folder or changes it; DELETE removes it.</summary>
         public const string ById = "api/folders/{folderId:guid}";
         /// <summary>PUT <see cref="ReorderChatFoldersRequest"/>.</summary>
         public const string Order = "api/folders/order";
-        /// <summary>PUT <see cref="ChatListSettingsDto"/> (new chats from strangers, the archive).</summary>
+        /// <summary>PUT <see cref="UpdateChatListSettingsRequest"/> (new chats from strangers, the archive).</summary>
         public const string Settings = "api/folders/settings";
         /// <summary>PUT pins the chat on top of the folder's own pins; DELETE unpins it.</summary>
         public const string Pin = "api/folders/{folderId:guid}/pins/{chatId:guid}";

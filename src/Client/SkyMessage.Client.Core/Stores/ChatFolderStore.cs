@@ -46,10 +46,9 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
         _logger = logger;
         _persist = new CoalescingAction(PersistDelay, PersistAsync, time, logger);
         realtime.ChatFoldersChanged += state => Accept(state, _generation);
-        realtime.Resynced += () =>
-        {
-            if (_loadedFromServer) LoadAsync(force: true).Forget(_logger);
-        };
+        // Every new connection: a refresh once the server state is known, else the first load again — the one at sign-in
+        // may have failed (offline, a server restarting), and nothing else asks for folders.
+        realtime.Resynced += () => LoadAsync(force: _loadedFromServer).Forget(_logger);
         lifecycle.Register(this);
     }
 
@@ -114,11 +113,16 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
         return null;
     }
 
-    public Task SaveAsync(ChatFolderDto folder)
+    public Task CreateAsync(ChatFolderDto folder) => SaveCoreAsync(folder, create: true);
+
+    public Task SaveAsync(ChatFolderDto folder) => SaveCoreAsync(folder, create: false);
+
+    private Task SaveCoreAsync(ChatFolderDto folder, bool create)
     {
         ArgumentNullException.ThrowIfNull(folder);
         if (folder.Id == Guid.Empty) throw new ArgumentException("A folder needs an id (Guid.CreateVersion7() for a new one).", nameof(folder));
-        return MutateAsync(s => ChatFolderEdits.Save(s, folder), () => _api.SaveChatFolderAsync(folder.Id, SaveChatFolderRequest.From(folder)));
+        return MutateAsync(s => ChatFolderEdits.Save(s, folder, create),
+            () => _api.SaveChatFolderAsync(folder.Id, SaveChatFolderRequest.From(folder, create)));
     }
 
     public Task DeleteAsync(Guid folderId) =>
@@ -138,10 +142,10 @@ internal sealed class ChatFolderStore : IChatFolderStore, IAccountScoped
             : MutateAsync(s => ChatFolderEdits.ReorderPinned(s, folderId, chatIdsTopFirst),
                 () => _api.ReorderFolderPinsAsync(folderId, chatIdsTopFirst));
 
-    public Task UpdateSettingsAsync(ChatListSettingsDto settings)
+    public Task UpdateSettingsAsync(UpdateChatListSettingsRequest change)
     {
-        ArgumentNullException.ThrowIfNull(settings);
-        return MutateAsync(s => ChatFolderEdits.UpdateSettings(s, settings), () => _api.UpdateChatListSettingsAsync(settings));
+        ArgumentNullException.ThrowIfNull(change);
+        return MutateAsync(s => ChatFolderEdits.UpdateSettings(s, change), () => _api.UpdateChatListSettingsAsync(change));
     }
 
     public Task MarkReadAsync(Guid? folderId) => _api.MarkFolderReadAsync(folderId);

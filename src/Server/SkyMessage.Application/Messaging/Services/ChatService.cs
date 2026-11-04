@@ -242,7 +242,7 @@ internal sealed class ChatService(
             allowed = allowed.Take(room).ToList();
         }
 
-        // A group from someone who is not in a member's contacts may start in that member's archive.
+        // A group from someone who is not in a member's contacts may start in that member's archive, muted.
         var archived = await ChatPlacement.ArchivedOnArrivalAsync(db, allowed, me, cancellationToken);
 
         var now = clock.UtcNow;
@@ -270,6 +270,7 @@ internal sealed class ChatService(
                 JoinedAt = now,
                 InvitedById = me,
                 IsArchived = archived.Contains(userId),
+                MutedUntil = ChatPlacement.MutedOnArrival(archived.Contains(userId)),
             });
         }
         db.Chats.Add(chat);

@@ -1,8 +1,10 @@
 @* The folder tabs under the chat list header: pills in a frosted capsule ("All chats" first), a gradient pill gliding
    under the active one (js/folders.js attachFolderTabs; it also follows a swipe between folders part of the way), an
-   unread counter per folder (chats, grey when only muted ones have something), the user's emoji before a name.
-   Long-press or right-click a tab for its menu. The strip scrolls sideways when the folders do not fit; it owns those
-   drags (no swipe-back, no folder swipe there). *@
+   unread counter per folder (messages, like the dock; grey when only muted chats have any), the user's emoji before a
+   name. Long-press or right-click a tab for its menu; a folder's tab lifted by the long-press (or pressed with the mouse)
+   can be dragged sideways to reorder the folders. The strip scrolls sideways when the folders do not fit (also with a
+   mouse wheel); it owns those drags (no swipe-back, no folder swipe there). Keyboard: one tab stop, the arrow keys move
+   between the tabs (Home / End: the first / last). *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -18,9 +20,11 @@
                 var index = i;
                 var active = item.Id == ActiveId;
                 var emoji = FolderUi.EmojiOf(item.Icon);
-                <ContextMenuArea @key="@(item.Id ?? Guid.Empty)" Class="folder-tabs__slot" OnContextMenu="pos => OnMenu.InvokeAsync((item.Id, pos))">
+                @* data-folder-key: the folders that move ("All chats" stays first). *@
+                <ContextMenuArea @key="@(item.Id ?? Guid.Empty)" Class="folder-tabs__slot" OnContextMenu="pos => OnMenu.InvokeAsync((item.Id, pos))"
+                                 data-folder-key="@item.Id?.ToString()">
                     <button type="button" role="tab" class="folder-tab" data-folder-tab="@index" data-active="@(active ? "" : null)"
-                            aria-selected="@(active ? "true" : "false")" @onclick="() => SelectAsync(item)">
+                            aria-selected="@(active ? "true" : "false")" tabindex="@(active ? 0 : -1)" @onclick="() => SelectAsync(item)">
                         @if (emoji is not null)
                         {
                             <span class="folder-tab__emoji sm-emoji" aria-hidden="true">@emoji</span>
@@ -42,6 +46,7 @@
     private ElementReference _track;
     private JsModule? _module;
     private JsObject? _tabs;
+    private DotNetObjectReference<FolderTabs>? _self;
 
     /// <summary>A tab: <see cref="Id"/> null is "All chats".</summary>
     public sealed record Item(Guid? Id, string Name, string? Icon, FolderBadge Badge);
@@ -51,6 +56,8 @@
     [Parameter] public EventCallback<Guid?> OnSelect { get; set; }
     /// <summary>Long-press / right-click on a tab.</summary>
     [Parameter] public EventCallback<(Guid? Id, MenuPosition Position)> OnMenu { get; set; }
+    /// <summary>A folder's tab was dragged to a new place: my folders in the new order.</summary>
+    [Parameter] public EventCallback<IReadOnlyList<Guid>> OnReorder { get; set; }
 
     /// <summary>The scrolling strip (the chat list's folder swipe moves its pill too).</summary>
     public ElementReference Track => _track;
@@ -58,8 +65,9 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
         _module = new JsModule(JS, FolderJs.Path);
-        _tabs = await _module.AttachAsync("attachFolderTabs", _track);
+        _tabs = await _module.AttachAsync("attachFolderTabs", _track, _self);
         if (IsDisposed) await _tabs.DisposeAsync();
     }
 
@@ -70,10 +78,25 @@
         await OnSelect.InvokeAsync(item.Id);
     }
 
+    /// <summary>A folder's tab was lifted to be dragged (touch: by the long-press).</summary>
+    [JSInvokable]
+    public Task OnTabLift() => InvokeAsync(Haptics.Tap);
+
+    /// <summary>A dragged tab was dropped in a new place: the folders' ids in their new order.</summary>
+    [JSInvokable]
+    public Task OnTabsReorder(string[] keys) => InvokeAsync(async () =>
+    {
+        var ids = new List<Guid>(keys.Length);
+        foreach (var key in keys)
+            if (Guid.TryParse(key, out var id)) ids.Add(id);
+        if (ids.Count >= 2) await OnReorder.InvokeAsync(ids);
+    });
+
     public async ValueTask DisposeAsync()
     {
         Dispose();
         if (_tabs is not null) await _tabs.DisposeAsync();
         if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
     }
 }

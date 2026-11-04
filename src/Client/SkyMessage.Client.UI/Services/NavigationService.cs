@@ -80,6 +80,8 @@ public sealed class NavigationService : IAsyncDisposable
     private string? _requested;
     private DateTimeOffset _requestedAt;
     private string? _pendingDeepLink;
+    private int _leavingPage;
+    private int _navigating;
     private bool _initialized;
     private bool _disposed;
 
@@ -148,6 +150,19 @@ public sealed class NavigationService : IAsyncDisposable
 
     public bool HasOverlays => _overlays.Count > 0;
 
+    /// <summary>
+    /// True while overlays are being dismissed because the app goes to another page (a navigation, a sign-out, a location
+    /// change from outside) rather than by Back: an overlay that stands for a state of its page (a chat folder on screen)
+    /// keeps that state then. Read it in the dismiss callback itself, before anything is awaited.
+    /// </summary>
+    public bool IsLeavingPage => _leavingPage > 0;
+
+    /// <summary>
+    /// A navigation started here has not arrived yet (its overlays may be closing, the new page is on its way): not the
+    /// moment to push a history entry for the current page.
+    /// </summary>
+    public bool IsNavigating => _navigating > 0 || (_pendingKind != PendingKind.None && DateTimeOffset.UtcNow - _pendingAt <= PendingWindow);
+
     /// <summary>Deep link waiting for sign-in ("/u/alice", "/join/…").</summary>
     public string? PendingDeepLink => _pendingDeepLink;
 
@@ -178,6 +193,7 @@ public sealed class NavigationService : IAsyncDisposable
     public async Task NavigateToAsync(string url, bool replace = false)
     {
         if (_disposed) return;
+        _navigating++;
         try
         {
             var target = Normalize(url);
@@ -201,6 +217,10 @@ public sealed class NavigationService : IAsyncDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Navigation failed");
+        }
+        finally
+        {
+            _navigating--;
         }
     }
 
@@ -254,6 +274,7 @@ public sealed class NavigationService : IAsyncDisposable
         var depth = 0;
         while (depth < _stack.Count && ChatIdOf(PathOf(_stack[^(depth + 1)])) == chatId) depth++;
         if (depth == 0) return;
+        _navigating++;
         try
         {
             if (_overlays.Count > 0) await CloseAllOverlaysAsync();
@@ -270,6 +291,10 @@ public sealed class NavigationService : IAsyncDisposable
         {
             _logger.LogWarning(ex, "Leaving the chat's pages failed");
         }
+        finally
+        {
+            _navigating--;
+        }
     }
 
     /// <summary>
@@ -282,6 +307,7 @@ public sealed class NavigationService : IAsyncDisposable
         if (_disposed) return;
         // Read before anything is awaited: this is the history as the session left it.
         var pages = _stack.Count - 1;
+        _navigating++;
         try
         {
             var target = Normalize(url);
@@ -293,6 +319,10 @@ public sealed class NavigationService : IAsyncDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Starting the history over failed");
+        }
+        finally
+        {
+            _navigating--;
         }
     }
 
@@ -457,12 +487,26 @@ public sealed class NavigationService : IAsyncDisposable
         var bottom = _overlays[0];
         var all = _overlays.AsEnumerable().Reverse().ToList();
         _overlays.Clear();
-        foreach (var entry in all)
-        {
-            if (entry.Handle.MarkClosed()) await DismissSafeAsync(entry);
-        }
+        await DismissLeavingAsync(all);
         await _js.HistoryCloseAsync(bottom.Id);
         RaiseChanged();
+    }
+
+    /// <summary>Dismisses overlays (top first) because the page is being left (<see cref="IsLeavingPage"/>).</summary>
+    private async Task DismissLeavingAsync(List<OverlayEntry> entries)
+    {
+        _leavingPage++;
+        try
+        {
+            foreach (var entry in entries)
+            {
+                if (entry.Handle.MarkClosed()) await DismissSafeAsync(entry);
+            }
+        }
+        finally
+        {
+            _leavingPage--;
+        }
     }
 
     private async Task DismissSafeAsync(OverlayEntry entry)
@@ -536,10 +580,7 @@ public sealed class NavigationService : IAsyncDisposable
             _overlays.Clear();
             _dispatcher.Post(async () =>
             {
-                foreach (var entry in all)
-                {
-                    if (entry.Handle.MarkClosed()) await DismissSafeAsync(entry);
-                }
+                await DismissLeavingAsync(all);
                 await _js.HistoryForgetAsync();
             });
         }

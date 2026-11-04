@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SkyMessage.Application.Common.Interfaces;
+using SkyMessage.Application.Messaging.Rules;
 using SkyMessage.Contracts;
 
 namespace SkyMessage.Application.Messaging.Services;
@@ -7,10 +8,11 @@ namespace SkyMessage.Application.Messaging.Services;
 /// <summary>
 /// Where a chat lands in a member's list when something arrives, by the member's <c>ChatListPreferences</c> (SPEC §6.3
 /// "Folders and the archive"). A chat from a stranger — a private chat whose first message (or call) comes from someone
-/// not in the member's contacts, a group such a person adds them to — starts in the archive for members who want that.
-/// A new message brings an archived chat back for members who do not keep archived chats archived, unless it is muted
-/// for them or it came from a stranger (still one) while they send those to the archive. Members without a preferences
-/// row have the defaults: new chats stay in the list, archived chats stay archived.
+/// not in the member's contacts, a group such a person adds them to — starts in the archive, muted, for members who want
+/// that (spam neither shows nor rings). A new message (or a call log from the other side) brings an archived chat back for
+/// members who do not keep archived chats archived, unless it is muted for them or it came from a stranger (still one)
+/// while they send those to the archive. Members without a preferences row have the defaults: new chats stay in the list,
+/// archived chats stay archived.
 /// </summary>
 internal static class ChatPlacement
 {
@@ -29,13 +31,18 @@ internal static class ChatPlacement
         return archived.ToHashSet();
     }
 
-    /// <summary>Puts the chat into the archive of these members (inside the transaction that made it appear for them).</summary>
+    /// <summary>A chat that starts in someone's archive is muted for them too (<see cref="ArchiveAsync"/>, new member rows).</summary>
+    public static DateTimeOffset? MutedOnArrival(bool archived) => archived ? MuteRules.Forever : null;
+
+    /// <summary>Puts the chat into the archive of these members, muted (inside the transaction that made it appear for them).</summary>
     public static async Task ArchiveAsync(IAppDbContext db, Guid chatId, IReadOnlyCollection<Guid> userIds, CancellationToken ct)
     {
         if (userIds.Count == 0) return;
         var ids = userIds.ToList();
-        await db.ChatMembers.Where(m => m.ChatId == chatId && ids.Contains(m.UserId) && !m.IsArchived)
-            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsArchived, true), ct);
+        await db.ChatMembers.Where(m => m.ChatId == chatId && ids.Contains(m.UserId))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.IsArchived, true)
+                .SetProperty(m => m.MutedUntil, (DateTimeOffset?)MuteRules.Forever), ct);
     }
 
     /// <summary>
@@ -85,7 +92,12 @@ internal static class ChatPlacement
     }
 
     /// <summary>After the commit: each member whose chat moved hears about it with their own settings of the chat.</summary>
-    public static async Task PublishSettingsAsync(IAppDbContext db, MessagingEvents events, Guid chatId, IReadOnlyCollection<Guid> userIds)
+    public static Task PublishSettingsAsync(IAppDbContext db, MessagingEvents events, Guid chatId, IReadOnlyCollection<Guid> userIds) =>
+        PublishSettingsAsync(db, (userId, e) => events.ToUserAsync(userId, "ChatSettingsChanged", c => c.ChatSettingsChanged(e)), chatId, userIds);
+
+    /// <inheritdoc cref="PublishSettingsAsync(IAppDbContext, MessagingEvents, Guid, IReadOnlyCollection{Guid})"/>
+    public static async Task PublishSettingsAsync(IAppDbContext db, Func<Guid, ChatSettingsChangedEvent, Task> publish, Guid chatId,
+        IReadOnlyCollection<Guid> userIds)
     {
         if (userIds.Count == 0) return;
         var ids = userIds.ToList();
@@ -106,9 +118,6 @@ internal static class ChatPlacement
             })
             .ToListAsync(CancellationToken.None);
         foreach (var row in rows)
-        {
-            await events.ToUserAsync(row.UserId, "ChatSettingsChanged",
-                c => c.ChatSettingsChanged(new ChatSettingsChangedEvent { ChatId = chatId, Settings = row.Settings }));
-        }
+            await publish(row.UserId, new ChatSettingsChangedEvent { ChatId = chatId, Settings = row.Settings });
     }
 }

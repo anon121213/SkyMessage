@@ -74,6 +74,24 @@ html[data-fx="lite"] .folder-tabs__track {
     flex-shrink: 0;
 }
 
+/* A folder's tab lifted to be dragged sideways (js/folders.js): it rises a little above the others, which glide aside. */
+.folder-tabs__track ::deep .folder-tabs__slot[data-tab-lifted] .folder-tab {
+    transform: scale(1.06);
+    background: var(--sm-card-solid);
+    color: var(--sm-text);
+    box-shadow: var(--sm-shadow-2);
+}
+
+.folder-tabs__track ::deep .folder-tabs__slot[data-tab-lifted] .folder-tab[data-active] {
+    background: var(--sm-grad);
+    color: var(--sm-on-accent);
+}
+
+/* While tabs are rearranged nothing else lights up as pressed. */
+.folder-tabs__track[data-reordering] .folder-tab:active {
+    transform: none;
+}
+
 .folder-tab {
     position: relative;
     z-index: 1;
@@ -149,7 +167,7 @@ html[data-input="keyboard"] .folder-tab:focus-visible {
 }
 
 .folder-tab[data-active] .folder-tab__count {
-    background: rgba(255, 255, 255, 0.24);
+    background: color-mix(in srgb, var(--sm-on-accent) 24%, transparent);
     color: var(--sm-on-accent);
 }
 

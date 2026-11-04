@@ -1,7 +1,9 @@
 @* Settings › Folders › a folder (/settings/folder?id=…, none = a new one): its name and icon (one of ours or an emoji),
    which chats it takes in (types and chats picked by hand), what it leaves out (muted, read, archived, chats picked by
-   hand), and a live count of the chats it would show now (the same rules the server runs). Saving goes back to where
-   the editor was opened from; an existing folder can be deleted here too. *@
+   hand), and a live count of the chats it would show now (the same rules the server runs). Save waits for the server
+   (a busy button) and only then goes back to where the editor was opened from, so a refused save keeps the draft; a
+   folder deleted meanwhile on another device is not brought back (the editor says so and offers to save the draft as a
+   new folder). An existing folder can be deleted here too. *@
 @inherits UiComponentBase
 @inject IChatFolderStore Folders
 @inject IChatListStore ChatList
@@ -15,11 +17,15 @@
     <ChildContent>
         @if (_draft is null)
         {
-            @if (Folders.IsLoaded)
+            @if (Folders.IsLoaded || _lost is not null)
             {
                 <EmptyState Icon="@IconNames.FolderOpen" Title="@L["folders.edit.notFound"]" Text="@L["folders.edit.notFoundText"]">
                     <Actions>
-                        <Button Variant="ButtonVariant.Tonal" OnClick="() => Nav.GoBackAsync(FolderUi.SettingsPath)">@L["common.back"]</Button>
+                        @if (_lost is not null && Folders.Folders.Count < Limits.MaxChatFolders)
+                        {
+                            <Button Icon="@IconNames.Plus" Loading="_busy" OnClick="SaveLostAsNewAsync">@L["folders.edit.saveAsNew"]</Button>
+                        }
+                        <Button Variant="ButtonVariant.Tonal" Disabled="_busy" OnClick="() => Nav.GoBackAsync(FolderUi.SettingsPath)">@L["common.back"]</Button>
                     </Actions>
                 </EmptyState>
             }
@@ -46,8 +52,9 @@
                     {
                         var key = icon.Key;
                         var selected = (draft.Icon ?? FolderUi.DefaultIconKey) == key;
+                        var label = L[FolderUi.IconLabelKeyOf(key)];
                         <button type="button" class="folder-edit__icon @(selected ? "is-selected" : null)" role="radio" aria-checked="@(selected ? "true" : "false")"
-                                title="@key" @onclick="() => SetIcon(key == FolderUi.DefaultIconKey ? null : key)">
+                                title="@label" aria-label="@label" @onclick="() => SetIcon(key == FolderUi.DefaultIconKey ? null : key)">
                             <Icon Name="@icon.Icon" />
                         </button>
                     }
@@ -55,7 +62,8 @@
                         var emoji = FolderUi.EmojiOf(draft.Icon);
                     }
                     <button type="button" class="folder-edit__icon folder-edit__icon--emoji @(emoji is not null ? "is-selected" : null)" role="radio"
-                            aria-checked="@(emoji is not null ? "true" : "false")" aria-label="@L["folders.edit.emoji"]" @onclick="PickEmojiAsync">
+                            aria-checked="@(emoji is not null ? "true" : "false")" title="@L["folders.edit.emoji"]" aria-label="@L["folders.edit.emoji"]"
+                            @onclick="PickEmojiAsync">
                         @if (emoji is not null)
                         {
                             <span class="sm-emoji">@emoji</span>
@@ -99,7 +107,8 @@
             @if (!_isNew)
             {
                 <Section>
-                    <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["folders.edit.delete"]" Danger="true" OnClick="DeleteAsync" />
+                    <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["folders.edit.delete"]" Danger="true" Disabled="_busy"
+                              OnClick="DeleteAsync" />
                 </Section>
             }
         }
@@ -111,7 +120,7 @@
                 <p class="folder-edit__preview @(Problem is null ? null : "folder-edit__preview--warn")" aria-live="polite">
                     @(Problem ?? PreviewText(current))
                 </p>
-                <Button Block="true" Size="ButtonSize.Large" Icon="@IconNames.Check" Disabled="@(Problem is not null)" OnClick="SaveAsync">
+                <Button Block="true" Size="ButtonSize.Large" Icon="@IconNames.Check" Disabled="@(Problem is not null)" Loading="_busy" OnClick="SaveAsync">
                     @(_isNew ? L["folders.edit.create"] : L["folders.edit.save"])
                 </Button>
             </div>
@@ -126,6 +135,10 @@
     private bool _initialized;
     // The editor stays mounted when the address names another folder: it starts over for that one.
     private Guid? _initializedFor;
+    // Save or delete on its way to the server: the editor waits for the answer.
+    private bool _busy;
+    // The draft of a folder that turned out to be deleted (on another device) when it was saved.
+    private ChatFolderDto? _lost;
 
     /// <summary>The folder to edit; none = a new folder.</summary>
     [SupplyParameterFromQuery(Name = "id")] public Guid? FolderId { get; set; }
@@ -135,7 +148,7 @@
         get
         {
             if (_draft is not { } d) return null;
-            if (string.IsNullOrWhiteSpace(_name)) return L["folders.edit.needName"];
+            if (!ChatFolderRules.IsValidName(ChatFolderRules.NormalizeName(_name))) return L["folders.edit.needName"];
             if (!ChatFolderRules.TakesInAnything(d.IncludeContacts, d.IncludeNonContacts, d.IncludeGroups, d.IncludeChannels, d.IncludedChatIds.Count))
                 return L["folders.edit.needRule"];
             return null;
@@ -156,6 +169,7 @@
         if (_initialized && _initializedFor == FolderId) return;
         _initialized = false;
         _draft = null;
+        _lost = null;
         _isNew = false;
         _name = "";
         if (FolderId is { } id)
@@ -175,10 +189,9 @@
 
     private void OnFoldersChanged()
     {
-        if (_initialized) return;
         _ = InvokeAsync(() =>
         {
-            OnParametersSet();
+            if (!_initialized) OnParametersSet();
             StateHasChanged();
         });
     }
@@ -194,7 +207,10 @@
     {
         var picked = await Dialogs.ShowAsync<SkyMessage.Client.UI.Features.ChatList.FolderEmojiDialog>(L["folders.edit.emoji"],
             options: new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Flush = true });
-        if (picked is string emoji && ChatFolderRules.IsValidIcon(emoji) && !string.IsNullOrEmpty(emoji)) SetIcon(emoji);
+        if (picked is not string emoji || string.IsNullOrEmpty(emoji)) return;
+        // The server takes one emoji; anything else would only fail on save.
+        if (ChatFolderRules.IsOneEmoji(emoji)) SetIcon(emoji);
+        else Toasts.Show(L["folders.edit.emojiInvalid"], ToastKind.Error);
     }
 
     private Task PickIncludedAsync() => PickAsync(included: true);
@@ -243,37 +259,81 @@
 
     private async Task SaveAsync()
     {
-        if (_draft is not { } draft || Problem is not null) return;
-        var folder = draft with { Name = _name.Trim() };
-        // The store shows the change at once; the editor does not wait for the server to answer.
-        var saving = Folders.SaveAsync(folder);
-        await Nav.GoBackAsync(FolderUi.SettingsPath);
+        if (_busy || _draft is not { } draft || Problem is not null) return;
+        var folder = draft with { Name = ChatFolderRules.NormalizeName(_name) };
+        _busy = true;
         try
         {
-            await saving;
+            // The store shows the change at once; the editor stays until the server took it, so a refused save keeps the draft.
+            await (_isNew ? Folders.CreateAsync(folder) : Folders.SaveAsync(folder));
+        }
+        catch (ApiException ex) when (!_isNew && ex.Code == ErrorCodes.FolderNotFound)
+        {
+            // Deleted meanwhile (another device): the editor says so instead of bringing it back.
+            _lost = folder;
+            _draft = null;
+            return;
         }
         catch (Exception ex)
         {
             Toasts.Error(ex);
+            return;
         }
+        finally
+        {
+            _busy = false;
+        }
+        if (!IsDisposed) await Nav.GoBackAsync(FolderUi.SettingsPath);
+    }
+
+    /// <summary>The draft of a folder deleted elsewhere, saved as a new folder (without the old one's pins).</summary>
+    private async Task SaveLostAsNewAsync()
+    {
+        if (_busy || _lost is not { } lost) return;
+        _busy = true;
+        try
+        {
+            await Folders.CreateAsync(lost with { Id = Guid.CreateVersion7(), PinnedChatIds = [] });
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return;
+        }
+        finally
+        {
+            _busy = false;
+        }
+        Toasts.Success(L.Format("folders.toast.added", lost.Name));
+        if (!IsDisposed) await Nav.GoBackAsync(FolderUi.SettingsPath);
     }
 
     private async Task DeleteAsync()
     {
-        if (_draft is not { } draft) return;
-        var ok = await Dialogs.ConfirmAsync(L.Format("folders.delete.title", _name.Trim().Length > 0 ? _name.Trim() : draft.Name),
+        if (_busy || _draft is not { } draft) return;
+        var name = ChatFolderRules.NormalizeName(_name);
+        var ok = await Dialogs.ConfirmAsync(L.Format("folders.delete.title", name.Length > 0 ? name : draft.Name),
             L["folders.delete.text"], L["folders.delete.confirm"], danger: true);
         if (!ok) return;
-        var deleting = Folders.DeleteAsync(draft.Id);
-        await Nav.GoBackAsync(FolderUi.SettingsPath);
+        _busy = true;
         try
         {
-            await deleting;
-            Toasts.Success(L["folders.toast.deleted"]);
+            await Folders.DeleteAsync(draft.Id);
+        }
+        catch (ApiException ex) when (ex.Code == ErrorCodes.FolderNotFound)
+        {
+            // Already deleted on another device: gone either way.
         }
         catch (Exception ex)
         {
             Toasts.Error(ex);
+            return;
         }
+        finally
+        {
+            _busy = false;
+        }
+        Toasts.Success(L["folders.toast.deleted"]);
+        if (!IsDisposed) await Nav.GoBackAsync(FolderUi.SettingsPath);
     }
 }

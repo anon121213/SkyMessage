@@ -75,15 +75,15 @@
 
     <Section Title="@L["folders.settings.newChats"]" Footer="@L["folders.settings.newChats.hint"]">
         <ChoiceList TValue="bool" Options="NewChatOptions" Value="Folders.Settings.ArchiveNewFromStrangers"
-                    ValueChanged="v => UpdateAsync(s => s with { ArchiveNewFromStrangers = v })" />
+                    ValueChanged="v => UpdateAsync(new UpdateChatListSettingsRequest { ArchiveNewFromStrangers = v })" />
     </Section>
 
     <Section Title="@L["folders.settings.archive"]" DividerInset="64px">
         <SwitchItem Icon="@IconNames.Archive" IconColor="@SettingsTones.Lagoon" Title="@L["folders.settings.keepArchived"]" Subtitle="@KeepArchivedHint"
-                    Checked="Folders.Settings.KeepArchived" CheckedChanged="v => UpdateAsync(s => s with { KeepArchived = v })" />
+                    Checked="Folders.Settings.KeepArchived" CheckedChanged="v => UpdateAsync(new UpdateChatListSettingsRequest { KeepArchived = v })" />
         <SwitchItem Icon="@IconNames.Eye" IconColor="@SettingsTones.Periwinkle" Title="@L["folders.settings.showArchive"]"
                     Subtitle="@(Folders.Settings.HideArchive ? L["folders.settings.showArchiveOff"] : L["folders.settings.showArchiveOn"])"
-                    Checked="!Folders.Settings.HideArchive" CheckedChanged="v => UpdateAsync(s => s with { HideArchive = !v })" />
+                    Checked="!Folders.Settings.HideArchive" CheckedChanged="v => UpdateAsync(new UpdateChatListSettingsRequest { HideArchive = !v })" />
     </Section>
 </SettingsScaffold>
 
@@ -144,6 +144,8 @@
         RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
         RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
         RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        // Opening the screen asks the server again when the folders never came (a first load that failed).
+        Folders.LoadAsync().Forget();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -179,7 +181,7 @@
         var name = L[FolderUi.NameKeyOf(preset)];
         try
         {
-            await Folders.SaveAsync(ChatFolderPresets.Create(preset, name));
+            await Folders.CreateAsync(ChatFolderPresets.Create(preset, name));
             Toasts.Success(L.Format("folders.toast.added", name));
         }
         catch (Exception ex)
@@ -232,11 +234,12 @@
 
     private async Task SetSwipeAsync(ChatSwipeMode mode) => await Settings.UpdateAsync(s => s.Chats.ChatSwipe = mode);
 
-    private async Task UpdateAsync(Func<ChatListSettingsDto, ChatListSettingsDto> change)
+    /// <summary>Only the setting that was switched goes out (another device may be switching another one).</summary>
+    private async Task UpdateAsync(UpdateChatListSettingsRequest change)
     {
         try
         {
-            await Folders.UpdateSettingsAsync(change(Folders.Settings));
+            await Folders.UpdateSettingsAsync(change);
         }
         catch (Exception ex)
         {

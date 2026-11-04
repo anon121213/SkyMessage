@@ -24,6 +24,57 @@
     flex-shrink: 0;
 }
 
+/* With the folder tabs, the scrolled header is one pane of frosted glass behind the bar and the tabs: nothing of the
+   list shows between them. The bar's own capsule steps aside and the tab strip drops its glass (one pane, not two). */
+.chatlist__head-glass {
+    display: none;
+}
+
+.chatlist__head--tabs .chatlist__head-glass {
+    position: absolute;
+    inset: 6px 8px 4px;
+    z-index: 0;
+    display: block;
+    border-radius: var(--sm-radius-xl);
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px) scale(0.98);
+    pointer-events: none;
+    transition: opacity var(--sm-dur) var(--sm-ease), transform var(--sm-dur-slow) var(--sm-spring-soft), visibility 0s linear var(--sm-dur);
+}
+
+[data-scrolled] .chatlist__head--tabs .chatlist__head-glass {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+}
+
+html[data-fx="lite"] .chatlist__head--tabs .chatlist__head-glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+.chatlist__head--tabs ::deep .app-bar__glass {
+    display: none;
+}
+
+.chatlist__head--tabs ::deep .folder-tabs__track {
+    transition: background-color var(--sm-dur) var(--sm-ease), box-shadow var(--sm-dur) var(--sm-ease);
+}
+
+[data-scrolled] .chatlist__head--tabs ::deep .folder-tabs__track {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+}
+
 /* The gradient compose orb: its plus turns a quarter when pressed. */
 .chatlist__head ::deep .chatlist__compose .sm-icon {
     transition: transform var(--sm-dur-slow) var(--sm-spring);
@@ -92,6 +143,26 @@
     background: transparent;
 }
 
+/* The neighbouring folder beside the list while a swipe follows the finger: a width to its side, moving with the pane,
+   from the top of what is visible under the header (--folder-peek-top, set by js/folders.js). */
+.chatlist__peek {
+    position: absolute;
+    top: var(--folder-peek-top, 0px);
+    left: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+}
+
+.chatlist__peek[data-folder-peek="-1"] {
+    left: -100%;
+}
+
+.chatlist__pane[data-folder-peek-hidden] .chatlist__peek {
+    visibility: hidden;
+}
+
 /* ---- Archive folder: a soft card above the chats ---- */
 
 .chatlist__scroll ::deep .chatlist__archive {
@@ -115,6 +186,11 @@
 .chatlist__scroll ::deep .chatlist__archive .sm-list-item__icon {
     width: 2.75rem;
     height: 2.75rem;
+}
+
+/* The neighbour is a still copy: what it shows was on screen already. */
+.chatlist__peek ::deep .chatlist__archive {
+    animation: none;
 }
 
 /* ---- Rows ---- */

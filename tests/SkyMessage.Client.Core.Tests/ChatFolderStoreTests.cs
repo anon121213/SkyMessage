@@ -37,6 +37,8 @@ public sealed class ChatFolderStoreTests
         }
 
         public void Raise(ChatFoldersDto state) => Realtime.ChatFoldersChanged += NSubstitute.Raise.Event<Action<ChatFoldersDto>>(state);
+
+        public void Resync() => Realtime.Resynced += NSubstitute.Raise.Event<Action>();
     }
 
     private static ChatFolderDto Folder(string name, params Guid[] pins) => new()
@@ -75,15 +77,38 @@ public sealed class ChatFolderStoreTests
         h.Api.SaveChatFolderAsync(Arg.Any<Guid>(), Arg.Any<SaveChatFolderRequest>(), Arg.Any<CancellationToken>()).Returns(answer.Task);
         var folder = Folder("New");
 
-        var saving = h.Store.SaveAsync(folder);
+        var saving = h.Store.CreateAsync(folder);
         h.Store.Folders.ShouldHaveSingleItem().Name.ShouldBe("New");
 
         answer.SetResult(State(2, folder with { Name = "New (server)" }));
         await saving;
         h.Store.Folders.ShouldHaveSingleItem().Name.ShouldBe("New (server)");
         h.Store.State.Revision.ShouldBe(2);
-        await h.Api.Received(1).SaveChatFolderAsync(folder.Id, Arg.Is<SaveChatFolderRequest>(r => r.Name == "New" && r.IncludeGroups),
+        // Every field the app knows goes out, and that it is a new folder.
+        await h.Api.Received(1).SaveChatFolderAsync(folder.Id,
+            Arg.Is<SaveChatFolderRequest>(r => r.Create && r.Name == "New" && r.IncludeGroups == true && r.IncludeContacts == false && r.Icon == ""
+                                               && r.IncludedChatIds != null && r.ExcludedChatIds != null),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Saving_a_folder_deleted_on_another_device_does_not_bring_it_back()
+    {
+        var h = new Harness();
+        var family = Folder("Family");
+        var work = Folder("Work");
+        await h.LoadAsync(State(1, family, work));
+        var answer = new TaskCompletionSource<ChatFoldersDto>();
+        h.Api.SaveChatFolderAsync(family.Id, Arg.Any<SaveChatFolderRequest>(), Arg.Any<CancellationToken>()).Returns(answer.Task);
+        h.Raise(State(2, work));
+
+        var saving = h.Store.SaveAsync(family with { Name = "Семья" });
+        h.Store.Folders.Select(f => f.Name).ShouldBe(["Work"]);
+        answer.SetException(new ApiException(404, ErrorCodes.FolderNotFound, "gone"));
+
+        (await Should.ThrowAsync<ApiException>(() => saving)).Code.ShouldBe(ErrorCodes.FolderNotFound);
+        h.Store.Folders.Select(f => f.Name).ShouldBe(["Work"]);
+        await h.Api.Received(1).SaveChatFolderAsync(family.Id, Arg.Is<SaveChatFolderRequest>(r => !r.Create), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -120,6 +145,60 @@ public sealed class ChatFolderStoreTests
         await pinning;
         h.Store.State.Revision.ShouldBe(3);
         h.Store.Folders.Single().PinnedChatIds.ShouldBe([chat]);
+    }
+
+    [Fact]
+    public async Task A_first_load_that_failed_is_tried_again_on_the_next_resync_and_later_resyncs_refresh()
+    {
+        var h = new Harness();
+        var calls = 0;
+        h.Api.GetChatFoldersAsync(Arg.Any<CancellationToken>()).Returns(_ => ++calls switch
+        {
+            1 => Task.FromException<ChatFoldersDto>(new ApiException(0, ClientErrorCodes.Network, "offline")),
+            2 => Task.FromResult(State(3, Folder("Family"))),
+            _ => Task.FromResult(State(4, Folder("Семья"))),
+        });
+        await h.Lifecycle.ActivateAsync(h.Me);
+        var changes = 0;
+        h.Store.Changed += () => changes++;
+
+        // Sign-in's load fails (offline, a server restarting): nothing to show yet, and nothing else asks for folders.
+        await h.Store.LoadAsync();
+        h.Store.IsLoaded.ShouldBeFalse();
+
+        // Realtime is back: the store asks again and publishes what came.
+        h.Resync();
+        await Wait.UntilAsync(() => h.Store.Folders.Count == 1, "the folders arrive after the resync");
+        h.Store.Folders.Single().Name.ShouldBe("Family");
+        h.Store.State.Revision.ShouldBe(3);
+        changes.ShouldBeGreaterThan(0);
+
+        // Once loaded, a resync refreshes (changes made elsewhere while disconnected).
+        h.Resync();
+        await Wait.UntilAsync(() => h.Store.State.Revision == 4, "a resync refreshes the folders");
+        h.Store.Folders.Single().Name.ShouldBe("Семья");
+        await h.Api.Received(3).GetChatFoldersAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_settings_change_sends_and_shows_only_that_setting()
+    {
+        var h = new Harness();
+        await h.LoadAsync(State(1));
+        var answer = new TaskCompletionSource<ChatFoldersDto>();
+        h.Api.UpdateChatListSettingsAsync(Arg.Any<UpdateChatListSettingsRequest>(), Arg.Any<CancellationToken>()).Returns(answer.Task);
+
+        var updating = h.Store.UpdateSettingsAsync(new UpdateChatListSettingsRequest { HideArchive = true });
+        // Another device switched another setting meanwhile: both show.
+        h.Raise(State(2) with { Settings = new ChatListSettingsDto { KeepArchived = false } });
+        h.Store.Settings.ShouldBe(new ChatListSettingsDto { KeepArchived = false, HideArchive = true });
+
+        answer.SetResult(State(3) with { Settings = new ChatListSettingsDto { KeepArchived = false, HideArchive = true } });
+        await updating;
+        h.Store.Settings.ShouldBe(new ChatListSettingsDto { KeepArchived = false, HideArchive = true });
+        await h.Api.Received(1).UpdateChatListSettingsAsync(
+            Arg.Is<UpdateChatListSettingsRequest>(r => r.HideArchive == true && r.KeepArchived == null && r.ArchiveNewFromStrangers == null),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -174,10 +253,16 @@ public sealed class ChatFolderStoreTests
         ChatFolderEdits.ReorderPinned(pinned, a.Id, [x, y]).Folders[0].PinnedChatIds.ShouldBe([x, y]);
         ChatFolderEdits.SetPinned(pinned, a.Id, y, false).Folders[0].PinnedChatIds.ShouldBe([x]);
 
-        // Saving keeps the pins (they have their own calls) and a new folder goes last.
-        var saved = ChatFolderEdits.Save(pinned, a with { Name = "A2", PinnedChatIds = [] });
+        // Saving keeps the pins (they have their own calls) and a new folder goes last; an edit of a folder that is gone
+        // (deleted on another device) does not bring it back.
+        var saved = ChatFolderEdits.Save(pinned, a with { Name = "A2", PinnedChatIds = [] }, create: false);
         saved.Folders[0].ShouldSatisfyAllConditions(f => f.Name.ShouldBe("A2"), f => f.PinnedChatIds.ShouldBe([y, x]));
-        ChatFolderEdits.Save(state, Folder("D")).Folders.Select(f => f.Name).ShouldBe(["A", "B", "C", "D"]);
+        ChatFolderEdits.Save(state, Folder("D"), create: true).Folders.Select(f => f.Name).ShouldBe(["A", "B", "C", "D"]);
+        ChatFolderEdits.Save(state, Folder("D"), create: false).ShouldBeSameAs(state);
+
+        var settings = state with { Settings = new ChatListSettingsDto { ArchiveNewFromStrangers = true } };
+        ChatFolderEdits.UpdateSettings(settings, new UpdateChatListSettingsRequest { KeepArchived = false }).Settings
+            .ShouldBe(new ChatListSettingsDto { ArchiveNewFromStrangers = true, KeepArchived = false });
     }
 
     private static readonly DateTimeOffset Now = new(2026, 11, 4, 12, 0, 0, TimeSpan.Zero);
@@ -228,16 +313,42 @@ public sealed class ChatFolderStoreTests
     }
 
     [Fact]
-    public void Badges_count_unread_chats_and_fall_back_to_the_muted_ones()
+    public void Badges_count_unread_messages_like_the_dock_and_fall_back_to_the_muted_ones()
     {
         var loud = Chat("loud", 1, unread: 4);
         var mentioned = Chat("mentioned", 2) with { UnreadMentionCount = 1 };
         var quiet = Chat("quiet", 3, unread: 9, muted: true);
         var read = Chat("read", 4);
 
-        ChatFolderView.BadgeOf([loud, mentioned, quiet, read], Now).ShouldBe(new FolderBadge(2, false));
-        ChatFolderView.BadgeOf([quiet, read], Now).ShouldBe(new FolderBadge(1, true));
+        ChatFolderView.BadgeOf([loud, mentioned, quiet, read], Now).ShouldBe(new FolderBadge(5, false));
+        ChatFolderView.BadgeOf([quiet, read], Now).ShouldBe(new FolderBadge(9, true));
         ChatFolderView.BadgeOf([read], Now).ShouldBe(new FolderBadge(0, false));
+    }
+
+    [Fact]
+    public void All_badges_in_one_pass_match_each_folder_on_its_own()
+    {
+        var friend = Chat("friend", 1, ChatType.Private, unread: 2);
+        var stranger = Chat("stranger", 2, ChatType.Private, unread: 1);
+        var group = Chat("group", 3, unread: 5);
+        var quietGroup = Chat("quiet group", 4, unread: 7, muted: true);
+        var archived = Chat("archived", 5, unread: 3, archived: true);
+        var chats = new[] { friend, stranger, group, quietGroup, archived, Chat("read", 6) };
+        bool IsContact(ChatSummaryDto c) => c.Id == friend.Id;
+        var folders = new[]
+        {
+            new ChatFolderDto { Id = Guid.CreateVersion7(), IncludeContacts = true },
+            new ChatFolderDto { Id = Guid.CreateVersion7(), IncludeNonContacts = true, IncludeGroups = true, ExcludeArchived = true },
+            new ChatFolderDto { Id = Guid.CreateVersion7(), IncludeGroups = true, ExcludeMuted = true, ExcludeArchived = true },
+            new ChatFolderDto { Id = Guid.CreateVersion7(), IncludedChatIds = [quietGroup.Id] },
+        };
+
+        var badges = ChatFolderView.BadgesOf(folders, chats, IsContact, Now);
+
+        badges.ShouldBe([new FolderBadge(2, false), new FolderBadge(6, false), new FolderBadge(5, false), new FolderBadge(7, true)]);
+        for (var i = 0; i < folders.Length; i++)
+            badges[i].ShouldBe(ChatFolderView.BadgeOf(ChatFolderView.ChatsOf(folders[i], chats, IsContact, Now), Now));
+        ChatFolderView.BadgesOf([], chats, IsContact, Now).ShouldBeEmpty();
     }
 
     [Fact]

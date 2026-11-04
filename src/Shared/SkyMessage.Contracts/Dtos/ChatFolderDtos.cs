@@ -43,8 +43,9 @@ public sealed record ChatFolderDto
 public sealed record ChatListSettingsDto
 {
     /// <summary>
-    /// New chats from strangers start in the archive: a private chat whose first message (or call) comes from someone
-    /// who is not in my contacts, and a group someone who is not in my contacts adds me to. Off: they appear in the list.
+    /// New chats from strangers start in the archive, muted: a private chat whose first message (or call) comes from
+    /// someone who is not in my contacts, and a group someone who is not in my contacts adds me to. Off: they appear in the
+    /// list.
     /// </summary>
     public bool ArchiveNewFromStrangers { get; init; }
     /// <summary>
@@ -67,30 +68,41 @@ public sealed record ChatFoldersDto
 }
 
 /// <summary>
-/// PUT <see cref="ApiRoutes.Folders.ById"/>: creates the folder with that id (the app picks a new one, so a repeat is
-/// harmless) or replaces its name, icon and rules. Its pins are kept.
+/// PUT <see cref="ApiRoutes.Folders.ById"/>: creates the folder with that id (<see cref="Create"/>; the app picks a new id,
+/// so a repeat is harmless) or changes the fields that are set — null leaves a field as it is, so a change made with an app
+/// that does not know a newer field never resets it (every field a later version adds is nullable too). Its pins are kept.
 /// </summary>
 public sealed record SaveChatFolderRequest
 {
-    /// <summary>1 to <see cref="Limits.ChatFolderNameMaxLength"/> characters (trimmed).</summary>
-    public string Name { get; init; } = "";
-    /// <summary>See <see cref="ChatFolderDto.Icon"/>.</summary>
+    /// <summary>
+    /// True: a new folder (it is created when that id does not exist yet). False: an edit — a folder that no longer exists
+    /// (deleted on another device) answers 404 <see cref="ErrorCodes.FolderNotFound"/> instead of coming back.
+    /// </summary>
+    public bool Create { get; init; }
+    /// <summary>
+    /// 1 to <see cref="Limits.ChatFolderNameMaxLength"/> characters (<see cref="ChatFolderRules.NormalizeName"/>: line
+    /// breaks become spaces, trimmed). Required to create.
+    /// </summary>
+    public string? Name { get; init; }
+    /// <summary>See <see cref="ChatFolderDto.Icon"/>; "" = the plain folder icon.</summary>
     public string? Icon { get; init; }
-    public bool IncludeContacts { get; init; }
-    public bool IncludeNonContacts { get; init; }
-    public bool IncludeGroups { get; init; }
-    public bool IncludeChannels { get; init; }
-    public bool ExcludeMuted { get; init; }
-    public bool ExcludeRead { get; init; }
-    public bool ExcludeArchived { get; init; }
+    public bool? IncludeContacts { get; init; }
+    public bool? IncludeNonContacts { get; init; }
+    public bool? IncludeGroups { get; init; }
+    public bool? IncludeChannels { get; init; }
+    public bool? ExcludeMuted { get; init; }
+    public bool? ExcludeRead { get; init; }
+    public bool? ExcludeArchived { get; init; }
     /// <summary>Distinct; a chat cannot be both included and excluded. Ids that are not my chats are dropped.</summary>
-    public IReadOnlyList<Guid> IncludedChatIds { get; init; } = [];
-    public IReadOnlyList<Guid> ExcludedChatIds { get; init; } = [];
+    public IReadOnlyList<Guid>? IncludedChatIds { get; init; }
+    public IReadOnlyList<Guid>? ExcludedChatIds { get; init; }
 
-    public static SaveChatFolderRequest From(ChatFolderDto folder) => new()
+    /// <summary>Every field the app knows, from the folder as it is edited.</summary>
+    public static SaveChatFolderRequest From(ChatFolderDto folder, bool create) => new()
     {
+        Create = create,
         Name = folder.Name,
-        Icon = folder.Icon,
+        Icon = folder.Icon ?? "",
         IncludeContacts = folder.IncludeContacts,
         IncludeNonContacts = folder.IncludeNonContacts,
         IncludeGroups = folder.IncludeGroups,
@@ -100,6 +112,28 @@ public sealed record SaveChatFolderRequest
         ExcludeArchived = folder.ExcludeArchived,
         IncludedChatIds = folder.IncludedChatIds,
         ExcludedChatIds = folder.ExcludedChatIds,
+    };
+}
+
+/// <summary>
+/// PUT <see cref="ApiRoutes.Folders.Settings"/>: changes the chat list settings that are set (null = as it is), so two
+/// devices switching different settings at the same moment both keep their change.
+/// </summary>
+public sealed record UpdateChatListSettingsRequest
+{
+    /// <summary>See <see cref="ChatListSettingsDto.ArchiveNewFromStrangers"/>.</summary>
+    public bool? ArchiveNewFromStrangers { get; init; }
+    /// <summary>See <see cref="ChatListSettingsDto.KeepArchived"/>.</summary>
+    public bool? KeepArchived { get; init; }
+    /// <summary>See <see cref="ChatListSettingsDto.HideArchive"/>.</summary>
+    public bool? HideArchive { get; init; }
+
+    /// <summary>The settings with the fields of this request applied.</summary>
+    public ChatListSettingsDto ApplyTo(ChatListSettingsDto settings) => settings with
+    {
+        ArchiveNewFromStrangers = ArchiveNewFromStrangers ?? settings.ArchiveNewFromStrangers,
+        KeepArchived = KeepArchived ?? settings.KeepArchived,
+        HideArchive = HideArchive ?? settings.HideArchive,
     };
 }
 
