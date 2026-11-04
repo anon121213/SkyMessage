@@ -464,7 +464,8 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   (default) / 5 min / 1 h / 5 h — measured with the wall, process and boot clock (`IAppLockPlatform.SinceBoot`): sleep
   counts, a wall clock moved back locks (without a boot clock) and never helps; a check every 5 s while away locks
   before the user is back, so returning never shows chats for a moment; "immediately" locks as the app leaves, except
-  for the app's own pickers/camera/system screens (`ExpectReturn`, `AppLockRules.OwnTripGrace` 2 min);
+  for the app's own pickers/camera/system screens (`ExpectReturn`, `AppLockRules.OwnTripGrace` 2 min; the browser's
+  file pickers announce it too, since a phone browser hides the page while its picker or camera is up);
   `LockNow`. Five wrong codes in a row pause the checks for 30 s, each further one doubles the pause up to 1 h
   (boot clock when known: moving the clock or restarting does not shorten it); the count survives restarts, is shared
   by browser tabs and starts over after a right code or fingerprint. While locked the window is secure
@@ -693,8 +694,8 @@ it by itself); minimizing it shows the lock again. Android Back on the lock scre
   USE_BIOMETRIC; no recents picture while a passcode is set — `setRecentsScreenshotEnabled(false)` on Android 13+,
   FLAG_SECURE while the activity is paused below; `SystemClock.elapsedRealtime` as the boot clock; Back on the lock
   screen leaves the app unless the call screen is over it; shown over the phone's own lock screen for a call, the app
-  locks (`LockNow`), so minimizing the call never shows chats there; `ActivityResults` launches and camera capture
-  announce `ExpectReturn`; iOS/Mac: keypad only),
+  locks (`LockNow`), so minimizing the call never shows chats there; `ActivityResults` launches, camera capture and
+  the own-sound picker announce `ExpectReturn`; iOS/Mac: keypad only),
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
   iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the

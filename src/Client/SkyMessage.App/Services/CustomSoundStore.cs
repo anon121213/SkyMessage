@@ -28,6 +28,8 @@ public sealed class CustomSoundStore(ILogger<CustomSoundStore> logger) : ICustom
         FileResult? result;
         try
         {
+            // The system picker is a trip of our own: the app passcode does not lock "immediately" for it.
+            using var trip = AppServices.Get<SkyMessage.Client.Core.Services.IAppLockService>()?.ExpectReturn();
             result = await MainThread.InvokeOnMainThreadAsync(() => FilePicker.Default.PickAsync(new PickOptions { FileTypes = AudioFiles }))
                 .ConfigureAwait(false);
         }

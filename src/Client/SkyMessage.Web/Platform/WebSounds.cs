@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using SkyMessage.Client.Core.Platform;
+using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Settings;
 
 namespace SkyMessage.Web.Platform;
@@ -8,9 +9,9 @@ namespace SkyMessage.Web.Platform;
 /// <summary>
 /// The user's own sounds in an IndexedDB database of their own (web-platform.js <c>skyPlatform.sounds</c>): they are
 /// device settings, so neither signing out nor clearing the offline cache removes them. Picked with a file input
-/// filtered to audio.
+/// filtered to audio (a trip of the app's own for the app passcode, as in <see cref="WebFilePickerService"/>).
 /// </summary>
-public sealed class WebCustomSoundStore(WebBridge bridge, WebBlobs blobs, ILogger<WebCustomSoundStore> logger) : ICustomSoundStore
+public sealed class WebCustomSoundStore(WebBridge bridge, WebBlobs blobs, IAppLockService appLock, ILogger<WebCustomSoundStore> logger) : ICustomSoundStore
 {
     public bool IsSupported => true;
 
@@ -18,6 +19,7 @@ public sealed class WebCustomSoundStore(WebBridge bridge, WebBlobs blobs, ILogge
     {
         try
         {
+            using var trip = appLock.ExpectReturn();
             var picked = await bridge.Js.InvokeAsync<PickedBlob[]>("skyPlatform.files.pick", cancellationToken, CustomSoundRules.AcceptAttribute, false, null)
                 .ConfigureAwait(false);
             return picked.Length == 0 ? null : blobs.ToPickedFile(picked[0].Ref, picked[0].Name, picked[0].Type, picked[0].Size);
