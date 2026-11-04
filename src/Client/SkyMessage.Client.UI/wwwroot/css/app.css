@@ -85,6 +85,11 @@ html[data-theme="light"] {
   --sm-grad-warm: linear-gradient(135deg, #FFD27A 0%, #FF8A65 100%);
   --sm-grad-danger: linear-gradient(135deg, #FF5F7E 0%, #E2334D 100%);
   --sm-grad-success: linear-gradient(135deg, #34D399 0%, #0E9F6E 100%);
+  /* The brand «Горизонт» on this theme's surfaces (docs/brand, Kit/Logo): sky = the bubble above the horizon, dawn =
+     the band below it, ink = the wordmark. Never swapped; the cut between sky and dawn stays empty. */
+  --sm-brand-sky: #2A1F86;
+  --sm-brand-dawn: #D9622F;
+  --sm-brand-ink: #2A1F86;
 
   --sm-bg: #F6F3FF;
   --sm-surface: #FFFFFF;
@@ -163,6 +168,9 @@ html[data-theme="dark"] {
   --sm-grad-warm: linear-gradient(135deg, #FFD27A 0%, #FF8A65 100%);
   --sm-grad-danger: linear-gradient(135deg, #FF6B86 0%, #E23A55 100%);
   --sm-grad-success: linear-gradient(135deg, #3DDC97 0%, #10A675 100%);
+  --sm-brand-sky: #FFFFFF;
+  --sm-brand-dawn: #FFAE86;
+  --sm-brand-ink: #FFFFFF;
 
   --sm-bg: #0D0B1E;
   --sm-surface: #17132D;
@@ -628,18 +636,25 @@ html[data-fx="lite"] .sm-sky__cloud { display: none; }
 .sm-icon { flex-shrink: 0; width: 1.25rem; height: 1.25rem; vertical-align: middle; }
 .sm-icon--spin { animation: sm-spin 0.9s linear infinite; }
 
-/* ---------- Logo ---------- */
+/* ---------- Logo («Горизонт», Kit/Logo.razor) ---------- */
 
 .sm-logo { display: inline-block; flex-shrink: 0; overflow: visible; }
-/* Inside the SVG, lengths are viewBox units (456 per side). */
-.sm-logo--animated .sm-logo__sun { animation: sm-logo-sun 5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-.sm-logo--animated .sm-logo__cloud { animation: sm-logo-cloud 6s ease-in-out infinite; }
-.sm-logo--animated .sm-logo__spark { animation: sm-logo-spark 3.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-.sm-logo--animated .sm-logo__spark--2 { animation-delay: -1.2s; animation-duration: 4.1s; }
-.sm-logo--animated .sm-logo__spark--3 { animation-delay: -2.3s; animation-duration: 3.8s; }
-@keyframes sm-logo-sun { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
-@keyframes sm-logo-cloud { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
-@keyframes sm-logo-spark { 0%, 100% { opacity: 0.35; transform: scale(0.6) rotate(0deg); } 50% { opacity: 1; transform: scale(1) rotate(45deg); } }
+/* The mark and the lockup take the theme's brand colors; the tile keeps white and peach on its ground (fill attributes). */
+.sm-logo--mark .sm-logo__sky, .sm-logo--wordmark .sm-logo__sky { fill: var(--sm-brand-sky); }
+.sm-logo--mark .sm-logo__dawn, .sm-logo--wordmark .sm-logo__dawn { fill: var(--sm-brand-dawn); }
+.sm-logo__word { fill: var(--sm-brand-ink); }
+.sm-logo--wordmark { max-width: 100%; height: auto; aspect-ratio: 1022.83 / 177.33; }
+/* Animated: the horizon opens once. Two seam strips first fill the cut (the bubble shows whole), then slide apart until
+   their edges meet the sky's bottom and the dawn band's top (lengths are viewBox units: the cut is 12.67), and rest
+   well outside their clip (4 units clear of it, so not even an edge pixel of them is drawn). The resting state is out of sight, so reduced motion and lite mode simply show the finished mark. */
+.sm-logo__seam--up { transform: translateY(-20px); }
+.sm-logo__seam--down { transform: translateY(16.67px); }
+.sm-logo--animated .sm-logo__seam--up { animation: sm-logo-horizon-up var(--sm-dur-xslow) cubic-bezier(0.3, 0, 0.2, 1) 280ms backwards; }
+.sm-logo--animated .sm-logo__seam--down { animation: sm-logo-horizon-down var(--sm-dur-xslow) cubic-bezier(0.3, 0, 0.2, 1) 280ms backwards; }
+@keyframes sm-logo-horizon-up { from { transform: none; } to { transform: translateY(-9.67px); } }
+@keyframes sm-logo-horizon-down { from { transform: none; } to { transform: translateY(6.33px); } }
+html[data-fx="lite"] .sm-logo__seam, html[data-reduce-motion="true"] .sm-logo__seam { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .sm-logo__seam { animation: none !important; } }
 
 /* ---------- Avatar ---------- */
 

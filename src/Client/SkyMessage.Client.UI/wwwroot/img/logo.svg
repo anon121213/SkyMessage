@@ -1,54 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SkyMessage icon: sun rising behind a cloud on a twilight squircle (our own artwork, same as Kit/Logo.razor). -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 456 456"><defs><clipPath id="sq"><path d="M228 0C404 0 456 52 456 228S404 456 228 456 0 404 0 228 52 0 228 0Z"/></clipPath></defs><g clip-path="url(#sq)">
+<!-- SkyMessage icon, launcher view (squircle): 72dp of the 108dp adaptive canvas -->
+<svg xmlns="http://www.w3.org/2000/svg" width="304" height="304" viewBox="76 76 304 304">
   <defs>
-    <linearGradient id="bsky" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3D2BD9"/>
-      <stop offset="0.52" stop-color="#7B3FEA"/>
-      <stop offset="1" stop-color="#D452A8"/>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A1F86"/>
+      <stop offset="1" stop-color="#4A35C8"/>
     </linearGradient>
-    <radialGradient id="horizon" cx="0.78" cy="1.02" r="0.72">
-      <stop offset="0" stop-color="#FFB37A" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#FFB37A" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="light" cx="0.22" cy="0.08" r="0.62">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
+    <clipPath id="tile"><path d="M380.00,228.00 L379.97,266.70 L379.87,279.06 L379.71,288.03 L379.48,295.32 L379.18,301.55 L378.82,307.06 L378.40,312.01 L377.91,316.52 L377.35,320.68 L376.72,324.53 L376.03,328.13 L375.26,331.51 L374.43,334.68 L373.52,337.68 L372.55,340.51 L371.50,343.19 L370.38,345.74 L369.18,348.15 L367.91,350.45 L366.56,352.63 L365.13,354.70 L363.61,356.67 L362.01,358.55 L360.32,360.32 L358.55,362.01 L356.67,363.61 L354.70,365.13 L352.63,366.56 L350.45,367.91 L348.15,369.18 L345.74,370.38 L343.19,371.50 L340.51,372.55 L337.68,373.52 L334.68,374.43 L331.51,375.26 L328.13,376.03 L324.53,376.72 L320.68,377.35 L316.52,377.91 L312.01,378.40 L307.06,378.82 L301.55,379.18 L295.32,379.48 L288.03,379.71 L279.06,379.87 L266.70,379.97 L228.00,380.00 L189.30,379.97 L176.94,379.87 L167.97,379.71 L160.68,379.48 L154.45,379.18 L148.94,378.82 L143.99,378.40 L139.48,377.91 L135.32,377.35 L131.47,376.72 L127.87,376.03 L124.49,375.26 L121.32,374.43 L118.32,373.52 L115.49,372.55 L112.81,371.50 L110.26,370.38 L107.85,369.18 L105.55,367.91 L103.37,366.56 L101.30,365.13 L99.33,363.61 L97.45,362.01 L95.68,360.32 L93.99,358.55 L92.39,356.67 L90.87,354.70 L89.44,352.63 L88.09,350.45 L86.82,348.15 L85.62,345.74 L84.50,343.19 L83.45,340.51 L82.48,337.68 L81.57,334.68 L80.74,331.51 L79.97,328.13 L79.28,324.53 L78.65,320.68 L78.09,316.52 L77.60,312.01 L77.18,307.06 L76.82,301.55 L76.52,295.32 L76.29,288.03 L76.13,279.06 L76.03,266.70 L76.00,228.00 L76.03,189.30 L76.13,176.94 L76.29,167.97 L76.52,160.68 L76.82,154.45 L77.18,148.94 L77.60,143.99 L78.09,139.48 L78.65,135.32 L79.28,131.47 L79.97,127.87 L80.74,124.49 L81.57,121.32 L82.48,118.32 L83.45,115.49 L84.50,112.81 L85.62,110.26 L86.82,107.85 L88.09,105.55 L89.44,103.37 L90.87,101.30 L92.39,99.33 L93.99,97.45 L95.68,95.68 L97.45,93.99 L99.33,92.39 L101.30,90.87 L103.37,89.44 L105.55,88.09 L107.85,86.82 L110.26,85.62 L112.81,84.50 L115.49,83.45 L118.32,82.48 L121.32,81.57 L124.49,80.74 L127.87,79.97 L131.47,79.28 L135.32,78.65 L139.48,78.09 L143.99,77.60 L148.94,77.18 L154.45,76.82 L160.68,76.52 L167.97,76.29 L176.94,76.13 L189.30,76.03 L228.00,76.00 L266.70,76.03 L279.06,76.13 L288.03,76.29 L295.32,76.52 L301.55,76.82 L307.06,77.18 L312.01,77.60 L316.52,78.09 L320.68,78.65 L324.53,79.28 L328.13,79.97 L331.51,80.74 L334.68,81.57 L337.68,82.48 L340.51,83.45 L343.19,84.50 L345.74,85.62 L348.15,86.82 L350.45,88.09 L352.63,89.44 L354.70,90.87 L356.67,92.39 L358.55,93.99 L360.32,95.68 L362.01,97.45 L363.61,99.33 L365.13,101.30 L366.56,103.37 L367.91,105.55 L369.18,107.85 L370.38,110.26 L371.50,112.81 L372.55,115.49 L373.52,118.32 L374.43,121.32 L375.26,124.49 L376.03,127.87 L376.72,131.47 L377.35,135.32 L377.91,139.48 L378.40,143.99 L378.82,148.94 L379.18,154.45 L379.48,160.68 L379.71,167.97 L379.87,176.94 L379.97,189.30 Z"/></clipPath>
   </defs>
-  <rect x="0" y="0" width="456" height="456" fill="url(#bsky)"/>
-  <rect x="0" y="0" width="456" height="456" fill="url(#horizon)"/>
-  <rect x="0" y="0" width="456" height="456" fill="url(#light)"/>
-</g>
-  <defs>
-    <radialGradient id="sun" cx="0.42" cy="0.38" r="0.62">
-      <stop offset="0" stop-color="#FFF6D2"/>
-      <stop offset="0.45" stop-color="#FFCB6E"/>
-      <stop offset="1" stop-color="#FF8A65"/>
-    </radialGradient>
-    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0.45" stop-color="#FFD58A" stop-opacity="0.6"/>
-      <stop offset="1" stop-color="#FFD58A" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="cloud" gradientUnits="userSpaceOnUse" x1="0" y1="150" x2="0" y2="345">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#E9E1FF"/>
-    </linearGradient>
-  </defs>
-  <g transform="translate(228 228) scale(0.84) translate(-228 -228)">
-    <circle cx="292" cy="186" r="116" fill="url(#halo)"/>
-    <circle cx="292" cy="186" r="72" fill="url(#sun)"/>
-    <ellipse cx="236" cy="352" rx="128" ry="16" fill="#2A1470" opacity="0.18"/>
-    <g fill="url(#cloud)">
-      <circle cx="168" cy="268" r="62"/>
-      <circle cx="238" cy="230" r="80"/>
-      <circle cx="312" cy="280" r="54"/>
-      <rect x="106" y="262" width="262" height="78" rx="39" ry="39"/>
-    </g>
-    <g fill="#FFFFFF">
-      <path transform="translate(98 104) scale(1.25)" opacity="0.95" d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z"/>
-      <path transform="translate(342 112) scale(0.8)" opacity="0.85" d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z"/>
-      <path transform="translate(186 126) scale(0.6)" opacity="0.8" d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z"/>
-    </g>
+  <g clip-path="url(#tile)">
+    <rect x="76" y="76" width="304" height="304" fill="url(#sky)"/>
+    <path fill="#FFFFFF" d="M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z"/>
+    <path fill="#FFAE86" d="M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z"/>
   </g>
 </svg>
