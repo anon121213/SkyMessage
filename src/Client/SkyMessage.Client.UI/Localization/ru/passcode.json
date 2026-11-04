@@ -1,6 +1,6 @@
 {
   "passcode.title": "Код-пароль",
-  "passcode.rowHint": "Код при входе в приложение",
+  "passcode.rowHint": "Спрашивать при входе",
   "passcode.on": "Вкл.",
   "passcode.off": "Выкл.",
 
