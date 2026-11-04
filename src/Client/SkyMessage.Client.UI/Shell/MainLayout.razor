@@ -16,7 +16,7 @@
 @inject HapticFeedback Haptics
 @inject AppJs Js
 
-<div class="shell shell--@Layout.Mode.ToString().ToLowerInvariant() @(Locked ? "shell--locked" : null)">
+<div class="shell shell--@Layout.Mode.ToString().ToLowerInvariant() @(Locked ? "shell--locked" : null) @(Locked && CallUi.IsCovering ? "shell--call-over-lock" : null)">
     @if (Layout.IsPhone)
     {
         <div @ref="_phone" class="shell__phone" inert="@Locked">
@@ -184,8 +184,11 @@
     private string Path => Nav.CurrentPath;
     private bool IsTopLevel => NavigationService.IsTopLevel(Path);
 
-    /// <summary>The app passcode hides the shell behind the lock screen (Features/Passcode/LockScreen).</summary>
-    private bool Locked => AppLock.IsLocked;
+    /// <summary>
+    /// The app passcode hides the shell behind the lock screen (Features/Passcode/LockScreen) — also while the stored
+    /// passcode is still being read: until then nobody can tell whether it must.
+    /// </summary>
+    private bool Locked => AppLock.IsLocked || !AppLock.IsInitialized;
     private Guid? ChatRouteId => NavigationService.ChatIdOf(Path);
     private string? ChatSubPage => NavigationService.ChatSubPageOf(Path);
     private bool IsInfoRoute => ChatRouteId is not null && ChatSubPage is not null;
@@ -287,6 +290,7 @@
         Nav.Changed += OnNavigated;
         ChatList.Changed += OnChatsChanged;
         AppLock.Changed += OnLockChanged;
+        CallUi.CoveringChanged += OnLockChanged;
     }
 
     private void OnLockChanged() => _ = InvokeAsync(StateHasChanged);
@@ -474,6 +478,7 @@
         Nav.Changed -= OnNavigated;
         ChatList.Changed -= OnChatsChanged;
         AppLock.Changed -= OnLockChanged;
+        CallUi.CoveringChanged -= OnLockChanged;
         _leavingVersion++;
         if (_resizerHandle is not null) await _resizerHandle.DisposeAsync();
         if (_swipeBack is not null) await _swipeBack.DisposeAsync();

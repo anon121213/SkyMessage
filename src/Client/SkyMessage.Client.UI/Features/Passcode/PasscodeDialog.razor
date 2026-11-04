@@ -4,6 +4,7 @@
    current codes count toward the same pause as on the lock screen. Closes with true when done. *@
 @inherits UiComponentBase
 @inject IAppLockService AppLock
+@inject ToastService Toasts
 @inject ILogger<PasscodeDialog> Logger
 
 <div class="pcflow">
@@ -148,7 +149,17 @@
         {
             if (Mode == Flow.Enable)
             {
-                await AppLock.EnableAsync(code);
+                try
+                {
+                    await AppLock.EnableAsync(code);
+                }
+                catch (InvalidOperationException) when (AppLock.IsEnabled)
+                {
+                    // Another tab set one meanwhile: that passcode stays (this one was never checked against it).
+                    Toasts.Warning(L["passcode.setup.alreadySet"]);
+                    Dialog.Cancel();
+                    return;
+                }
             }
             else
             {

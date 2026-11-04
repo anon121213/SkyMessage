@@ -1,6 +1,6 @@
 {
   "passcode.title": "Passcode",
-  "passcode.rowHint": "Ask for a code when the app opens",
+  "passcode.rowHint": "A code to open the app",
   "passcode.on": "On",
   "passcode.off": "Off",
 
@@ -52,6 +52,7 @@
   "passcode.setup.useSix": "Use 6 digits",
   "passcode.setup.useFour": "Use 4 digits",
   "passcode.setup.failed": "Could not save the passcode. Try again",
+  "passcode.setup.alreadySet": "A passcode is already on — perhaps from another tab. Changing it needs the current code",
 
   "passcode.lock.title": "Enter your passcode",
   "passcode.lock.forgot": "Forgot the passcode?",
@@ -66,10 +67,10 @@
   "passcode.forgot.signOut": "Sign out",
 
   "passcode.wrong": "Wrong passcode",
-  "passcode.wrong.left.one": "Wrong passcode. {0} try left",
-  "passcode.wrong.left.few": "Wrong passcode. {0} tries left",
-  "passcode.wrong.left.many": "Wrong passcode. {0} tries left",
-  "passcode.wrong.left.other": "Wrong passcode. {0} tries left",
+  "passcode.wrong.left.one": "Wrong passcode. {0} more try before a pause",
+  "passcode.wrong.left.few": "Wrong passcode. {0} more tries before a pause",
+  "passcode.wrong.left.many": "Wrong passcode. {0} more tries before a pause",
+  "passcode.wrong.left.other": "Wrong passcode. {0} more tries before a pause",
   "passcode.paused": "Too many attempts. Try again in {0}",
   "passcode.dots": "{0} of {1} digits entered",
   "passcode.keypad": "Keypad",

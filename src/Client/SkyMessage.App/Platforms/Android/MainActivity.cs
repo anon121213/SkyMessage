@@ -49,6 +49,12 @@ public class MainActivity : MauiAppCompatActivity
         HandleIntent(intent);
     }
 
+    protected override void OnStart()
+    {
+        base.OnStart();
+        LockIfOverKeyguard();
+    }
+
     protected override void OnPause()
     {
         // Android 12 and older with a passcode set: secure while paused, so the recents picture shows no chats.
@@ -59,6 +65,7 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnResume()
     {
         base.OnResume();
+        LockIfOverKeyguard();
         (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.SetPaused(this, false);
         // In the foreground a foreground service may start: revive the background connection if its process died.
         AndroidBackgroundConnectionService.EnsureRunning(ApplicationContext ?? this);
@@ -158,10 +165,7 @@ public class MainActivity : MauiAppCompatActivity
     {
         if (show == _showingOverLockScreen) return;
         _showingOverLockScreen = show;
-        // Over the phone's own lock screen only the call may show: with an app passcode set, the chats stay locked
-        // behind it for whoever holds the phone (minimizing the call shows our lock screen).
-        if (show && GetSystemService(KeyguardService) is KeyguardManager { IsKeyguardLocked: true })
-            AppServices.Get<IAppLockService>()?.LockNow();
+        LockIfOverKeyguard();
         try
         {
             if (OperatingSystem.IsAndroidVersionAtLeast(27))
@@ -187,6 +191,26 @@ public class MainActivity : MauiAppCompatActivity
         }
     }
 
+    /// <summary>
+    /// Over the phone's own lock screen only the call may show: with an app passcode set, the chats stay locked behind it
+    /// for whoever holds the phone (minimizing the call shows our lock screen). Checked whenever the activity comes back,
+    /// not only when it starts showing over the lock screen: a call accepted on an unlocked phone stays showable after
+    /// the phone locks during it, and the screen coming on again must not reopen the chats.
+    /// </summary>
+    private void LockIfOverKeyguard()
+    {
+        if (!_showingOverLockScreen) return;
+        try
+        {
+            if (GetSystemService(KeyguardService) is KeyguardManager { IsKeyguardLocked: true })
+                AppServices.Get<IAppLockService>()?.LockNow();
+        }
+        catch (Exception)
+        {
+            // The keyguard state could not be read: the auto-lock still applies.
+        }
+    }
+
     private void HookCallChanges(ICallService calls)
     {
         if (_calls is not null) return;
@@ -197,15 +221,17 @@ public class MainActivity : MauiAppCompatActivity
 
     /// <summary>
     /// Back closes overlays/screens through WebView history; at the root the app goes to background (never finishes). The
-    /// passcode lock screen has nothing behind it to go back to: Back leaves the app (the call screen shown over it still
-    /// minimizes first).
+    /// passcode lock screen has nothing behind it to go back to: Back closes its "Forgot the passcode?" question, else it
+    /// leaves the app (the call screen shown over it still minimizes first).
     /// </summary>
     private sealed class BackCallback(MainActivity activity) : OnBackPressedCallback(true)
     {
         public override void HandleOnBackPressed()
         {
-            if (AppServices.Get<IAppLockService>() is { IsLocked: true } && !SkyMessage.Client.UI.Features.Calls.CallUi.IsCovering)
+            if (AppServices.Get<IAppLockService>() is { } appLock && (appLock.IsLocked || !appLock.IsInitialized)
+                && !SkyMessage.Client.UI.Features.Calls.CallUi.IsCovering)
             {
+                if (SkyMessage.Client.UI.Features.Passcode.LockUi.TryBack()) return;
                 activity.MoveTaskToBack(true);
                 return;
             }

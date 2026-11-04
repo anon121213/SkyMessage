@@ -59,7 +59,7 @@
     border-radius: 999px;
     background: var(--sm-grad-success);
     box-shadow: var(--sm-shadow-1);
-    color: #FFFFFF;
+    color: var(--sm-on-accent);
     font-family: var(--sm-font-display);
     font-size: 0.9375rem;
     font-weight: 600;
@@ -80,7 +80,7 @@
     width: 1.75rem;
     height: 1.75rem;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.22);
+    background: color-mix(in srgb, var(--sm-on-accent) 22%, transparent);
 }
 
 .lock__head {

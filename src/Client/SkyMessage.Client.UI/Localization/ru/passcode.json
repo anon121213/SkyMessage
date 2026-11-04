@@ -1,6 +1,6 @@
 {
   "passcode.title": "Код-пароль",
-  "passcode.rowHint": "Спрашивать код при входе в приложение",
+  "passcode.rowHint": "Код при входе в приложение",
   "passcode.on": "Вкл.",
   "passcode.off": "Выкл.",
 
@@ -52,6 +52,7 @@
   "passcode.setup.useSix": "Код из 6 цифр",
   "passcode.setup.useFour": "Код из 4 цифр",
   "passcode.setup.failed": "Не получилось сохранить код-пароль. Попробуйте ещё раз",
+  "passcode.setup.alreadySet": "Код-пароль уже включён — например, в другой вкладке. Сменить его можно, зная текущий код",
 
   "passcode.lock.title": "Введите код-пароль",
   "passcode.lock.forgot": "Забыли код?",
@@ -66,10 +67,10 @@
   "passcode.forgot.signOut": "Выйти",
 
   "passcode.wrong": "Неверный код-пароль",
-  "passcode.wrong.left.one": "Неверный код. Осталась {0} попытка",
-  "passcode.wrong.left.few": "Неверный код. Осталось {0} попытки",
-  "passcode.wrong.left.many": "Неверный код. Осталось {0} попыток",
-  "passcode.wrong.left.other": "Неверный код. Осталось {0} попытки",
+  "passcode.wrong.left.one": "Неверный код. Ещё {0} попытка до паузы",
+  "passcode.wrong.left.few": "Неверный код. Ещё {0} попытки до паузы",
+  "passcode.wrong.left.many": "Неверный код. Ещё {0} попыток до паузы",
+  "passcode.wrong.left.other": "Неверный код. Ещё {0} попытки до паузы",
   "passcode.paused": "Слишком много попыток. Попробуйте через {0}",
   "passcode.dots": "Введено цифр: {0} из {1}",
   "passcode.keypad": "Цифры",
