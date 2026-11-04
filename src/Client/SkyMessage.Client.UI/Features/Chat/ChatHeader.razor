@@ -207,7 +207,7 @@
         {
             [nameof(BackdropEditor.Target)] = BackdropTarget.Chat,
             [nameof(BackdropEditor.Initial)] = current?.Clone(),
-        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as BackdropEditorResult;
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Class = "sm-dialog--solid" }) as BackdropEditorResult;
         if (result is null) return;
         try
         {

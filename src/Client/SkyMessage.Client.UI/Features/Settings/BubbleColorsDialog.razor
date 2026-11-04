@@ -9,7 +9,11 @@
 <div class="bubble-pick">
     @{
         var paint = Theme.Catalog.CustomBubble(_colors, Theme.IsDark);
-        var sky = Theme.Catalog.ChatPaint(Settings.Current.Appearance, Theme.IsDark);
+        var appearance = Settings.Current.Appearance;
+        // Chats that follow the app show its background as the root screens do (under its readability floor).
+        var sky = BackdropRules.Normalize(appearance.ChatBackground) is null
+            ? Painter.OnScreen(Theme.Catalog.ChatPaint(appearance, Theme.IsDark), Theme.IsDark)
+            : Theme.Catalog.ChatPaint(appearance, Theme.IsDark);
         var photoUrl = sky.Photo is { } photo ? Painter.Url(photo, sky.Blur) : null;
     }
     <div class="bubble-pick__preview" aria-hidden="true">
@@ -18,7 +22,11 @@
         {
             <div class="bubble-pick__photo" style="@($"background-image:url(\"{photoUrl}\")")"></div>
         }
-        @if (sky.Dim > 0)
+        @if (sky.Veil is { } veil)
+        {
+            <div class="bubble-pick__veil" style="@($"background:{veil}")"></div>
+        }
+        else if (sky.Dim > 0)
         {
             <div class="bubble-pick__veil" style="@($"opacity:{sky.Dim.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}")"></div>
         }

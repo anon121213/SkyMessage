@@ -12,7 +12,12 @@
         {
             <div class="bd-prev__photo" style="@($"background-image:url(\"{url}\");--blur:{Num(BlurPx)}px")"></div>
         }
-        @if (Paint.Dim > 0)
+        @if (Paint.Veil is { } veil)
+        {
+            @* Row by row, as the readability floor veils it behind the root screens. *@
+            <div class="bd-prev__veil" style="@($"background:{veil}")"></div>
+        }
+        else if (Paint.Dim > 0)
         {
             <div class="bd-prev__veil" style="@($"opacity:{Num(Paint.Dim)}")"></div>
         }

@@ -564,10 +564,10 @@ html[data-theme="dark"] .look-tint__bubble {
 
 /* ---------- The sky: mini skies ---------- */
 
-/* As many columns as fit tiles of a text-sized width: four on a phone, three with large text. */
+/* As many columns as fit tiles of a text-sized width, four at most: four on a phone, three with large text. */
 .look-skies {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(max(4rem, 22%), 1fr));
     gap: 14px 8px;
     padding: 12px 8px 10px;
 }

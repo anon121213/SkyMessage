@@ -7,7 +7,8 @@
 }
 
 /* By day and at night, side by side; they stay in view at the top of the sheet while the controls scroll under them
-   (a band of the dialog's own glass, edge to edge: the dialog body pads 8px 24px 22px). */
+   (a band in the dialog's own color, edge to edge: the editor opens in an opaque dialog, sm-dialog--solid, whose body
+   pads 8px 24px 22px — sticky insets count from inside that padding). */
 .bd-edit__previews {
     position: sticky;
     top: -8px;
@@ -17,22 +18,13 @@
     gap: 12px;
     margin: -8px -24px 0;
     padding: 8px 24px 10px;
-    background: var(--sm-glass-strong);
-    -webkit-backdrop-filter: var(--sm-blur);
-    backdrop-filter: var(--sm-blur);
-}
-
-html[data-fx="lite"] .bd-edit__previews,
-html[data-fx="lite"] .bd-edit__actions {
     background: var(--sm-glass-solid);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
 }
 
 /* Little room (large text on a phone, a short screen): smaller mocks, so the controls keep most of the sheet, and the
    segmented choices take two lines rather than cut their names. */
 @container (max-width: 18em) {
-    .bd-edit__previews {
+    .bd-edit__previews ::deep .bd-prev {
         zoom: 0.76;
     }
 
@@ -42,15 +34,31 @@ html[data-fx="lite"] .bd-edit__actions {
         padding: 6px 4px;
         line-height: 1.15;
         text-align: center;
+    }
+
+    .bd-edit ::deep .sm-segmented__item .sm-truncate {
+        overflow: visible;
+        text-overflow: clip;
         white-space: normal;
         overflow-wrap: normal;
         -webkit-hyphens: auto;
         hyphens: auto;
     }
+
+    /* Cancel and Save side by side, sharing the row, rather than one above the other. */
+    .bd-edit__actions ::deep .sm-dialog-actions {
+        flex-wrap: nowrap;
+    }
+
+    .bd-edit__actions ::deep .sm-dialog-actions .sm-btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0 0.75rem;
+    }
 }
 
 @media (max-height: 700px) {
-    .bd-edit__previews {
+    .bd-edit__previews ::deep .bd-prev {
         zoom: 0.8;
     }
 }
@@ -78,16 +86,15 @@ html[data-fx="lite"] .bd-edit__actions {
     color: var(--sm-text);
 }
 
-/* Cancel and Save stay at the bottom of the sheet, on the same glass as the previews. */
+/* Cancel and Save stay at the bottom of the sheet, on a band like the previews' one. */
 .bd-edit__actions {
     position: sticky;
-    bottom: 0;
+    bottom: -22px;
     z-index: 3;
     margin: 0 -24px -22px;
     padding: 10px 24px 22px;
-    background: var(--sm-glass-strong);
-    -webkit-backdrop-filter: var(--sm-blur);
-    backdrop-filter: var(--sm-blur);
+    background: var(--sm-glass-solid);
+    box-shadow: 0 -1px 0 var(--sm-divider);
 }
 
 .bd-edit__actions ::deep .sm-dialog-actions {

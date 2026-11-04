@@ -70,17 +70,23 @@ public sealed class BackdropPainter : IDisposable
     }
 
     /// <summary>
-    /// A still picture of a background with the veil a photo gets behind the root screens in that theme: the larger of
-    /// its own dim and the readability floor measured on the picture (its own dim until the picture is there). The cells
-    /// are measured on the sharp picture whatever its blur: <paramref name="blur"/> only says which copy to load (the one
-    /// the caller shows; the photo's own blur by default).
+    /// A still picture of a background with the veil a photo gets behind the root screens in that theme: row by row the
+    /// larger of its own dim and the readability floor measured on the picture (its own dim until the picture is there).
+    /// The cells are measured on the sharp picture whatever its blur: <paramref name="blur"/> only says which copy to load
+    /// (the one the caller shows; the photo's own blur by default).
     /// </summary>
-    public BackdropPaint OnScreen(BackdropPaint paint, bool dark, int? blur = null) =>
-        paint.Photo is { } photo && ScreenFloor(photo, dark, blur ?? paint.Blur) is { } floor && floor > paint.Dim ? paint with { Dim = floor } : paint;
+    public BackdropPaint OnScreen(BackdropPaint paint, bool dark, int? blur = null)
+    {
+        if (paint.Photo is not { } photo || ScreenRows(photo, dark, blur ?? paint.Blur) is not { Count: > 0 } rows || rows.Max() <= paint.Dim) return paint;
+        return paint with { Dim = rows.Max(), Veil = ThemeCatalog.ScreenVeilCss(rows, paint.Dim, dark) };
+    }
 
-    /// <summary>The readability floor a photo needs behind the root screens in a theme (0..0.9), or null until its picture is there.</summary>
+    /// <summary>The readability floor a photo needs behind the root screens in a theme at its strongest row (0..0.9), or null until its picture is there.</summary>
     public double? ScreenFloor(BackdropPhoto photo, bool dark, int blur) =>
-        Image(photo, blur)?.Cells is { Count: > 0 } cells ? ThemeCatalog.ScreenVeil(cells.Select(ThemeCatalog.Color.Parse), dark) : null;
+        ScreenRows(photo, dark, blur) is { Count: > 0 } rows ? rows.Max() : null;
+
+    private IReadOnlyList<double>? ScreenRows(BackdropPhoto photo, bool dark, int blur) =>
+        Image(photo, blur)?.Cells is { Count: > 0 } cells ? ThemeCatalog.ScreenVeilRows(cells.Select(ThemeCatalog.Color.Parse).ToList(), dark) : null;
 
     /// <summary>
     /// The picture's URL as the backgrounds show it (blur 0..100 baked in), or null while it loads or when it cannot be

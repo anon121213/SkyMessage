@@ -85,9 +85,11 @@ public sealed record PaletteColor(string Hex, string NameKey);
 
 /// <summary>
 /// A still picture of a background for previews and tiles: <see cref="Css"/> over <see cref="Base"/>, star dots
-/// (0..1), and for a photo the picture with its blur (0..100) and veil (0..1).
+/// (0..1), and for a photo the picture with its blur (0..100) and veil (0..1). <see cref="Veil"/>: the veil as a CSS
+/// image instead (row by row, as the readability floor needs it behind the root screens; <see cref="Dim"/> is then its
+/// strongest row).
 /// </summary>
-public sealed record BackdropPaint(string Css, string Base, double Stars, BackdropPhoto? Photo = null, int Blur = 0, double Dim = 0);
+public sealed record BackdropPaint(string Css, string Base, double Stars, BackdropPhoto? Photo = null, int Blur = 0, double Dim = 0, string? Veil = null);
 
 /// <summary>The few tokens a mock screen needs to look like one theme while the page shows the other (editor previews).</summary>
 public sealed record PreviewPalette(string Text, string Text2, string Glass, string Card, string Veil, string Accent, BubblePaint Outgoing, BubblePaint Incoming);
@@ -517,6 +519,37 @@ public sealed class ThemeCatalog
         return MaxScreenVeil;
     }
 
+    /// <summary>Rows of cells a picture is measured in (boot.js draws it down to <see cref="PictureRows"/>×8 cells).</summary>
+    public const int PictureRows = 8;
+
+    /// <summary>
+    /// A picture's readability floor row by row: the least veil each band of the screen needs (its 8 cells, read left to
+    /// right and top to bottom as boot.js lists them), so a light sky over dark hills keeps its sky. Empty when the
+    /// cells are not a full 8×8 grid.
+    /// </summary>
+    public static IReadOnlyList<double> ScreenVeilRows(IReadOnlyList<Color> cells, bool dark)
+    {
+        if (cells.Count != PictureRows * 8) return [];
+        return Enumerable.Range(0, PictureRows).Select(row => ScreenVeil(cells.Skip(row * 8).Take(8), dark)).ToList();
+    }
+
+    /// <summary>
+    /// The veil over a picture as one top-to-bottom gradient of the theme's background: at least <paramref name="dim"/>,
+    /// and at each row's edges at least what the rows on both sides need, so no part of a row gets less than its floor
+    /// (boot.js builds the same for the page, --sm-sky-veil).
+    /// </summary>
+    public static string ScreenVeilCss(IReadOnlyList<double> rows, double dim, bool dark)
+    {
+        var veil = Color.Parse(dark ? DarkBg : LightBg);
+        var stops = Enumerable.Range(0, rows.Count + 1).Select(edge =>
+        {
+            var need = Math.Max(edge > 0 ? rows[edge - 1] : 0, edge < rows.Count ? rows[edge] : 0);
+            var at = rows.Count == 0 ? 0 : edge * 100.0 / rows.Count;
+            return $"{veil.Rgba(Math.Max(dim, need))} {Num(at)}%";
+        });
+        return $"linear-gradient(to bottom, {string.Join(", ", stops)})";
+    }
+
     /// <summary>Every ink of <see cref="ScreenFloorOf"/> keeps its contrast on every one of <paramref name="backgrounds"/>.</summary>
     public static bool ReadsOnScreen(IEnumerable<Color> backgrounds, bool dark)
     {
@@ -822,6 +855,8 @@ public sealed class ThemeCatalog
             yield return ("--sm-chat-clouds", "0");
         }
         yield return ("--sm-chat-dim", Num(paint.Dim));
+        // A plain veil of their own: the app's picture's row-by-row veil (--sm-sky-veil) is not theirs.
+        yield return ("--sm-chat-veil", dark ? DarkBg : LightBg);
         yield return ("--sm-chat-photo", "none");
     }
 

@@ -35,8 +35,9 @@
   // The result stays an object URL for the session, with the picture's average color (its tone: the chat screen's edges
   // fade into it) and the colors of its 8×8 cells, measured on the sharp picture; the page shows them through
   // --sm-sky-photo / --sm-chat-photo and --sm-sky-tone / --sm-chat-tone. The app's picture carries a readability floor
-  // ("floor": the theme's background color and the text that sits on the picture): the least veil under which that text
-  // reads on every cell becomes --sm-sky-dim-min, and the veil shows the larger of it and the user's dim.
+  // ("floor": the theme's background color and the text that sits on the picture): row by row, the least veil under
+  // which that text reads on every cell of the row, and the veil becomes a top-to-bottom gradient that is everywhere
+  // the larger of that and the user's dim (--sm-sky-veil; --sm-sky-dim-min is its strongest row).
   var PHOTO_BLUR_PX = 28;
   var photoJobs = {};
   var photoUrls = {};
@@ -166,6 +167,26 @@
     return 0.9;
   }
 
+  // The floor row by row (8 rows of 8 cells, ThemeCatalog.ScreenVeilRows); [] without a full grid.
+  function screenVeilRows(cells, floor) {
+    if (!cells || cells.length !== 64) return [];
+    var rows = [];
+    for (var r = 0; r < 8; r++) rows.push(screenVeil(cells.slice(r * 8, r * 8 + 8), floor));
+    return rows;
+  }
+
+  // The veil as one gradient of the theme's background (ThemeCatalog.ScreenVeilCss): at each row's edges at least what
+  // the rows on both sides need, and never less than the user's dim (resolved on <html>, per theme).
+  function veilImage(rows) {
+    var stops = [];
+    for (var edge = 0; edge <= rows.length; edge++) {
+      var need = Math.max(edge > 0 ? rows[edge - 1] : 0, edge < rows.length ? rows[edge] : 0);
+      stops.push('color-mix(in srgb, var(--sm-bg) calc(max(var(--sm-sky-dim, 0), ' + need + ') * 100%), transparent) ' +
+        (edge * 100 / rows.length) + '%');
+    }
+    return 'linear-gradient(to bottom, ' + stops.join(', ') + ')';
+  }
+
   // A sharp JPEG is shown as stored (it was downscaled to the screen when picked): only a small copy is decoded, for
   // its tone and cells.
   function sharpPhoto(blob) {
@@ -258,11 +279,18 @@
       var prop = '--sm-' + slot + '-photo';
       var toneProp = '--sm-' + slot + '-tone';
       var floorProp = '--sm-' + slot + '-dim-min';
+      var veilProp = '--sm-' + slot + '-veil';
+      var veilOpacityProp = '--sm-' + slot + '-veil-opacity';
+      var clearFloor = function () {
+        root.style.removeProperty(floorProp);
+        root.style.removeProperty(veilProp);
+        root.style.removeProperty(veilOpacityProp);
+      };
       if (!item || !item.src) {
         photoApplied[slot] = null;
         root.style.removeProperty(prop);
         root.style.removeProperty(toneProp);
-        root.style.removeProperty(floorProp);
+        clearFloor();
         return;
       }
       // Per theme: the same picture may need another floor by day than at night.
@@ -275,9 +303,15 @@
         else root.style.removeProperty(prop);
         if (result && result.tone) root.style.setProperty(toneProp, result.tone);
         else root.style.removeProperty(toneProp);
-        var floor = result && item.floor ? screenVeil(result.cells, item.floor) : 0;
-        if (floor > 0) root.style.setProperty(floorProp, String(floor));
-        else root.style.removeProperty(floorProp);
+        var rows = result && item.floor ? screenVeilRows(result.cells, item.floor) : [];
+        var strongest = rows.length ? Math.max.apply(null, rows) : 0;
+        if (strongest > 0) {
+          root.style.setProperty(floorProp, String(strongest));
+          root.style.setProperty(veilProp, veilImage(rows));
+          root.style.setProperty(veilOpacityProp, '1');
+        } else {
+          clearFloor();
+        }
       });
     });
   }

@@ -49,7 +49,11 @@
         {
             <div class="look-preview__photo" style="@($"background-image:url(\"{chatPhoto}\")")"></div>
         }
-        @if (chatPaint.Dim > 0)
+        @if (chatPaint.Veil is { } chatVeil)
+        {
+            <div class="look-preview__veil" style="@($"background:{chatVeil}")"></div>
+        }
+        else if (chatPaint.Dim > 0)
         {
             <div class="look-preview__veil" style="@($"opacity:{Num(chatPaint.Dim)}")"></div>
         }
@@ -299,7 +303,11 @@
             {
                 <span class="look-sky__photo" style="@($"background-image:url(\"{url}\")")"></span>
             }
-            @if (paint.Dim > 0)
+            @if (paint.Veil is { } veil)
+            {
+                <span class="look-sky__veil" style="@($"background:{veil}")"></span>
+            }
+            else if (paint.Dim > 0)
             {
                 <span class="look-sky__veil" style="@($"opacity:{Num(paint.Dim)}")"></span>
             }
@@ -544,7 +552,7 @@
                 [nameof(BackdropEditor.Target)] = target,
                 [nameof(BackdropEditor.App)] = app?.Clone(),
                 [nameof(BackdropEditor.Initial)] = backdrop?.Clone(),
-            }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as BackdropEditorResult;
+            }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Class = "sm-dialog--solid" }) as BackdropEditorResult;
         }
         finally
         {

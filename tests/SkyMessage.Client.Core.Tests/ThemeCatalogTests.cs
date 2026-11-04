@@ -498,6 +498,30 @@ public sealed partial class ThemeCatalogTests
     }
 
     [Fact]
+    public void A_photo_is_veiled_row_by_row_only_where_its_text_needs_it()
+    {
+        // A pale sky over dark hills, by day: the sky keeps the user's own dim, the hills get the floor.
+        var cells = Enumerable.Range(0, 64).Select(i => i < 40 ? Color.Parse("#E6EEF8") : Color.Parse("#3B4A2E")).ToList();
+        var rows = ThemeCatalog.ScreenVeilRows(cells, dark: false);
+        rows.Count.ShouldBe(ThemeCatalog.PictureRows);
+        rows.Take(5).ShouldAllBe(r => r == 0);
+        rows.Skip(5).ShouldAllBe(r => r > 0.5);
+        ThemeCatalog.ScreenVeilRows(cells.Take(10).ToList(), dark: false).ShouldBeEmpty("only a full 8×8 grid is measured");
+
+        // At every row edge the gradient veils at least what both neighbours need, and never less than the dim.
+        var css = ThemeCatalog.ScreenVeilCss(rows, 0.4, dark: false);
+        var alphas = Regex.Matches(css, @"rgba\(246,243,255,([0-9.]+)\) ([0-9.]+)%").Select(m => double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        alphas.Count.ShouldBe(9);
+        for (var edge = 0; edge <= 8; edge++)
+        {
+            var need = Math.Max(edge > 0 ? rows[edge - 1] : 0, edge < 8 ? rows[edge] : 0);
+            alphas[edge].ShouldBeGreaterThanOrEqualTo(Math.Max(0.4, need) - 0.0005, $"edge {edge}");
+        }
+        alphas[0].ShouldBe(0.4, "the sky only gets the user's dim");
+        css.ShouldStartWith("linear-gradient(to bottom, ");
+    }
+
+    [Fact]
     public void Each_theme_says_which_backgrounds_are_ones_own_and_what_lies_under_the_system_bars()
     {
         var sky = Catalog.BuildState(new AppearanceSettings());
