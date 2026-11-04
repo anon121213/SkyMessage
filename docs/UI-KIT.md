@@ -325,7 +325,8 @@ Custom dialog content component:
 Results complete after the dialog's history entry is gone, so you can navigate right after `await`.
 `Dialog.SetTitle(text)` re-renders the frame's title (multi-step dialogs such as the passcode steps use it).
 `DialogOptions`: `Size` (Small/Medium/Large), `Dismissible`, `ShowClose`, `Presentation` (Dialog/Sheet/Auto),
-`Flush` (no body padding), `Class`.
+`Flush` (no body padding), `Class` (on the frame; `sm-dialog--solid` makes it opaque, so nothing colored behind tints
+the content — the passcode steps use it).
 
 ### `ToastService` (scoped)
 

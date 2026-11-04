@@ -145,7 +145,8 @@ white text only.
   gradient, and a keypad of round translucent glass keys (card color + glass rim, no backdrop blur on twelve keys) with
   Montserrat digits — no letters, no system keyboard; erase and the fingerprint are plain glyph keys. "Forgot the
   passcode?" is a quiet accent link; its sign-out confirmation is a frosted card on the same screen. A live call shows
-  a mint capsule "Back to the call" at the top. Settings flows reuse the keypad in a sheet (phones) or a dialog.
+  a mint capsule "Back to the call" at the top. Settings flows reuse the keypad in a sheet (phones) or a dialog with an
+  opaque frame (`sm-dialog--solid`: the button it opens over must not tint the glass behind the dots).
 - **Calls**: a calm deep night sky with soft low-saturation light, avatar squircle 132px with subtle pulsing rings
   (`sm-ring`), glass control circles 64px, rose gradient hang-up. Calls list rows like chat rows; missed = rose.
 - **Media viewer**: night background, glass top/bottom bars.

@@ -50,7 +50,8 @@
 </SettingsScaffold>
 
 @code {
-    private static readonly DialogOptions StepOptions = new() { Presentation = OverlayPresentation.Auto, Size = DialogSize.Small };
+    /// <summary>An opaque frame: the button it opens over would otherwise tint the glass right behind the dots.</summary>
+    private static readonly DialogOptions StepOptions = new() { Presentation = OverlayPresentation.Auto, Size = DialogSize.Small, Class = "sm-dialog--solid" };
 
     private bool _busy;
 
