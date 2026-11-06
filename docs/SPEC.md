@@ -866,7 +866,8 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   `ProxyController` (androidx.webkit) for HTTP proxies, answer 407 in the wrapped WebViewClient; SOCKS with
   credentials cannot apply to the WebView — warn; WebRTC media never uses a proxy).
 - Native strings via `ILocalizer` with `Localization/*/platform.json`.
-- Replace the template icon/splash/titles with our own («Горизонт» from `docs/brand`: adaptive + themed icon, splash, notification icon).
+- Replace the template icon/splash/titles with our own («Горизонт» from `docs/brand`: Android adaptive + themed icon,
+  splash, notification icon; one full-bleed iOS / Mac Catalyst icon).
 - Web host (`SkyMessage.Web`): `UseHostOrigin`, optional `ServerUrl` in `wwwroot/appsettings.json` for
   standalone dev, platform implementations through `wwwroot/web-platform.js` (IndexedDB cache + outbox
   blobs, IndexedDB databases of their own for the user's sounds and background photos, localStorage for preferences/secure store, hidden file input, canvas image compression,

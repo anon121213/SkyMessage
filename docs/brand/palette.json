@@ -28,14 +28,16 @@
       "name": "Dawn peach",
       "hex": "#FFAE86",
       "onLightVariant": "#D9622F",
-      "role": "The dawn band under the horizon: the brand's one warm note. #FFAE86 on the icon and dark surfaces, #D9622F on light surfaces (graphics ≥ 3:1).",
-      "roleRu": "Полоса рассвета под горизонтом — единственный тёплый цвет бренда. #FFAE86 на иконке и на тёмном, #D9622F на светлом (графика ≥ 3:1).",
+      "role": "The dawn band under the horizon: the brand's one warm note. #FFAE86 on the icon and dark surfaces, #D9622F on light surfaces (3.34:1 on #F6F3FF, about 2.9:1 on the light sky behind the lockups; a logo has no contrast requirement).",
+      "roleRu": "Полоса рассвета под горизонтом — единственный тёплый цвет бренда. #FFAE86 на иконке и на тёмном, #D9622F на светлом (3,34:1 на #F6F3FF, около 2,9:1 на светлом небе за логотипом; у логотипа нет требований к контрасту).",
       "contrast": {
         "on_night": 7.11,
         "on_dusk": 4.42,
         "on_dark_bg_0D0B1E": 10.75,
         "deep_on_light_bg_F6F3FF": 3.34,
-        "deep_on_white": 3.66
+        "deep_on_white": 3.66,
+        "deep_on_light_sky_ECE6FF": 3.02,
+        "deep_on_lockup_sky_E7DEFF": 2.84
       }
     },
     {
