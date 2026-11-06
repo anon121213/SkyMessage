@@ -3,6 +3,7 @@ using Shouldly;
 using SkyMessage.Client.Core.Infrastructure;
 using SkyMessage.Client.Core.Platform;
 using SkyMessage.Client.Core.Services;
+using SkyMessage.Contracts;
 using Xunit;
 
 namespace SkyMessage.Client.Core.Tests;
@@ -121,6 +122,8 @@ internal sealed class FakeLockPlatform : IAppLockPlatform
 
     public void SetHiddenInRecents(bool hidden) => HiddenInRecents = hidden;
 
+    public bool BlocksScreenshotsWhileSet { get; set; }
+
     public Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length)
     {
         KdfCalls++;
@@ -144,14 +147,17 @@ internal sealed class LockHarness
     public ScreenCaptureGuard Capture { get; }
     public IAuthService Auth { get; }
     public AccountLifecycle Accounts { get; }
-    public Guid UserId { get; } = Guid.CreateVersion7();
+    /// <summary>The signed-in account (the same one after a restart or in another tab, unless told otherwise).</summary>
+    public Guid UserId { get; }
     public AppLockService Lock { get; }
     public bool Native { get; }
     public FakeTabs? Tabs { get; }
     public int Changes;
 
-    public LockHarness(InMemorySecureStore? store = null, bool signedIn = true, LockClocks? clocks = null, bool native = false, FakeTabs? tabs = null)
+    public LockHarness(InMemorySecureStore? store = null, bool signedIn = true, LockClocks? clocks = null, bool native = false, FakeTabs? tabs = null,
+        Guid? userId = null)
     {
+        UserId = userId ?? Guid.CreateVersion7();
         Store = store ?? new InMemorySecureStore();
         Clocks = clocks ?? new LockClocks();
         Native = native;
@@ -170,11 +176,11 @@ internal sealed class LockHarness
         Lock.Changed += () => Interlocked.Increment(ref Changes);
     }
 
-    /// <summary>The app process starts over on the same device (same storage, same clocks).</summary>
-    public LockHarness Restart(bool signedIn = true) => new(Store, signedIn, Clocks, Native);
+    /// <summary>The app process starts over on the same device (same storage, same clocks; by default the same account).</summary>
+    public LockHarness Restart(bool signedIn = true, Guid? userId = null) => new(Store, signedIn, Clocks, Native, userId: userId ?? UserId);
 
-    /// <summary>Another tab of the same browser (same storage, clocks and tabs).</summary>
-    public LockHarness OpenTab() => new(Store, signedIn: true, Clocks, native: false, Tabs);
+    /// <summary>Another tab of the same browser (same storage, clocks, tabs and session).</summary>
+    public LockHarness OpenTab() => new(Store, signedIn: true, Clocks, native: false, Tabs, UserId);
 
     public static async Task<LockHarness> WithPasscodeAsync(TimeSpan? boot = null, bool native = false)
     {
@@ -200,10 +206,10 @@ internal sealed class LockHarness
 
     public void Return() => Lifecycle.Set(true);
 
-    /// <summary>The user signs out by choice: the session is still valid for the before-sign-out hooks.</summary>
+    /// <summary>The user signs out by choice: the by-choice hooks run before the session goes.</summary>
     public async Task SignOutByChoiceAsync()
     {
-        await Accounts.BeforeSignOutAsync(UserId);
+        await Accounts.SignOutByChoiceAsync(UserId);
         await SignedOutAsync();
     }
 
@@ -220,6 +226,73 @@ internal sealed class LockHarness
         Auth.State.Returns(AuthState.SignedIn);
         await Accounts.ActivateAsync(UserId);
     }
+}
+
+/// <summary>
+/// The passcode next to a real <see cref="AuthService"/> on one account lifecycle, wired as the app wires them: the sign-ins
+/// and sign-outs the UI and the server start reach the passcode the way they do in the app. <see cref="Restart"/> starts
+/// the app again on the same device.
+/// </summary>
+internal sealed class AuthedDevice
+{
+    public LockClocks Clocks { get; }
+    public InMemorySecureStore Store { get; }
+    public IAuthChannel Channel { get; } = Substitute.For<IAuthChannel>();
+    public FakeLockPlatform Platform { get; }
+    public AccountLifecycle Accounts { get; }
+    public AuthService Auth { get; }
+    public AppLockService Lock { get; }
+
+    public AuthedDevice(InMemorySecureStore? store = null, LockClocks? clocks = null)
+    {
+        Store = store ?? new InMemorySecureStore();
+        Clocks = clocks ?? new LockClocks();
+        Platform = new FakeLockPlatform(Clocks);
+        var info = Substitute.For<IPlatformInfo>();
+        info.IsNativeApp.Returns(true);
+        info.DeviceName.Returns("Test phone");
+        (_, Accounts) = Fakes.Account();
+        Auth = new AuthService(new AuthSessionStore(Store, Log.For<AuthSessionStore>()), Channel, new SharedLock(), info, Accounts, Clocks,
+            Log.For<AuthService>());
+        var capture = new ScreenCaptureGuard(Substitute.For<IScreenSecurityService>(), Log.For<ScreenCaptureGuard>());
+        Lock = new AppLockService(Store, Store, new FakeLifecycle(), Platform, capture, Auth, info, Accounts, Clocks, Log.For<AppLockService>())
+        {
+            FixedIterations = 1_000,
+        };
+    }
+
+    /// <summary>The app process starts over on this device (same storage and clocks).</summary>
+    public AuthedDevice Restart() => new(Store, Clocks);
+
+    /// <summary>The app starts: the session is restored, the passcode read, then the session activated (ClientBootstrapper's order).</summary>
+    public async Task StartAsync()
+    {
+        await Auth.InitializeAsync();
+        await Lock.InitializeAsync();
+        if (Auth.State == AuthState.SignedIn && Auth.UserId is { } userId) await Accounts.ActivateAsync(userId);
+    }
+
+    /// <summary>Signs in with the password as <paramref name="userId"/>.</summary>
+    public async Task SignInAsync(Guid userId)
+    {
+        var now = Clocks.GetUtcNow();
+        Channel.LoginAsync(Arg.Any<LoginRequest>(), Arg.Any<CancellationToken>()).Returns(new AuthResponse
+        {
+            SessionId = Guid.CreateVersion7(),
+            AccessToken = "access-" + userId,
+            AccessTokenExpiresAt = now.AddMinutes(15),
+            RefreshToken = "refresh-" + userId,
+            RefreshTokenExpiresAt = now.AddDays(30),
+            MediaKey = MediaSignature.EncodeKey(MediaSignature.NewKey()),
+            User = new MeDto { Id = userId, DisplayName = "Someone" },
+        });
+        (await Auth.LoginAsync("someone", "password")).Success.ShouldBeTrue();
+    }
+
+    /// <summary>Any of the passcode's records (the hash, its marker, the attempt count) is still on the device.</summary>
+    public bool PasscodeStored =>
+        Store.Values.ContainsKey(AppLockService.ConfigKey) || Store.Values.ContainsKey(AppLockService.MarkerKey)
+        || Store.Values.ContainsKey(AppLockService.AttemptsKey);
 }
 
 internal sealed class FakeLifecycle : IAppLifecycle
@@ -714,7 +787,7 @@ public sealed class AppLockServiceTests
         await FailAsync(h.Lock, 2);
 
         // "Forgot the passcode?": the session is still valid while calls hang up and the server is told.
-        await h.Accounts.BeforeSignOutAsync(h.UserId);
+        await h.Accounts.SignOutByChoiceAsync(h.UserId);
         h.Store.Values.ShouldBeEmpty("removed first, so it is gone even if the app is closed halfway");
         h.Lock.IsEnabled.ShouldBeFalse();
         h.Lock.IsLocked.ShouldBeTrue("the chats stay hidden until the session has gone");
@@ -770,6 +843,131 @@ public sealed class AppLockServiceTests
         await next.SignInAsync();
 
         next.Lock.IsLocked.ShouldBeTrue("a cold start asks for the passcode");
+    }
+
+    /// <summary>When the user's request to sign out runs, relative to the sign-out the server started.</summary>
+    public enum DeletionOrder
+    {
+        /// <summary>The answer to "delete my account" arrives first.</summary>
+        AnswerFirst,
+        /// <summary>The server's SessionRevoked (realtime, sent before the answer) is still signing the app out.</summary>
+        WhileTheServersSignOutRuns,
+        /// <summary>The server's sign-out had finished.</summary>
+        AfterTheServersSignOut,
+    }
+
+    [Theory]
+    [InlineData(DeletionOrder.AnswerFirst)]
+    [InlineData(DeletionOrder.WhileTheServersSignOutRuns)]
+    [InlineData(DeletionOrder.AfterTheServersSignOut)]
+    public async Task Deleting_the_account_removes_the_passcode(DeletionOrder order)
+    {
+        var device = new AuthedDevice();
+        await device.StartAsync();
+        await device.SignInAsync(Guid.CreateVersion7());
+        await device.Lock.EnableAsync(Code);
+        await device.Lock.SetHideNotificationTextAsync(true);
+
+        // DeleteAccountDialog, once the server deleted the account (and with it every session).
+        switch (order)
+        {
+            case DeletionOrder.AnswerFirst:
+                await device.Auth.LogoutAsync(revokeOnServer: false, byChoice: true);
+                break;
+            case DeletionOrder.WhileTheServersSignOutRuns:
+                var revoked = device.Auth.LogoutAsync(revokeOnServer: false);
+                await device.Auth.LogoutAsync(revokeOnServer: false, byChoice: true);
+                await revoked;
+                break;
+            case DeletionOrder.AfterTheServersSignOut:
+                await device.Auth.LogoutAsync(revokeOnServer: false);
+                device.Lock.IsEnabled.ShouldBeTrue("a sign-out the user did not ask for keeps the passcode");
+                await device.Auth.LogoutAsync(revokeOnServer: false, byChoice: true);
+                break;
+        }
+
+        device.Auth.State.ShouldBe(AuthState.SignedOut);
+        device.Lock.IsEnabled.ShouldBeFalse();
+        device.Lock.IsLocked.ShouldBeFalse();
+        device.PasscodeStored.ShouldBeFalse("the hash, its marker and the count go with the account");
+        device.Platform.HiddenInRecents.ShouldBeFalse();
+        await device.Channel.DidNotReceive().LogoutAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // The next account on this phone starts without it, also after a restart.
+        await device.SignInAsync(Guid.CreateVersion7());
+        device.Lock.IsEnabled.ShouldBeFalse();
+        var next = device.Restart();
+        await next.StartAsync();
+        next.Lock.IsEnabled.ShouldBeFalse();
+        next.Lock.IsLocked.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Another_account_signing_in_never_inherits_a_kept_passcode()
+    {
+        var device = new AuthedDevice();
+        await device.StartAsync();
+        var first = Guid.CreateVersion7();
+        await device.SignInAsync(first);
+        await device.Lock.EnableAsync(Code);
+
+        // The session ends without the user asking (it expired, or was ended from another device): the passcode is kept for
+        // that account, and stays kept across a restart on the sign-in screen.
+        await device.Auth.LogoutAsync(revokeOnServer: false);
+        device.Lock.IsEnabled.ShouldBeTrue();
+        var restarted = device.Restart();
+        await restarted.StartAsync();
+        restarted.Lock.IsEnabled.ShouldBeTrue();
+
+        // Another account signs in on this phone: nobody but the first one knows that code.
+        await restarted.SignInAsync(Guid.CreateVersion7());
+        restarted.Lock.IsEnabled.ShouldBeFalse();
+        restarted.Lock.IsLocked.ShouldBeFalse();
+        restarted.PasscodeStored.ShouldBeFalse();
+        restarted.Platform.HiddenInRecents.ShouldBeFalse();
+        restarted.Lock.LockNow();
+        restarted.Lock.IsLocked.ShouldBeFalse("nothing to lock with");
+
+        var cold = restarted.Restart();
+        await cold.StartAsync();
+        cold.Lock.IsLocked.ShouldBeFalse("the next start is not locked behind the other account's code");
+    }
+
+    [Fact]
+    public async Task The_account_that_set_a_kept_passcode_gets_it_back_when_it_signs_in_again()
+    {
+        var device = new AuthedDevice();
+        await device.StartAsync();
+        var me = Guid.CreateVersion7();
+        await device.SignInAsync(me);
+        await device.Lock.EnableAsync(Code);
+        device.Store.Values[AppLockService.ConfigKey].ShouldContain(me.ToString(), Case.Insensitive, "the record names the account that set it");
+
+        await device.Auth.LogoutAsync(revokeOnServer: false);
+        await device.SignInAsync(me);
+
+        device.Lock.IsEnabled.ShouldBeTrue();
+        device.Lock.IsLocked.ShouldBeFalse("the password was just entered");
+        var next = device.Restart();
+        await next.StartAsync();
+        next.Lock.IsLocked.ShouldBeTrue("from now on it asks again");
+        (await next.Lock.UnlockAsync(Code)).IsCorrect.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_session_of_another_account_restored_at_start_drops_the_passcode_it_never_set()
+    {
+        var h = await LockHarness.WithPasscodeAsync();
+
+        // The app stopped after another account's sign-in had stored its session, before the passcode was removed.
+        var next = h.Restart(userId: Guid.CreateVersion7());
+        await next.Lock.InitializeAsync();
+        next.Lock.IsLocked.ShouldBeTrue("a cold start asks first: the passcode is read before the session is looked at");
+        await next.Accounts.ActivateAsync(next.UserId);
+
+        next.Lock.IsEnabled.ShouldBeFalse();
+        next.Lock.IsLocked.ShouldBeFalse();
+        next.Store.Values.ShouldBeEmpty();
     }
 
     [Fact]

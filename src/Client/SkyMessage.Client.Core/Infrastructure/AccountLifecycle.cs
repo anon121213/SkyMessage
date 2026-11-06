@@ -17,13 +17,16 @@ internal interface IAccountScoped
 /// Sign-in/sign-out fan-out. Activation restores every account-scoped store from the local cache first, then
 /// runs the sign-in hooks (which start network work in the background). Sign-out runs the hooks first
 /// (realtime, calls, notifications), then every account-scoped store, then wipes the account's cache prefix
-/// and the media file cache, so nothing of the old account survives on the device.
+/// and the media file cache, so nothing of the old account survives on the device. A sign-out the user asked for
+/// first runs the by-choice hooks (what the user set up on this device for the account, such as the app passcode, goes
+/// with it), then — while the server still accepts the session — the before-sign-out hooks.
 /// </summary>
 internal sealed class AccountLifecycle(LocalCache cache, IMediaFileStore mediaFiles, ILogger<AccountLifecycle> logger)
 {
     private readonly object _lock = new();
     private readonly List<IAccountScoped> _scoped = [];
     private readonly List<Func<Guid, Task>> _signInHooks = [];
+    private readonly List<Func<Guid, Task>> _byChoiceHooks = [];
     private readonly List<Func<Guid, Task>> _beforeSignOutHooks = [];
     private readonly List<Func<Guid, Task>> _signOutHooks = [];
     private CancellationTokenSource _account = CreateCancelled();
@@ -67,7 +70,17 @@ internal sealed class AccountLifecycle(LocalCache cache, IMediaFileStore mediaFi
         lock (_lock) _signInHooks.Add(hook);
     }
 
-    /// <summary>Runs while the session is still valid (only when the user signs out voluntarily).</summary>
+    /// <summary>
+    /// Runs first when the user signs out of this device on purpose — "Sign out", "Forgot the passcode?", switching to
+    /// another server, deleting the account — also when the server has already ended the session (the deleted account);
+    /// never for a sign-out the user did not ask for (the session expired or was ended from another device).
+    /// </summary>
+    public void OnSignOutByChoice(Func<Guid, Task> hook)
+    {
+        lock (_lock) _byChoiceHooks.Add(hook);
+    }
+
+    /// <summary>Runs while the session is still valid, before the server is told (the user signs out voluntarily).</summary>
     public void OnBeforeSignOut(Func<Guid, Task> hook)
     {
         lock (_lock) _beforeSignOutHooks.Add(hook);
@@ -107,6 +120,14 @@ internal sealed class AccountLifecycle(LocalCache cache, IMediaFileStore mediaFi
             if (ActiveUserId != userId) return;
             await RunIsolatedAsync(() => hook(userId), "sign-in hook").ConfigureAwait(false);
         }
+    }
+
+    public async Task SignOutByChoiceAsync(Guid userId)
+    {
+        Func<Guid, Task>[] hooks;
+        lock (_lock) hooks = [.. _byChoiceHooks];
+        foreach (var hook in hooks)
+            await RunIsolatedAsync(() => hook(userId), "sign-out-by-choice hook").ConfigureAwait(false);
     }
 
     public async Task BeforeSignOutAsync(Guid userId)

@@ -17,6 +17,11 @@ internal sealed record PasscodeConfig
     public int Length { get; init; } = AppLockRules.ShortLength;
     /// <summary>Null when the stored record could not be read: no passcode matches it, only signing out removes it.</summary>
     public PasscodeHash? Hash { get; init; }
+    /// <summary>
+    /// The account that set it: a passcode kept by a sign-out the user did not ask for applies again only when that
+    /// account signs in (null in an unreadable record and in one stored before owners were kept).
+    /// </summary>
+    public Guid? UserId { get; init; }
     public int AutoLockSeconds { get; init; } = (int)AppLockRules.DefaultAutoLock.TotalSeconds;
     public bool UseBiometrics { get; init; }
     public bool HideNotificationText { get; init; }
@@ -116,7 +121,7 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
         lifecycle.ForegroundChanged += OnForegroundChanged;
         platform.Signaled += OnSignaled;
         accounts.Register(this);
-        accounts.OnBeforeSignOut(OnBeforeSignOutAsync);
+        accounts.OnSignOutByChoice(OnSignOutByChoiceAsync);
     }
 
     /// <summary>Rounds for new hashes; null calibrates them on the device (tests use a few to stay fast).</summary>
@@ -338,9 +343,10 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
                 {
                     if (_config is not null) throw new InvalidOperationException("A passcode is already set; change it instead.");
                 }
-                if (_auth.State != AuthState.SignedIn) throw new InvalidOperationException("A passcode needs a signed-in session.");
+                if (_auth.State != AuthState.SignedIn || _auth.UserId is not { } owner)
+                    throw new InvalidOperationException("A passcode needs a signed-in session.");
                 var hash = await HashAsync(passcode).ConfigureAwait(false);
-                var config = new PasscodeConfig { Length = passcode.Length, Hash = hash };
+                var config = new PasscodeConfig { Length = passcode.Length, Hash = hash, UserId = owner };
                 await WriteConfigAsync(config).ConfigureAwait(false);
                 // After the record: a passcode is never "lost" because only its marker was written.
                 await SetMarkerAsync(true).ConfigureAwait(false);
@@ -374,7 +380,8 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
             lock (_gate) current = _config;
             if (current is null) return;
             var hash = await HashAsync(newPasscode).ConfigureAwait(false);
-            var next = current with { Length = newPasscode.Length, Hash = hash };
+            // The account that proved the current code owns the new one (a record stored before owners were kept gets one).
+            var next = current with { Length = newPasscode.Length, Hash = hash, UserId = _auth.UserId ?? current.UserId };
             await WriteConfigAsync(next).ConfigureAwait(false);
             lock (_gate) _config = next;
         }).ConfigureAwait(false);
@@ -438,35 +445,53 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
     /// <summary>
     /// A sign-in in this run (after a sign-out, or a start without a session): the password was just entered, so the
     /// app opens and the wrong-attempt count starts over; a passcode kept by a sign-out the user did not ask for applies
-    /// again from here on. The session restored at start is not one of them: that cold start asks for the passcode.
+    /// again from here on — when this is the account that set it. Any other account (or a record that names none) never
+    /// inherits it: nobody else knows that code, so it is removed. The session restored at start is not a fresh sign-in:
+    /// that cold start asks for the passcode, unless the record names another account (a sign-in that ended before its
+    /// passcode was removed).
     /// </summary>
     async Task IAccountScoped.OnSignedInAsync(Guid userId)
     {
-        var changed = await _queue.RunAsync(async () =>
+        var (changed, passcodeChanged) = await _queue.RunAsync(async () =>
         {
+            // Browsers: the tab that signed in may not have heard of a passcode another tab set or removed meanwhile.
+            var synced = _shared && await SyncFromStoreCoreAsync(lockIfNew: false).ConfigureAwait(false) is not null;
             bool fresh;
+            bool foreign;
             bool unlocked;
             lock (_gate)
             {
                 fresh = _signedOutSeen;
                 _signedOutSeen = false;
-                unlocked = fresh && _locked;
-                if (fresh)
+                foreign = _config is { } config && (fresh ? config.UserId != userId : config.UserId is { } owner && owner != userId);
+                unlocked = (fresh || foreign) && _locked;
+                if (foreign) ClearCore();
+                else if (fresh)
                 {
                     _attempts = PasscodeAttempts.None;
                     UnlockCore();
                 }
             }
-            if (fresh) await DeleteAttemptsAsync().ConfigureAwait(false);
-            return unlocked;
+            if (foreign)
+            {
+                _logger.LogInformation("The passcode on this device was set by another account; it is removed");
+                await RemoveStoredAsync().ConfigureAwait(false);
+            }
+            else if (fresh)
+            {
+                await DeleteAttemptsAsync().ConfigureAwait(false);
+            }
+            return (unlocked || foreign || synced, foreign || synced);
         }).ConfigureAwait(false);
+        if (passcodeChanged) _platform.SetHiddenInRecents(IsEnabled);
         if (changed) RaiseChanged();
     }
 
     /// <summary>
     /// Any sign-out: nothing is left to open, so the app is unlocked. A passcode still set at this point was kept on
     /// purpose — the user did not ask for this sign-out (the session expired or was ended elsewhere) — and applies after
-    /// the next sign-in. Signing out by choice removed it before the session went (<see cref="OnBeforeSignOutAsync"/>).
+    /// the next sign-in of the account that set it. Signing out by choice removed it before the session went
+    /// (<see cref="OnSignOutByChoiceAsync"/>).
     /// </summary>
     async Task IAccountScoped.OnSignedOutAsync(Guid userId)
     {
@@ -487,18 +512,21 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
     }
 
     /// <summary>
-    /// The user signs out of this device ("Sign out", "Forgot the passcode?", another server): the passcode goes with the
-    /// session. It is removed first, so it is gone even when the app is closed halfway, and the app stays locked until the
-    /// session has gone too (signing out takes a moment: calls hang up, the server is told).
+    /// The user signs out of this device ("Sign out", "Forgot the passcode?", another server, deleting the account): the
+    /// passcode goes with the session. It is removed first, so it is gone even when the app is closed halfway, and the app
+    /// stays locked until the session has gone too (signing out takes a moment: calls hang up, the server is told). After
+    /// the account was deleted it may come once the session has already gone (the server's sign-out arrived first).
     /// </summary>
-    private async Task OnBeforeSignOutAsync(Guid userId)
+    private async Task OnSignOutByChoiceAsync(Guid userId)
     {
         var had = false;
+        var open = false;
         await _queue.RunAsync(async () =>
         {
             lock (_gate)
             {
                 had = _config is not null;
+                open = !_locked;
                 _config = null;
                 _attempts = PasscodeAttempts.None;
                 _away = null;
@@ -506,7 +534,10 @@ internal sealed class AppLockService : IAppLockService, IAccountScoped, IDisposa
             }
             if (had) await RemoveStoredAsync().ConfigureAwait(false);
         }).ConfigureAwait(false);
-        if (had) RaiseChanged();
+        if (!had) return;
+        // Locked, the content stays out of the recents picture until the session has gone (OnSignedOutAsync).
+        if (open) _platform.SetHiddenInRecents(false);
+        RaiseChanged();
     }
 
     /// <summary>

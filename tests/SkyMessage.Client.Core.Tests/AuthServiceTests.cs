@@ -155,6 +155,59 @@ public sealed class AuthServiceTests
         instance.Lifecycle.ActiveUserId.ShouldBeNull();
     }
 
+    /// <summary>A signed-in instance whose sign-out steps are written down in order.</summary>
+    private static async Task<(Instance Instance, IAuthChannel Channel, List<string> Steps)> SignedInWithStepsAsync()
+    {
+        var channel = Substitute.For<IAuthChannel>();
+        var instance = new Instance(new InMemorySecureStore(), channel, new SharedLock(), new ManualClock(Now));
+        var session = Session("access-1", "refresh-1", TimeSpan.FromMinutes(10));
+        await instance.Sessions.SaveAsync(session);
+        await instance.Auth.InitializeAsync();
+        await instance.Lifecycle.ActivateAsync(session.UserId);
+        var steps = new List<string>();
+        void Step(string name, Guid userId)
+        {
+            lock (steps) steps.Add(userId == session.UserId ? name : name + " (another account)");
+        }
+        instance.Lifecycle.OnSignOutByChoice(id => { Step("by choice", id); return Task.CompletedTask; });
+        instance.Lifecycle.OnBeforeSignOut(id => { Step("before", id); return Task.CompletedTask; });
+        instance.Lifecycle.OnSignOut(id => { Step("signed out", id); return Task.CompletedTask; });
+        return (instance, channel, steps);
+    }
+
+    [Theory]
+    [InlineData(true, false, new[] { "by choice", "before", "signed out" }, true)] // "Sign out": the session still works
+    [InlineData(false, false, new[] { "signed out" }, false)] // the server ended it: revoked elsewhere, expired
+    [InlineData(false, true, new[] { "by choice", "signed out" }, false)] // the account was deleted: ended at the user's request
+    public async Task Only_a_sign_out_the_user_asked_for_runs_the_by_choice_hooks(bool revokeOnServer, bool byChoice, string[] expected,
+        bool serverTold)
+    {
+        var (instance, channel, steps) = await SignedInWithStepsAsync();
+
+        await instance.Auth.LogoutAsync(revokeOnServer, byChoice);
+
+        steps.ShouldBe(expected);
+        instance.Auth.State.ShouldBe(AuthState.SignedOut);
+        await channel.Received(serverTold ? 1 : 0).LogoutAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Deleting_the_account_signs_out_by_choice_also_when_the_servers_sign_out_came_first()
+    {
+        // The server ends a deleted account's sessions and says so over realtime before it answers "delete my account".
+        var (running, _, steps) = await SignedInWithStepsAsync();
+        var revoked = running.Auth.LogoutAsync(revokeOnServer: false);
+        var deleted = running.Auth.LogoutAsync(revokeOnServer: false, byChoice: true);
+        await Task.WhenAll(revoked, deleted);
+        steps.ShouldBe(["signed out", "by choice"], "once that sign-out is done, the user's choice applies to the same account");
+
+        var (finished, _, later) = await SignedInWithStepsAsync();
+        await finished.Auth.LogoutAsync(revokeOnServer: false);
+        await finished.Auth.LogoutAsync(revokeOnServer: false, byChoice: true);
+        await finished.Auth.LogoutAsync(revokeOnServer: false, byChoice: true);
+        later.ShouldBe(["signed out", "by choice"], "it runs once");
+    }
+
     [Fact]
     public async Task Network_errors_keep_the_session_while_the_token_is_still_valid()
     {
