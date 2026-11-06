@@ -9,8 +9,11 @@ Needs Pillow and a local Chrome or Chromium (CHROME_PATH, else the macOS install
 PNG is the SVG rastered by headless Chrome at its final size, transparent background, nothing redrawn. Writes:
 
   web (src/Client/SkyMessage.Web/wwwroot/icons)
-    favicon.svg            = docs/brand/icon.svg (the launcher view: 72 of the 108 dp canvas on the squircle tile)
-    favicon-32.png         docs/brand/favicon-32.svg, the tile hinted for 32 px (straight edges on whole pixels)
+    favicon.svg            = docs/brand/favicon-32.svg, the tile hinted for 32 px (straight edges on whole pixels): the
+                           browser tab icon, crisp at 32 device px (the exact drawing blurs the 1m cut at that size)
+    favicon-32.png         favicon-32.svg rastered at 32 px (browsers without SVG favicons)
+    icon.svg               = docs/brand/icon.svg (the launcher view: 72 of the 108 dp canvas on the squircle tile), the
+                           manifest's scalable icon (sizes "any"): exact geometry for large renders
     icon-192/512.png       icon.svg (purpose "any": the squircle tile, transparent corners)
     maskable-192/512.png   bg + fg, the same 72 dp view full bleed (purpose "maskable"; the mark is inside the 80 % circle)
     apple-touch-icon.png   the full-bleed view at 180 px, opaque (iOS draws its own corners)
@@ -21,6 +24,9 @@ PNG is the SVG rastered by headless Chrome at its final size, transparent backgr
     Platforms/Android/Resources/drawable/ic_stat_skymessage.xml   notif.svg as a VectorDrawable (notification small icon)
     Platforms/Android/Resources/mipmap-*/appicon.png, appicon_round.png   legacy launcher icons (48 dp: 48..192 px), the
                            launcher view on the squircle tile / in a circle; they replace MAUI's full-canvas squares
+  iOS / Mac Catalyst (src/Client/SkyMessage.App)
+    Resources/AppIcon/Apple/appicon.svg   the full-bleed view as one opaque layer (= apple-touch-icon.png's drawing):
+                           the mark at 58 % of the icon, as approved; the system draws the corners
   docs/brand/play-store-512.png   the full-bleed view at 512 px, opaque (store listing)
   src/Client/SkyMessage.Client.UI/wwwroot/img/logo.svg, logo-mark.svg   static copies for anything outside the app (the
                            tile = icon.svg; the mark in mark-light.svg colours, mark-dark.svg's when the viewer prefers dark)
@@ -117,14 +123,23 @@ NOTIF_COMMENT = """<!-- SkyMessage notification icon «Горизонт» (docs/
      silhouette, redrawn on the 24dp grid (live area 2..22, every straight edge on a whole unit, gap 17..19). The
      system tints it; NotificationChannels.AccentColor colours it in the shade. -->"""
 SPLASH_COMMENT = """<!-- SkyMessage splash mark: the launcher foreground (docs/brand/fg.svg, same geometry) on the brand ground #2A1F86
-     (MauiSplashScreen Color). BaseSize 288 dp = the Android 12+ splash icon area; the mark's farthest point is 72 dp
-     from the centre, inside the 96 dp circle the system shows, so the mask never clips it. -->"""
+     (MauiSplashScreen Color). Android 8-11 draw it at BaseSize, 288 dp: the mark is about 112 dp wide. On Android 12+
+     MAUI's drawable-v31/maui_splash_image fixes the image at 108 dp and the system scales it to its 192 dp icon circle,
+     whatever the BaseSize: the whole 456-unit canvas spans 192 dp, the mark is about 75 dp wide and its farthest point
+     (the dawn's corner) about 48 dp from the centre, well inside the 96 dp radius: the mask never clips it. -->"""
+APPLE_COMMENT = """<!-- SkyMessage app icon for iOS and Mac Catalyst «Горизонт»: the launcher view (units 76..380 of the
+     108 dp canvas, docs/brand/bg.svg + fg.svg) full bleed, one opaque layer: the same drawing as the web
+     apple-touch-icon.png, the mark at 58 % of the icon. The system draws the corners. -->"""
 
 
 def splash_svg():
     pieces = "".join(f'  <path fill="{fill}" d="{d}"/>\n' for fill, d in paths_of(os.path.join(BRAND, "fg.svg")))
     return ('<?xml version="1.0" encoding="UTF-8"?>\n' + SPLASH_COMMENT + "\n"
             '<svg xmlns="http://www.w3.org/2000/svg" width="456" height="456" viewBox="0 0 456 456">\n' + pieces + "</svg>\n")
+
+
+def apple_icon_svg():
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + APPLE_COMMENT + "\n" + view_svg("full")
 
 
 def mark_svg():
@@ -161,7 +176,8 @@ def build(out):
             f.write(view_svg("circle"))
         icon = os.path.join(BRAND, "icon.svg")
 
-        copy("icon.svg", f"{WEB}/favicon.svg")
+        copy("favicon-32.svg", f"{WEB}/favicon.svg")
+        copy("icon.svg", f"{WEB}/icon.svg")
         raster(os.path.join(BRAND, "favicon-32.svg"), 32, os.path.join(out, WEB, "favicon-32.png"), work)
         for size in (192, 512):
             raster(icon, size, os.path.join(out, WEB, f"icon-{size}.png"), work)
@@ -172,6 +188,7 @@ def build(out):
 
         copy("bg.svg", f"{APP}/Resources/AppIcon/appicon.svg")
         copy("fg.svg", f"{APP}/Resources/AppIcon/appiconfg.svg")
+        put(f"{APP}/Resources/AppIcon/Apple/appicon.svg", apple_icon_svg())
         put(f"{APP}/Resources/Splash/splash.svg", splash_svg())
         put(f"{DROID}/drawable/appicon_monochrome.xml",
             vector_drawable(os.path.join(BRAND, "mono.svg"), 108, 456, MONO_COMMENT, "#FF000000"))

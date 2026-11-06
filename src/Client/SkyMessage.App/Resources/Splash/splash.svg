@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SkyMessage splash mark: the launcher foreground (docs/brand/fg.svg, same geometry) on the brand ground #2A1F86
-     (MauiSplashScreen Color). BaseSize 288 dp = the Android 12+ splash icon area; the mark's farthest point is 72 dp
-     from the centre, inside the 96 dp circle the system shows, so the mask never clips it. -->
+     (MauiSplashScreen Color). Android 8-11 draw it at BaseSize, 288 dp: the mark is about 112 dp wide. On Android 12+
+     MAUI's drawable-v31/maui_splash_image fixes the image at 108 dp and the system scales it to its 192 dp icon circle,
+     whatever the BaseSize: the whole 456-unit canvas spans 192 dp, the mark is about 75 dp wide and its farthest point
+     (the dawn's corner) about 48 dp from the centre, well inside the 96 dp radius: the mask never clips it. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="456" height="456" viewBox="0 0 456 456">
   <path fill="#FFFFFF" d="M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z"/>
   <path fill="#FFAE86" d="M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z"/>
