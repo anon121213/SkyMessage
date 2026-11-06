@@ -12,7 +12,8 @@
    - Animated: the horizon opens once when the logo appears. The bubble shows whole first (two seam strips, clipped to
      its silhouette, fill the cut with sky and dawn), then the strips slide apart into the two pieces and the cut
      opens (docs/MOTION.md, "The logo"). At rest the strips lie outside their clip, so the finished logo is exactly the
-     static one. Without Animated there are no strips. *@
+     static one. Without Animated there are no strips. Only where the logo is introduced (the signed-out intro, About):
+     never on the boot splash, which is often gone before the cut could open. *@
 <svg class="sm-logo @VariantClass @(Animated ? "sm-logo--animated" : null) @Class" style="@Style" viewBox="@ViewBox" role="img" aria-label="SkyMessage">
     @if (IsTile)
     {
@@ -60,7 +61,10 @@
     [Parameter] public bool Mark { get; set; }
     /// <summary>The lockup: the mark and "SkyMessage" on the horizon (wins over <see cref="Mark"/>).</summary>
     [Parameter] public bool Wordmark { get; set; }
-    /// <summary>The horizon opens once when the logo appears (no loop; off with reduced motion and in lite mode).</summary>
+    /// <summary>
+    /// The horizon opens once when the logo appears (no loop; off with reduced motion and in lite mode). Only where the
+    /// logo is introduced (docs/MOTION.md, "The logo"): never on short-lived or often-repeated screens.
+    /// </summary>
     [Parameter] public bool Animated { get; set; }
     [Parameter] public string? Class { get; set; }
 
