@@ -8,15 +8,15 @@ namespace SkyMessage.App.Droid;
 /// FLAG_SECURE on the activity window while a protected chat is open or the app passcode locks the app: screenshots and
 /// screen recordings come out black, casting shows nothing and the recents preview is blank. The flag can change on a
 /// visible window (no restart) on every supported API level (26+); it needs no permission. The last requested state is
-/// kept so a recreated activity (MainActivity.OnCreate) gets it back. Before Android 13, while an app passcode is set, the
-/// window is also secure whenever the activity is paused (<see cref="SetSecureWhilePaused"/>, driven by MainActivity):
-/// the system takes the recents picture right after the pause, and those versions cannot skip it otherwise.
+/// kept so a recreated activity (MainActivity.OnCreate) gets it back. Before Android 13 the window also stays secure for
+/// as long as an app passcode is set (<see cref="SetSecureWhilePasscodeSet"/>): those versions take the recents picture
+/// before the app can react — on the way out, and with gesture navigation even while the app is still resumed — and a
+/// window that is secure all along is the only one they leave out of it.
 /// </summary>
 public sealed class AndroidScreenSecurityService(ILogger<AndroidScreenSecurityService> logger) : IScreenSecurityService
 {
     private volatile bool _secure;
-    private volatile bool _secureWhilePaused;
-    private volatile bool _paused;
+    private volatile bool _passcodeSet;
 
     public bool IsSupported => true;
 
@@ -27,17 +27,10 @@ public sealed class AndroidScreenSecurityService(ILogger<AndroidScreenSecuritySe
     }
 
     /// <summary>Android 12 and older with a passcode set: keep the content out of the recents picture.</summary>
-    internal void SetSecureWhilePaused(bool secure)
+    internal void SetSecureWhilePasscodeSet(bool secure)
     {
-        _secureWhilePaused = secure;
+        _passcodeSet = secure;
         MainThread.BeginInvokeOnMainThread(() => Apply(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity));
-    }
-
-    /// <summary>UI thread: MainActivity's OnPause / OnResume. Applied at once (the picture is taken right after the pause).</summary>
-    internal void SetPaused(Android.App.Activity activity, bool paused)
-    {
-        _paused = paused;
-        Apply(activity);
     }
 
     /// <summary>UI thread. Also called by MainActivity on create.</summary>
@@ -48,7 +41,7 @@ public sealed class AndroidScreenSecurityService(ILogger<AndroidScreenSecuritySe
         try
         {
             // Read at apply time: of two quick changes posted in a row both apply the latest state.
-            if (_secure || (_paused && _secureWhilePaused)) window.SetFlags(WindowManagerFlags.Secure, WindowManagerFlags.Secure);
+            if (_secure || _passcodeSet) window.SetFlags(WindowManagerFlags.Secure, WindowManagerFlags.Secure);
             else window.ClearFlags(WindowManagerFlags.Secure);
         }
         catch (Exception ex)

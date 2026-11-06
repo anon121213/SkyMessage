@@ -1,7 +1,8 @@
 @* Settings › Privacy › Passcode (a sub-page of privacy): turn the app passcode on (4 or 6 digits, twice), change it,
    choose when the app locks by itself, allow fingerprint/face unlock (Android with one enrolled; hidden in browsers),
-   hide notification text while locked, lock right now, turn it off (the current code is asked first). The code steps run
-   in PasscodeDialog; the rules live in Core's IAppLockService. *@
+   hide notification text while locked, lock right now, turn it off (the current code is asked first). On phones where
+   keeping the chats out of recent apps blocks screenshots while a passcode is set (Android 8–12), both states say so.
+   The code steps run in PasscodeDialog; the rules live in Core's IAppLockService. *@
 @inherits UiComponentBase
 @inject IAppLockService AppLock
 @inject IAppLockPlatform LockPlatform
@@ -19,11 +20,16 @@
                 </Actions>
             </EmptyState>
             <p class="passcode-note">@L["passcode.intro.forgotNote"]</p>
+            @if (LockPlatform.BlocksScreenshotsWhileSet)
+            {
+                <p class="passcode-note">@L["passcode.screenshotsNote"]</p>
+            }
         </div>
     }
     else
     {
-        <Section Title="@L["passcode.group.locking"]" DividerInset="64px">
+        <Section Title="@L["passcode.group.locking"]" Footer="@(LockPlatform.BlocksScreenshotsWhileSet ? L["passcode.screenshotsNote"] : null)"
+                 DividerInset="64px">
             <ListItem Icon="@IconNames.KeyRound" IconColor="@SettingsTones.Violet" Title="@L["passcode.change"]"
                       Subtitle="@L.Plural("passcode.digits", AppLock.Length)" Chevron="true" OnClick="ChangeAsync" />
             <ListItem Icon="@IconNames.Timer" IconColor="@SettingsTones.Lagoon" Title="@L["passcode.autoLock"]"

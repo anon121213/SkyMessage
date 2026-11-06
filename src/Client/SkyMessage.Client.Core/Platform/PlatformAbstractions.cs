@@ -453,10 +453,10 @@ public enum AppLockSignal
 /// Platform side of the app passcode (<see cref="Services.IAppLockService"/>). Android: fingerprint or face unlock
 /// through the system BiometricPrompt (Android 10+, weak biometrics allowed so face unlock counts), the recent-apps
 /// switcher kept free of the app's content while a passcode is set (Android 13+ without a recents screenshot, older
-/// versions with FLAG_SECURE while the app is in the background) and the boot clock. Browser, iOS, Mac: no
-/// biometrics (the setting is hidden), the rest does nothing. Browsers run one instance of the app per tab, all on the
-/// same storage: <see cref="Announce"/> and <see cref="Signaled"/> keep them one app (BroadcastChannel and storage
-/// events); elsewhere there is one instance and both do nothing. Implementations never throw.
+/// versions with a window that stays FLAG_SECURE meanwhile: <see cref="BlocksScreenshotsWhileSet"/>) and the boot clock.
+/// Browser, iOS, Mac: no biometrics (the setting is hidden), the rest does nothing. Browsers run one instance of the app
+/// per tab, all on the same storage: <see cref="Announce"/> and <see cref="Signaled"/> keep them one app (BroadcastChannel
+/// and storage events); elsewhere there is one instance and both do nothing. Implementations never throw.
 /// </summary>
 public interface IAppLockPlatform
 {
@@ -472,6 +472,12 @@ public interface IAppLockPlatform
     Task<BiometricOutcome> AuthenticateAsync(BiometricPromptText text, CancellationToken cancellationToken = default);
     /// <summary>While true, the recent-apps switcher shows no picture of the app's content.</summary>
     void SetHiddenInRecents(bool hidden);
+    /// <summary>
+    /// Keeping the content out of the recent-apps switcher also blocks screenshots of the app for as long as a passcode
+    /// is set: Android 8–12, where only a window that is secure all along stays out of that picture (it is taken before
+    /// the app could react — with gesture navigation even before the app pauses). The passcode settings say so.
+    /// </summary>
+    bool BlocksScreenshotsWhileSet { get; }
     /// <summary>
     /// PBKDF2-HMAC-SHA256 of the passcode (UTF-8) with the platform's own crypto, where that is much faster than .NET's
     /// (browsers: WebCrypto — .NET runs interpreted there); null to use .NET's. Both give the same bytes.

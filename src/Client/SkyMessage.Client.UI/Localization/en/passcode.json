@@ -7,6 +7,7 @@
   "passcode.intro.title": "A passcode for the app",
   "passcode.intro.text": "SkyMessage will ask for a code when you open it, so nobody but you sees your chats on this device.",
   "passcode.intro.forgotNote": "The passcode works on this device only. If you forget it, you will have to sign out and sign in again with your password.",
+  "passcode.screenshotsNote": "On this device, screenshots of SkyMessage are blocked while the passcode is on: otherwise Android would show your chats in recent apps.",
   "passcode.enable": "Turn on passcode",
   "passcode.enabled": "Passcode is on",
   "passcode.changed": "Passcode changed",

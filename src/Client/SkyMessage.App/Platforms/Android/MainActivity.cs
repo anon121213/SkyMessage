@@ -31,7 +31,7 @@ public class MainActivity : MauiAppCompatActivity
         OnBackPressedDispatcher.AddCallback(this, _backCallback);
         (AppServices.Get<ISystemUiService>() as AndroidSystemUiService)?.Apply(this);
         // A recreated activity has a fresh window: a protected chat still on screen (or the passcode lock) keeps it out of
-        // screenshots, and with a passcode set the recents picture stays blank.
+        // screenshots, and with a passcode set the recents picture stays blank (before Android 13 a secure window too).
         (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.Apply(this);
         (AppServices.Get<IAppLockPlatform>() as AndroidAppLockPlatform)?.Apply(this);
 
@@ -55,18 +55,10 @@ public class MainActivity : MauiAppCompatActivity
         LockIfOverKeyguard();
     }
 
-    protected override void OnPause()
-    {
-        // Android 12 and older with a passcode set: secure while paused, so the recents picture shows no chats.
-        (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.SetPaused(this, true);
-        base.OnPause();
-    }
-
     protected override void OnResume()
     {
         base.OnResume();
         LockIfOverKeyguard();
-        (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.SetPaused(this, false);
         // In the foreground a foreground service may start: revive the background connection if its process died.
         AndroidBackgroundConnectionService.EnsureRunning(ApplicationContext ?? this);
         // A call showing a picture keeps the screen on, also on a window created meanwhile.

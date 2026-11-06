@@ -12,9 +12,12 @@ namespace SkyMessage.App.Droid;
 /// The app passcode on Android. Fingerprint or face unlock through the framework BiometricPrompt (Android 10+, no extra
 /// library), allowing weak biometrics so the face unlock of most phones counts; the prompt has no device-credential
 /// fallback, its button goes back to our keypad. While a passcode is set the recent-apps switcher gets no picture of the
-/// content: Android 13+ takes no recents screenshot (the app can still be screenshotted while in use), older versions
-/// mark the window FLAG_SECURE while the activity is paused (<see cref="AndroidScreenSecurityService"/>), the moment the
-/// system takes that picture. SystemClock.elapsedRealtime is the boot clock: it counts deep sleep and cannot be set.
+/// content: Android 13+ takes no recents screenshot (the app can still be screenshotted while in use); older versions
+/// have no such switch for apps, and a window made secure only as the app leaves can be too late (with gesture
+/// navigation the picture is taken while the app is still resumed), so there the window stays FLAG_SECURE for as long as
+/// a passcode is set (<see cref="AndroidScreenSecurityService"/>) — no screenshots of the app meanwhile, which the
+/// passcode settings say (<see cref="BlocksScreenshotsWhileSet"/>). SystemClock.elapsedRealtime is the boot clock: it
+/// counts deep sleep and cannot be set.
 /// </summary>
 public sealed class AndroidAppLockPlatform(AndroidScreenSecurityService screen, ILogger<AndroidAppLockPlatform> logger) : IAppLockPlatform
 {
@@ -100,10 +103,12 @@ public sealed class AndroidAppLockPlatform(AndroidScreenSecurityService screen, 
     public void SetHiddenInRecents(bool hidden)
     {
         _hiddenInRecents = hidden;
-        // Before Android 13 the only way is a secure window at the moment the picture is taken.
-        screen.SetSecureWhilePaused(hidden && !OperatingSystem.IsAndroidVersionAtLeast(33));
+        // Before Android 13 the only way is a window that is secure whenever the picture may be taken.
+        screen.SetSecureWhilePasscodeSet(hidden && BlocksScreenshotsWhileSet);
         MainThread.BeginInvokeOnMainThread(() => Apply(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity));
     }
+
+    public bool BlocksScreenshotsWhileSet => !OperatingSystem.IsAndroidVersionAtLeast(33);
 
     /// <summary>UI thread. Also called by MainActivity on create (a recreated activity has a fresh window).</summary>
     internal void Apply(Activity? activity)

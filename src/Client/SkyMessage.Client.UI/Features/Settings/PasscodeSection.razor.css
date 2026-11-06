@@ -16,3 +16,7 @@
     color: var(--sm-text-3);
     text-wrap: pretty;
 }
+
+.passcode-note + .passcode-note {
+    margin-top: 10px;
+}

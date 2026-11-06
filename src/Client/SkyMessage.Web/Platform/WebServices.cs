@@ -416,6 +416,8 @@ public sealed class WebAppLockPlatform : IAppLockPlatform
     {
     }
 
+    public bool BlocksScreenshotsWhileSet => false;
+
     public async Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length)
     {
         try

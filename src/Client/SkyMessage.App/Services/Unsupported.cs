@@ -86,6 +86,8 @@ public sealed class UnsupportedAppLockPlatform : IAppLockPlatform
     {
     }
 
+    public bool BlocksScreenshotsWhileSet => false;
+
     public Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length) => Task.FromResult<byte[]?>(null);
 }
 
