@@ -491,7 +491,12 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   AuthService↔Api cycle (raw auth channel). `GetUsersAsync` splits > 200 ids.
 - **IAuthService**: "auth.v1" in `ISecureStore`; refresh 60 s before expiry under `IInterProcessLock`
   ("sky-auth-refresh"), re-reading the store first; refresh 401 `refresh_token_invalid` → `LogoutAsync(false)`;
-  network errors keep the session. `UserChanged` for me → `RefreshMeAsync`.
+  network errors keep the session. `UserChanged` for me → `RefreshMeAsync`. A sign-out is the user's choice when this
+  device revokes the session (`LogoutAsync()`: "Sign out", "Forgot the passcode?", switching to another server) or
+  with `byChoice` (deleting the account: `LogoutAsync(false, byChoice: true)`, the server already ended the session at
+  the user's request); it first runs `AccountLifecycle.OnSignOutByChoice` — also when the server's own sign-out
+  (`SessionRevoked`, sent before the answer to the deletion) is running or has just finished, then for the account that
+  sign-out ended — and, while the session still works, `OnBeforeSignOut` (calls hang up) before the server is told.
 - **IRealtimeService**: hub URL `Resolve("hubs/realtime")`, `AccessTokenProvider`, transports WebSockets|SSE|
   LongPolling (WebSockets only when `AllowTransportFallback=false`), **`UseStatefulReconnect = true`**
   (server allows it), `HttpConnectionOptions.Proxy` from `IHttpHandlerFactory.CreateProxy` and
@@ -576,10 +581,14 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   restarting the app or the phone never shortens it; the count survives restarts, is shared by browser tabs and starts
   over after a right code or fingerprint. While locked the window is secure (`IScreenCaptureGuard`); while a passcode
   is set the recents picture shows no content. Change and turn off need the current code. Signing out by choice
-  ("Sign out", "Forgot the passcode?", switching to another server: `AccountLifecycle.OnBeforeSignOut`) removes the
-  passcode before the session goes, the app staying locked until it has; a sign-out the user did not ask for (the
-  session expired, was ended from another device or another server answered) keeps it, nothing locks while signed out,
-  and the next sign-in with the password opens the app (the count starts over) with the passcode on again. Browsers:
+  ("Sign out", "Forgot the passcode?", switching to another server, deleting the account:
+  `AccountLifecycle.OnSignOutByChoice`) removes the passcode before the session goes, the app staying locked until it
+  has; a sign-out the user did not ask for (the session expired, was ended from another device or another server
+  answered) keeps it for the account that set it (the record names it), nothing locks while signed out, and the next
+  sign-in of that account with the password opens the app (the count starts over) with the passcode on again. Any
+  other account never inherits it: its sign-in removes the passcode (nobody else knows the code), and so does a
+  session of another account restored at start (one whose sign-in ended before the passcode was removed); a record
+  that names no account (unreadable) is removed by the next sign-in with a password. Browsers:
   every tab is an instance of the app on the same storage (`IAppLockPlatform.Announce`/`Signaled`, web-platform.js
   `skyPlatform.passcode`: a BroadcastChannel, storage events). "Lock now" locks every tab, a right code or fingerprint
   in one opens all of them, turning it off opens them; turned on in another tab, a hidden tab locks at once and a
@@ -786,8 +795,10 @@ name, username with availability, bio), phone (detect via `IPhoneNumberService` 
 region, unlink, "who can find me by number"), privacy & security (all levels, blocked users, active
 sessions, the app passcode — `/settings/passcode`: turn on with a 4- or 6-digit code entered twice, change, auto-lock
 delay, fingerprint/face unlock (shown where `IAppLockPlatform.SupportsBiometrics`, confirmed by the system prompt once),
-hide notification text while locked, lock now, turn off; the code steps run in `Features/Passcode/PasscodeDialog` —,
-change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
+hide notification text while locked, lock now, turn off; the code steps run in `Features/Passcode/PasscodeDialog`;
+where a passcode blocks screenshots (`IAppLockPlatform.BlocksScreenshotsWhileSet`: Android 8–12) both states say so —,
+change password, delete account (then signs out by choice: `LogoutAsync(false, byChoice: true)`), sign out),
+notifications & sounds (toggles incl. keep connected
 in background + battery exemption via `IBackgroundConnectionService`; on iOS a hint that the app must stay
 open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, message colors (my bubbles' style, their tint), the
 app's background (skies + "Свой": gradient or photo, per theme or both) and the chats' background with a live preview, font size, bubble radius,
@@ -905,8 +916,11 @@ Android Back on the lock screen otherwise moves the app to the background.
   service + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
   AppLockPlatform (app passcode: framework BiometricPrompt on Android 10+ with weak biometrics so face unlock counts,
-  USE_BIOMETRIC; no recents picture while a passcode is set — `setRecentsScreenshotEnabled(false)` on Android 13+,
-  FLAG_SECURE while the activity is paused below; `SystemClock.elapsedRealtime` as the boot clock; Back on the lock
+  USE_BIOMETRIC; no recents picture while a passcode is set — `setRecentsScreenshotEnabled(false)` on Android 13+;
+  below, a window that stays FLAG_SECURE for as long as a passcode is set (those versions take the picture before an
+  app can react — with gesture navigation while it is still resumed — and leave out only a window that was secure all
+  along), so the app cannot be screenshotted meanwhile and the passcode settings say so
+  (`IAppLockPlatform.BlocksScreenshotsWhileSet`); `SystemClock.elapsedRealtime` as the boot clock; Back on the lock
   screen closes its "Forgot the passcode?" question, else leaves the app unless the call screen is over it; shown over
   the phone's own lock screen for a call, the app locks (`LockNow`) whenever the activity starts or resumes over a
   locked keyguard — also for a call accepted while the phone was unlocked and locked during it — so minimizing the call
