@@ -117,3 +117,15 @@ Coexistence:
 - A recognizer decides its axis after ~8px (`|dx| > 1.5·|dy|` for horizontal) and only then captures the pointer, so
   vertical scrolling stays native (`touch-action: pan-y` on horizontally swipeable surfaces).
 - The Android system back gesture keeps the screen edges; ours starts 24px in.
+
+## 3. The passcode lock screen
+
+- It appears at once, opaque (fading in would show the chats for a moment), and leaves with a 180 ms fade
+  (`sm-fade-out`, accelerating) once unlocked. "Back to the call" drops in (`sm-drop-in`).
+- A dot fills with a 140 ms spring (scale 0.55 → 1); keys press down to 0.9 with `--sm-spring` (transform only, no
+  ripple, no glow).
+- A wrong code turns the dots rose and shakes their row once (`sm-shake`, 360 ms) with a Warning haptic: an outcome,
+  not a tap — key taps give no haptic (rule 6). Input waits for the shake (420 ms), then the dots clear.
+- The pause after five wrong codes counts down on the hint line once a second; the keys dim meanwhile.
+- Under the lock screen the shell stands still (its animations are paused until the app is unlocked).
+- Reduced motion: no pop and no shake; the rose dots and the hint line still tell what happened.

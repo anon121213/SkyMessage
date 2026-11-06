@@ -308,3 +308,26 @@ html.sm-resizing .shell__resizer::after {
 
 /* ---- Notices floating over everything (update required, notification permission) ---- */
 
+
+/* ---- The app passcode: the lock screen (990) covers the shell; the call screen comes above it, so a call stays
+   reachable while the app is locked ---- */
+
+.shell--locked ::deep .call-backdrop {
+    z-index: 995;
+}
+
+.shell--locked ::deep .call-screen {
+    z-index: 996;
+}
+
+/* Toasts the call screen raises (a device that failed, a permission) stay readable while it covers the lock. Other
+   toasts stay under the lock screen: they may tell something of the chats. */
+.shell--call-over-lock ::deep .sm-toasts {
+    z-index: 997;
+}
+
+/* Nothing under the opaque lock screen needs to move: the shell's animations wait until the app is unlocked. */
+.shell--locked > .shell__phone ::deep *,
+.shell--locked > .shell__wide ::deep * {
+    animation-play-state: paused;
+}

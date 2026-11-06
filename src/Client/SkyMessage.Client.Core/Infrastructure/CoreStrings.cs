@@ -24,6 +24,9 @@ internal static class CoreStrings
 
     public static string NewMessage(bool ru) => ru ? "Новое сообщение" : "New message";
 
+    /// <summary>Title of notifications that must not tell who wrote (the app passcode's "hide notification text").</summary>
+    public const string AppName = "SkyMessage";
+
     public static string UnknownUser => "…";
 
     public static string Preview(MessageDto message, bool ru)

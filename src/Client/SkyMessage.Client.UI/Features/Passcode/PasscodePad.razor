@@ -1,0 +1,154 @@
+@* The passcode keypad of the lock screen and the passcode dialogs (docs/DESIGN.md "Lock screen"): a row of dots that
+   fill as digits come in, and our own glass keypad — never the system keyboard. On a computer the digit keys and
+   Backspace type into the pad in front (js/passcode.js). A full code goes to OnComplete; the owner answers with
+   FailAsync (the dots turn rose and shake, a haptic marks it, then they clear) or Clear. The key left of 0 is optional
+   (the fingerprint on the lock screen). Taps give no haptic (docs/MOTION.md: never on plain taps). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<div @ref="_root" class="pcpad @(Disabled ? "pcpad--disabled" : null) @Class" data-no-swipe-back>
+    <div @key="_failures" class="pcpad__dots @(_error ? "is-error" : null)" role="status" aria-live="polite" aria-label="@DotsLabel">
+        @for (var i = 0; i < Length; i++)
+        {
+            <span class="pcpad__dot @(i < _digits.Length ? "is-filled" : null)"></span>
+        }
+    </div>
+    <div class="pcpad__keys" role="group" aria-label="@L["passcode.keypad"]">
+        @foreach (var digit in Digits)
+        {
+            var d = digit;
+            <button type="button" class="pcpad__key" disabled="@Disabled" @onclick="() => PressAsync(d)">@d</button>
+        }
+        @if (ExtraIcon is not null)
+        {
+            <button type="button" class="pcpad__key pcpad__key--plain" aria-label="@ExtraLabel" title="@ExtraLabel" @onclick="OnExtra">
+                <Icon Name="@ExtraIcon" Size="30" StrokeWidth="1.8" />
+            </button>
+        }
+        else
+        {
+            <span class="pcpad__gap" aria-hidden="true"></span>
+        }
+        <button type="button" class="pcpad__key" disabled="@Disabled" @onclick="() => PressAsync('0')">0</button>
+        <button type="button" class="pcpad__key pcpad__key--plain pcpad__erase @(_digits.Length == 0 ? "is-idle" : null)" aria-label="@L["passcode.erase"]"
+                title="@L["passcode.erase"]" disabled="@(Disabled || _digits.Length == 0)" @onclick="Erase">
+            <Icon Name="@IconNames.Delete" Size="28" StrokeWidth="1.8" />
+        </button>
+    </div>
+</div>
+
+@code {
+    /// <summary>How long the rose shake shows before the dots clear (sm-shake runs 360 ms).</summary>
+    private const int FailMs = 420;
+    private static readonly char[] Digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+    private ElementReference _root;
+    private JsModule? _module;
+    private JsObject? _keys;
+    private DotNetObjectReference<PasscodePad>? _self;
+    private string _digits = "";
+    private bool _error;
+    private int _failures;
+    private bool _submitting;
+
+    /// <summary>4 or 6 digits.</summary>
+    [Parameter] public int Length { get; set; } = AppLockRules.ShortLength;
+    /// <summary>No input (a pause after wrong attempts, signing out).</summary>
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<string> OnComplete { get; set; }
+    /// <summary>Icon of the optional key left of 0 (null leaves the place empty).</summary>
+    [Parameter] public string? ExtraIcon { get; set; }
+    [Parameter] public string? ExtraLabel { get; set; }
+    [Parameter] public EventCallback OnExtra { get; set; }
+    /// <summary>The lock screen's pad: Escape does not reach the app underneath while it is in front.</summary>
+    [Parameter] public bool LockScreen { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string DotsLabel => L.Format("passcode.dots", _digits.Length, Length);
+
+    protected override void OnParametersSet()
+    {
+        if (_digits.Length > Length) _digits = "";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        _module = new JsModule(JS, "./_content/SkyMessage.Client.UI/js/passcode.js");
+        var keys = await _module.AttachAsync("attach", _root, _self, LockScreen);
+        if (IsDisposed) await keys.DisposeAsync();
+        else _keys = keys;
+    }
+
+    /// <summary>A physical key (passcode.js): "0"…"9" or "Backspace". Not a UI event: the pad renders itself.</summary>
+    [JSInvokable]
+    public Task OnKey(string key) => InvokeAsync(async () =>
+    {
+        if (Disabled || IsDisposed) return;
+        if (key == "Backspace") Erase();
+        else if (key.Length == 1 && char.IsAsciiDigit(key[0])) await PressAsync(key[0]);
+        if (!IsDisposed) StateHasChanged();
+    });
+
+    /// <summary>The code was wrong (or did not match): rose dots, a shake and a haptic, then they clear.</summary>
+    public async Task FailAsync()
+    {
+        _error = true;
+        _failures++;
+        Haptics.Warning();
+        StateHasChanged();
+        await Task.Delay(FailMs);
+        if (IsDisposed) return;
+        _error = false;
+        _digits = "";
+        _submitting = false;
+        StateHasChanged();
+    }
+
+    /// <summary>Empties the dots (the next step of a flow, a new length).</summary>
+    public void Clear()
+    {
+        _digits = "";
+        _error = false;
+        _submitting = false;
+        StateHasChanged();
+    }
+
+    private async Task PressAsync(char digit)
+    {
+        if (Disabled || _submitting || _error || _digits.Length >= Length) return;
+        _digits += digit;
+        if (_digits.Length < Length) return;
+        _submitting = true;
+        // Let the last dot fill before the check (it may hold the thread for a moment in a browser).
+        StateHasChanged();
+        await Task.Yield();
+        var code = _digits;
+        try
+        {
+            await OnComplete.InvokeAsync(code);
+        }
+        finally
+        {
+            // A step that neither failed nor cleared the pad keeps it full; anything else frees it again.
+            if (!_error && _digits.Length < Length) _submitting = false;
+        }
+    }
+
+    private void Erase()
+    {
+        if (Disabled || _submitting || _error || _digits.Length == 0) return;
+        _digits = _digits[..^1];
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_keys is not null) await _keys.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+    }
+}

@@ -34,6 +34,9 @@ internal sealed record UpdateState
 /// <see cref="IAppUpdateService"/>: one run at a time (pending triggers merge), state persisted after every step so a
 /// killed process resumes where it stopped — a partial download continues with a Range request, a verified package is
 /// installed without downloading again. Never throws into callers; failures become <see cref="AppUpdateStatus.Error"/>.
+/// A web page reloads itself for a new client only while it is hidden, not in a call, and not open behind the app
+/// passcode: every start of the app is locked, so a reload would cut the auto-lock delay short — it waits until the page
+/// locks (or the next start).
 /// </summary>
 internal sealed class AppUpdateService : IAppUpdateService, IDisposable
 {
@@ -48,6 +51,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
     private readonly IAppLifecycle _lifecycle;
     private readonly IRealtimeService _realtime;
     private readonly ICallService _calls;
+    private readonly IAppLockService _appLock;
     private readonly TimeProvider _time;
     private readonly ILogger<AppUpdateService> _logger;
 
@@ -92,6 +96,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         IAppLifecycle lifecycle,
         IRealtimeService realtime,
         ICallService calls,
+        IAppLockService appLock,
         TimeProvider time,
         ILogger<AppUpdateService> logger)
     {
@@ -104,6 +109,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         _lifecycle = lifecycle;
         _realtime = realtime;
         _calls = calls;
+        _appLock = appLock;
         _time = time;
         _logger = logger;
         _progress = new ProgressThrottle(time);
@@ -134,6 +140,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         _realtime.Resynced += OnResynced;
         _calls.Changed += OnCallsChanged;
         _installer.InstallStatusChanged += OnInstallStatus;
+        if (!_platform.IsNativeApp) _appLock.Changed += OnLockChanged;
         _timer = _time.CreateTimer(static s => ((AppUpdateService)s!).Kick(UpdateTrigger.Periodic), this,
             AppUpdateRules.TimerPeriod, AppUpdateRules.TimerPeriod);
         StartAsync().Forget(_logger);
@@ -765,7 +772,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
 
     private void EvaluateWebReload()
     {
-        if (_platform.IsNativeApp || _status.NewWebVersion is null || _lifecycle.IsForeground || InCall) return;
+        if (_platform.IsNativeApp || _status.NewWebVersion is null || _lifecycle.IsForeground || InCall || OpenBehindPasscode) return;
         CancellationTokenSource cts;
         lock (_lock)
         {
@@ -781,7 +788,8 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
         {
             // Hidden for a moment, not just switching tabs: reload in the background so the new client is there on return.
             await Task.Delay(AppUpdateRules.WebReloadDelay, _time, cts.Token).ConfigureAwait(false);
-            if (!cts.IsCancellationRequested && !_lifecycle.IsForeground && !InCall) await RequestWebReloadAsync().ConfigureAwait(false);
+            if (!cts.IsCancellationRequested && !_lifecycle.IsForeground && !InCall && !OpenBehindPasscode)
+                await RequestWebReloadAsync().ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -881,6 +889,18 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
     }
 
     private bool InCall => _calls.Current is not null || _calls.Incoming is not null;
+
+    /// <summary>
+    /// A passcode is set and the page is open: reloading would start it locked before its auto-lock delay ran out.
+    /// </summary>
+    private bool OpenBehindPasscode => _appLock.IsEnabled && !_appLock.IsLocked;
+
+    /// <summary>The page locked while hidden (its delay ran out): a reload waiting for that may go now.</summary>
+    private void OnLockChanged()
+    {
+        if (OpenBehindPasscode) CancelWebReload();
+        else EvaluateWebReload();
+    }
 
     private bool DownloadNetworkAllowed(UpdateSettings updates) =>
         AppUpdateRules.NetworkAllows(updates.WifiOnly, _network.IsConnected, _network.Kind, _network.IsMetered);
@@ -1051,6 +1071,7 @@ internal sealed class AppUpdateService : IAppUpdateService, IDisposable
             _realtime.Resynced -= OnResynced;
             _calls.Changed -= OnCallsChanged;
             _installer.InstallStatusChanged -= OnInstallStatus;
+            if (!_platform.IsNativeApp) _appLock.Changed -= OnLockChanged;
         }
         _lifetime.Cancel();
         _lifetime.Dispose();

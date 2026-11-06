@@ -46,6 +46,33 @@ public sealed class SecureStore(ILogger<SecureStore> logger) : ISecureStore
         }
     }
 
+    /// <summary>
+    /// No recovery here: a failed read is reported and nothing is wiped (the app passcode then stays locked instead of
+    /// reading as "none"). MAUI itself may still drop a value it cannot decrypt and return null; the passcode keeps a
+    /// marker in the plain preferences for that.
+    /// </summary>
+    public async Task<SecureStoreRead> TryGetAsync(string key)
+    {
+        if (_degraded) return new SecureStoreRead(true, FallbackGet(key));
+        try
+        {
+            var value = await SecureStorage.Default.GetAsync(key).ConfigureAwait(false);
+#if DEBUG && (IOS || MACCATALYST)
+            if (value is null && FallbackGet(key) is { } fallback)
+            {
+                Degrade();
+                return new SecureStoreRead(true, fallback);
+            }
+#endif
+            return new SecureStoreRead(true, value);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Secure storage read failed for {Key}", key);
+            return new SecureStoreRead(false, null);
+        }
+    }
+
     public async Task SetAsync(string key, string value)
     {
         if (_degraded)

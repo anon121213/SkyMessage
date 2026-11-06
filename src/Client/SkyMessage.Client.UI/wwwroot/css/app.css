@@ -1307,6 +1307,9 @@ html[data-fx="lite"] .sm-overlay--sheet .sm-dialog { box-shadow: 0 24px 0 0 var(
 .sm-overlay--sheet .sm-dialog__header { padding-top: 2px; }
 .sm-sheet__handle { display: flex; justify-content: center; padding: 10px 0 4px; cursor: grab; touch-action: none; }
 .sm-sheet__handle::before { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--sm-text-3); opacity: 0.45; }
+/* An opaque frame (DialogOptions.Class): nothing colored behind it tints the content (the passcode keypad). */
+.sm-dialog--solid { background: var(--sm-glass-solid); }
+.sm-overlay--sheet .sm-dialog--solid { box-shadow: 0 24px 0 0 var(--sm-glass-solid), var(--sm-edge), var(--sm-shadow-3); }
 
 /* Context menu: a frosted card unfolding from where it was asked for. */
 .sm-menu-layer { position: fixed; inset: 0; z-index: 950; }

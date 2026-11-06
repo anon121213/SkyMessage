@@ -1,0 +1,57 @@
+/* A passcode step inside the dialog/sheet: the hint line, the pad, and the 4/6 digits switch on the "new code" step. */
+
+.pcflow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    padding: 2px 0 4px;
+}
+
+.pcflow__hint {
+    min-height: 2.8em;
+    max-width: 300px;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--sm-text-2);
+    text-wrap: balance;
+}
+
+.pcflow__hint--error {
+    color: var(--sm-danger);
+}
+
+/* In a sheet the keys stay a little smaller than on the lock screen. */
+.pcflow ::deep .pcflow__pad {
+    --pc-key: clamp(3.5rem, 9vh, 4.25rem);
+}
+
+.pcflow__foot {
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.pcflow__switch {
+    padding: 8px 16px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.pcflow__switch:active {
+    background: var(--sm-press);
+}
+
+@media (hover: hover) {
+    .pcflow__switch:hover {
+        background: var(--sm-hover);
+    }
+}

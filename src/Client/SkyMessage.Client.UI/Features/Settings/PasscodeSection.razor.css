@@ -1,0 +1,22 @@
+/* Passcode settings without a passcode yet: the kit's empty state (glass squircle with the lock) and a quiet note on
+   what happens when the code is forgotten. */
+
+.passcode-off ::deep .passcode-intro {
+    padding-top: 28px;
+    padding-bottom: 12px;
+}
+
+.passcode-note {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 0 24px;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    text-align: center;
+    color: var(--sm-text-3);
+    text-wrap: pretty;
+}
+
+.passcode-note + .passcode-note {
+    margin-top: 10px;
+}

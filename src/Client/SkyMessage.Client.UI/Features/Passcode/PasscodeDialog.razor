@@ -1,0 +1,233 @@
+@* The passcode steps of Settings › Privacy › Passcode, in a dialog (a sheet on phones) through DialogService: turning it
+   on (a new code, then the same again; 4 or 6 digits), changing it (the current one first) and turning it off (the
+   current one). Each step titles the dialog; the hint line under the title explains or reports the mistake. Wrong
+   current codes count toward the same pause as on the lock screen. Closes with true when done. *@
+@inherits UiComponentBase
+@inject IAppLockService AppLock
+@inject ToastService Toasts
+@inject ILogger<PasscodeDialog> Logger
+
+<div class="pcflow">
+    <p class="pcflow__hint @(_hintIsError || Paused ? "pcflow__hint--error" : null)" aria-live="polite">@HintText</p>
+    <PasscodePad @ref="_pad" Length="_length" Disabled="@(Paused || _saving)" OnComplete="OnCodeAsync" Class="pcflow__pad" />
+    <div class="pcflow__foot">
+        @if (_step == Step.New)
+        {
+            <button type="button" class="pcflow__switch" @onclick="SwitchLength">
+                @(_length == AppLockRules.ShortLength ? L["passcode.setup.useSix"] : L["passcode.setup.useFour"])
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    public enum Flow
+    {
+        Enable,
+        Change,
+        Disable,
+    }
+
+    private enum Step
+    {
+        Current,
+        New,
+        Confirm,
+    }
+
+    private PasscodePad? _pad;
+    private Step _step;
+    private int _length = AppLockRules.ShortLength;
+    private string? _current;
+    private string? _new;
+    private string? _hint;
+    private bool _hintIsError;
+    private bool _saving;
+    private bool _ticking;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter] public Flow Mode { get; set; }
+
+    private bool Paused => _step == Step.Current && AppLock.RetryIn > TimeSpan.Zero;
+
+    private string HintText =>
+        Paused ? L.Format("passcode.paused", PasscodeUi.Wait(AppLock.RetryIn))
+        : _hint ?? _step switch
+        {
+            Step.Current => L["passcode.setup.currentHint"],
+            Step.New => L.Format("passcode.setup.newHint", L.Plural("passcode.digits", _length)),
+            _ => L["passcode.setup.confirmHint"],
+        };
+
+    protected override void OnInitialized()
+    {
+        _step = Mode == Flow.Enable ? Step.New : Step.Current;
+        _length = Mode == Flow.Enable ? AppLockRules.ShortLength : Math.Max(AppLockRules.ShortLength, AppLock.Length);
+        SetTitle();
+        if (Paused) StartTicking();
+    }
+
+    private void SetTitle() => Dialog.SetTitle(_step switch
+    {
+        Step.Current => L["passcode.setup.currentTitle"],
+        Step.New => Mode == Flow.Change ? L["passcode.setup.newTitleChange"] : L["passcode.setup.newTitle"],
+        _ => L["passcode.setup.confirmTitle"],
+    });
+
+    private async Task OnCodeAsync(string code)
+    {
+        try
+        {
+            switch (_step)
+            {
+                case Step.Current:
+                    await CheckCurrentAsync(code);
+                    break;
+                case Step.New:
+                    _new = code;
+                    GoTo(Step.Confirm);
+                    break;
+                default:
+                    await ConfirmAsync(code);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Passcode step failed");
+            _hint = L["passcode.setup.failed"];
+            _hintIsError = true;
+            if (_pad is not null) await _pad.FailAsync();
+        }
+    }
+
+    private async Task CheckCurrentAsync(string code)
+    {
+        var check = Mode == Flow.Disable ? await AppLock.DisableAsync(code) : await AppLock.VerifyAsync(code);
+        switch (check.Status)
+        {
+            case PasscodeCheckStatus.Correct when Mode == Flow.Disable:
+                Dialog.Close(true);
+                return;
+            case PasscodeCheckStatus.Correct:
+                _current = code;
+                GoTo(Step.New);
+                return;
+            case PasscodeCheckStatus.NotSet:
+                Dialog.Cancel();
+                return;
+            case PasscodeCheckStatus.Paused:
+                _hint = null;
+                _pad?.Clear();
+                StartTicking();
+                return;
+            default:
+                _hintIsError = true;
+                _hint = PasscodeUi.WrongHint(L, check);
+                if (check.RetryIn > TimeSpan.Zero) StartTicking();
+                StateHasChanged();
+                if (_pad is not null) await _pad.FailAsync();
+                return;
+        }
+    }
+
+    private async Task ConfirmAsync(string code)
+    {
+        if (code != _new)
+        {
+            // The reason shows with the shake, and stays while the code is made again.
+            _new = null;
+            _hint = L["passcode.setup.mismatch"];
+            _hintIsError = true;
+            StateHasChanged();
+            if (_pad is not null) await _pad.FailAsync();
+            GoTo(Step.New, keepHint: true);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            if (Mode == Flow.Enable)
+            {
+                try
+                {
+                    await AppLock.EnableAsync(code);
+                }
+                catch (InvalidOperationException) when (AppLock.IsEnabled)
+                {
+                    // Another tab set one meanwhile: that passcode stays (this one was never checked against it).
+                    Toasts.Warning(L["passcode.setup.alreadySet"]);
+                    Dialog.Cancel();
+                    return;
+                }
+            }
+            else
+            {
+                var check = await AppLock.ChangeAsync(_current ?? "", code);
+                if (!check.IsCorrect)
+                {
+                    // The current code stopped matching meanwhile (changed elsewhere): start over.
+                    _current = null;
+                    GoTo(Step.Current);
+                    _hint = L["passcode.wrong"];
+                    _hintIsError = true;
+                    return;
+                }
+            }
+            Dialog.Close(true);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void GoTo(Step step, bool keepHint = false)
+    {
+        _step = step;
+        if (!keepHint)
+        {
+            _hint = null;
+            _hintIsError = false;
+        }
+        SetTitle();
+        _pad?.Clear();
+    }
+
+    private void SwitchLength()
+    {
+        _length = _length == AppLockRules.ShortLength ? AppLockRules.LongLength : AppLockRules.ShortLength;
+        _hint = null;
+        _hintIsError = false;
+        _pad?.Clear();
+    }
+
+    /// <summary>Re-renders every second while a pause runs, then once more to enable the keypad (one loop at a time).</summary>
+    private void StartTicking()
+    {
+        if (_ticking) return;
+        _ticking = true;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                while (!IsDisposed)
+                {
+                    var left = AppLock.RetryIn;
+                    if (left <= TimeSpan.Zero)
+                    {
+                        StateHasChanged();
+                        return;
+                    }
+                    var untilNextSecond = left.TotalMilliseconds % 1000;
+                    await Task.Delay(TimeSpan.FromMilliseconds(untilNextSecond < 20 ? 1000 : untilNextSecond));
+                    StateHasChanged();
+                }
+            }
+            finally
+            {
+                _ticking = false;
+            }
+        });
+    }
+}

@@ -64,9 +64,13 @@ public interface IAuthService
     Task<UsernameAvailabilityDto> CheckUsernameAsync(string username, CancellationToken cancellationToken = default);
     /// <summary>
     /// Clears all local state (stores, caches, per-account data). <paramref name="revokeOnServer"/> = false
-    /// when the server already revoked the session (SessionRevoked, refresh_token_invalid).
+    /// when the server already revoked the session (SessionRevoked, refresh_token_invalid, the account was deleted).
+    /// A sign-out that revokes the session on the server is the user's choice, and so is one with
+    /// <paramref name="byChoice"/> (deleting the account: the server ended the session at the user's request — also when
+    /// its SessionRevoked has signed this device out a moment before): what the user set up on this device for the
+    /// account, such as the app passcode, goes with it. A sign-out the user did not ask for keeps that.
     /// </summary>
-    Task LogoutAsync(bool revokeOnServer = true);
+    Task LogoutAsync(bool revokeOnServer = true, bool byChoice = false);
     /// <summary>Valid access token, refreshing it if needed. Null when signed out.</summary>
     Task<string?> GetAccessTokenAsync(CancellationToken cancellationToken = default);
     /// <summary>Call after profile/avatar/phone/privacy edits (and on UserChanged for me) so <see cref="Me"/> stays current.</summary>

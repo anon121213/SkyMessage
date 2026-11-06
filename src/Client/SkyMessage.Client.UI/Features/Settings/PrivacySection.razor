@@ -1,7 +1,9 @@
-@* Privacy & security: every privacy level, blocked people, active sessions, password, account deletion, sign out. *@
+@* Privacy & security: every privacy level, blocked people, active sessions, the app passcode, password, account
+   deletion, sign out. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IAuthService Auth
+@inject IAppLockService AppLock
 @inject ISkyApi Api
 @inject IContactStore Contacts
 @inject DialogService Dialogs
@@ -30,6 +32,9 @@
         </Section>
 
         <Section Title="@L["settings.privacy.group.security"]" DividerInset="64px">
+            <ListItem Icon="@IconNames.Lock" IconColor="@SettingsTones.Violet" Title="@L["passcode.title"]" Subtitle="@L["passcode.rowHint"]"
+                      Meta="@(AppLock.IsEnabled ? L["passcode.on"] : L["passcode.off"])" Chevron="true"
+                      OnClick="@(() => Nav.NavigateTo(SettingsRoutes.PathOf(SettingsRoutes.Passcode)))" />
             <ListItem Icon="@IconNames.KeyRound" IconColor="@SettingsTones.Sky" Title="@L["settings.password.title"]" Subtitle="@L["settings.password.subtitle"]"
                       Chevron="true" OnClick="ChangePasswordAsync" />
             <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["settings.deleteAccount.title"]" Danger="true" OnClick="DeleteAccountAsync" />
@@ -72,6 +77,7 @@
     {
         RenderOn(h => Auth.Changed += h, h => Auth.Changed -= h);
         RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
+        RenderOn(h => AppLock.Changed += h, h => AppLock.Changed -= h);
         _ = LoadBlockedAsync();
         try
         {

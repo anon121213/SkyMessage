@@ -8,11 +8,15 @@
     const PREF_PREFIX = 'sm.p.';
     const SECURE_PREFIX = 'sm.s.';
     const LOCK_PREFIX = 'sm.lock.';
+    // The app passcode's records (AppLockService: "passcode.v1", "passcode.attempts.v1" secure, "passcode.set.v1" plain).
+    const PASSCODE_KEYS = [SECURE_PREFIX + 'passcode.v1', SECURE_PREFIX + 'passcode.attempts.v1', PREF_PREFIX + 'passcode.set.v1'];
+    const PASSCODE_SIGNAL_KEY = 'sm.passcode.signal';
     const BLOB_MAX_BYTES = 512 * 1024 * 1024;
     const BLOB_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
     let dotnet = null;
     const pendingEvents = [];
+    let passcodeChannel = null;
 
     function emit(method, ...args) {
         if (dotnet) {
@@ -659,6 +663,26 @@
                 if (!reg || !reg.getNotifications) return;
                 try { (await reg.getNotifications({ tag })).forEach(n => n.close()); } catch (e) { /* ignore */ }
             },
+            // The app passcode locked the app with "hide notification text": every message notification on screen is
+            // replaced (same tag, same chat to open) by the neutral text, without a sound. Notifications shown without
+            // the service worker cannot be listed; they are never used for messages where one is registered.
+            async redact(title, body) {
+                const reg = await registration();
+                if (!reg || !reg.getNotifications) return;
+                let shown = [];
+                try { shown = await reg.getNotifications(); } catch (e) { return; }
+                for (const n of shown) {
+                    const data = n.data || {};
+                    if (data.kind !== 'message') continue;
+                    try {
+                        if (!n.tag) { n.close(); continue; }
+                        await reg.showNotification(title || 'SkyMessage', {
+                            body: body || '', tag: n.tag, data, icon: 'icons/icon-192.png', badge: 'icons/badge-96.png',
+                            silent: true, renotify: false,
+                        });
+                    } catch (e) { /* ignore */ }
+                }
+            },
             badge(count) {
                 try {
                     if (count > 0 && navigator.setAppBadge) navigator.setAppBadge(count).catch(() => { });
@@ -753,6 +777,32 @@
             vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* ignore */ } },
         },
 
+        passcode: {
+            // "locked" / "unlocked" to the other tabs of this origin (they apply it through OnPasscodeSignal).
+            announce(signal) {
+                if (signal !== 'locked' && signal !== 'unlocked') return;
+                if (passcodeChannel) { try { passcodeChannel.postMessage({ signal }); return; } catch (e) { /* fall back */ } }
+                // No BroadcastChannel (older Safari): a short-lived localStorage entry reaches the others as a storage event.
+                safe(() => localStorage.setItem(PASSCODE_SIGNAL_KEY, JSON.stringify({ signal, at: Date.now(), n: Math.random() })));
+            },
+        },
+
+        crypto: {
+            // PBKDF2-HMAC-SHA256 for the app passcode through WebCrypto: .NET runs interpreted in the browser and its own
+            // is many times slower. Null without WebCrypto (not a secure context): .NET's own is used then.
+            async pbkdf2(passcode, salt, iterations, length) {
+                const subtle = self.crypto && self.crypto.subtle;
+                if (!subtle) return null;
+                try {
+                    const key = await subtle.importKey('raw', new TextEncoder().encode(passcode), 'PBKDF2', false, ['deriveBits']);
+                    const bits = await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, length * 8);
+                    return new Uint8Array(bits);
+                } catch (e) {
+                    return null;
+                }
+            },
+        },
+
         locks: {
             acquire(name, id) {
                 if (navigator.locks && navigator.locks.request) {
@@ -825,6 +875,25 @@
     window.addEventListener('offline', reportNetwork);
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (connection && connection.addEventListener) connection.addEventListener('change', reportNetwork);
+
+    // The app passcode is one for every tab: what another tab announces, and its changes to the stored passcode.
+    passcodeChannel = safe(() => typeof BroadcastChannel === 'function' ? new BroadcastChannel('sky-passcode') : null, null);
+    if (passcodeChannel) {
+        passcodeChannel.onmessage = event => {
+            const signal = event && event.data && event.data.signal;
+            if (signal === 'locked' || signal === 'unlocked') emit('OnPasscodeSignal', signal);
+        };
+    }
+    window.addEventListener('storage', event => {
+        if (event.storageArea && event.storageArea !== localStorage) return;
+        if (event.key === PASSCODE_SIGNAL_KEY) {
+            const value = safe(() => JSON.parse(event.newValue || 'null'), null);
+            if (value && (value.signal === 'locked' || value.signal === 'unlocked')) emit('OnPasscodeSignal', value.signal);
+            return;
+        }
+        // null: another tab cleared the storage.
+        if (event.key === null || PASSCODE_KEYS.indexOf(event.key) >= 0) emit('OnPasscodeSignal', 'stored');
+    });
 
     document.addEventListener('visibilitychange', () => emit('OnVisibilityChanged', document.visibilityState !== 'hidden'));
     window.addEventListener('pagehide', () => emit('OnVisibilityChanged', false));
