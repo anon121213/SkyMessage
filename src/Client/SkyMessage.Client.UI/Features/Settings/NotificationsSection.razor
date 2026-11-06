@@ -3,6 +3,7 @@
    alive in background + the battery exemption. iPhones and browsers get a hint about when messages and calls can
    arrive until push notifications exist. *@
 @inherits UiComponentBase
+@inject IReminderNotificationService Reminders
 @inject ISettingsService Settings
 @inject ISoundService Sounds
 @inject IPermissionService Permissions
@@ -67,6 +68,9 @@
                     CheckedChanged="v => SetAsync(s => s.Notifications.GroupsEnabled = v)" />
         <SwitchItem Icon="@IconNames.AtSign" IconColor="@SettingsTones.Sky" Title="@L["settings.notifications.mentions"]" Subtitle="@L["settings.notifications.mentionsHint"]"
                     Checked="n.MentionsBypassMute" Disabled="!n.Enabled" CheckedChanged="v => SetAsync(s => s.Notifications.MentionsBypassMute = v)" />
+        <SwitchItem Icon="@IconNames.Calendar" IconColor="@SettingsTones.Gold" Title="@L["birthday.reminders"]"
+                    Subtitle="@(Reminders.IsSupported ? L["birthday.reminders.hint"] : L["birthday.reminders.hintWeb"])"
+                    Checked="n.BirthdayReminders" CheckedChanged="v => SetAsync(s => s.Notifications.BirthdayReminders = v)" />
         <SwitchItem Icon="@IconNames.Volume2" IconColor="@SettingsTones.Mint" Title="@L["settings.notifications.sound"]" Checked="n.Sound" Disabled="!n.Enabled"
                     CheckedChanged="v => SetAsync(s => s.Notifications.Sound = v)" />
         @if (Platform.IsMobile)

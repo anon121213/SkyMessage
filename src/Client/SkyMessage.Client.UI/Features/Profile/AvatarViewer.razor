@@ -1,0 +1,357 @@
+@* A person's or a group's photos full screen, on the media viewer's night (an overlay: Back / Escape close it). It
+   opens out of the avatar that was tapped and closes back into it, pinch / wheel / double-tap zoom with panning, swipe
+   sideways through the avatar history (newest first, the current photo leads), swipe down to close (viewer.js, shared
+   with the media viewer). The current photo shows at once; the history arrives a moment later. My own photos and the
+   photos of a group I may change: "set as main" and delete; those also open on the earlier photos alone, while there
+   is no current one. What the server returns already follows privacy and blocks (others' histories: only while they
+   have a current photo they let me see). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Chat
+@inject ISkyApi Api
+@inject IAuthService Auth
+@inject IMediaUrlBuilder MediaUrls
+@inject IMediaDownloadService Downloads
+@inject FormatService Format
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+@if (Current is { } item)
+{
+    <div class="viewer @(_chrome ? null : "viewer--bare")" data-viewer-open data-no-swipe-back role="dialog" aria-modal="true" aria-label="@Title">
+        <div class="viewer__stage" @ref="_stage">
+            <div class="viewer__backdrop"></div>
+            <div class="viewer__track" data-track>
+                <div @key="item.Media.Id" class="viewer__frame" data-frame style="--ar:@Aspect(item.Media)">
+                    <div class="viewer__photo" data-zoom>
+                        <img class="viewer__img viewer__img--low" src="@MediaUrls.ThumbnailUrl(item.Media.Id)" alt="" draggable="false" />
+                        <img class="viewer__img" src="@MediaUrls.ContentUrl(item.Media.Id)" alt="@Title" draggable="false" decoding="async" />
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="viewer__top">
+            <div class="viewer__bar">
+                <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Class="viewer__btn" OnClick="CloseAsync" />
+                <div class="viewer__who">
+                    <div class="viewer__name">@Subject.Title</div>
+                    <div class="viewer__date">@Subtitle(item)</div>
+                </div>
+                <div class="viewer__actions">
+                    @if (_loaded)
+                    {
+                        <IconButton Icon="@IconNames.Download" Label="@L["media.save"]" Class="viewer__btn" OnClick="SaveAsync" />
+                        @if (Subject.CanManage)
+                        {
+                            <IconButton Icon="@IconNames.Trash2" Label="@L["common.delete"]" Class="viewer__btn" Disabled="_busy" OnClick="DeleteAsync" />
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="viewer__bottom">
+            @if (_items.Count > 1)
+            {
+                <span class="viewer__count sm-nums">@L.Format("avatar.viewer.position", _index + 1, _items.Count)</span>
+            }
+            @if (Subject.CanManage && _loaded && !item.IsCurrent)
+            {
+                <button type="button" class="viewer__main" disabled="@_busy" @onclick="MakeMainAsync">
+                    <Icon Name="@IconNames.CircleCheck" Size="20" />
+                    <span>@L["avatar.viewer.makeMain"]</span>
+                </button>
+            }
+        </div>
+        @if (_index > 0)
+        {
+            <button type="button" class="viewer__nav viewer__nav--prev" aria-label="@L["media.viewer.previous"]" title="@L["media.viewer.previous"]" @onclick="() => MoveAsync(-1)">
+                <Icon Name="@IconNames.ChevronLeft" Size="26" />
+            </button>
+        }
+        @if (_index < _items.Count - 1)
+        {
+            <button type="button" class="viewer__nav viewer__nav--next" aria-label="@L["media.viewer.next"]" title="@L["media.viewer.next"]" @onclick="() => MoveAsync(1)">
+                <Icon Name="@IconNames.ChevronRight" Size="26" />
+            </button>
+        }
+    </div>
+}
+
+@code {
+    private ElementReference _stage;
+    private IReadOnlyList<AvatarPhotoDto> _items = [];
+    private int _index;
+    private bool _loaded;
+    private bool _chrome = true;
+    private bool _busy;
+    private bool _attachPending = true;
+    private bool _showPending;
+    private int _enterFrom;
+    private bool _closing;
+    private bool _gone;
+    private OverlayHandle? _overlay;
+    private JsModule? _module;
+    private JsObject? _gestures;
+    private DotNetObjectReference<AvatarViewer>? _self;
+    private readonly CancellationTokenSource _lifetime = new();
+
+    [Parameter, EditorRequired] public AvatarSubject Subject { get; set; } = default!;
+    /// <summary>The viewer is gone (closed by the user, Back or because nothing is left to show).</summary>
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    private AvatarPhotoDto? Current => _index >= 0 && _index < _items.Count ? _items[_index] : null;
+
+    private string Title => Subject.ChatId is null ? L["avatar.viewer.title"] : L["avatar.viewer.groupTitle"];
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        if (Subject.CurrentMediaId is { } current)
+            _items = [new AvatarPhotoDto { Media = new MediaDto { Id = current, Kind = MediaKind.Photo }, IsCurrent = true }];
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _overlay = await Nav.OpenOverlayAsync(() => InvokeAsync(async () =>
+        {
+            // Back / Escape: the picture still flies home first.
+            _overlay = null;
+            await PlayCloseAsync();
+            await GoneAsync();
+        }));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var items = Subject.ChatId is { } chatId
+                ? await Api.GetChatAvatarsAsync(chatId, _lifetime.Token)
+                : await Api.GetUserAvatarsAsync(Subject.UserId!.Value, _lifetime.Token);
+            if (_gone) return;
+            var shownId = Current?.Media.Id;
+            _items = items;
+            _loaded = true;
+            var index = shownId is { } id ? items.ToList().FindIndex(p => p.Media.Id == id) : -1;
+            _index = Math.Max(0, index);
+            if (_items.Count == 0)
+            {
+                await CloseAsync();
+                return;
+            }
+            // viewer.js learns the neighbours (and a different photo, if the shown one is gone) without a transition.
+            _enterFrom = 0;
+            _showPending = !_attachPending;
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (_gone) return;
+            // The current photo stays viewable; the history simply is not there.
+            _loaded = Subject.CurrentMediaId is not null;
+            if (!_loaded) Toasts.Error(ex);
+            if (_items.Count == 0)
+            {
+                // Opened on earlier photos only (no current one): nothing to show.
+                await CloseAsync();
+                return;
+            }
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_gone || Current is null) return;
+        if (_attachPending)
+        {
+            _attachPending = false;
+            _showPending = false;
+            _self ??= DotNetObjectReference.Create(this);
+            _module ??= new JsModule(JS, JsModule.Viewer);
+            _gestures = await _module.AttachAsync("attach", _stage, _self, new { mediaId = CurrentId, hasPrev = _index > 0, hasNext = _index < _items.Count - 1 });
+            if (_gone && _gestures is not null)
+            {
+                await _gestures.DisposeAsync();
+                _gestures = null;
+            }
+            return;
+        }
+        if (_showPending && _gestures is not null)
+        {
+            _showPending = false;
+            var from = _enterFrom;
+            _enterFrom = 0;
+            await _gestures.InvokeVoidAsync("show", from, CurrentId, _index > 0, _index < _items.Count - 1);
+        }
+    }
+
+    private string? CurrentId => Current?.Media.Id.ToString();
+
+    [JSInvokable]
+    public Task OnNavigate(int delta) => InvokeAsync(() => MoveAsync(delta));
+
+    [JSInvokable]
+    public Task OnDismiss() => InvokeAsync(CloseAsync);
+
+    [JSInvokable]
+    public Task OnTap() => InvokeAsync(() =>
+    {
+        _chrome = !_chrome;
+        StateHasChanged();
+    });
+
+    private Task MoveAsync(int delta)
+    {
+        var next = _index + Math.Sign(delta);
+        if (next < 0 || next >= _items.Count) return Task.CompletedTask;
+        _index = next;
+        _enterFrom = Math.Sign(delta);
+        _showPending = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_gone || _closing) return;
+        await PlayCloseAsync();
+        var overlay = _overlay;
+        _overlay = null;
+        await GoneAsync();
+        if (overlay is { IsOpen: true }) await overlay.CloseAsync();
+    }
+
+    /// <summary>The picture flies back into its avatar (or fades) before the viewer goes; instant with reduced motion.</summary>
+    private async Task PlayCloseAsync()
+    {
+        if (_gone || _closing || _gestures is not { } gestures) return;
+        _closing = true;
+        try
+        {
+            await gestures.InvokeAsync<bool>("close", CurrentId);
+        }
+        finally
+        {
+            _closing = false;
+        }
+    }
+
+    private async Task GoneAsync()
+    {
+        if (_gone) return;
+        _gone = true;
+        _lifetime.Cancel();
+        if (_gestures is not null)
+        {
+            await _gestures.DisposeAsync();
+            _gestures = null;
+        }
+        await OnClosed.InvokeAsync();
+    }
+
+    private string Subtitle(AvatarPhotoDto item)
+    {
+        if (!_loaded) return L["common.loading"];
+        if (item.IsCurrent && item.SetAt == default) return L["avatar.viewer.current"];
+        var date = item.SetAt == default ? item.Media.CreatedAt : item.SetAt;
+        var day = Format.DayMonthYear(date.ToLocalTime().DateTime);
+        return item.IsCurrent ? $"{L["avatar.viewer.current"]} · {day}" : L.Format("avatar.viewer.setAt", day);
+    }
+
+    private async Task MakeMainAsync()
+    {
+        if (Current is not { } item || _busy) return;
+        _busy = true;
+        try
+        {
+            if (Subject.ChatId is { } chatId) await Api.SetChatAvatarAsync(chatId, item.Media.Id, _lifetime.Token);
+            else Auth.UpdateMe(await Api.SetAvatarAsync(item.Media.Id, _lifetime.Token));
+            Toasts.Success(L["avatar.viewer.madeMain"]);
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Current is not { } item || _busy) return;
+        var text = !item.IsCurrent ? L["avatar.viewer.deleteTextOld"]
+            : _items.Count > 1 ? L["avatar.viewer.deleteTextMain"] : L["avatar.viewer.deleteTextLast"];
+        if (!await Dialogs.ConfirmAsync(L["avatar.viewer.deleteTitle"], text, L["common.delete"], danger: true)) return;
+        _busy = true;
+        try
+        {
+            if (Subject.ChatId is { } chatId) await Api.DeleteChatAvatarAsync(chatId, item.Media.Id, _lifetime.Token);
+            else Auth.UpdateMe(await Api.DeleteMyAvatarAsync(item.Media.Id, _lifetime.Token));
+            Toasts.Success(L["avatar.viewer.deleted"]);
+            var left = _items.Where(p => p.Media.Id != item.Media.Id).ToList();
+            if (left.Count == 0)
+            {
+                await CloseAsync();
+                return;
+            }
+            // The next photo takes the place of the deleted one; the history then comes back fresh.
+            _items = left;
+            _index = Math.Min(_index, left.Count - 1);
+            _enterFrom = 0;
+            _showPending = true;
+            StateHasChanged();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Current is not { } item || item.Media.SizeBytes <= 0) return;
+        try
+        {
+            if (await Downloads.SaveToDeviceAsync(item.Media)) Toasts.Success(L["media.saved"]);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private static string Aspect(MediaDto media)
+    {
+        var ratio = media is { Width: > 0, Height: > 0 } ? (double)media.Width.Value / media.Height.Value : 1;
+        return Math.Clamp(ratio, 0.2, 5).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _gone = true;
+        _lifetime.Cancel();
+        if (_gestures is not null) await _gestures.DisposeAsync();
+        if (_overlay is { IsOpen: true } overlay) await overlay.CloseAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

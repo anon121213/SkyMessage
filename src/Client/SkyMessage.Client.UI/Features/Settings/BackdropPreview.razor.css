@@ -1,0 +1,228 @@
+/* A mock screen over a background (the editor's previews). Its tokens (--p-*) come inline for the theme it shows. */
+
+.bd-prev {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+    min-width: 0;
+}
+
+.bd-prev__frame {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    height: 13.5rem;
+    padding: 10px 9px 9px;
+    border-radius: 22px;
+    overflow: hidden;
+    color: var(--p-text);
+    box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
+}
+
+/* The edited theme: a ring grows in around its mock. */
+.bd-prev__frame::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 2.5px var(--sm-accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out);
+}
+
+.bd-prev.is-active .bd-prev__frame::after {
+    opacity: 1;
+}
+
+.bd-prev__paint,
+.bd-prev__photo,
+.bd-prev__veil,
+.bd-prev__stars {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.bd-prev__paint {
+    z-index: -4;
+}
+
+/* Sharp picture, blurred here (a small still layer); a little larger than the frame so the blur never shows an edge. */
+.bd-prev__photo {
+    z-index: -3;
+    inset: -12px;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    filter: blur(var(--blur, 0px));
+}
+
+.bd-prev__veil {
+    z-index: -2;
+    background: var(--p-veil);
+}
+
+.bd-prev__stars {
+    z-index: -1;
+    background-image:
+        radial-gradient(1.2px 1.2px at 14% 18%, #fff 50%, transparent 52%),
+        radial-gradient(1px 1px at 58% 9%, #fff 50%, transparent 52%),
+        radial-gradient(1.3px 1.3px at 84% 26%, #fff 50%, transparent 52%),
+        radial-gradient(1px 1px at 36% 44%, #fff 50%, transparent 52%),
+        radial-gradient(1.1px 1.1px at 10% 70%, #fff 50%, transparent 52%),
+        radial-gradient(1px 1px at 72% 62%, #fff 50%, transparent 52%),
+        radial-gradient(1.2px 1.2px at 90% 84%, #fff 50%, transparent 52%);
+}
+
+.bd-prev__label {
+    font-size: 0.75rem;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--sm-text-2);
+}
+
+.bd-prev.is-active .bd-prev__label {
+    font-family: var(--sm-font-display);
+    font-weight: 700;
+    color: var(--sm-text);
+}
+
+.bd-prev__avatar {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    color: #3A2160;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.bd-prev__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--p-text);
+}
+
+/* ---- The app: rows straight on the background ---- */
+
+.bd-prev__title {
+    padding: 4px 4px 6px;
+    font-family: var(--sm-font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--p-text);
+}
+
+.bd-prev__search {
+    flex-shrink: 0;
+    height: 1.125rem;
+    margin: 0 2px 8px;
+    border-radius: 999px;
+    background: var(--p-card);
+}
+
+.bd-prev__row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 3px;
+}
+
+.bd-prev__lines {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.bd-prev__text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.625rem;
+    color: var(--p-text-2);
+}
+
+.bd-prev__dock {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    height: 1.625rem;
+    margin: auto 6px 0;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--p-glass);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.bd-prev__dock i {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background: var(--p-text-2);
+    opacity: 0.55;
+}
+
+.bd-prev__dock i.is-on {
+    width: 1.25rem;
+    border-radius: 999px;
+    background: var(--p-accent);
+    opacity: 1;
+}
+
+/* ---- A chat: the header capsule and a bubble each way ---- */
+
+.bd-prev__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 2rem;
+    padding: 0 9px 0 4px;
+    border-radius: 999px;
+    background: var(--p-glass);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.bd-prev__bubbles {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: auto;
+}
+
+.bd-prev__bubble {
+    max-width: 88%;
+    padding: 5px 9px;
+    border-radius: 12px;
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.bd-prev__bubble--in {
+    align-self: flex-start;
+    background: var(--p-in);
+    color: var(--p-in-ink);
+    box-shadow: 0 1px 2px rgba(20, 10, 60, 0.12);
+}
+
+.bd-prev__bubble--out {
+    align-self: flex-end;
+    background: var(--p-out);
+    color: var(--p-out-ink);
+}

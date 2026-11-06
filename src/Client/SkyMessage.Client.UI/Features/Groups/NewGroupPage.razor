@@ -7,6 +7,7 @@
 @inject IChatListStore ChatList
 @inject IUserStore Users
 @inject AvatarUploader Avatars
+@inject AvatarFlows AvatarSources
 @inject NavigationService Nav
 @inject DialogService Dialogs
 @inject ToastService Toasts
@@ -123,7 +124,7 @@
     {
         try
         {
-            if (await Avatars.PickAsync() is { } photo) _photo = photo;
+            if (await AvatarSources.ChooseAsync() is { } photo) _photo = photo;
         }
         catch (Exception ex)
         {

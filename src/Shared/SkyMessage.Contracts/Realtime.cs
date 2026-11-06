@@ -30,11 +30,20 @@ public interface IRealtimeClient
 
     Task ChatMembersChanged(ChatRefEvent e);
 
-    /// <summary>Pin / archive / mute changed on another device of the same user.</summary>
+    /// <summary>
+    /// Pin / archive / mute changed on another device of the same user, or a new message brought an archived chat back to
+    /// the list (<see cref="ChatListSettingsDto.KeepArchived"/> off).
+    /// </summary>
     Task ChatSettingsChanged(ChatSettingsChangedEvent e);
 
     /// <summary>The user rearranged their pinned chats (sent to all of the user's devices, the acting one included).</summary>
     Task PinnedChatsReordered(PinnedChatsOrderDto order);
+
+    /// <summary>
+    /// The user's folders or chat list settings changed (all of the user's devices, the acting one included): the whole
+    /// new state; a copy with a lower <see cref="ChatFoldersDto.Revision"/> than one already seen is older.
+    /// </summary>
+    Task ChatFoldersChanged(ChatFoldersDto state);
 
     Task HistoryCleared(HistoryClearedEvent e);
 

@@ -18,6 +18,7 @@ public static class WebPlatformSetup
         services.AddSingleton<IOutboxFileStore, WebOutboxFileStore>();
         services.AddSingleton<IMediaFileStore, WebMediaFileStore>();
         services.AddSingleton<ICustomSoundStore, WebCustomSoundStore>();
+        services.AddSingleton<IBackdropImageStore, WebBackdropImageStore>();
         services.AddSingleton<IFilePickerService, WebFilePickerService>();
         services.AddSingleton<IMediaCompressor, WebMediaCompressor>();
         services.AddSingleton<IPhoneNumberService, WebPhoneNumberService>();
@@ -42,6 +43,9 @@ public static class WebPlatformSetup
         services.AddSingleton<IHttpHandlerFactory, WebHttpHandlerFactory>();
         // The server serves the new client; IAppUpdateService asks the page to reload when it changes.
         services.AddSingleton<IAppUpdateInstaller, UnsupportedAppUpdateInstaller>();
+        // Birthdays remind on the chat list only; there is no phone book to watch.
+        services.AddSingleton<IReminderNotificationService, UnsupportedReminderNotificationService>();
+        services.AddSingleton<IDeviceContactsWatcher, UnsupportedDeviceContactsWatcher>();
         return services;
     }
 }

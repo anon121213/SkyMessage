@@ -189,3 +189,28 @@ internal sealed class MarkReadRequestValidator : AbstractValidator<MarkReadReque
         RuleFor(x => x.UpToSeq).GreaterThanOrEqualTo(0);
     }
 }
+
+internal sealed class SaveChatFolderRequestValidator : AbstractValidator<SaveChatFolderRequest>
+{
+    public SaveChatFolderRequestValidator()
+    {
+        RuleFor(x => x).Custom((request, context) =>
+        {
+            foreach (var (field, error) in ChatFolderInput.Errors(request))
+                context.AddFailure(field, error);
+        });
+    }
+}
+
+internal sealed class ReorderChatFoldersRequestValidator : AbstractValidator<ReorderChatFoldersRequest>
+{
+    public ReorderChatFoldersRequestValidator()
+    {
+        RuleFor(x => x.FolderIds)
+            .NotNull()
+            .Must(ids => ids.Count is > 0 and <= Limits.MaxChatFolders)
+            .WithMessage($"List 1 to {Limits.MaxChatFolders} folders.")
+            .Must(ids => ids.Distinct().Count() == ids.Count && !ids.Contains(Guid.Empty))
+            .WithMessage("Folder ids must be distinct and not empty.");
+    }
+}

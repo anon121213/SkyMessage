@@ -17,6 +17,8 @@
 @inject ILinkBuilder Links
 @inject IMediaUrlBuilder MediaUrls
 @inject AvatarUploader Avatars
+@inject AvatarFlows AvatarSources
+@inject AvatarOverlays AvatarViewer
 @inject ChatActions Actions
 @inject FormatService Format
 @inject NavigationService Nav
@@ -137,6 +139,9 @@
     };
 
     private string? InviteLink => _inviteToken is null ? null : Links.InviteLink(_inviteToken);
+
+    /// <summary>Earlier photos of the group's history I may open (see <see cref="ChatDetailsDto.EarlierAvatarCount"/>).</summary>
+    private int EarlierPhotos => _details?.EarlierAvatarCount ?? 0;
 
     /// <summary>Owner, admins, then everyone else (online first, then by name).</summary>
     private IReadOnlyList<ChatMemberDto> Members =>
@@ -282,7 +287,12 @@
             <div class="ginfo__head">
                 <div class="ginfo__avatar">
                     @Portrait()
-                    <ChatAvatar Chat="chat" Size="116" />
+                    @* The photo opens the avatar viewer with the group's earlier photos (admins: set as main, delete) — for
+                       admins also while the group has no photo but earlier ones are kept. *@
+                    <button type="button" class="ginfo__avatar-view" aria-label="@(ChatList.AvatarOf(chat) is null ? L["avatar.history"] : L["avatar.choose.view"])"
+                            disabled="@(!AvatarViewer.HasPhoto(chat, EarlierPhotos))" @onclick="() => AvatarViewer.ViewChat(chat, EarlierPhotos)">
+                        <ChatAvatar Chat="chat" Size="116" />
+                    </button>
                     @if (chat.CanChangeInfo())
                     {
                         <button type="button" class="ginfo__avatar-edit" aria-label="@L["groups.photo.change"]" title="@L["groups.photo.change"]" @onclick="ChangePhotoAsync">
@@ -494,19 +504,27 @@
     private async Task ChangePhotoAsync()
     {
         if (Chat is not { } chat) return;
-        var options = new List<ChoiceOption<string>> { new("pick", L["groups.photo.choose"]) { Icon = IconNames.ImageUp } };
-        if (ChatList.AvatarOf(chat) is not null) options.Add(new ChoiceOption<string>("remove", L["groups.photo.remove"]) { Icon = IconNames.Trash2, Danger = true });
-        var choice = options.Count == 1 ? options[0] : await Dialogs.ChooseAsync(L["groups.photo.change"], options);
+        var options = AvatarSources.SourceOptions().ToList();
+        var hasPhoto = ChatList.AvatarOf(chat) is not null;
+        if (hasPhoto || EarlierPhotos > 0)
+            options.Add(new ChoiceOption<string>("view", hasPhoto ? L["avatar.choose.view"] : L["avatar.history"]) { Icon = IconNames.Images });
+        if (hasPhoto)
+            options.Add(new ChoiceOption<string>("remove", L["groups.photo.remove"]) { Icon = IconNames.Trash2, Danger = true });
+        var choice = await Dialogs.ChooseAsync(L["groups.photo.change"], options);
         if (choice is null) return;
         try
         {
-            if (choice.Value == "remove")
+            if (choice.Value == "view")
             {
-                await Api.RemoveChatAvatarAsync(chat.Id);
-                Toasts.Success(L["groups.photo.removed"]);
+                AvatarViewer.ViewChat(chat, EarlierPhotos);
                 return;
             }
-            if (await Avatars.PickAsync() is not { } photo) return;
+            if (choice.Value == "remove")
+            {
+                await RemovePhotoAsync(chat);
+                return;
+            }
+            if (await AvatarSources.MakeAsync(choice.Value) is not { } photo) return;
             Toasts.Info(L["groups.photo.uploading"]);
             var media = await Avatars.UploadAsync(photo);
             await Api.SetChatAvatarAsync(chat.Id, media.Id);
@@ -516,6 +534,28 @@
         {
             Toasts.Error(ex);
         }
+    }
+
+    /// <summary>
+    /// No photo for the group. Earlier photos stay in its history (seen by who may change the group until a new photo
+    /// shows them to everyone again), so the dialog says it and can take them along.
+    /// </summary>
+    private async Task RemovePhotoAsync(ChatSummaryDto chat)
+    {
+        var earlier = EarlierPhotos;
+        var answer = await Dialogs.ConfirmAsync(new ConfirmOptions
+        {
+            Title = L["avatar.remove.groupTitle"],
+            Message = earlier > 0 ? L["avatar.remove.keepsHistoryGroup"] : null,
+            CheckboxLabel = earlier > 0 ? L.Format("avatar.remove.alsoEarlier", earlier) : null,
+            ConfirmText = L["groups.photo.remove"],
+            Danger = true,
+        });
+        if (!answer.Confirmed) return;
+        var all = earlier > 0 && answer.Checked;
+        if (all) await Api.DeleteAllChatAvatarsAsync(chat.Id);
+        else await Api.RemoveChatAvatarAsync(chat.Id);
+        Toasts.Success(all ? L["avatar.remove.allDone"] : L["groups.photo.removed"]);
     }
 
     private async Task AddMembersAsync(ChatSummaryDto chat)

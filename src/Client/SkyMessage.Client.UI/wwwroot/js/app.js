@@ -887,6 +887,8 @@ export function attachRowSwipe(list, scroller, ref) {
 
   const down = (e) => {
     if (!e.isPrimary || (e.pointerType !== 'touch' && e.pointerType !== 'pen')) return;
+    // Sideways swipes switch folders instead (folders.js, the "Swipe on a chat" setting).
+    if (list.hasAttribute('data-row-swipe-off')) return;
     const wrap = rowOf(e.target);
     const onAction = !!(e.target instanceof Element && e.target.closest('[data-row-action]'));
     if (onAction) return;
@@ -1733,7 +1735,23 @@ export function applyTheme(state) {
   let style = document.getElementById('sm-theme');
   if (!style) { style = document.createElement('style'); style.id = 'sm-theme'; document.head.appendChild(style); }
   style.textContent = state.css || '';
+  const scene = (state.scenes || []).find((s) => s && s.theme === (dark ? 'dark' : 'light'));
+  if (scene && scene.own) root.setAttribute('data-sky-own', scene.own);
+  else root.removeAttribute('data-sky-own');
   return dark;
+}
+
+/** A background picture as the page shows it (boot.js bakes its blur in): { url, tone } (an object URL and its average color), or null. */
+export function backdropUrl(src, blur) {
+  const boot = window.__smBoot;
+  return boot && boot.photo && src ? boot.photo(src, blur) : Promise.resolve(null);
+}
+
+/** The long side, in device pixels, a background picture needs on this screen (it is downscaled to it when picked). */
+export function backdropMaxSide() {
+  const screen = window.screen || {};
+  const side = Math.max(screen.width || 0, screen.height || 0, window.innerWidth || 0, window.innerHeight || 0);
+  return Math.round(side * Math.min(3, Math.max(1, window.devicePixelRatio || 1)));
 }
 
 export function observeSystemTheme(ref, method) {

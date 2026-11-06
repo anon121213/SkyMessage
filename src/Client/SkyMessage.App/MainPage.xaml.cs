@@ -14,6 +14,7 @@ public partial class MainPage : ContentPage
 {
     private readonly IServiceProvider _services;
     private readonly MediaProxy _mediaProxy;
+    private readonly BackdropImageStore _backdrops;
     private readonly ILogger<MainPage> _logger;
     private BlazorWebView? _webView;
     private CancellationTokenSource _webViewLifetime = new();
@@ -24,10 +25,11 @@ public partial class MainPage : ContentPage
     private SkyMessage.App.Apple.AppleWebViewHost? _appleHost;
 #endif
 
-    public MainPage(IServiceProvider services, MediaProxy mediaProxy, ILogger<MainPage> logger)
+    public MainPage(IServiceProvider services, MediaProxy mediaProxy, BackdropImageStore backdrops, ILogger<MainPage> logger)
     {
         _services = services;
         _mediaProxy = mediaProxy;
+        _backdrops = backdrops;
         _logger = logger;
         InitializeComponent();
         CreateWebView("/");
@@ -59,8 +61,10 @@ public partial class MainPage : ContentPage
         Root.Children.Add(webView);
     }
 
-    private void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e) =>
-        _mediaProxy.TryHandle(e, _webViewLifetime.Token);
+    private void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e)
+    {
+        if (!_mediaProxy.TryHandle(e, _webViewLifetime.Token)) _backdrops.TryServe(e);
+    }
 
     private void OnUrlLoading(object? sender, UrlLoadingEventArgs e)
     {

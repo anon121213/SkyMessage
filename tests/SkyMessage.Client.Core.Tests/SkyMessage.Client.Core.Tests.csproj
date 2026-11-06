@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Client\SkyMessage.Client.Core\SkyMessage.Client.Core.csproj" />
+    <!-- Theme building (ThemeCatalog: bubble ink and contrast, backgrounds) is UI code without JS; tested here. -->
+    <ProjectReference Include="..\..\src\Client\SkyMessage.Client.UI\SkyMessage.Client.UI.csproj" />
   </ItemGroup>
 
 </Project>

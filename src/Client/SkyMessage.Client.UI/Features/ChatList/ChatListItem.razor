@@ -39,7 +39,7 @@
             </div>
         }
     }
-    <ListItem Class="@($"chat-row {(Unread ? "chat-row--unread" : null)}")" Selected="Selected" OnClick="OpenAsync" OnContextMenu="MenuAsync"
+    <ListItem Class="@($"chat-row {(Unread ? "chat-row--unread" : null)}")" Selected="Selected" OnClick="OpenAsync" OnContextMenu="ContextMenu"
               Tooltip="@(Layout?.IsWide == true ? Title : null)" data-swipe-content="">
         <Leading>
             <span class="chat-row__avatar @(Unread ? "chat-row__avatar--ring" : null) @(Unread && Muted ? "chat-row__avatar--quiet" : null)">
@@ -100,7 +100,7 @@
                         <Badge Kind="BadgeKind.Mention" Title="@L["chatlist.mentions"]" Pop="_mentionPop" />
                     }
                     <Badge Count="Chat.UnreadCount" Muted="Muted" Animate="true" />
-                    @if (Chat.UnreadCount == 0 && Chat.IsPinned)
+                    @if (Chat.UnreadCount == 0 && IsPinned)
                     {
                         <Icon Name="@IconNames.Pin" Size="15" StrokeWidth="2.2" Class="chat-row__pin" Title="@L["chatlist.pinned"]" />
                     }
@@ -127,15 +127,25 @@
     [Parameter] public bool SwipeActions { get; set; }
     /// <summary>A pinned chat that can be dragged among the other pinned ones of the list.</summary>
     [Parameter] public bool Reorderable { get; set; }
+    /// <summary>Shown in a folder: pinned there (its own pins; the global pin of the chat belongs to "All chats"). Null = the global pin.</summary>
+    [Parameter] public bool? Pinned { get; set; }
     [Parameter] public EventCallback<ChatSummaryDto> OnOpen { get; set; }
     [Parameter] public EventCallback<(ChatSummaryDto Chat, MenuPosition Position)> OnMenu { get; set; }
     /// <summary>A swipe button was tapped.</summary>
     [Parameter] public EventCallback<(ChatSummaryDto Chat, string Action)> OnAction { get; set; }
+    /// <summary>
+    /// A copy that is only looked at (the neighbouring folder beside the list while a swipe follows the finger): the same
+    /// row, without the long-press menu binding.
+    /// </summary>
+    [Parameter] public bool Still { get; set; }
+
+    private EventCallback<MenuPosition> ContextMenu => Still ? default : EventCallback.Factory.Create<MenuPosition>(this, MenuAsync);
 
     private Guid? Me => Auth.UserId;
     private bool Compact => Settings.Current.Appearance.CompactChatList;
     private bool Muted => Chat.IsMuted(DateTimeOffset.UtcNow);
     private bool Unread => Chat.UnreadCount > 0 || Chat.UnreadMentionCount > 0;
+    private bool IsPinned => Pinned ?? Chat.IsPinned;
 
     private string Title => Chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(Chat);
 
@@ -146,9 +156,10 @@
         {
             var list = new List<SwipeAction>(2);
             if (Unread) list.Add(new("read", IconNames.CheckCheck, L["chatlist.swipe.read"]));
-            if (!Chat.IsArchived)
+            // A folder pins its own chats, archived ones too; the global pins leave archived chats alone.
+            if (Pinned is not null || !Chat.IsArchived)
             {
-                list.Add(Chat.IsPinned
+                list.Add(IsPinned
                     ? new("pin", IconNames.PinOff, L["chatlist.swipe.unpin"])
                     : new("pin", IconNames.Pin, L["chatlist.swipe.pin"]));
             }

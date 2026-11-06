@@ -104,6 +104,7 @@ internal sealed class RealtimeService : IRealtimeService, IAsyncDisposable, IDis
     public event Action<ChatRefEvent>? ChatMembersChanged;
     public event Action<ChatSettingsChangedEvent>? ChatSettingsChanged;
     public event Action<PinnedChatsOrderDto>? PinnedChatsReordered;
+    public event Action<ChatFoldersDto>? ChatFoldersChanged;
     public event Action<HistoryClearedEvent>? HistoryCleared;
     public event Action<ChatRefEvent>? PinnedMessagesChanged;
     public event Action<PresenceChangedEvent>? PresenceChanged;
@@ -530,6 +531,7 @@ internal sealed class RealtimeService : IRealtimeService, IAsyncDisposable, IDis
         c.On<ChatRefEvent>(nameof(IRealtimeClient.ChatMembersChanged), e => EventRaiser.Raise(ChatMembersChanged, e, _logger));
         c.On<ChatSettingsChangedEvent>(nameof(IRealtimeClient.ChatSettingsChanged), e => EventRaiser.Raise(ChatSettingsChanged, e, _logger));
         c.On<PinnedChatsOrderDto>(nameof(IRealtimeClient.PinnedChatsReordered), e => EventRaiser.Raise(PinnedChatsReordered, e, _logger));
+        c.On<ChatFoldersDto>(nameof(IRealtimeClient.ChatFoldersChanged), e => EventRaiser.Raise(ChatFoldersChanged, e, _logger));
         c.On<HistoryClearedEvent>(nameof(IRealtimeClient.HistoryCleared), e => EventRaiser.Raise(HistoryCleared, e, _logger));
         c.On<ChatRefEvent>(nameof(IRealtimeClient.PinnedMessagesChanged), e => EventRaiser.Raise(PinnedMessagesChanged, e, _logger));
         c.On<PresenceChangedEvent>(nameof(IRealtimeClient.PresenceChanged), e => EventRaiser.Raise(PresenceChanged, e, _logger));

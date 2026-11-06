@@ -23,6 +23,8 @@ public static class PlatformServices
         services.AddSingleton<IOutboxFileStore, OutboxFileStore>();
         services.AddSingleton<IMediaFileStore, MediaFileStore>();
         services.AddSingleton<ICustomSoundStore, CustomSoundStore>();
+        services.AddSingleton<BackdropImageStore>();
+        services.AddSingleton<IBackdropImageStore>(sp => sp.GetRequiredService<BackdropImageStore>());
         services.AddSingleton<IShareService, ShareService>();
         services.AddSingleton<IFileOpener, FileOpener>();
         services.AddSingleton<IExternalLauncher, ExternalLauncher>();
@@ -50,6 +52,8 @@ public static class PlatformServices
         services.AddSingleton<IBackgroundConnectionService, AndroidBackgroundConnectionService>();
         services.AddSingleton<IFileSaveService, AndroidFileSaveService>();
         services.AddSingleton<IAppUpdateInstaller, AndroidAppUpdateInstaller>();
+        services.AddSingleton<IReminderNotificationService, AndroidReminderService>();
+        services.AddSingleton<IDeviceContactsWatcher, AndroidDeviceContactsWatcher>();
 #elif IOS || MACCATALYST
         services.AddSingleton<IPermissionService, ApplePermissionService>();
         services.AddSingleton<INetworkStatusService, AppleNetworkStatusService>();
@@ -66,6 +70,9 @@ public static class PlatformServices
         services.AddSingleton<IFileSaveService, AppleFileSaveService>();
         // Store builds update through the store.
         services.AddSingleton<IAppUpdateInstaller, UnsupportedAppUpdateInstaller>();
+        // Birthdays remind on the chat list; contact sync reads the address book at start.
+        services.AddSingleton<IReminderNotificationService, UnsupportedReminderNotificationService>();
+        services.AddSingleton<IDeviceContactsWatcher, UnsupportedDeviceContactsWatcher>();
 #if IOS
         services.AddSingleton<IHapticsService, AppleHapticsService>();
         services.AddSingleton<IAudioRouteService, AppleAudioRouteService>();

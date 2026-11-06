@@ -1,0 +1,66 @@
+/* Settings › Folders: a quiet illustration with one line of explanation, then the grouped cards. */
+
+.folders-intro {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 24px 2px;
+    text-align: center;
+}
+
+.folders-intro__text {
+    max-width: 26rem;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+
+/* Positioned: a dragged row travels over the others (js/folders.js attachHandleReorder). */
+.folders-list {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.folders-list__row {
+    position: relative;
+    border-radius: 20px;
+}
+
+.folders-list__row[data-dragging] {
+    background: var(--sm-glass-strong);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+}
+
+html[data-fx="lite"] .folders-list__row[data-dragging] {
+    background: var(--sm-card-solid);
+}
+
+.folders-list[data-reordering] ::deep .sm-list-item {
+    background: transparent;
+}
+
+.folders-list__handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-right: -8px;
+    border-radius: 12px;
+    color: var(--sm-text-3);
+    cursor: grab;
+    touch-action: none;
+}
+
+.folders-list__row[data-dragging] .folders-list__handle {
+    color: var(--sm-accent);
+    cursor: grabbing;
+}
+
+.folders-create {
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+}

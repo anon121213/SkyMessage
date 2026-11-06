@@ -37,6 +37,11 @@ public interface IChatListStore
     event Action? Changed;
     /// <summary>Raised when <see cref="ActiveChatId"/> takes a different value (any thread).</summary>
     event Action? ActiveChatChanged;
+    /// <summary>
+    /// Raised after a full list arrived from the server, with the id of every chat of mine it holds (archived and hidden
+    /// ones too): a chat missing from it is gone for me (any thread).
+    /// </summary>
+    event Action<IReadOnlyCollection<Guid>>? Synced;
 
     Task LoadAsync(bool force = false, CancellationToken cancellationToken = default);
     ChatSummaryDto? Get(Guid chatId);
@@ -217,6 +222,9 @@ public interface IUserStore
 /// <summary>A phone-book match. Only matches the user confirms are imported; the list shows @username and avatar.</summary>
 public sealed record PhoneBookMatch(string DeviceContactName, string PhoneNumber, UserSummaryDto User, bool AlreadyContact);
 
+/// <summary>A number of the phone book (E.164 from the OS when it has it, else as written) and the name it is saved under.</summary>
+public sealed record PhoneBookEntry(string Number, string Name);
+
 public interface IContactStore
 {
     /// <summary>Sorted by display name.</summary>
@@ -235,7 +243,23 @@ public interface IContactStore
     Task UnblockAsync(Guid userId);
     /// <summary>Reads the phone book (asks permission) and returns registered users found by number (DefaultRegion from IPlatformInfo.CountryCode).</summary>
     Task<IReadOnlyList<PhoneBookMatch>> FindDeviceContactsAsync(CancellationToken cancellationToken = default);
+    /// <summary>The phone book's numbers, one entry each (asks permission; empty without one).</summary>
+    Task<IReadOnlyList<PhoneBookEntry>> ReadPhoneBookAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Registered users among these numbers: find-by-phones in chunks of <see cref="Limits.FindByPhonesMax"/>, which the
+    /// server allows <see cref="Limits.PhoneLookupsPerWindow"/> times per window (429 after that).
+    /// </summary>
+    Task<IReadOnlyList<PhoneBookMatch>> MatchPhoneBookAsync(IReadOnlyList<PhoneBookEntry> phoneBook, CancellationToken cancellationToken = default);
     Task ImportAsync(IReadOnlyList<PhoneBookMatch> confirmedMatches);
+    /// <summary>
+    /// Contact sync: adds these matches marked as synced, and synced contacts among them take their phone-book name
+    /// (people added or renamed by hand stay as they are). Returns the contacts added or renamed.
+    /// </summary>
+    Task<IReadOnlyList<ContactDto>> AddSyncedAsync(IReadOnlyList<PhoneBookMatch> matches);
+    /// <summary>Removes the contacts sync added (<see cref="ContactDto.IsSynced"/>); returns how many went.</summary>
+    Task<int> RemoveSyncedAsync();
+    /// <summary>Removes these people while they are synced contacts (their number left the phone book); returns the ones removed.</summary>
+    Task<IReadOnlyList<Guid>> RemoveSyncedAsync(IReadOnlyCollection<Guid> userIds);
 }
 
 public interface ITypingStore
@@ -350,4 +374,42 @@ public interface ICallService
     void ReportParticipants(IReadOnlyList<CallParticipantState> participants);
     void RequestCommand(CallCommand command);
     Task<IReadOnlyList<CallHistoryItemDto>> GetHistoryAsync(DateTimeOffset? before = null, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// My chat folders and chat list settings, synced across my devices (SPEC §8.1 "Folders"). Starts from the per-account
+/// cache, then the server; a ChatFoldersChanged event replaces the state when its revision is newer, and every resync
+/// reloads it (or retries a first load that failed). Changes show at once and are put back (and rethrown) when the server refuses them; my pending changes
+/// stay on top of whatever newer state arrives meanwhile. Which chats a folder shows: <see cref="ChatFolderView"/> over
+/// <see cref="IChatListStore"/>, with the same <see cref="ChatFolderRules"/> the server runs.
+/// </summary>
+public interface IChatFolderStore
+{
+    /// <summary>The newest server state with my pending changes on top.</summary>
+    ChatFoldersDto State { get; }
+    /// <summary>In my order ("All chats" is not one of them: the UI shows it first).</summary>
+    IReadOnlyList<ChatFolderDto> Folders { get; }
+    ChatListSettingsDto Settings { get; }
+    bool IsLoaded { get; }
+    event Action? Changed;
+
+    Task LoadAsync(bool force = false, CancellationToken cancellationToken = default);
+    ChatFolderDto? Get(Guid folderId);
+    /// <summary>A new folder (a new id: Guid.CreateVersion7()); it goes last.</summary>
+    Task CreateAsync(ChatFolderDto folder);
+    /// <summary>
+    /// Saves an existing folder's name, icon and rules (its pins stay as they are). A folder deleted meanwhile (on another
+    /// device) is not brought back: the server answers 404 folder_not_found, which this rethrows.
+    /// </summary>
+    Task SaveAsync(ChatFolderDto folder);
+    Task DeleteAsync(Guid folderId);
+    /// <summary>My folders in the order I want them (the listed ones take the places they held, like pinned chats).</summary>
+    Task ReorderAsync(IReadOnlyList<Guid> folderIds);
+    /// <summary>A new pin goes on top of the folder's own pins (the global pins belong to "All chats").</summary>
+    Task SetPinnedAsync(Guid folderId, Guid chatId, bool pinned);
+    Task ReorderPinnedAsync(Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst);
+    /// <summary>Changes the settings the request sets (null keeps a setting, so another device's change of another one stays).</summary>
+    Task UpdateSettingsAsync(UpdateChatListSettingsRequest change);
+    /// <summary>Marks every chat of the folder read (null = "All chats"); the counters follow the server's MessagesRead events.</summary>
+    Task MarkReadAsync(Guid? folderId);
 }

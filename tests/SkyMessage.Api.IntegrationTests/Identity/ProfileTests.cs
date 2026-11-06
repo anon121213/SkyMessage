@@ -270,6 +270,7 @@ public sealed class ProfileTests(ApiFactory factory)
             Messages = PrivacyLevel.Everybody,
             Calls = PrivacyLevel.Everybody,
             GroupInvites = PrivacyLevel.Everybody,
+            Birthday = PrivacyLevel.Contacts,
         });
 
         var wanted = new PrivacySettingsDto
@@ -281,6 +282,7 @@ public sealed class ProfileTests(ApiFactory factory)
             Messages = PrivacyLevel.Contacts,
             Calls = PrivacyLevel.Nobody,
             GroupInvites = PrivacyLevel.Contacts,
+            Birthday = PrivacyLevel.Everybody,
         };
         (await user.Client.PutAs<PrivacySettingsDto>(ApiRoutes.Users.MePrivacy, wanted)).ShouldBe(wanted);
         (await user.Client.GetAs<PrivacySettingsDto>(ApiRoutes.Users.MePrivacy)).ShouldBe(wanted);

@@ -1,0 +1,87 @@
+/* A glass card at the top of the chat list (the notices stack), dropping in once: faces with a small 🎂, the line,
+   the age, and the accent "Поздравить" capsule. */
+.bday-card {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    width: min(100%, 28rem);
+    padding: 14px 8px 14px 14px;
+    border-radius: var(--sm-radius-xl);
+    pointer-events: auto;
+    overflow: hidden;
+    animation: bday-card-in 560ms var(--sm-spring-soft) backwards;
+}
+
+.bday-card--leaving {
+    pointer-events: none;
+    animation: bday-card-out 200ms var(--sm-ease-in) forwards;
+}
+
+.bday-card__faces {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    padding-right: 4px;
+}
+
+.bday-card__faces ::deep .bday-card__face + .bday-card__face {
+    margin-left: -14px;
+}
+
+.bday-card__faces ::deep .bday-card__face {
+    --sm-dot-ring: var(--sm-surface);
+}
+
+.bday-card__cake {
+    position: absolute;
+    right: -4px;
+    bottom: -6px;
+    font-size: 1.125rem;
+    line-height: 1;
+}
+
+.bday-card__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-top: 1px;
+}
+
+.bday-card__title {
+    font-family: var(--sm-font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.bday-card__text {
+    margin-top: 2px;
+    font-size: 0.875rem;
+    line-height: 1.42;
+    color: var(--sm-text-2);
+    text-wrap: pretty;
+}
+
+.bday-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.bday-card ::deep .bday-card__close {
+    position: relative;
+    flex-shrink: 0;
+    margin: -4px 0 0 -6px;
+}
+
+@keyframes bday-card-in {
+    from { opacity: 0; transform: translateY(-110%) scale(0.94); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes bday-card-out {
+    to { opacity: 0; transform: translateY(-40%) scale(0.94); }
+}

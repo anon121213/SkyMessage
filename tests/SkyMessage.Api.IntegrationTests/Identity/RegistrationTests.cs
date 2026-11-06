@@ -24,7 +24,7 @@ public sealed class RegistrationTests(ApiFactory factory)
         auth.User.DisplayName.ShouldBe("Alice Example");
         auth.User.PhoneNumber.ShouldBeNull();
         auth.User.PhoneSource.ShouldBe(PhoneSource.None);
-        auth.User.Privacy.ShouldBe(new PrivacySettingsDto());
+        auth.User.Privacy.ShouldBe(new PrivacySettingsDto { Birthday = PrivacyLevel.Contacts });
         auth.SessionId.ShouldNotBe(Guid.Empty);
         auth.AccessToken.ShouldNotBeNullOrWhiteSpace();
         auth.AccessTokenExpiresAt.ShouldBeGreaterThan(DateTimeOffset.UtcNow.AddMinutes(10));
@@ -34,7 +34,9 @@ public sealed class RegistrationTests(ApiFactory factory)
         auth.User.SavedMessagesChatId.ShouldNotBe(Guid.Empty);
 
         var me = await user.Client.GetAs<MeDto>(ApiRoutes.Users.Me);
-        me.ShouldBe(auth.User);
+        // Field by field: the links list makes record equality a reference comparison.
+        me.ShouldBeEquivalentTo(auth.User);
+        me.Links.ShouldBeEmpty();
 
         var (saved, members, session) = await factory.WithDbAsync(async db => (
             await db.Chats.AsNoTracking().SingleAsync(c => c.Id == auth.User.SavedMessagesChatId, Ct),

@@ -24,7 +24,17 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         b.HasOne<Media>().WithMany().HasForeignKey(x => x.AvatarMediaId).OnDelete(DeleteBehavior.SetNull);
         b.OwnsOne(x => x.Privacy);
         b.Navigation(x => x.Privacy).IsRequired();
+        b.Property(x => x.ProfileColor).HasMaxLength(ProfileStyleColumns.KeyMaxLength);
+        b.Property(x => x.CoverGradient).HasMaxLength(ProfileStyleColumns.KeyMaxLength);
+        b.HasOne<Media>().WithMany().HasForeignKey(x => x.CoverMediaId).OnDelete(DeleteBehavior.SetNull);
+        b.OwnsMany(x => x.Links, l => l.ToJson());
     }
+}
+
+internal static class ProfileStyleColumns
+{
+    /// <summary>Room for color and cover keys (ProfileStyle) that later releases may add.</summary>
+    public const int KeyMaxLength = 24;
 }
 
 internal sealed class SessionConfiguration : IEntityTypeConfiguration<Session>

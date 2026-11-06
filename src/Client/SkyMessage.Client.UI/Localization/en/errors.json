@@ -30,6 +30,8 @@
   "error.chat_member_limit": "The group already has the maximum number of members.",
   "error.invite_invalid": "This invite link no longer works.",
   "error.not_a_group": "This is not a group.",
+  "error.folder_not_found": "This folder no longer exists.",
+  "error.folder_limit": "You already have the most folders allowed — delete one to add another.",
   "error.message_not_found": "Message not found.",
   "error.message_empty": "The message is empty.",
   "error.message_edit_expired": "This message can no longer be edited.",

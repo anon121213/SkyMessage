@@ -70,6 +70,19 @@ public static class ApiRoutes
         /// <summary>GET ?q=&amp;limit=</summary>
         public const string Search = "api/users/search";
         public const string FindByPhones = "api/users/find-by-phones";
+        /// <summary>GET → <see cref="AvatarPhotoDto"/>[]: someone's avatar history (profile-photo privacy applies).</summary>
+        public const string Avatars = "api/users/{userId:guid}/avatars";
+        /// <summary>DELETE → <see cref="MeDto"/>: drops a photo from my avatar history (the previous one takes over if it was the current).</summary>
+        public const string MeAvatarById = "api/users/me/avatars/{mediaId:guid}";
+        /// <summary>DELETE → <see cref="MeDto"/>: no photo and no avatar history left.</summary>
+        public const string MeAvatars = "api/users/me/avatars";
+        /// <summary>PUT <see cref="SetBirthdayRequest"/> / DELETE → <see cref="MeDto"/>.</summary>
+        public const string MeBirthday = "api/users/me/birthday";
+        /// <summary>PUT <see cref="SetCoverRequest"/> / DELETE → <see cref="MeDto"/>.</summary>
+        public const string MeCover = "api/users/me/cover";
+
+        public static string AvatarsPath(Guid userId) => $"api/users/{userId}/avatars";
+        public static string MeAvatarByIdPath(Guid mediaId) => $"api/users/me/avatars/{mediaId}";
 
         public static string ByIdPath(Guid userId) => $"api/users/{userId}";
         public static string ByUsernamePath(string username) => $"api/users/by-username/{Uri.EscapeDataString(username)}";
@@ -82,6 +95,8 @@ public static class ApiRoutes
         public const string Root = "api/contacts";
         public const string Bulk = "api/contacts/bulk";
         public const string ByUserId = "api/contacts/{userId:guid}";
+        /// <summary>DELETE → <see cref="RemoveSyncedContactsResultDto"/>: removes the contacts phone-book sync added.</summary>
+        public const string Synced = "api/contacts/synced";
 
         public static string ByUserIdPath(Guid userId) => $"api/contacts/{userId}";
     }
@@ -117,6 +132,16 @@ public static class ApiRoutes
         public const string PinnedOrder = "api/chats/pinned-order";
         /// <summary>PUT <see cref="SetContentProtectionRequest"/> → <see cref="ChatInfoDto"/> (no forwarding/copying/saving).</summary>
         public const string ContentProtection = "api/chats/{chatId:guid}/content-protection";
+        /// <summary>
+        /// GET → <see cref="AvatarPhotoDto"/>[]: the group's avatar history (members; without a current photo only who may
+        /// change the info). DELETE → <see cref="ChatInfoDto"/>: no photo and no history left (who may change the info).
+        /// </summary>
+        public const string Avatars = "api/chats/{chatId:guid}/avatars";
+        /// <summary>DELETE → <see cref="ChatInfoDto"/>: drops a photo from the group's history (who may change the group's info).</summary>
+        public const string AvatarById = "api/chats/{chatId:guid}/avatars/{mediaId:guid}";
+
+        public static string AvatarsPath(Guid chatId) => $"api/chats/{chatId}/avatars";
+        public static string AvatarByIdPath(Guid chatId, Guid mediaId) => $"api/chats/{chatId}/avatars/{mediaId}";
 
         public static string PinnedPath(Guid chatId) => $"api/chats/{chatId}/pinned";
         public static string ContentProtectionPath(Guid chatId) => $"api/chats/{chatId}/content-protection";
@@ -135,6 +160,34 @@ public static class ApiRoutes
         public static string SettingsPath(Guid chatId) => $"api/chats/{chatId}/settings";
         public static string ReadPath(Guid chatId) => $"api/chats/{chatId}/read";
         public static string ClearHistoryPath(Guid chatId) => $"api/chats/{chatId}/clear-history";
+    }
+
+    /// <summary>
+    /// My chat folders and chat list settings. GET <see cref="Root"/> → <see cref="ChatFoldersDto"/>; every change answers
+    /// with the new whole state (and sends it to all my devices as <see cref="IRealtimeClient.ChatFoldersChanged"/>).
+    /// </summary>
+    public static class Folders
+    {
+        public const string Root = "api/folders";
+        /// <summary>PUT <see cref="SaveChatFolderRequest"/> creates that folder or changes it; DELETE removes it.</summary>
+        public const string ById = "api/folders/{folderId:guid}";
+        /// <summary>PUT <see cref="ReorderChatFoldersRequest"/>.</summary>
+        public const string Order = "api/folders/order";
+        /// <summary>PUT <see cref="UpdateChatListSettingsRequest"/> (new chats from strangers, the archive).</summary>
+        public const string Settings = "api/folders/settings";
+        /// <summary>PUT pins the chat on top of the folder's own pins; DELETE unpins it.</summary>
+        public const string Pin = "api/folders/{folderId:guid}/pins/{chatId:guid}";
+        /// <summary>PUT <see cref="ReorderPinnedChatsRequest"/>: the folder's own pinned chats, top first.</summary>
+        public const string PinnedOrder = "api/folders/{folderId:guid}/pinned-order";
+        /// <summary>POST: marks every chat of the folder read (204).</summary>
+        public const string Read = "api/folders/{folderId:guid}/read";
+        /// <summary>POST: marks every chat of "All chats" (all chats outside the archive) read (204).</summary>
+        public const string ReadAll = "api/folders/all/read";
+
+        public static string ByIdPath(Guid folderId) => $"api/folders/{folderId}";
+        public static string PinPath(Guid folderId, Guid chatId) => $"api/folders/{folderId}/pins/{chatId}";
+        public static string PinnedOrderPath(Guid folderId) => $"api/folders/{folderId}/pinned-order";
+        public static string ReadPath(Guid folderId) => $"api/folders/{folderId}/read";
     }
 
     public static class Messages

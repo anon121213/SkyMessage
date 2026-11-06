@@ -1,0 +1,94 @@
+@* A small mock screen over a background, in one theme whatever the page's own is (its few tokens come inline from
+   ThemeCatalog.Palette): the app's (a large title, the search capsule, three chat rows straight on the background, the
+   dock) or a chat (the header capsule and a bubble each way). A photo shows sharp with the blur applied here (CSS
+   filter on this small, still layer) and its veil, so the sliders preview live. *@
+@using System.Globalization
+@inherits UiComponentBase
+
+<div class="bd-prev @(Screen ? "bd-prev--screen" : "bd-prev--chat") @(Dark ? "bd-prev--dark" : null) @(Active ? "is-active" : null) @Class" style="@PaletteStyle">
+    <div class="bd-prev__frame">
+        <div class="bd-prev__paint" style="@($"background:{Paint.Css};background-color:{Paint.Base}")"></div>
+        @if (PhotoUrl is { } url)
+        {
+            <div class="bd-prev__photo" style="@($"background-image:url(\"{url}\");--blur:{Num(BlurPx)}px")"></div>
+        }
+        @if (Paint.Veil is { } veil)
+        {
+            @* Row by row, as the readability floor veils it behind the root screens. *@
+            <div class="bd-prev__veil" style="@($"background:{veil}")"></div>
+        }
+        else if (Paint.Dim > 0)
+        {
+            <div class="bd-prev__veil" style="@($"opacity:{Num(Paint.Dim)}")"></div>
+        }
+        @if (Paint.Stars > 0)
+        {
+            <span class="bd-prev__stars" style="@($"opacity:{Num(Paint.Stars)}")"></span>
+        }
+        @if (Screen)
+        {
+            <div class="bd-prev__title">@L["nav.chats"]</div>
+            <div class="bd-prev__search"></div>
+            @foreach (var (name, text, hue) in Rows)
+            {
+                <div class="bd-prev__row">
+                    <span class="bd-prev__avatar" style="@($"background:{hue}")">@Initial(name)</span>
+                    <span class="bd-prev__lines">
+                        <span class="bd-prev__name">@name</span>
+                        <span class="bd-prev__text">@text</span>
+                    </span>
+                </div>
+            }
+            <div class="bd-prev__dock"><i class="is-on"></i><i></i><i></i><i></i></div>
+        }
+        else
+        {
+            <div class="bd-prev__head">
+                <span class="bd-prev__avatar" style="background:#FFC7A8">@Initial(L["settings.appearance.preview.name"])</span>
+                <span class="bd-prev__name">@L["settings.appearance.preview.name"]</span>
+            </div>
+            <div class="bd-prev__bubbles">
+                <span class="bd-prev__bubble bd-prev__bubble--in">@L["settings.background.preview.in"]</span>
+                <span class="bd-prev__bubble bd-prev__bubble--out">@L["settings.background.preview.out"]</span>
+            </div>
+        }
+    </div>
+    @if (Label is not null)
+    {
+        <span class="bd-prev__label">@Label</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BackdropPaint Paint { get; set; } = default!;
+    [Parameter, EditorRequired] public PreviewPalette Palette { get; set; } = default!;
+    /// <summary>The app's screen (true) or a chat (false).</summary>
+    [Parameter] public bool Screen { get; set; }
+    [Parameter] public bool Dark { get; set; }
+    /// <summary>The photo's sharp picture (BackdropPainter.Url with blur 0), when the background is one.</summary>
+    [Parameter] public string? PhotoUrl { get; set; }
+    /// <summary>The theme being edited (a ring).</summary>
+    [Parameter] public bool Active { get; set; }
+    /// <summary>Caption under the mock ("Светлая" / "Тёмная").</summary>
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>The mock is about 0.45 of a phone screen: the blur scales with it.</summary>
+    private double BlurPx => Paint.Blur / 100.0 * 28 * 0.45;
+
+    private IEnumerable<(string Name, string Text, string Hue)> Rows =>
+    [
+        (L["settings.appearance.preview.name"], L["settings.background.preview.row1"], "#FFC7A8"),
+        (L["settings.background.preview.name2"], L["settings.background.preview.row2"], "#B9E4C9"),
+        (L["settings.background.preview.name3"], L["settings.background.preview.row3"], "#C9C2FF"),
+    ];
+
+    private string PaletteStyle =>
+        $"--p-text:{Palette.Text};--p-text-2:{Palette.Text2};--p-glass:{Palette.Glass};--p-card:{Palette.Card};--p-veil:{Palette.Veil};" +
+        $"--p-accent:{Palette.Accent};--p-out:{Palette.Outgoing.Background};--p-out-ink:{Palette.Outgoing.Ink};" +
+        $"--p-in:{Palette.Incoming.Background};--p-in-ink:{Palette.Incoming.Ink}";
+
+    private static string Initial(string name) => string.IsNullOrEmpty(name) ? "" : name[..1];
+
+    private static string Num(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+}

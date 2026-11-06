@@ -44,6 +44,24 @@ public interface ISkyApi
     /// <summary>Full request (several <see cref="FindByPhonesRequest.DefaultRegions"/>, e.g. both SIM countries); ≤ Limits.FindByPhonesMax numbers.</summary>
     Task<IReadOnlyList<PhoneMatchDto>> FindByPhonesAsync(FindByPhonesRequest request, CancellationToken ct = default);
 
+    // Profile extras: avatar histories, birthday, cover (color and links go through UpdateProfileAsync)
+    /// <summary>Someone's avatar history, the current photo first (empty when their photo privacy hides it).</summary>
+    Task<IReadOnlyList<AvatarPhotoDto>> GetUserAvatarsAsync(Guid userId, CancellationToken ct = default);
+    /// <summary>Drops a photo from my history; the previous one takes over when it was the current.</summary>
+    Task<MeDto> DeleteMyAvatarAsync(Guid mediaId, CancellationToken ct = default);
+    /// <summary>No photo and no avatar history left.</summary>
+    Task<MeDto> DeleteAllMyAvatarsAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<AvatarPhotoDto>> GetChatAvatarsAsync(Guid chatId, CancellationToken ct = default);
+    Task<ChatInfoDto> DeleteChatAvatarAsync(Guid chatId, Guid mediaId, CancellationToken ct = default);
+    /// <summary>The group keeps no photo and no avatar history (who may change its info).</summary>
+    Task<ChatInfoDto> DeleteAllChatAvatarsAsync(Guid chatId, CancellationToken ct = default);
+    Task<MeDto> SetBirthdayAsync(SetBirthdayRequest request, CancellationToken ct = default);
+    Task<MeDto> RemoveBirthdayAsync(CancellationToken ct = default);
+    Task<MeDto> SetCoverAsync(SetCoverRequest request, CancellationToken ct = default);
+    Task<MeDto> RemoveCoverAsync(CancellationToken ct = default);
+    /// <summary>Removes the contacts phone-book sync added (not the ones added by hand).</summary>
+    Task<RemoveSyncedContactsResultDto> RemoveSyncedContactsAsync(CancellationToken ct = default);
+
     // Contacts / blocks
     Task<IReadOnlyList<ContactDto>> GetContactsAsync(CancellationToken ct = default);
     Task<ContactDto> AddContactAsync(AddContactRequest request, CancellationToken ct = default);
@@ -80,6 +98,18 @@ public interface ISkyApi
     Task ClearHistoryAsync(Guid chatId, bool forEveryone, CancellationToken ct = default);
     Task DeleteChatAsync(Guid chatId, bool forEveryone, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetPinnedMessagesAsync(Guid chatId, CancellationToken ct = default);
+
+    // Folders (every change answers with the whole new state, see ApiRoutes.Folders)
+    Task<ChatFoldersDto> GetChatFoldersAsync(CancellationToken ct = default);
+    /// <summary>Creates the folder with this id (<see cref="SaveChatFolderRequest.Create"/>) or changes the fields set (its pins stay).</summary>
+    Task<ChatFoldersDto> SaveChatFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken ct = default);
+    Task<ChatFoldersDto> DeleteChatFolderAsync(Guid folderId, CancellationToken ct = default);
+    Task<ChatFoldersDto> ReorderChatFoldersAsync(IReadOnlyList<Guid> folderIds, CancellationToken ct = default);
+    Task<ChatFoldersDto> SetFolderPinAsync(Guid folderId, Guid chatId, bool pinned, CancellationToken ct = default);
+    Task<ChatFoldersDto> ReorderFolderPinsAsync(Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst, CancellationToken ct = default);
+    Task<ChatFoldersDto> UpdateChatListSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken ct = default);
+    /// <summary>Marks every chat of the folder read; null = "All chats" (everything outside the archive).</summary>
+    Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default);
 
     // Messages
     Task<MessagesPageDto> GetMessagesAsync(Guid chatId, long? beforeSeq = null, long? afterSeq = null, long? aroundSeq = null, int limit = Limits.MessagesPageDefault, CancellationToken ct = default);

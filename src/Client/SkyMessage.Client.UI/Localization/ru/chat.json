@@ -39,6 +39,8 @@
   "chat.menu.leave": "Покинуть группу",
   "chat.menu.leaveOrDelete": "Покинуть или удалить группу",
   "chat.menu.delete": "Удалить чат",
+  "chat.menu.background": "Фон чата",
+  "chat.background.title": "Фон чата",
   "chat.menu.reply": "Ответить",
   "chat.menu.pin": "Закрепить",
   "chat.menu.unpin": "Открепить",

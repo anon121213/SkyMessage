@@ -74,7 +74,7 @@ internal sealed partial class MessageService
             .Select((m, index) => new MessageAttachment { MessageId = message.Id, MediaId = m.Id, Order = index })
             .ToList();
 
-        List<Guid> unhidden;
+        AppendOutcome outcome;
         await using (var tx = await db.Database.BeginTransactionAsync(cancellationToken))
         {
             try
@@ -91,7 +91,7 @@ internal sealed partial class MessageService
                 db.Messages.Add(message);
                 db.MessageMentions.AddRange(MentionResolver.Rows(message.Id, chatId, message.Seq, mentioned));
                 await db.SaveChangesAsync(cancellationToken);
-                unhidden = await CompleteAppendAsync(chatId, me, message.Id, message.Seq, cancellationToken);
+                outcome = await CompleteAppendAsync(chatId, member.Type, me, message.Id, message.Seq, now, cancellationToken);
                 await tx.CommitAsync(cancellationToken);
             }
             catch (DbUpdateException)
@@ -108,7 +108,8 @@ internal sealed partial class MessageService
 
         var dto = await loader.LoadOneAsync(message.Id, CancellationToken.None)
                   ?? throw new InvalidOperationException($"Message {message.Id} vanished after commit.");
-        await PublishCreatedAsync(dto, unhidden, mentioned);
+        await PublishCreatedAsync(dto, outcome.Unhidden, mentioned);
+        await ChatPlacement.PublishSettingsAsync(db, events, chatId, outcome.Unarchived);
         return dto;
     }
 
@@ -152,7 +153,7 @@ internal sealed partial class MessageService
         if (pendingSourceIds.Count > 0 && source.ProtectContent) throw new ForbiddenException(ErrorCodes.ForwardRestricted);
 
         var created = new List<Message>();
-        List<Guid> unhidden = [];
+        var outcome = AppendOutcome.None;
         if (pendingSourceIds.Count > 0)
         {
             var sources = await db.VisibleMessages(source).AsNoTracking()
@@ -225,7 +226,7 @@ internal sealed partial class MessageService
                 }
                 await db.SaveChangesAsync(ct);
                 var newest = created[^1];
-                unhidden = await CompleteAppendAsync(chatId, me, newest.Id, newest.Seq, ct);
+                outcome = await CompleteAppendAsync(chatId, target.Type, me, newest.Id, newest.Seq, now, ct);
                 await tx.CommitAsync(ct);
                 db.ChangeTracker.Clear();
             }
@@ -244,33 +245,47 @@ internal sealed partial class MessageService
             var first = true;
             foreach (var dto in result.Where(m => createdIds.Contains(m.Id)))
             {
-                await PublishCreatedAsync(dto, first ? unhidden : [], []);
+                await PublishCreatedAsync(dto, first ? outcome.Unhidden : [], []);
                 first = false;
             }
+            await ChatPlacement.PublishSettingsAsync(db, events, chatId, outcome.Unarchived);
         }
         return result;
     }
 
+    /// <summary>Members a new message unhid (they get ChatAdded) and members it brought back from the archive (ChatSettingsChanged).</summary>
+    private sealed record AppendOutcome(List<Guid> Unhidden, List<Guid> Unarchived)
+    {
+        public static AppendOutcome None => new([], []);
+    }
+
     /// <summary>
     /// Chat aggregate updates that follow every append (inside the transaction, chat row already locked):
-    /// LastMessageId, unhide members who had hidden the chat, mark the sender's own message read.
-    /// Returns the unhidden members (they get ChatAdded).
+    /// LastMessageId, archived chats the message brings back (<see cref="ChatPlacement"/>), unhide members who had hidden
+    /// the chat (one from a stranger may start in their archive), mark the sender's own message read.
     /// </summary>
-    private async Task<List<Guid>> CompleteAppendAsync(Guid chatId, Guid senderId, Guid messageId, long seq, CancellationToken ct)
+    private async Task<AppendOutcome> CompleteAppendAsync(Guid chatId, ChatType type, Guid senderId, Guid messageId, long seq,
+        DateTimeOffset now, CancellationToken ct)
     {
         await db.Chats.Where(c => c.Id == chatId)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.LastMessageId, messageId), ct);
+
+        // Before the unhiding below: a chat that reappears now is not in anyone's archive yet.
+        var unarchived = await ChatPlacement.UnarchiveForMessageAsync(db, chatId, type, senderId, now, ct);
 
         var unhidden = await db.ChatMembers.Where(m => m.ChatId == chatId && m.IsHidden).Select(m => m.UserId).ToListAsync(ct);
         if (unhidden.Count > 0)
         {
             await db.ChatMembers.Where(m => m.ChatId == chatId && m.IsHidden)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsHidden, false), ct);
+            // A private chat that (re)appears for the other person is a new chat for them.
+            if (type == ChatType.Private)
+                await ChatPlacement.ArchiveAsync(db, chatId, await ChatPlacement.ArchivedOnArrivalAsync(db, unhidden, senderId, ct), ct);
         }
 
         await db.ChatMembers.Where(m => m.ChatId == chatId && m.UserId == senderId && m.LastReadSeq < seq)
             .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, seq), ct);
-        return unhidden;
+        return new AppendOutcome(unhidden, unarchived);
     }
 
     /// <summary>MessageCreated to every member, ChatAdded to members the message unhid, push to the other members.</summary>

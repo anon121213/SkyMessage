@@ -296,6 +296,12 @@ public sealed class MediaAccessTests(ApiFactory factory)
         await owner.SetChatAvatarAsync(groupId, newAvatar.Id);
         await member.ShouldSeeAsync(newAvatar);
         await outsider.ShouldNotSeeAsync(newAvatar.Id);
+        // The earlier photo stays in the group's avatar history (members only) until an admin deletes it there.
+        factory.ForgetCachedDecisions();
+        await member.ShouldSeeAsync(avatar);
+        await outsider.ShouldNotSeeAsync(avatar.Id);
+        using (var delete = await owner.Client.DeleteAsync(ApiRoutes.Chats.AvatarByIdPath(groupId, avatar.Id), Ct))
+            await delete.ShouldHaveStatusAsync(HttpStatusCode.OK);
         factory.ForgetCachedDecisions();
         await member.ShouldNotSeeAsync(avatar.Id);
     }
@@ -377,11 +383,12 @@ public sealed class MediaAccessTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Replaced_or_removed_profile_photos_are_no_longer_shared()
+    public async Task Earlier_profile_photos_are_shared_from_the_history_and_removed_ones_are_not()
     {
         var owner = await factory.RegisterUserAsync();
         var first = await factory.RegisterUserAsync();
         var second = await factory.RegisterUserAsync();
+        var third = await factory.RegisterUserAsync();
         var oldAvatar = await owner.UploadPhotoAsync("old.png");
         var newAvatar = await owner.UploadPhotoAsync("new.png");
         var otherPhoto = await owner.UploadPhotoAsync("private.png");
@@ -389,12 +396,20 @@ public sealed class MediaAccessTests(ApiFactory factory)
 
         await owner.SetAvatarAsync(newAvatar.Id);
 
-        await first.ShouldNotSeeAsync(oldAvatar.Id);
+        await first.ShouldSeeAsync(oldAvatar);
         await first.ShouldSeeAsync(newAvatar);
         await first.ShouldNotSeeAsync(otherPhoto.Id);
 
+        // Removing the photo takes it out of the history; with no current photo the earlier ones are not shown either.
         await owner.RemoveAvatarAsync();
         await second.ShouldNotSeeAsync(newAvatar.Id);
+        await second.ShouldNotSeeAsync(oldAvatar.Id);
+
+        // Back as the photo, then deleted from the history: gone for good.
+        await owner.SetAvatarAsync(oldAvatar.Id);
+        using (var delete = await owner.Client.DeleteAsync(ApiRoutes.Users.MeAvatarByIdPath(oldAvatar.Id), Ct))
+            await delete.ShouldHaveStatusAsync(HttpStatusCode.OK);
+        await third.ShouldNotSeeAsync(oldAvatar.Id);
     }
 
     [Fact]

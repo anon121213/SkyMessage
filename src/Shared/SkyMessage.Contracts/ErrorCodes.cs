@@ -39,6 +39,9 @@ public static class ErrorCodes
     public const string ChatMemberLimit = "chat_member_limit";
     public const string InviteInvalid = "invite_invalid";
     public const string NotAGroup = "not_a_group";
+    public const string FolderNotFound = "folder_not_found";
+    /// <summary>The user already has <see cref="Limits.MaxChatFolders"/> folders.</summary>
+    public const string FolderLimit = "folder_limit";
 
     // Messages
     public const string MessageNotFound = "message_not_found";

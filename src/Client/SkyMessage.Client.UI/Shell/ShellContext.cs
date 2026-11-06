@@ -54,4 +54,6 @@ public enum SkyArtKind
     NotFound,
     /// <summary>A phone with contact rows and a "found" check (phone-book import).</summary>
     PhoneBook,
+    /// <summary>An open folder with a sheet peeking out, resting on a cloud in the morning sun (an empty chat folder).</summary>
+    Folder,
 }

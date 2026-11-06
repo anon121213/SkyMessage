@@ -538,6 +538,25 @@ html[data-fx="lite"] .sm-dialog, html[data-fx="lite"] .sm-menu { background: var
 }
 .sm-sky--fixed { position: fixed; }
 .sm-sky--chat { background: var(--sm-chat-wallpaper, var(--sm-sky)); }
+/* A picture of the user's own (Settings › Appearance, a chat's menu): still, its blur baked in by boot.js, under a veil
+   of the theme's background color (the dim). Behind the root screens the veil is at least the readability floor boot.js
+   measured on the picture, row by row (--sm-sky-veil, a gradient; --sm-sky-veil-opacity 1 while it is set); a chat
+   with a background of its own has a plain veil of its own (--sm-chat-veil, --sm-chat-dim). Nothing paints while no
+   picture is set. */
+.sm-sky__photo,
+.sm-sky__veil { position: absolute; inset: 0; }
+.sm-sky__photo { background: var(--sm-sky-photo, none) center / cover no-repeat; }
+.sm-sky--chat .sm-sky__photo { background-image: var(--sm-chat-photo, var(--sm-sky-photo, none)); }
+.sm-sky__veil { background: var(--sm-sky-veil, var(--sm-bg)); opacity: var(--sm-sky-veil-opacity, var(--sm-sky-dim, 0)); }
+.sm-sky--chat .sm-sky__veil {
+  background: var(--sm-chat-veil, var(--sm-sky-veil, var(--sm-bg)));
+  opacity: var(--sm-chat-dim, var(--sm-sky-veil-opacity, var(--sm-sky-dim, 0)));
+}
+/* Backgrounds of one's own are still: no lights, clouds or stars over them (html[data-sky-own], boot.js, per theme). A
+   chat's own background says so itself: SkyBackdrop Lights (sm-sky--lit over its own sky, sm-sky--unlit over the rest). */
+html[data-sky-own~="app"] .sm-sky:not(.sm-sky--chat):not(.sm-sky--lit) > :is(.sm-sky__orb, .sm-sky__cloud, .sm-sky__stars, .sm-sky__comet),
+html[data-sky-own~="chat"] .sm-sky--chat:not(.sm-sky--lit) > :is(.sm-sky__orb, .sm-sky__cloud, .sm-sky__stars, .sm-sky__comet),
+.sm-sky--unlit > :is(.sm-sky__orb, .sm-sky__cloud, .sm-sky__stars, .sm-sky__comet) { display: none; }
 .sm-sky__orb {
   position: absolute;
   width: 95vmax;
@@ -563,6 +582,7 @@ html[data-fx="lite"] .sm-dialog, html[data-fx="lite"] .sm-menu { background: var
   animation: sm-cloud-drift 95s linear infinite;
   will-change: transform;
 }
+.sm-sky--chat .sm-sky__cloud { opacity: calc(var(--sm-chat-clouds, var(--sm-clouds)) * 0.85); }
 .sm-sky__cloud--1 { top: 12%; animation-delay: -30s; }
 .sm-sky__cloud--2 { top: 58%; width: 52vmax; height: 18vmax; animation-duration: 120s; animation-delay: -85s; }
 /* Dark theme: two star fields twinkling out of phase, and a rare shooting star. */
@@ -571,6 +591,7 @@ html[data-fx="lite"] .sm-dialog, html[data-fx="lite"] .sm-menu { background: var
   inset: 0;
   opacity: var(--sm-stars);
 }
+.sm-sky--chat .sm-sky__stars { opacity: var(--sm-chat-stars, var(--sm-stars)); }
 .sm-sky__stars::before,
 .sm-sky__stars::after {
   content: "";
@@ -1257,6 +1278,9 @@ html[data-fx="lite"] .sm-overlay__scrim { -webkit-backdrop-filter: none; backdro
   animation: sm-dialog-in var(--sm-dur-slow) var(--sm-spring-soft);
 }
 .sm-dialog--m { max-width: 560px; }
+/* An opaque dialog (DialogOptions.Class): for editors whose bands stay in view over scrolling content in the same color. */
+.sm-dialog--solid { background: var(--sm-glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sm-overlay--sheet .sm-dialog--solid { box-shadow: 0 24px 0 0 var(--sm-glass-solid), var(--sm-edge), var(--sm-shadow-3); }
 .sm-dialog--l { max-width: 820px; height: min(86vh, 760px); }
 .sm-dialog__header { display: flex; align-items: center; gap: 8px; min-height: 3.75rem; padding: 16px 14px 4px 24px; }
 .sm-dialog__title { flex: 1 1 auto; min-width: 0; font-family: var(--sm-font-display); font-size: 1.25rem; font-weight: 700; line-height: 1.28; letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -1327,6 +1351,180 @@ html[data-fx="lite"] .sm-overlay--sheet .sm-dialog { box-shadow: 0 24px 0 0 var(
 .sm-menu-item__hint { color: var(--sm-text-3); font-size: 0.8125rem; }
 .sm-menu-divider { height: 1px; margin: 6px 12px; background: var(--sm-divider); }
 .sm-dialog .sm-menu-item { padding: 0 18px; min-height: 3.25rem; font-size: 1rem; margin: 0 8px; width: calc(100% - 16px); }
+
+/* ---------- Night viewer: the chrome of the full-screen viewers (MediaViewer, AvatarViewer) ----------
+   A deep night that frosts the page below, always dark in both themes; a glass top bar; a bottom stack; glass circles
+   for previous / next on desktop. No glows, no colored light: the picture is the only color on screen. viewer.js
+   flies the picture between its thumbnail and full size and relies on these names (.viewer__backdrop, __top, __bottom,
+   __nav, .viewer--bare, .is-flying). The CSS intro is the fallback it replaces after 60 ms. Each viewer sizes its own
+   .viewer__frame and adds its own pieces in its .razor.css. */
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 880;
+  color: #FFFFFF;
+  /* The night palette, for the viewers' own pieces too (captions, video controls, the avatar's "set as main"). */
+  --sm-viewer-glass: rgba(16, 18, 40, 0.52);
+  --sm-viewer-glass-solid: rgba(16, 18, 40, 0.94);
+  --sm-viewer-glass-hover: rgba(40, 44, 80, 0.7);
+  --sm-viewer-blur: blur(20px) saturate(160%);
+  --sm-viewer-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.11);
+  --sm-viewer-lift: 0 16px 32px -20px rgba(0, 0, 0, 0.7);
+  --sm-viewer-text-2: rgba(255, 255, 255, 0.7);
+}
+.viewer__stage { position: absolute; inset: 0; overflow: hidden; touch-action: none; }
+.viewer__backdrop {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(14, 16, 36, 0.92) 0%, rgba(6, 7, 18, 0.96) 100%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  animation: sm-viewer-fade-in var(--sm-dur) ease 60ms backwards;
+}
+html[data-fx="lite"] .viewer__backdrop {
+  background: linear-gradient(180deg, #0E1024 0%, #060712 100%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.viewer__track { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+/* One item, with its proportions: flies (clipped) while opening and closing. */
+.viewer__frame {
+  position: relative;
+  flex-shrink: 0;
+  aspect-ratio: var(--ar, 1);
+  animation: sm-viewer-in var(--sm-dur) var(--sm-ease-out) 60ms backwards;
+}
+.viewer__frame.is-flying { overflow: hidden; will-change: transform; }
+.viewer__photo { position: absolute; inset: 0; transform-origin: center center; }
+.viewer__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+@keyframes sm-viewer-in { from { opacity: 0; transform: scale(0.94); } }
+/* No "to": ends at whatever the element shows (the chrome may be hidden). */
+@keyframes sm-viewer-fade-in { from { opacity: 0; } }
+@keyframes sm-viewer-top-in { from { opacity: 0; transform: translateY(-14px); } }
+@keyframes sm-viewer-bottom-in { from { opacity: 0; transform: translateY(16px); } }
+
+/* Top: a glass bar with who and when, and the actions. */
+.viewer__top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 3;
+  padding: calc(8px + var(--sm-inset-top)) calc(10px + var(--sm-inset-right)) 0 calc(10px + var(--sm-inset-left));
+  pointer-events: none;
+  transition: opacity var(--sm-dur) ease;
+  animation: sm-viewer-top-in 420ms var(--sm-spring-soft) 60ms backwards;
+}
+.viewer__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 760px;
+  min-height: 3.5rem;
+  margin: 0 auto;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--sm-viewer-glass);
+  -webkit-backdrop-filter: var(--sm-viewer-blur);
+  backdrop-filter: var(--sm-viewer-blur);
+  box-shadow: var(--sm-viewer-edge), var(--sm-viewer-lift);
+  pointer-events: auto;
+}
+.viewer__bar .viewer__btn { color: #FFFFFF; }
+@media (hover: hover) { .viewer__bar .viewer__btn:hover:not(:disabled) { color: #FFFFFF; background: rgba(255, 255, 255, 0.12); } }
+.viewer__who { flex: 1 1 auto; min-width: 0; padding-left: 4px; line-height: 1.25; }
+.viewer__name {
+  overflow: hidden;
+  font-family: var(--sm-font-display);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewer__date { overflow: hidden; font-size: 0.75rem; color: var(--sm-viewer-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.viewer__actions { flex-shrink: 0; display: flex; gap: 2px; }
+
+/* Bottom: a stack (the counter chip, then each viewer's own pieces). */
+.viewer__bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 calc(12px + var(--sm-inset-right)) calc(14px + var(--sm-inset-bottom)) calc(12px + var(--sm-inset-left));
+  pointer-events: none;
+  transition: opacity var(--sm-dur) ease;
+  animation: sm-viewer-bottom-in 420ms var(--sm-spring-soft) 90ms backwards;
+}
+.viewer__bottom > * { pointer-events: auto; }
+.viewer__count {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  padding: 0 13px;
+  border-radius: 999px;
+  font-family: var(--sm-font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.92);
+  background: var(--sm-viewer-glass);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: var(--sm-viewer-edge);
+}
+html[data-fx="lite"] .viewer__bar,
+html[data-fx="lite"] .viewer__count { background: var(--sm-viewer-glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* Hidden chrome (a tap toggles it). */
+.viewer--bare .viewer__top,
+.viewer--bare .viewer__bottom,
+.viewer--bare .viewer__nav { opacity: 0; pointer-events: none; }
+.viewer--bare .viewer__bottom > *,
+.viewer--bare .viewer__bar { pointer-events: none; }
+
+/* Previous / next (mouse): glass circles at the sides. */
+.viewer__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-top: -1.5rem;
+  border-radius: 50%;
+  color: #FFFFFF;
+  background: var(--sm-viewer-glass);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
+  transition: opacity var(--sm-dur) ease, background-color var(--sm-dur-fast) ease, transform var(--sm-dur) var(--sm-spring);
+  animation: sm-viewer-fade-in var(--sm-dur) ease 60ms backwards;
+}
+html[data-fx="lite"] .viewer__nav { background: var(--sm-viewer-glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (hover: hover) { .viewer__nav:hover { background: var(--sm-viewer-glass-hover); } }
+.viewer__nav:active { transform: scale(0.9); }
+.viewer__nav--prev { left: calc(14px + var(--sm-inset-left)); }
+.viewer__nav--next { right: calc(14px + var(--sm-inset-right)); }
+@media (pointer: coarse) { .viewer__nav { display: none; } }
 
 /* ---------- Toasts ---------- */
 

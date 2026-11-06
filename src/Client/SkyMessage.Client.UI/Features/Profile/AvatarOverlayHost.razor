@@ -1,0 +1,16 @@
+@* Hosts the avatar viewer and the crop editor above every page (rendered once by MainLayout). *@
+@inherits UiComponentBase
+@inject AvatarOverlays Overlays
+
+@if (Overlays.Viewer is { } subject)
+{
+    <AvatarViewer @key="Overlays.ViewerVersion" Subject="subject" OnClosed="Overlays.CloseViewer" />
+}
+@if (Overlays.Editor is { } editor)
+{
+    <AvatarEditor @key="editor" Source="editor.Source" OnDone="bytes => Overlays.CompleteEditor(editor, bytes)" />
+}
+
+@code {
+    protected override void OnInitialized() => RenderOn(h => Overlays.Changed += h, h => Overlays.Changed -= h);
+}

@@ -1,0 +1,128 @@
+@* DialogService content: pick chats for a folder (its included or excluded chats). Saved Messages first, then the chat
+   list and the archive; a search capsule on top; squircle gradient checks. Closes with the chosen chat ids
+   (IReadOnlyList<Guid>, possibly empty) or null when cancelled. *@
+@inherits UiComponentBase
+@inject IChatListStore ChatList
+@inject LayoutService Layout
+@inject ILogger<ChatPickerDialog> Logger
+
+<div class="chat-pick">
+    <div class="chat-pick__search">
+        <SearchBox Value="@_query" ValueChanged="v => _query = v ?? string.Empty" DebounceMs="0" Autofocus="@(!Layout.IsTouch)" Placeholder="@L["folders.picker.search"]" />
+    </div>
+    <div class="chat-pick__list">
+        @{
+            var chats = Filtered;
+        }
+        @if (chats.Count == 0)
+        {
+            <EmptyState Icon="@IconNames.SearchX" Title="@L["folders.picker.nothing"]" />
+        }
+        @foreach (var chat in chats)
+        {
+            var item = chat;
+            var selected = _selected.Contains(item.Id);
+            <ListItem @key="item.Id" Selected="selected" OnClick="() => Toggle(item)" Class="chat-pick__item">
+                <Leading><ChatAvatar Chat="item" Size="42" /></Leading>
+                <ChildContent>
+                    <div class="sm-list-item__title">@TitleOf(item)</div>
+                    @if (item.IsArchived)
+                    {
+                        <div class="sm-list-item__subtitle">@L["chatlist.archive.title"]</div>
+                    }
+                    else if (item.Type == ChatType.Group)
+                    {
+                        <div class="sm-list-item__subtitle">@L.Plural("plural.members", item.MemberCount)</div>
+                    }
+                </ChildContent>
+                <Trailing>
+                    <span class="chat-pick__check @(selected ? "chat-pick__check--on" : null)" aria-hidden="true">
+                        @if (selected)
+                        {
+                            <Icon Name="@IconNames.Check" Size="14" StrokeWidth="3" />
+                        }
+                    </span>
+                </Trailing>
+            </ListItem>
+        }
+    </div>
+    <DialogActions>
+        <Button Variant="ButtonVariant.Ghost" OnClick="Dialog.Cancel">@L["common.cancel"]</Button>
+        <Button Icon="@IconNames.Check" OnClick="Done">@L["common.done"]</Button>
+    </DialogActions>
+</div>
+
+@code {
+    private string _query = "";
+    private readonly HashSet<Guid> _selected = [];
+    // Picked first, kept in the order they were picked (the result keeps it).
+    private readonly List<Guid> _order = [];
+    private ChatSummaryDto? _saved;
+    // Offered chats, built once per chat list change (the query only filters them).
+    private IReadOnlyList<ChatSummaryDto>? _offered;
+    private HashSet<Guid> _exclude = [];
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    /// <summary>Chats chosen so far (they come checked).</summary>
+    [Parameter] public IReadOnlyList<Guid> Selected { get; set; } = [];
+    /// <summary>Chats not offered (the folder's other list holds them).</summary>
+    [Parameter] public IReadOnlyList<Guid> Exclude { get; set; } = [];
+
+    private IReadOnlyList<ChatSummaryDto> Filtered
+    {
+        get
+        {
+            var offered = _offered ??= Offered();
+            var q = _query.Trim();
+            return q.Length == 0
+                ? offered
+                : offered.Where(c => TitleOf(c).Contains(q, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        }
+    }
+
+    private List<ChatSummaryDto> Offered()
+    {
+        var seen = new HashSet<Guid>();
+        var offered = new List<ChatSummaryDto>();
+        // Saved Messages first, then the list and the archive.
+        if (_saved is not null && !_exclude.Contains(_saved.Id) && seen.Add(_saved.Id)) offered.Add(_saved);
+        foreach (var chat in ChatList.Chats.Concat(ChatList.ArchivedChats))
+            if (!_exclude.Contains(chat.Id) && seen.Add(chat.Id)) offered.Add(chat);
+        return offered;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
+        ChatList.Changed += OnChatsChanged;
+        OnDispose(() => ChatList.Changed -= OnChatsChanged);
+        _exclude = [.. Exclude];
+        foreach (var id in Selected)
+            if (_selected.Add(id)) _order.Add(id);
+        _saved = ChatList.Chats.Concat(ChatList.ArchivedChats).FirstOrDefault(c => c.Type == ChatType.Saved);
+        if (_saved is null)
+        {
+            try
+            {
+                _saved = await ChatList.GetSavedMessagesAsync();
+                _offered = null;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Saved Messages not available for the folder picker");
+            }
+        }
+    }
+
+    private void OnChatsChanged() => _offered = null;
+
+    private string TitleOf(ChatSummaryDto chat) => chat.Type == ChatType.Saved ? L["common.savedMessages"] : ChatList.TitleOf(chat);
+
+    private void Toggle(ChatSummaryDto chat)
+    {
+        if (_selected.Remove(chat.Id)) _order.Remove(chat.Id);
+        else if (_selected.Add(chat.Id)) _order.Add(chat.Id);
+    }
+
+    private void Done() => Dialog.Close(_order.ToList());
+}

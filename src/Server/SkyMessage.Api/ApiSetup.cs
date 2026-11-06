@@ -357,7 +357,11 @@ public static class ApiSetup
 
             o.AddPolicy(RateLimitPolicies.PhoneLookup, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 PartitionKey(ctx),
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(10) }));
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = Limits.PhoneLookupsPerWindow,
+                    Window = TimeSpan.FromMinutes(Limits.PhoneLookupWindowMinutes),
+                }));
         });
     }
 

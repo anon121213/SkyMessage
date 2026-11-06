@@ -15,8 +15,25 @@ public static class Limits
     public const int BioMaxLength = 200;
     public const int ContactNameMaxLength = 64;
 
+    /// <summary>Photos kept in a profile's or a group's avatar history (the oldest go first).</summary>
+    public const int AvatarHistoryMax = 30;
+    /// <summary>Links on a profile.</summary>
+    public const int ProfileLinksMax = 3;
+    public const int ProfileLinkUrlMaxLength = 512;
+    public const int ProfileLinkTitleMaxLength = 32;
+    /// <summary>Earliest birth year accepted (a birthday without a year is fine too).</summary>
+    public const int BirthYearMin = 1900;
+
     /// <summary>Chat ids in one <see cref="ReorderPinnedChatsRequest"/>.</summary>
     public const int MaxPinnedChatsReorder = 1000;
+
+    /// <summary>Folders of one user (the built-in "All chats" not counted).</summary>
+    public const int MaxChatFolders = 20;
+    public const int ChatFolderNameMaxLength = 24;
+    /// <summary>UTF-16 units of <see cref="ChatFolderDto.Icon"/> (an emoji or an icon key).</summary>
+    public const int ChatFolderIconMaxLength = 32;
+    /// <summary>Chats a folder includes by id, excludes by id, or pins (each list).</summary>
+    public const int MaxChatFolderChats = 200;
 
     public const int GroupTitleMaxLength = 128;
     public const int GroupDescriptionMaxLength = 500;
@@ -46,6 +63,12 @@ public static class Limits
     public const int CallRingTimeoutSeconds = 45;
 
     public const int FindByPhonesMax = 1000;
+    /// <summary>
+    /// <c>find-by-phones</c> requests one user may make per <see cref="PhoneLookupWindowMinutes"/> (a fixed window shared
+    /// by the import and contact sync).
+    /// </summary>
+    public const int PhoneLookupsPerWindow = 10;
+    public const int PhoneLookupWindowMinutes = 10;
     public const int MaxBatchUsers = 200;
     public const int SearchQueryMinLength = 2;
     /// <summary>Global (non-contact) user search only matches username prefixes at least this long.</summary>

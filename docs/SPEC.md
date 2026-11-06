@@ -182,7 +182,8 @@ Logout revokes the current session. `GET api/auth/username-available` (anonymous
 Change password: wrong current → 400 `wrong_password`; optionally revoke other sessions.
 **Delete account** `POST api/users/me/delete {password}`: tombstone (`IsDeleted`, `DeletedAt`, username →
 `deleted_{id:N}`, display name "Deleted Account", clear bio/phone/avatar), revoke all sessions, leave groups
-(ownership transfer rules), keep messages (shown as from a deleted account).
+(ownership transfer rules), keep messages (shown as from a deleted account). Saved Messages, contacts, own blocks, chat
+folders and chat list settings are deleted explicitly (the tombstone row stays, so no cascade fires).
 
 **Sessions**: `GET api/sessions`, `DELETE api/sessions/{id}`, `DELETE api/sessions/others`,
 `PUT api/sessions/current/push` (stored; sending pushes is v2 — register a logging no-op
@@ -198,6 +199,30 @@ session's key (cached 5 min, evicted on revoke), `MediaSignature.Verify`.
 `Photo`, `Ready`), phone `PUT/DELETE` (libphonenumber; region = `DefaultRegion` ?? caller's phone region ??
 "RU"; valid; E.164; taken → 409 `phone_taken`; optional FindByPhone update), privacy `GET/PUT`.
 Any profile/privacy/phone/avatar change sends `UserChanged` to related users **and the caller's own user**.
+
+**Avatar history** (`AvatarPhoto`, shared with groups, `AvatarHistory` in Application/Common): every photo that
+becomes the avatar is kept (newest `SetAt` first, at most `Limits.AvatarHistoryMax` = 30, the oldest go); setting a
+photo of the history again moves it to the front. `DELETE api/users/me/avatar` leaves no photo and drops that photo
+from the history (older ones stay, seen only by the owner until a new photo shows them again — the apps say so and
+offer to delete them too); `DELETE api/users/me/avatars` leaves no photo and no history; `DELETE
+api/users/me/avatars/{mediaId}` drops one photo — the current one is replaced by the newest remaining (none left → no
+photo); unknown → 404 `media_not_found`. `MeDto.EarlierAvatarCount` counts the history without the current photo
+(every `MeDto`, auth responses included), so Settings opens the earlier photos even without a current one.
+`GET api/users/{id}/avatars` → `AvatarPhotoDto[]` (current first): for others only while the person has a current
+photo and `CanSeeProfilePhoto` allows it, else `[]`; unknown/deleted users → 404. The migration put every current
+avatar into its history.
+
+**Profile extras**: `PATCH api/users/me` also takes `ProfileColor` (a `ProfileStyle.Colors` key, "" = none) and
+`Links` (≤ `Limits.ProfileLinksMax` = 3, the whole list; URLs normalized by `ProfileStyle.NormalizeLinkUrl`: absolute
+http/https with a host, "https://" added, ≤ 512 chars; titles ≤ 32; duplicates dropped; anything else 400
+`validation_failed`). `PUT api/users/me/cover {Gradient | MediaId}` (a `ProfileStyle.CoverGradients` key or the
+caller's own `Ready` photo, exactly one) / `DELETE`. `PUT api/users/me/birthday {Day, Month, Year?}` (`Birthdays.IsValid`:
+a real date, Feb 29 needs a leap year when the year is given, year ≥ 1900, not in the future) / `DELETE`.
+What others see: `UserSummaryDto.ProfileColor` and `.Birthday` (per the **Birthday** privacy level, default
+Contacts; the year only if given), `UserProfileDto.Cover` (a photo cover follows the ProfilePhoto level; then the
+gradient is gone) and `.Links`. Someone who blocked the viewer (or a deleted account) shows none of it. Old apps
+save privacy without `Birthday`: a missing `PrivacySettingsDto.Birthday` keeps the stored level. Account deletion
+clears all of it and the avatar history.
 `GET api/users/{id}`, `GET api/users/by-username/{username}` → `UserProfileDto` (viewer-dependent).
 `POST api/users/batch {userIds ≤ 200}` → `UserSummaryDto[]` (unknown ids skipped).
 `GET api/users/search?q=` (`Search` limit): q ≥ 2 after stripping `@`. Matches: contacts and members of my
@@ -210,11 +235,18 @@ users and users who blocked me. Contacts first, then exact username match. Limit
 **Contacts/blocks**: `GET/POST api/contacts`, `POST api/contacts/bulk`, `PATCH/DELETE api/contacts/{userId}`
 (idempotent, no self → `cannot_target_self`, `IsMutual`), `GET api/blocks`, `PUT/DELETE api/blocks/{userId}`;
 both send `ContactsChanged` to the caller's user (blocks also `UserChanged` to both sides).
+Phone-book sync: `POST api/contacts/bulk {Synced: true}` marks new contacts `ContactSource.PhoneSync`
+(`ContactDto.IsSynced`) and gives synced ones the name sent (the phone book's); the user's own contacts stay as they
+are. Adding, importing (bulk without `Synced`) or renaming a synced contact makes it Manual. `DELETE
+api/contacts/synced` → `{Removed}` removes only the synced ones. `POST api/users/find-by-phones` allows
+`Limits.PhoneLookupsPerWindow` requests per user per `Limits.PhoneLookupWindowMinutes` (fixed window, 429
+`rate_limited`), shared by the import and sync.
 
 **Privacy** (`IPrivacyService`): blocks first — if the owner blocked the viewer every level is Nobody.
 `CanMessage(from,to)`: not blocked AND (`to.Messages == Everybody` OR `to` has `from` in contacts OR `to`
 already sent a message in their private chat); Nobody ≈ Contacts. `CanCall` per `to.Calls`.
-`CanAddToGroup` per `GroupInvites` (Nobody ≈ Contacts). `CanSeeProfilePhoto` per `ProfilePhoto`.
+`CanAddToGroup` per `GroupInvites` (Nobody ≈ Contacts). `CanSeeProfilePhoto` per `ProfilePhoto` (also the avatar
+history and a photo cover). Birthday per `Birthday` (Nobody means nobody).
 
 **Presence**: online = any *active* connection (`SetActive`; connections start active). Online↔offline
 transitions update `LastSeenAt` and send `PresenceChanged` to related users with the per-viewer
@@ -255,7 +287,14 @@ Chats:
   (403 `privacy_restricted`/`user_blocked`) and create with the peer's row `IsHidden = true`.
 - `POST api/chats/groups` → `CreateGroupResultDto`: title 1..128, avatar must be the caller's own
   `Ready` Photo, members via `CanAddToGroup` (failures returned), creator Owner, system `ChatCreated`.
-- `PATCH api/chats/{id}`, avatar `PUT/DELETE` (caller's own Photo), system messages, `ChatUpdated`.
+- `PATCH api/chats/{id}`, avatar `PUT/DELETE` (caller's own Photo, or one of the group's avatar history — any admin
+  may set it again), system messages, `ChatUpdated`. The group's avatar history works like a profile's:
+  `GET api/chats/{id}/avatars` (members; while the group has no photo only who may change the info, others get
+  `[]`), `DELETE api/chats/{id}/avatars/{mediaId}` (who may change the info; the current one → the newest remaining
+  takes over with `PhotoChanged`, or `PhotoRemoved`), `ChatUpdated` either way; `DELETE api/chats/{id}/avatars` (who
+  may change the info) leaves no photo and no history (`PhotoRemoved` when there was a photo); removing the avatar
+  drops it from the history; a group created with a photo starts its history. `ChatDetailsDto.EarlierAvatarCount`:
+  the earlier photos this viewer may open.
 - Members: add (AddMembers permission or admin; **banned users: only admins can add, which lifts the ban**),
   remove (admin; owner removes admins; creates a `ChatBan`; then calls every `IChatMembershipObserver`),
   role (owner; Owner = transfer), leave (ownership passes to the oldest admin, else oldest member; last
@@ -272,6 +311,45 @@ Chats:
   on is 403 `user_blocked`, taking one's own part back still works but posts no notice. Deleting an account removes
   its part (no notice). A real change → `ChatUpdated` + system `ContentProtectionEnabled/Disabled`. Forwarding out
   of a protected chat → 403 `forward_restricted`.
+
+Folders and the archive (`IChatFolderService`, `ApiRoutes.Folders`):
+- My folders (≤ `Limits.MaxChatFolders`, name 1..24, icon = one emoji or an app icon key) and my chat list settings
+  are one state (`ChatFoldersDto`) with a revision: every real change bumps it and sends the whole state to all my
+  devices as `ChatFoldersChanged` (a change that changes nothing is silent); every call answers with that state. Changes
+  run under a row lock of my `ChatListPreferences` (created by the first change with `INSERT … ON CONFLICT DO NOTHING`),
+  so devices apply one after another (parallel creates stop exactly at the limit). `GET api/folders`;
+  `PUT api/folders/{id}` (`SaveChatFolderRequest`): with `Create` it creates the folder with that id (the app picks it: a
+  repeat is harmless), else it edits it — a folder that no longer exists (deleted on another device) or someone else's id
+  → 404 `folder_not_found`, never a new folder; a 21st folder → 400 `folder_limit`. Its fields are nullable: null keeps
+  what is stored (an app that does not know a newer field never resets it; fields added later are nullable too), and
+  the folder is checked whole once the edit is laid over it (it must take in something; no chat both included and
+  excluded). Names: line breaks become spaces, trimmed, something visible (`ChatFolderRules.NormalizeName/IsValidName`: no
+  control characters, not only spaces or zero-width characters). Icons: an app icon key or exactly one emoji
+  (`ChatFolderRules.IsOneEmoji`: one grapheme cluster with a non-ASCII code point; ASCII only as a keycap's 0–9 # *; no
+  bidi or other invisible format characters besides ZWJ and the tags of subdivision flags). Ids that are not (or no
+  longer) my chats are dropped from the folder's included, excluded and pinned lists on every write of that folder;
+  `DELETE`; `PUT api/folders/order` (the listed folders take the places they held, like pinned chats);
+  `PUT api/folders/settings` (`UpdateChatListSettingsRequest`: only the settings it sets change, so two devices switching
+  different settings both keep theirs).
+- Which chats a folder shows is `Contracts.ChatFolderRules.Contains` (`ChatFolderMatcher` for many chats: the same rules
+  with hash sets), run by the server and every app on the viewer's `ChatSummaryDto`: not excluded by id, included by id or by type (private chats by whether the other person is in my
+  contacts; groups; channels once they exist; Saved Messages only by id), and not filtered out by the exclusions (muted,
+  read = no unread messages or mentions, archived), which apply to the chats included by id too. Booleans, not a flags
+  enum, so older apps read folders of a newer server.
+- Each folder has its own pins (`PinnedChatIds`, top first): `PUT/DELETE api/folders/{id}/pins/{chatId}` (a new pin goes on
+  top; only my visible chats, else 404 `chat_not_found`), `PUT api/folders/{id}/pinned-order` (`PinOrderRules.Arrange`).
+  They only order the folder; the global pins (`PinOrder`) belong to "All chats".
+- `POST api/folders/{id}/read` marks every unread chat of the folder read (`POST api/folders/all/read`: every chat outside
+  the archive), only forward, with the usual `MessagesRead` per chat.
+- Where chats land (`ChatPlacement`, by the member's settings; no row = the defaults): with `ArchiveNewFromStrangers`
+  a chat from a stranger starts in the archive, muted (`MutedUntil` = forever: spam neither shows nor rings) — a private
+  chat that appears (or reappears after "delete for me") with a message, a forward, a call log or a notice from someone
+  not in my contacts, a group that someone not in my contacts creates with me or adds me to (joining by a link is my own
+  doing). `KeepArchived` (default on, the old behavior) keeps archived chats archived; off, a new message, forward or
+  call log from someone else brings an archived chat back (`ChatSettingsChanged` to that member) unless it is muted for
+  them (a mute that ran out no longer counts) or it came from a stranger (still not a contact; for a group: whoever
+  added me) while they send those to the archive. Notices never bring a chat back. `HideArchive` only tells the apps to
+  drop the archive row.
 
 Messages:
 - `GET .../messages?beforeSeq|afterSeq|aroundSeq&limit` → `MessagesPageDto` (ascending, default 50/max 100,
@@ -329,14 +407,16 @@ Messages:
   Replace chunks, update metadata, `Ready`, then `MediaProcessed` to the owner (also on `Failed`). Missing
   ffmpeg → store as-is and log.
 - `GET api/media/{id}/content?t=&download=1`, `.../thumbnail?t=` (anonymous endpoints): require a bearer
-  user or a valid `?t=` signature for that media id. Access: owner; or current `users.avatar_media_id` of
-  a user whose photo the viewer may see (`CanSeeProfilePhoto`); or current avatar of a chat the viewer is
-  a member of; or attached to a non-deleted message in a chat where the viewer is a member and the message
-  is visible to them. Positive checks cached 60 s. Seekable chunk-backed stream with `EnableRangeProcessing`,
+  user or a valid `?t=` signature for that media id. Access: owner; or the current avatar, a photo of the avatar
+  history or the cover photo of a user whose photo the viewer may see (`CanSeeProfilePhoto`); or the current avatar
+  of a chat the viewer is a member of, or a photo of its history while it has a current one (always for who may change
+  its info); or attached to a non-deleted message in a chat where the viewer is a member and the message is visible
+  to them. Positive checks cached 60 s. Seekable chunk-backed stream with `EnableRangeProcessing`,
   `ETag`, `Cache-Control: private, max-age=31536000, immutable`, `nosniff`, `CSP: sandbox`; Files and
   dangerous types (html, svg, xml, js) → `attachment` (+ octet-stream when dangerous).
 - `GET api/media/{id}` → `MediaDto` (same access rule).
-- Cleanup hourly: `Uploading` older than `IncompleteUploadTtlHours`; unreferenced `Ready` media older than 7 days.
+- Cleanup hourly: `Uploading` older than `IncompleteUploadTtlHours`; unreferenced `Ready` media older than 7 days
+  (avatar histories and covers count as references).
 
 ### 6.5 Calls (backend-calls)
 
@@ -377,15 +457,16 @@ Messages:
 | MessagesRead | chat members | read up to seq |
 | Typing | other members (not blockers) | hub SendTyping |
 | ChatAdded | the user(s) | new group, added, joined, first private message, unhide |
-| ChatUpdated | members | title/description/avatar/permissions/member count/active call/content protection |
+| ChatUpdated | members | title/description/avatar (and its history)/permissions/member count/active call/content protection |
 | ChatRemoved | the user(s) | left, removed, group deleted |
 | ChatMembersChanged | members | add/remove/role |
-| ChatSettingsChanged | caller's user | pin/archive/mute/contact bar closed |
+| ChatSettingsChanged | caller's user; a member whose archived chat a new message brought back | pin/archive/mute/contact bar closed |
 | PinnedChatsReordered | caller's user (all devices) | pinned chats rearranged (`PUT api/chats/pinned-order`) |
+| ChatFoldersChanged | caller's user (all devices) | folders, folder pins or chat list settings changed (whole state, by revision) |
 | HistoryCleared | caller / both | clear history |
 | PinnedMessagesChanged | members | pin/unpin |
 | PresenceChanged | related users (per-viewer privacy, not blocked) | online/offline |
-| UserChanged | related users + the user's own devices | profile/privacy/phone/avatar/blocks |
+| UserChanged | related users + the user's own devices | profile/privacy/phone/avatar (and its history)/birthday/color/cover/links/blocks |
 | ContactsChanged | caller's user | contacts/blocks |
 | MediaProcessed | uploader | processing finished |
 | IncomingCall / CallUpdated | participants (group: members) | call lifecycle |
@@ -446,6 +527,20 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   `/changes` from the stored cursor (apply tombstones, `HiddenMessageIds`, `ClearedUpToSeq`); verify the
   current call. `IUserStore` batches misses (50 ms, `GetUsersAsync`). `IDraftStore`, `IAccountLocalStore`
   per account.
+- **IChatFolderStore** (folders): restored from the cache ("folders"), loaded at sign-in and on every resync (which also
+  retries a first load that failed: an offline start, a server restarting; a load that fails while the connection comes
+  back runs once more; Settings › Folders asks again too); keeps the
+  newest server state by revision (a first server state after a cache restore always wins: the server may have been
+  reset) and lays the changes still on their way on top of it (`ChatFolderEdits`, the server's own edits), so another
+  device's change never makes a pending one flicker; a refused change is put back and rethrown. `CreateAsync` makes a
+  folder, `SaveAsync` edits one (a folder deleted elsewhere is not brought back, locally or on the server),
+  `UpdateSettingsAsync` sends only the settings it changes. `ChatFolderView` shows a folder (its pins first, then by
+  activity; an "unread" folder keeps the chat open next to the list, or on phones the one last opened from it, until
+  another is opened or the folder switched) and counts unread messages for the tabs (`BadgesOf`: every folder in one
+  pass), and `ChatFolderPresets` are the recommended folders. Counters on the chat list count unread messages like the
+  dock: the dock = everything not muted, "All chats" = the main list, the archive row = the archive, each folder = its
+  chats (muted ones only when nothing else, shown grey). `ChatBehaviorSettings.ChatSwipe` (per device): Auto = switch
+  folders once there are folders, else the chat actions.
 - **ICallService**: per its doc. Before starting/accepting request Microphone (and Camera for video) via
   `IPermissionService`; call `ICallPlatformService.OnCallStartedAsync` only while in foreground. Incoming
   while in a call → `DeclineCallAsync(busy: true)`. Outgoing gets `JoinInfo` immediately. Ended calls stay 2 s with `EndStatus`. `ICallPlatformService` start/media/end;
@@ -453,6 +548,34 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   decline. Incoming in background → `ShowIncomingCallAsync`.
 - **INotificationCoordinator** per its doc; badge = `TotalUnread` via `SetBadgeCountAsync`; notification taps
   open `DeepLinks.AppChatUri(chatId)`.
+- **IBirthdayService** (`Services/Birthdays.cs`): contacts whose birthday (as their privacy shows it) is today
+  (`Celebrating`, with the age when the year shows), the chat list's card closable for the day (`IAccountLocalStore`),
+  `IsBirthdayToday(user)` for the 🎂 next to anyone's name, and reminders at 10:00 local time for the next 14 days
+  through `IReminderNotificationService` (one per person, linking to their chat or profile; scheduled again at every
+  start, on contact/birthday/setting changes and after midnight; nothing with
+  `NotificationSettings.BirthdayReminders` off; people I blocked get no card, reminder or 🎂). Each reminder carries
+  its day (`ScheduledReminder.Day`): one the OS delivers on another day or more than `ReminderRules.MaxDelay` (6 h)
+  late is dropped. After midnight the reminders go to the OS again even when unchanged. Texts from the UI's
+  `IReminderTexts`: "Сегодня день рождения у Анны" (`RussianNames.Genitive` declines given names, family words,
+  patronymics and common surnames, and keeps names Russian does not decline as they are — "у Нелли", "у Седых", "у
+  Мариам Петровой"; a word in a consonant on its own only when it is a man's name or a word like "Брат", since
+  "Ковальчук" may be a woman's; a name it cannot decline for sure follows a colon instead: "Сегодня день рождения:
+  Саша работа").
+- **IContactSyncService** (`Services/ContactSync.cs`, `ContactsSettings.SyncPhoneContacts`, per device): with the
+  contacts permission (never asked for by itself — only when the user turns it on) it reads the phone book at sign-in
+  / app start and on `IDeviceContactsWatcher.Changed` (5 s after a burst, and at least 30 min after the previous
+  sync). The numbers go to find-by-phones only when their set changed (a hash per account) or a day has passed, and
+  never during a pause after a 429 (the server's window plus 30 s; a sync is scheduled for its end, and no sync is
+  ever scheduled sooner than 5 s ahead). They go in key order, 1000 per request and at most 5 requests per sync (half
+  the window, the import shares it); a look-up cut short by that or by a 429 keeps the people found so far and goes on
+  with the other numbers after the pause, so a phone book of any size finishes. It adds the
+  people found as synced contacts; synced contacts whose number left the phone book are removed (not when the phone
+  book reads empty or more than half would go at once) and renamed ones take the new name — the user's own contacts
+  are never touched. It announces a newcomer once ("X теперь в SkyMessage", `IReminderNotificationService`) only when
+  their number was in the phone book at the previous look-up, at most 14 days ago; the first sync and the first after
+  turning sync on are quiet. Per account it keeps whom it found (someone removed by hand is not brought back), which
+  number found each synced contact and the numbers of the last look-up — as short SHA-256 hashes, never the numbers.
+  `RemoveSyncedAsync` deletes the synced contacts on the server, turns sync off and forgets all of it.
 - **IClientBootstrapper** per its doc (no network wait; owns sign-in/out cleanup; enables
   `IBackgroundConnectionService` according to `KeepConnectedInBackground`).
 - **ILinkBuilder**: `ServerInfoDto.PublicBaseUrl ?? BaseUri` + `DeepLinks.*Path`.
@@ -472,6 +595,49 @@ tails, radius from settings (default 16), consecutive messages from one sender g
 inside the bubble; outgoing accent-tinted, incoming surface color; avatars = image or initials on a color
 derived from the id. Respect `prefers-reduced-motion` and the Animations setting.
 
+**Colors and backgrounds of one's own** (Settings › Appearance; per device, in `AppearanceSettings`, repaired by
+`AppearanceRules`/`BackdropRules` on load and on every change):
+- My bubbles (`OutgoingBubble`): the accent's gradient (default, as before), the accent flat, or my own colors
+  (`OutgoingColors`: one = flat, two = a 135° gradient; `BubbleColorsDialog`). Their bubbles (`IncomingTint`): white/indigo
+  ("default", unchanged) or a calm tint (lavender, peach, mint, sky, sand) light by day and deep at night. The ink on
+  every bubble is derived and keeps **4.5:1** (WCAG AA; gradients are checked along their length): accent bubbles
+  (gradient or flat) carry white ink like every accent fill, their stops deepened toward black where that is enough
+  (at most 20%; `ThemeCatalog.ReadableFor`), and only an accent too light for that takes dark ink; my own colors take
+  white or dark (#1C1634), whichever reads better, nudged just enough (`ThemeCatalog.Readable`). A stop that already
+  reads well is left as it is. The time and ticks and a failed status on my bubble are solid colors that keep at least
+  **3:1** on every part of it (`--sm-bubble-out-meta`, `--sm-bubble-out-danger`). Text on accent fills (buttons, badges,
+  the send orb, the dock pill: `--sm-on-accent`) keeps the released rule: white unless the fill's middle is very light
+  (luminance above 0.42), so custom accents saved before look as they did.
+- The app's background (`Wallpaper`): a sky, or "custom" = `CustomBackground` — a gradient (2–3 colors, any angle,
+  ready-made ones offered) or a gallery photo with blur and dim (a veil of the theme's background color), one for
+  both themes or one for each (`SameForBoth`; a first one starts per theme). Kept while a sky is chosen. Behind every
+  screen that shows the app's sky (root screens, pushed pages, the wide layout, auth, boot splash).
+- **Readability floor**: root screens put text straight on the app's background, so one's own background is veiled
+  toward the theme's background (`--sm-bg`) as much as that text needs — titles and names (`--sm-text`) 7:1,
+  previews, times and footers (`--sm-text-2`) 4.5:1, checked everywhere on it (`ThemeCatalog.ScreenVeil`). A
+  gradient is veiled as a whole in the theme CSS (`ScreenGradient`; colors that suit the theme stay as they are); a
+  photo is measured by boot.js on the part the window shows (8×8 cells) and veiled row by row
+  (`--sm-sky-veil`, never less than the user's dim; `ScreenVeilRows`), so a light sky over dark hills keeps its sky.
+  Chats that follow the app look the same; a chat's own background has no floor (its text sits on bubbles and glass).
+  The editor says when the floor dims a theme ("Приглушить" puts a gradient's veiled colors into it) and lists the
+  ready-made gradients that suit the edited theme first. Over one's own backgrounds no sky lights, clouds or stars
+  are drawn (`html[data-sky-own]`, `SkyBackdrop Lights`). The system bars follow what lies under them: the top of
+  the app's background (the browser's theme-color too), or a chat's own background while it is on a phone's screen
+  (`ThemeService.HoldSystemBars`).
+- The chats' background (`ChatBackground`, null = the app's) and one chat's (`ChatBackgrounds[chatId]`, from the chat
+  header menu, "Фон чата"): a sky, a gradient or a photo; "reset" goes back to the default. Single chats' backgrounds
+  belong to the account: a chat that is gone for me (`ChatRemoved`, or missing from a full chat list after an offline
+  stretch: `IChatListStore.Synced`) drops its background, and signing out (or another account signing in) drops them
+  all; the app's and the chats' backgrounds stay with the device. Appearance › Reset keeps single chats' backgrounds.
+- Photos are downscaled to the screen (`IMediaCompressor`, metadata stripped) and kept per device by
+  `IBackdropImageStore` (MAUI: files in the app's data dir served at `/_sm/backdrops/{file}`; browser: IndexedDB
+  "skymessage-backdrops", records `{ type, blob, savedAt }`); `BackdropPhotoService` deletes a photo once no setting
+  refers to it (replace, reset, cancelled editor, leftovers after start — not ones stored within the last hour, which
+  another tab's open editor may hold). Pictures are always still (drawn once onto a canvas: a GIF shows its first
+  frame) with the blur baked in by boot.js, which shows the persisted theme's pictures (`ThemeState.Images`) right
+  after the first paint; gradients are in the theme CSS itself. Lite mode changes nothing about them (they never move).
+  Editors preview both themes side by side (`BackdropEditor`, `BackdropPreview`).
+
 **Design tokens** (CSS custom properties on `:root`, theme via `html[data-theme=light|dark]`, applied by
 `ThemeService` and early by `js/boot.js`): `--sm-accent --sm-accent-hover --sm-accent-soft --sm-on-accent
 --sm-bg --sm-surface --sm-surface-2 --sm-surface-3 --sm-text --sm-text-2 --sm-text-3 --sm-link --sm-border
@@ -490,12 +656,14 @@ with an icon rail + list, routed content on the right, third info column ≥ 128
 screen expanded) pushes a history entry and closes on `popstate`, so Android Back closes overlays first.
 `NavigationService` is the only consumer of `IDeepLinkSource` and `DeepLinks.TryParse`; signed-out users
 opening `/u/*` or `/join/*` go to `/welcome` and the pending link is opened after sign-in (no anonymous
-previews). `ThemeService` calls `ISystemUiService.SetSystemBarsStyleAsync` on theme changes; tap feedback
+previews). `ThemeService` calls `ISystemUiService.SetSystemBarsStyleAsync` on theme changes (dark or light icons
+for what lies under the bars; a chat with its own background holds them while on screen); tap feedback
 uses `IHapticsService` when `InAppVibrate`.
 
 **Routes**: `/`, `/welcome`, `/login`, `/register`, `/chat/{ChatId:guid}`, `/chat/{ChatId:guid}/info`,
 `/chat/{ChatId:guid}/media`, `/user/{UserId:guid}`, `/u/{Username}`, `/join/{Token}`, `/contacts`,
-`/contacts/import`, `/new-group`, `/search`, `/calls`, `/settings`, `/settings/{Section}`.
+`/contacts/import`, `/new-group`, `/search`, `/calls`, `/settings`, `/settings/{Section}` (the folder editor is
+`/settings/folder?id=`).
 
 **People & data rules**: render people via `IUserStore.Get(id) ?? embedded` / `DisplayNameOf`; chat titles
 via `IChatListStore.TitleOf/AvatarOf`; media URLs only via `IMediaUrlBuilder` (re-render on its `Changed`);
@@ -519,10 +687,28 @@ right-click), Toast, Tabs, SegmentedControl, ProgressRing, QrCode (QRCoder PNG d
 "classic"/"soft"/"bright", ringback, busy, call-end, plus the user's own sounds; `PlayMessageTone(key)`,
 `StartRingtone(key)`, `StartRingback()`, `Stop()`), `FormatService`
 (times, durations, sizes, last-seen phrases), `IMessagePreviewFormatter`, JS wrapper for `app.js`), and
+Avatars and profiles (Features/Profile): `AvatarOverlays` (scoped; `AvatarOverlayHost` in MainLayout) opens the
+**avatar viewer** from a profile, group info or the chat header — the media viewer's night and gestures (viewer.js:
+grows out of the tapped avatar, pinch/wheel/double-tap zoom, swipe through the history, swipe down to close), my own
+photos and a group's I may change: set as main, delete — and the **crop editor** (avatar.js: squircle preview over a
+dimmed veil, drag/pinch/wheel/slider zoom 1–5×, quarter turns, flip; Done draws a 1024 px JPEG on the device).
+`AvatarFlows` turns gallery/camera picks (pre-shrunk to 2048 px by the device's compressor, HEIC included) and the
+emoji maker (`EmojiAvatarDialog`: an emoji on an `AvatarPalette` gradient) into prepared photos that
+`AvatarUploader` sends as they are. `ProfileLook` maps profile colors to the accent pairs (ring, main action, a soft
+cover wash, sender names in groups) and cover keys to calm skies for both themes. Settings › Profile edits links,
+color, cover (gradients or a photo) and the birthday (`BirthdayDialog`); Privacy has the Birthday level;
+Notifications the birthday reminders switch; the chat list shows `BirthdayCard`; the phone-book page offers sync.
+
 features: Auth (welcome with server picker + connection test, login, register with live username check
 and invite code when required), ChatList (avatar, title, preview incl. "Draft:", sender for groups, time,
 unread + mention badges, pinned/muted marks, typing preview, actions pin/mute/archive/delete, archived
-folder), Contacts (online first, add by username, phone-book import with confirmation list showing
+folder; chat folders: pill tabs under the header with a gliding pill and unread messages per folder (with them the
+scrolled header is one pane of glass), a long-press menu (mark all read, edit, move left / right, delete; "All chats":
+mark all read, open the archive, set up folders), a folder's tab lifted by the long-press (or dragged with the mouse)
+moves sideways to reorder the folders, arrow keys between the tabs, a vertical mouse wheel scrolls the strip, a sideways
+swipe on the list that follows the finger with the neighbouring folder beside it when "Swipe on a chat" says so, Back
+on phones returning to "All chats" first, each folder's own pins, an empty-folder state; the archive row lives in "All
+chats" or, hidden, behind a header button), Contacts (online first, add by username, phone-book import with confirmation list showing
 @username + avatar, share my profile link), Profile (avatar, name, @username, bio, phone, message/call/
 video, share link + QR, add/rename/remove contact, block), Groups (new group → `CreateGroupResultDto`
 failures offered as invite link; group info with members, roles, add, invite link copy/share/revoke, edit,
@@ -561,9 +747,14 @@ name, username with availability, bio), phone (detect via `IPhoneNumberService` 
 region, unlink, "who can find me by number"), privacy & security (all levels, blocked users, active
 sessions, change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
 in background + battery exemption via `IBackgroundConnectionService`; on iOS a hint that the app must stay
-open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, wallpapers with live preview, font size, bubble radius,
-animations, compact list), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
-speed), **devices** (mic select + live level meter + record/playback test; camera select + preview +
+open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, message colors (my bubbles' style, their tint), the
+app's background (skies + "Свой": gradient or photo, per theme or both) and the chats' background with a live preview, font size, bubble radius,
+animations, compact list; see "Colors and backgrounds of one's own" above), chat settings (send by Enter, quick reaction via `EmojiPicker`, autoplay, voice
+speed), **folders** (`/settings/folders`: my folders — "All chats" first, reorder by the handle, long-press menu —,
+recommended folders added with one tap, "Swipe on a chat", new chats from strangers, the archive; the editor
+`/settings/folder?id=`: name, icon or emoji, types, chats included/excluded through `ChatPickerDialog`, exclusions,
+a live count, delete; Save and delete wait for the server, so a refused save keeps the draft, and a folder deleted on
+another device meanwhile is not brought back — the editor offers to save the draft as a new folder), **devices** (mic select + live level meter + record/playback test; camera select + preview +
 mirror; speaker select + test tone (`setSinkId` where supported); echo cancellation / noise suppression /
 auto gain; call video quality; phones: default audio route via `IAudioRouteService`; Android: pause music in other
 apps during calls and note recordings via `IAudioFocusCoordinator`, default on), data & storage
@@ -634,7 +825,8 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   the outbox under Library/Caches (excluded from backup).
 - Platform services (Android complete; iOS/Mac compiling with best-effort implementations;
   `IsSupported=false` where impossible): PlatformInfo (+ CountryCode from SIM/network/locale), SecureStore,
-  PreferencesStore, LocalCacheStore (files), OutboxFileStore, FilePicker (mixed photo+video selection
+  PreferencesStore, LocalCacheStore (files), OutboxFileStore, BackdropImageStore (background photos in the app's data
+  dir, answered on the app origin at `/_sm/backdrops/{file}` next to the media proxy), FilePicker (mixed photo+video selection
   natively: Android `PickMultipleVisualMedia(10)` ImageAndVideo via ActivityResultRegistry + persistable URI
   grants; iOS/Mac `PHPickerViewController` images+videos, copy files inside the completion handler; cap 10 in
   code; FilePicker for files; capture), MediaCompressor (**platform codecs, no SkiaSharp in the app**: Android
@@ -655,6 +847,13 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   (transient focus for ringing, calls, recordings), BackgroundConnectionService (low-priority persistent foreground
   service + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
+  ReminderNotificationService (Android: "Reminders" channel; future ones as alarms allowed while idle —
+  `setExactAndAllowWhileIdle` on Android 8–11, where it needs no permission and an inexact alarm could come days late,
+  `setAndAllowWhileIdle` on 12+, at most an hour late — whose receiver posts the stored text unless it is late by
+  hours or on another day (`ReminderRules.IsDue`), re-armed after reboot/update by `ReminderBootReceiver`, a reminder
+  missed while the phone was off included — one whose alarm already went off leaves the store then and is not shown
+  again; elsewhere unsupported — the app reminds on the chat list),
+  DeviceContactsWatcher (Android: a ContentObserver on the contacts provider while sync is on; elsewhere unsupported),
   ExternalLauncher, DeepLinkSource (intents/URL opens/notification taps), InterProcessLock (in-process),
   AudioRouteService (route ids: `AudioDeviceInfo.Id` on API 31+, speakerphone/SCO below; AVAudioSession on
   iOS; re-apply the preferred route after publish and on device changes; `CallRoutePolicy`: a choice made in the
@@ -670,7 +869,7 @@ participants by `metadata.userId` (identity is per device), reports through a `D
 - Replace the template icon/splash/titles with our own («Горизонт» from `docs/brand`: adaptive + themed icon, splash, notification icon).
 - Web host (`SkyMessage.Web`): `UseHostOrigin`, optional `ServerUrl` in `wwwroot/appsettings.json` for
   standalone dev, platform implementations through `wwwroot/web-platform.js` (IndexedDB cache + outbox
-  blobs, localStorage for preferences/secure store, hidden file input, canvas image compression,
+  blobs, IndexedDB databases of their own for the user's sounds and background photos, localStorage for preferences/secure store, hidden file input, canvas image compression,
   notifications through a minimal no-cache `sw.js` + `registration.showNotification` (Chrome Android has no
   `new Notification()`), visibilitychange, navigator.onLine/connection, navigator.locks with a localStorage
   lease fallback, navigator.share/clipboard, anchor download, deep link = initial path), `SupportsProxy =
@@ -691,6 +890,6 @@ participants by `metadata.userId` (identity is per device), reports through a `D
 Push delivery (FCM/APNs, encrypted payloads — iOS first: until then iPhones only get messages/calls while the
 app is open; the UI says so), CallKit/ConnectionService system call UI, relays in Russia (a plain reverse
 proxy works for REST/SignalR/media/signaling, but calls also need TURN over TLS on the relay), E2E secret chats,
-channels, bots, stickers/GIFs, polls, scheduled messages, chat folders, link previews, 2FA, multi-account,
+channels, bots, stickers/GIFs, polls, scheduled messages, link previews, 2FA, multi-account,
 translation, certificate pinning, production deployment (Caddy TLS, TURN over TLS on 443 via SNI routing,
 backups, separate prod compose with mandatory secrets), app links (`assetlinks.json`, AASA).
