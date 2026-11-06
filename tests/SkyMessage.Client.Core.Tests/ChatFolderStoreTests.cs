@@ -160,18 +160,19 @@ public sealed class ChatFolderStoreTests
         });
         await h.Lifecycle.ActivateAsync(h.Me);
         var changes = 0;
-        h.Store.Changed += () => changes++;
+        h.Store.Changed += () => Interlocked.Increment(ref changes);
 
         // Sign-in's load fails (offline, a server restarting): nothing to show yet, and nothing else asks for folders.
         await h.Store.LoadAsync();
         h.Store.IsLoaded.ShouldBeFalse();
 
-        // Realtime is back: the store asks again and publishes what came.
+        // Realtime is back: the store asks again and publishes what came. The resync runs on its own thread, which
+        // publishes the folders under the store's lock and raises Changed just after it, so wait for both.
         h.Resync();
         await Wait.UntilAsync(() => h.Store.Folders.Count == 1, "the folders arrive after the resync");
+        await Wait.UntilAsync(() => Volatile.Read(ref changes) > 0, "the store announces the folders");
         h.Store.Folders.Single().Name.ShouldBe("Family");
         h.Store.State.Revision.ShouldBe(3);
-        changes.ShouldBeGreaterThan(0);
 
         // Once loaded, a resync refreshes (changes made elsewhere while disconnected).
         h.Resync();
