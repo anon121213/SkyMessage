@@ -510,9 +510,6 @@ html[data-fx="lite"] .sm-dialog, html[data-fx="lite"] .sm-menu { background: var
 .sm-squircle { -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat; mask: var(--sm-squircle) center / 100% 100% no-repeat; }
 .sm-float { animation: sm-float 6s ease-in-out infinite; }
 
-/* Four-point sparkles are an AI cliché and not part of the design (docs/DESIGN.md); any leftover is hidden. */
-.sm-sparkle { display: none !important; }
-
 /* Page content arriving: children rise in one after another (first ten). Use on a screen's first render only. */
 .sm-stagger > * { animation: sm-rise-in 460ms var(--sm-ease-out) both; }
 .sm-stagger > :nth-child(2) { animation-delay: 35ms; }

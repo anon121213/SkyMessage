@@ -9,7 +9,7 @@
 <div @ref="_root" class="app-page @(OwnSky ? "app-page--sky" : null) @(LargeTitle ? "app-page--large" : null) @(Toolbar is not null ? "app-page--toolbar" : null) @Class">
     @if (OwnSky)
     {
-        <SkyBackdrop Still="true" Sparkles="false" Comet="false" Class="app-page__sky" />
+        <SkyBackdrop Still="true" Comet="false" Class="app-page__sky" />
     }
     @if (Scroll)
     {
