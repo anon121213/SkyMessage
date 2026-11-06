@@ -431,6 +431,7 @@ public sealed class CallForegroundService : Service
             manager.CreateNotificationChannel(new NotificationChannel(NotificationChannels.OngoingCall, "SkyMessage", NotificationImportance.Low));
         return new NotificationCompat.Builder(this, NotificationChannels.OngoingCall)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle("SkyMessage")!
             .SetSilent(true)!
             .Build()!;

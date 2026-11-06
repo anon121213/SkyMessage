@@ -36,7 +36,6 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
     private const string DayFormat = "yyyyMMdd";
     private const string StoreName = "sky.reminders";
     private const string GroupsKey = "groups";
-    private static readonly int AccentColor = unchecked((int)0xFF6A4BFF);
     private static readonly object Gate = new();
 
     private static Context Context => Android.App.Application.Context;
@@ -146,7 +145,7 @@ public sealed class AndroidReminderService(NativeStrings strings, ILogger<Androi
         var content = AppIntents.ActivityPendingIntent(context, code, AppIntents.ActivityIntent(context, data is null ? null : Intent.ActionView, data: data));
         var notification = new NotificationCompat.Builder(context, Channel)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-            .SetColor(AccentColor)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle(title)!
             .SetContentText(body)!
             .SetStyle(new NotificationCompat.BigTextStyle().BigText(body))!
