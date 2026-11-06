@@ -129,6 +129,41 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
         return result;
     }
 
+    // Profile extras
+
+    public Task<IReadOnlyList<AvatarPhotoDto>> GetUserAvatarsAsync(Guid userId, CancellationToken ct = default) =>
+        Get<IReadOnlyList<AvatarPhotoDto>>(ApiRoutes.Users.AvatarsPath(userId), ct);
+
+    public Task<MeDto> DeleteMyAvatarAsync(Guid mediaId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<MeDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Users.MeAvatarByIdPath(mediaId), idempotent: false), ct);
+
+    public Task<MeDto> DeleteAllMyAvatarsAsync(CancellationToken ct = default) =>
+        sender.SendJsonAsync<MeDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Users.MeAvatars, idempotent: true), ct);
+
+    public Task<IReadOnlyList<AvatarPhotoDto>> GetChatAvatarsAsync(Guid chatId, CancellationToken ct = default) =>
+        Get<IReadOnlyList<AvatarPhotoDto>>(ApiRoutes.Chats.AvatarsPath(chatId), ct);
+
+    public Task<ChatInfoDto> DeleteChatAvatarAsync(Guid chatId, Guid mediaId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<ChatInfoDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Chats.AvatarByIdPath(chatId, mediaId), idempotent: false), ct);
+
+    public Task<ChatInfoDto> DeleteAllChatAvatarsAsync(Guid chatId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<ChatInfoDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Chats.AvatarsPath(chatId), idempotent: true), ct);
+
+    public Task<MeDto> SetBirthdayAsync(SetBirthdayRequest request, CancellationToken ct = default) =>
+        Json<MeDto>(HttpMethod.Put, ApiRoutes.Users.MeBirthday, request, idempotent: true, ct);
+
+    public Task<MeDto> RemoveBirthdayAsync(CancellationToken ct = default) =>
+        sender.SendJsonAsync<MeDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Users.MeBirthday, idempotent: true), ct);
+
+    public Task<MeDto> SetCoverAsync(SetCoverRequest request, CancellationToken ct = default) =>
+        Json<MeDto>(HttpMethod.Put, ApiRoutes.Users.MeCover, request, idempotent: true, ct);
+
+    public Task<MeDto> RemoveCoverAsync(CancellationToken ct = default) =>
+        sender.SendJsonAsync<MeDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Users.MeCover, idempotent: true), ct);
+
+    public Task<RemoveSyncedContactsResultDto> RemoveSyncedContactsAsync(CancellationToken ct = default) =>
+        sender.SendJsonAsync<RemoveSyncedContactsResultDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Contacts.Synced, idempotent: true), ct);
+
     // Contacts / blocks
 
     public Task<IReadOnlyList<ContactDto>> GetContactsAsync(CancellationToken ct = default) =>
@@ -230,6 +265,35 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
 
     public Task<IReadOnlyList<MessageDto>> GetPinnedMessagesAsync(Guid chatId, CancellationToken ct = default) =>
         Get<IReadOnlyList<MessageDto>>(ApiRoutes.Chats.PinnedPath(chatId), ct);
+
+    // Folders: every change is a state (the folder id is the app's own), so each is safe to repeat.
+
+    public Task<ChatFoldersDto> GetChatFoldersAsync(CancellationToken ct = default) =>
+        Get<ChatFoldersDto>(ApiRoutes.Folders.Root, ct);
+
+    public Task<ChatFoldersDto> SaveChatFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken ct = default) =>
+        Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.ByIdPath(folderId), request, idempotent: true, ct);
+
+    public Task<ChatFoldersDto> DeleteChatFolderAsync(Guid folderId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<ChatFoldersDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Folders.ByIdPath(folderId), idempotent: true), ct);
+
+    public Task<ChatFoldersDto> ReorderChatFoldersAsync(IReadOnlyList<Guid> folderIds, CancellationToken ct = default) =>
+        Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.Order, new ReorderChatFoldersRequest { FolderIds = folderIds }, idempotent: true, ct);
+
+    public Task<ChatFoldersDto> SetFolderPinAsync(Guid folderId, Guid chatId, bool pinned, CancellationToken ct = default) =>
+        sender.SendJsonAsync<ChatFoldersDto>(ApiRequest.Empty(pinned ? HttpMethod.Put : HttpMethod.Delete, ApiRoutes.Folders.PinPath(folderId, chatId),
+            idempotent: true), ct);
+
+    public Task<ChatFoldersDto> ReorderFolderPinsAsync(Guid folderId, IReadOnlyList<Guid> chatIdsTopFirst, CancellationToken ct = default) =>
+        Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.PinnedOrderPath(folderId), new ReorderPinnedChatsRequest { ChatIds = chatIdsTopFirst },
+            idempotent: true, ct);
+
+    public Task<ChatFoldersDto> UpdateChatListSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken ct = default) =>
+        Json<ChatFoldersDto>(HttpMethod.Put, ApiRoutes.Folders.Settings, request, idempotent: true, ct);
+
+    // Read marks only move forward on the server: safe to repeat.
+    public Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default) =>
+        NoContent(ApiRequest.Empty(HttpMethod.Post, folderId is { } id ? ApiRoutes.Folders.ReadPath(id) : ApiRoutes.Folders.ReadAll, idempotent: true), ct);
 
     // Messages
 

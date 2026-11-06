@@ -19,6 +19,9 @@ public sealed class ContactsController(ContactService contacts, ICurrentUser cur
     public Task<IReadOnlyList<ContactDto>> AddBulk(AddContactsBulkRequest request, CancellationToken ct) =>
         contacts.AddBulkAsync(currentUser.UserId, request, ct);
 
+    [HttpDelete(ApiRoutes.Contacts.Synced)]
+    public Task<RemoveSyncedContactsResultDto> RemoveSynced(CancellationToken ct) => contacts.RemoveSyncedAsync(currentUser.UserId, ct);
+
     [HttpPatch(ApiRoutes.Contacts.ByUserId)]
     public Task<ContactDto> Update(Guid userId, UpdateContactRequest request, CancellationToken ct) =>
         contacts.UpdateAsync(currentUser.UserId, userId, request, ct);

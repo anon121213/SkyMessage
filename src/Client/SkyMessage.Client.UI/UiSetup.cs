@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.UI.Features.ChatList;
+using SkyMessage.Client.UI.Features.Profile;
 using SkyMessage.Client.UI.Features.Search;
 using SkyMessage.Client.UI.Kit.Emoji;
 using SkyMessage.Client.UI.Services;
@@ -30,12 +31,16 @@ public static class UiSetup
         services.TryAddSingleton<RecentSearches>();
         services.TryAddSingleton<HapticFeedback>();
         services.TryAddSingleton<AvatarUploader>();
+        services.TryAddSingleton<ReminderTexts>();
+        // Core resolves the reminder texts lazily too (English without them).
+        services.Replace(ServiceDescriptor.Singleton<IReminderTexts>(sp => sp.GetRequiredService<ReminderTexts>()));
 
         // Scoped (JS wrappers, navigation, overlays)
         services.TryAddScoped<AppJs>();
         services.TryAddScoped<UiDispatcher>();
         services.TryAddScoped<LayoutService>();
         services.TryAddScoped<ThemeService>();
+        services.TryAddScoped<BackdropPainter>();
         services.TryAddScoped<NavigationService>();
         services.TryAddScoped<DialogService>();
         services.TryAddScoped<ToastService>();
@@ -47,6 +52,8 @@ public static class UiSetup
         services.TryAddScoped<ShareHelper>();
         services.TryAddScoped<ChatActions>();
         services.TryAddScoped<AppUpdatePrompts>();
+        services.TryAddScoped<AvatarOverlays>();
+        services.TryAddScoped<AvatarFlows>();
         return services;
     }
 }

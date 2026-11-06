@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SkyMessage.Application.Common.Exceptions;
 using SkyMessage.Application.Common.Interfaces;
+using SkyMessage.Application.Common.Persistence;
 using SkyMessage.Contracts;
 using SkyMessage.Domain.Entities;
 
@@ -35,6 +36,22 @@ public sealed class UserDirectoryService(
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException(ErrorCodes.UserNotFound);
         return await BuildProfileAsync(viewerId, userId, ct);
+    }
+
+    /// <summary>
+    /// Someone's avatar history (current first, then newest first) when the viewer may see their profile photo;
+    /// empty otherwise, and for others while the person has no current photo. Unknown or deleted users → 404.
+    /// </summary>
+    public async Task<IReadOnlyList<AvatarPhotoDto>> GetAvatarsAsync(Guid viewerId, Guid userId, CancellationToken ct)
+    {
+        var owner = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId && !u.IsDeleted)
+            .Select(u => new { u.AvatarMediaId })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException(ErrorCodes.UserNotFound);
+        if (viewerId != userId && (owner.AvatarMediaId is null || !await privacy.CanSeeProfilePhotoAsync(viewerId, userId, ct)))
+            return [];
+        return await AvatarHistory.ListAsync(db, db.OfUser(userId), owner.AvatarMediaId, ct);
     }
 
     /// <summary>Unknown ids are skipped; order follows the request.</summary>
@@ -201,6 +218,10 @@ public sealed class UserDirectoryService(
                 u.Bio,
                 u.PhoneNumber,
                 u.IsDeleted,
+                u.CoverGradient,
+                u.CoverMediaId,
+                u.Links,
+                PhotoLevel = u.Privacy.ProfilePhoto,
                 PhoneLevel = u.Privacy.PhoneNumber,
                 OwnerBlockedViewer = db.Blocks.Any(b => b.BlockerId == userId && b.BlockedId == viewerId),
                 ViewerBlockedOwner = db.Blocks.Any(b => b.BlockerId == viewerId && b.BlockedId == userId),
@@ -222,6 +243,8 @@ public sealed class UserDirectoryService(
         // A user who blocked the viewer (or a deleted account) shows nothing beyond the card itself.
         var hidden = !isSelf && (row.OwnerBlockedViewer || row.IsDeleted);
         var phoneVisible = isSelf || (!hidden && PrivacyRules.Allows(row.PhoneLevel, row.OwnerHasViewer));
+        // A photo cover is a profile photo too: same privacy level.
+        var coverPhotoVisible = isSelf || (!hidden && PrivacyRules.Allows(row.PhotoLevel, row.OwnerHasViewer));
         var canMessage = !row.IsDeleted && await privacy.CanMessageAsync(viewerId, userId, ct);
         var canCall = !isSelf && !row.IsDeleted && await privacy.CanCallAsync(viewerId, userId, ct);
 
@@ -236,6 +259,8 @@ public sealed class UserDirectoryService(
             CanCall = canCall,
             PrivateChatId = row.PrivateChatId,
             CommonGroupsCount = isSelf ? 0 : row.CommonGroups,
+            Cover = hidden ? null : IdentityMapping.CoverOf(row.CoverGradient, row.CoverMediaId, coverPhotoVisible),
+            Links = hidden ? [] : row.Links.ToDtos(),
         };
     }
 

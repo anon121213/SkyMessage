@@ -19,8 +19,22 @@ public interface IChatService
     Task<ChatSummaryDto> OpenPrivateChatAsync(CreatePrivateChatRequest request, CancellationToken cancellationToken = default);
     Task<CreateGroupResultDto> CreateGroupAsync(CreateGroupRequest request, CancellationToken cancellationToken = default);
     Task<ChatInfoDto> UpdateChatAsync(Guid chatId, UpdateChatRequest request, CancellationToken cancellationToken = default);
+    /// <summary>The caller's own processed photo, or one from the group's avatar history (it moves to the front).</summary>
     Task<ChatInfoDto> SetAvatarAsync(Guid chatId, SetChatAvatarRequest request, CancellationToken cancellationToken = default);
+    /// <summary>No photo from now on; the removed one leaves the history too.</summary>
     Task<ChatInfoDto> RemoveAvatarAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The group's avatar history (members only): the current photo first, then newest first. Without a current photo
+    /// only who may change the info gets it (others: empty).
+    /// </summary>
+    Task<IReadOnlyList<AvatarPhotoDto>> GetAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>No photo and no history left (who may change the group's info); ChatUpdated when anything went.</summary>
+    Task<ChatInfoDto> DeleteAllAvatarsAsync(Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Drops a photo from the group's history (who may change the group's info); when it is the current one the newest
+    /// remaining photo takes over. ChatUpdated to the members either way.
+    /// </summary>
+    Task<ChatInfoDto> DeleteAvatarAsync(Guid chatId, Guid mediaId, CancellationToken cancellationToken = default);
 
     Task<ChatUserSettingsDto> UpdateSettingsAsync(Guid chatId, UpdateChatSettingsRequest request, CancellationToken cancellationToken = default);
     /// <summary>Rearranges my pinned chats (top first); returns every pinned chat's new order and tells all my devices.</summary>
@@ -37,6 +51,34 @@ public interface IChatService
     /// Groups: for everyone = owner deletes the group, for me = leave.
     /// </summary>
     Task DeleteChatAsync(Guid chatId, bool forEveryone, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// My chat folders and chat list settings. Every change answers with the whole new state and sends it to all my devices
+/// (ChatFoldersChanged); a change that changes nothing is silent.
+/// </summary>
+public interface IChatFolderService
+{
+    Task<ChatFoldersDto> GetAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Creates the folder with this id (<see cref="SaveChatFolderRequest.Create"/>; a new one goes last) or changes the
+    /// fields the request sets (null keeps a field); its pins stay. An edit of a folder that no longer exists is 404.
+    /// </summary>
+    Task<ChatFoldersDto> SaveFolderAsync(Guid folderId, SaveChatFolderRequest request, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> DeleteFolderAsync(Guid folderId, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> ReorderFoldersAsync(ReorderChatFoldersRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Pins one of my chats on top of the folder's own pins.</summary>
+    Task<ChatFoldersDto> PinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default);
+    Task<ChatFoldersDto> UnpinAsync(Guid folderId, Guid chatId, CancellationToken cancellationToken = default);
+    /// <summary>Rearranges the folder's own pinned chats (top first), like <see cref="IChatService.ReorderPinnedAsync"/> does the global ones.</summary>
+    Task<ChatFoldersDto> ReorderPinnedAsync(Guid folderId, ReorderPinnedChatsRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Changes the chat list settings the request sets (null keeps a setting).</summary>
+    Task<ChatFoldersDto> UpdateSettingsAsync(UpdateChatListSettingsRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Marks every unread chat of the folder read (<paramref name="folderId"/> null = "All chats": every chat outside the
+    /// archive), evaluated with <see cref="ChatFolderRules"/> over my chat summaries; MessagesRead per chat as usual.
+    /// </summary>
+    Task MarkReadAsync(Guid? folderId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Group membership, roles and invite links.</summary>

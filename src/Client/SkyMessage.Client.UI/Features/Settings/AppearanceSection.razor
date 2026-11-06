@@ -1,21 +1,29 @@
 @* Appearance: theme (three little flat scenes: dawn with a sun and a drifting cloud, night with a crescent and star
-   dots, both split by a horizon line for "as the device"), accent (gradient pairs), the sky behind every screen (mini
-   skies), text size and bubble roundness, animations, compact list. A slice of a chat at the top shows the result live
-   (colors ease over, a new sky cross-fades in); sliders preview through ThemeService while dragging, with their own
-   small sample right above them. Picks animate (the ring grows in, the check pops) only once the user changed
+   dots, both split by a horizon line for "as the device"), accent (gradient pairs), message colors (my bubbles: the
+   accent's gradient, flat, or my own colors; theirs: calm tints), the app's background (mini skies and "Свой": a
+   gradient or a photo, BackdropEditor), the chats' background (as the app's, or their own), text size and bubble
+   roundness, animations, compact list. A slice of a chat at the top shows the result live on the chats' background
+   (colors ease over, a new background cross-fades in); sliders preview through ThemeService while dragging, with their
+   own small sample right above them. Picks animate (the ring grows in, the check pops) only once the user changed
    something, not when the page opens. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject ISettingsService Settings
 @inject ThemeService Theme
 @inject DialogService Dialogs
+@inject BackdropPhotoService Photos
+@inject BackdropPainter Painter
 
 <SettingsScaffold Title="@L["settings.appearance.title"]">
     @{
         var a = Settings.Current.Appearance;
         var accentKey = ThemeCatalog.NormalizeHex(a.CustomAccentHex) is null ? a.Accent : null;
-        var sky = Theme.Catalog.FindWallpaper(a.Wallpaper);
-        var skyColors = Theme.IsDark ? sky.Dark : sky.Light;
+        var ownApp = a.CustomBackground;
+        var ownAppSelected = string.Equals(a.Wallpaper, ThemeCatalog.CustomWallpaperKey, StringComparison.OrdinalIgnoreCase) && ownApp is not null;
+        var ownChats = BackdropRules.Normalize(a.ChatBackground);
+        // Chats that follow the app show its background as the root screens do (under its readability floor).
+        var chatPaint = ownChats is null ? Painter.OnScreen(Theme.Catalog.ChatPaint(a, Theme.IsDark), Theme.IsDark) : Theme.Catalog.ChatPaint(a, Theme.IsDark);
+        var chatPhoto = chatPaint.Photo is { } shownPhoto ? Painter.Url(shownPhoto, chatPaint.Blur) : null;
     }
     @* Paint servers and clips of the theme scenes (an always-rendered, zero-size svg). *@
     <svg class="look-defs" width="0" height="0" aria-hidden="true" focusable="false">
@@ -36,13 +44,25 @@
     </svg>
 
     <div class="look-preview" aria-hidden="true">
-        <div class="look-preview__sky" style="@($"background:{skyColors.PreviewCss};background-color:{skyColors.Base}")"></div>
+        <div class="look-preview__sky" style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")"></div>
+        @if (chatPhoto is not null)
+        {
+            <div class="look-preview__photo" style="@($"background-image:url(\"{chatPhoto}\")")"></div>
+        }
+        @if (chatPaint.Veil is { } chatVeil)
+        {
+            <div class="look-preview__veil" style="@($"background:{chatVeil}")"></div>
+        }
+        else if (chatPaint.Dim > 0)
+        {
+            <div class="look-preview__veil" style="@($"opacity:{Num(chatPaint.Dim)}")"></div>
+        }
         @if (_fadeFrom is { } fade)
         {
-            @* The previous sky on top, fading out: a cross-fade to the new one. *@
+            @* The previous background on top, fading out: a cross-fade to the new one. *@
             <div @key="_fadeKey" class="look-preview__fade" style="@($"background:{fade.Css};background-color:{fade.Base}")"></div>
         }
-        <span class="look-preview__stars" style="@($"opacity:{Num(skyColors.Stars)}")"></span>
+        <span class="look-preview__stars" style="@($"opacity:{Num(chatPaint.Stars)}")"></span>
         <div class="look-preview__head">
             <span class="look-preview__avatar">@Initial(L["settings.appearance.preview.name"])</span>
             <span class="look-preview__who">
@@ -100,6 +120,65 @@
         </div>
     </Section>
 
+    <Section Title="@L["settings.appearance.messages"]">
+        <div class="look-messages @(_touched ? "is-live" : null)">
+            <span class="look-messages__label">@L["settings.appearance.outgoing"]</span>
+            <div class="look-styles" role="radiogroup" aria-label="@L["settings.appearance.outgoing"]">
+                @foreach (var style in OutgoingStyles)
+                {
+                    var selected = style.Value == a.OutgoingBubble;
+                    var paint = StylePaint(a, style.Value);
+                    <button @key="style.Value" type="button" role="radio" aria-checked="@(selected ? "true" : "false")"
+                            class="look-style @(selected ? "is-selected" : null)" @onclick="() => PickOutgoingAsync(style.Value)">
+                        <span class="look-style__tile" style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")">
+                            @if (paint is { } p)
+                            {
+                                @* Two of my bubbles, a long one and a short one: wide enough for a gradient to show as one. *@
+                                <span class="look-style__bubble" style="@($"background:{p.Background};color:{p.Ink}")">@L["settings.appearance.outgoing.sample"]</span>
+                                <span class="look-style__bubble look-style__bubble--short" style="@($"background:{p.Background};color:{p.Ink}")">@L["settings.appearance.outgoing.sample2"]</span>
+                            }
+                            else
+                            {
+                                <span class="look-style__bubble look-style__bubble--add"><Icon Name="@IconNames.Plus" Size="16" StrokeWidth="2.6" /></span>
+                            }
+                            @if (selected)
+                            {
+                                <span class="look-sky__check"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                            }
+                            @if (selected && style.Value == OutgoingBubbleStyle.Custom)
+                            {
+                                <span class="look-style__edit"><Icon Name="@IconNames.Pencil" Size="12" StrokeWidth="2.6" /></span>
+                            }
+                        </span>
+                        <span class="look-style__name">@style.Label</span>
+                    </button>
+                }
+            </div>
+
+            <span class="look-messages__label">@L["settings.appearance.incoming"]</span>
+            @* Their bubbles as they will look: small bubbles with a sample of their ink, on a strip of the chats' background. *@
+            <div class="look-tints" role="radiogroup" aria-label="@L["settings.appearance.incoming"]"
+                 style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")">
+                @foreach (var tint in Theme.Catalog.IncomingTints)
+                {
+                    var selected = string.Equals(tint.Key, a.IncomingTint, StringComparison.OrdinalIgnoreCase);
+                    var tintPaint = Theme.Catalog.IncomingPaint(tint.Key, Theme.IsDark);
+                    <button @key="tint.Key" type="button" role="radio" aria-checked="@(selected ? "true" : "false")" aria-label="@L[tint.NameKey]" title="@L[tint.NameKey]"
+                            class="look-tint @(selected ? "is-selected" : null)" @onclick="() => PickTintAsync(tint.Key)">
+                        <span class="look-tint__bubble" style="@($"background:{tintPaint.Background};color:{tintPaint.Ink}")" aria-hidden="true">@L["settings.appearance.tintSample"]</span>
+                        @if (selected)
+                        {
+                            <span class="look-sky__check" aria-hidden="true"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                        }
+                    </button>
+                }
+            </div>
+            <div class="look-accents__name">
+                <span>@L[Theme.Catalog.FindTint(a.IncomingTint).NameKey]</span>
+            </div>
+        </div>
+    </Section>
+
     <Section Title="@L["settings.appearance.wallpaper"]" Footer="@L["settings.appearance.wallpaperHint"]">
         <div class="look-skies @(_touched ? "is-live" : null)" role="radiogroup" aria-label="@L["settings.appearance.wallpaper"]">
             @foreach (var wallpaper in Theme.Wallpapers)
@@ -125,6 +204,28 @@
                     <span class="look-sky__name">@L[wallpaper.NameKey]</span>
                 </button>
             }
+            @OwnTile(ownApp is null ? null : Painter.OnScreen(Theme.Catalog.Paint(ownApp.For(Theme.IsDark), Theme.IsDark, screen: true), Theme.IsDark), ownAppSelected,
+                     L["settings.background.own"], PickOwnAppAsync)
+        </div>
+    </Section>
+
+    <Section Title="@L["settings.appearance.chatBackground"]" Footer="@L["settings.appearance.chatBackgroundHint"]">
+        <div class="look-skies look-skies--chats @(_touched ? "is-live" : null)" role="radiogroup" aria-label="@L["settings.appearance.chatBackground"]">
+            @{
+                var followPaint = Painter.OnScreen(Theme.Catalog.AppPaint(a, Theme.IsDark), Theme.IsDark);
+                var follows = ownChats is null;
+            }
+            <button type="button" role="radio" aria-checked="@(follows ? "true" : "false")" class="look-sky @(follows ? "is-selected" : null)" @onclick="FollowAppAsync">
+                <span class="look-sky__tile" aria-hidden="true">
+                    @SkyPaint(followPaint)
+                    @if (follows)
+                    {
+                        <span class="look-sky__check"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                    }
+                </span>
+                <span class="look-sky__name">@L["settings.background.followApp"]</span>
+            </button>
+            @OwnTile(ownChats is null ? null : Theme.Catalog.Paint(ownChats, Theme.IsDark), ownChats is not null, L["settings.background.own"], EditChatsAsync)
         </div>
     </Section>
 
@@ -161,6 +262,7 @@
     private bool _touched;
     private (string Css, string Base)? _fadeFrom;
     private int _fadeKey;
+    private bool _editing;
 
     private IReadOnlyList<ChoiceOption<ThemeMode>> Modes =>
     [
@@ -176,7 +278,71 @@
         _ => "system",
     };
 
+    private IReadOnlyList<ChoiceOption<OutgoingBubbleStyle>> OutgoingStyles =>
+    [
+        new(OutgoingBubbleStyle.Gradient, L["settings.appearance.outgoing.gradient"]),
+        new(OutgoingBubbleStyle.Solid, L["settings.appearance.outgoing.solid"]),
+        new(OutgoingBubbleStyle.Custom, L["settings.appearance.outgoing.custom"]),
+    ];
+
     private static string Num(double value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>My bubble as a style paints it (my own colors: null until there are some).</summary>
+    private BubblePaint? StylePaint(AppearanceSettings a, OutgoingBubbleStyle style) => style switch
+    {
+        OutgoingBubbleStyle.Custom => a.OutgoingColors.Count > 0 ? Theme.Catalog.CustomBubble(a.OutgoingColors, Theme.IsDark) : null,
+        _ => Theme.Catalog.AccentBubble(Theme.AccentHex, style, Theme.IsDark),
+    };
+
+    /// <summary>A mini background in a tile: its colors, its photo under the veil, star dots, two tiny bubbles.</summary>
+    private RenderFragment SkyPaint(BackdropPaint paint) => __builder =>
+    {
+        var url = paint.Photo is { } photo ? Painter.Url(photo, paint.Blur) : null;
+        <span class="look-sky__paint" style="@($"background:{paint.Css};background-color:{paint.Base}")">
+            @if (url is not null)
+            {
+                <span class="look-sky__photo" style="@($"background-image:url(\"{url}\")")"></span>
+            }
+            @if (paint.Veil is { } veil)
+            {
+                <span class="look-sky__veil" style="@($"background:{veil}")"></span>
+            }
+            else if (paint.Dim > 0)
+            {
+                <span class="look-sky__veil" style="@($"opacity:{Num(paint.Dim)}")"></span>
+            }
+            @if (paint.Stars > 0)
+            {
+                <span class="look-sky__stars" style="@($"opacity:{Num(paint.Stars)}")"></span>
+            }
+            <span class="look-sky__bubble look-sky__bubble--in"></span>
+            <span class="look-sky__bubble look-sky__bubble--out"></span>
+        </span>
+    };
+
+    /// <summary>"Свой": the own background (or a plus before there is one), a pencil once it is chosen (tap again to edit).</summary>
+    private RenderFragment OwnTile(BackdropPaint? paint, bool selected, string label, Func<Task> onClick) => __builder =>
+    {
+        <button type="button" role="radio" aria-checked="@(selected ? "true" : "false")" class="look-sky look-sky--own @(selected ? "is-selected" : null)"
+                title="@(selected ? L["settings.background.edit"] : label)" @onclick="onClick">
+            <span class="look-sky__tile" aria-hidden="true">
+                @if (paint is not null)
+                {
+                    @SkyPaint(paint)
+                }
+                else
+                {
+                    <span class="look-sky__paint look-sky__paint--add"><Icon Name="@IconNames.Plus" Size="20" StrokeWidth="2.4" /></span>
+                }
+                @if (selected)
+                {
+                    <span class="look-sky__check"><Icon Name="@IconNames.Check" Size="13" StrokeWidth="3" /></span>
+                    <span class="look-sky__edit"><Icon Name="@IconNames.Pencil" Size="12" StrokeWidth="2.6" /></span>
+                }
+            </span>
+            <span class="look-sky__name">@label</span>
+        </button>
+    };
 
     private static string Initial(string name) => string.IsNullOrEmpty(name) ? "" : name[..1];
 
@@ -237,6 +403,7 @@
         Settings.Changed += OnSettingsChanged;
         OnDispose(() => Settings.Changed -= OnSettingsChanged);
         RenderOn(h => Theme.Changed += h, h => Theme.Changed -= h);
+        RenderOn(h => Painter.Changed += h, h => Painter.Changed -= h);
     }
 
     private void OnSettingsChanged() => _ = InvokeAsync(() =>
@@ -276,13 +443,121 @@
         var current = Settings.Current.Appearance.Wallpaper;
         if (string.Equals(current, key, StringComparison.OrdinalIgnoreCase)) return;
         _touched = true;
-        var old = Theme.Catalog.FindWallpaper(current);
-        _fadeFrom = Theme.IsDark ? (old.DarkCss, old.DarkBase) : (old.LightCss, old.LightBase);
+        await FadeAsync();
+        await SaveAsync(s => s.Appearance.Wallpaper = key);
+    }
+
+    /// <summary>
+    /// Paints the preview's current background on top first: once the change lands, the new one shows through as that
+    /// layer fades (a picture fades as its plain base).
+    /// </summary>
+    private async Task FadeAsync()
+    {
+        var paint = Theme.Catalog.ChatPaint(Settings.Current.Appearance, Theme.IsDark);
+        _fadeFrom = (paint.Css, paint.Base);
         _fadeKey++;
-        // Paint the old sky on top first, then switch: the new one shows through as the layer fades.
         StateHasChanged();
         await Task.Yield();
-        await SaveAsync(s => s.Appearance.Wallpaper = key);
+    }
+
+    private Task PickOutgoingAsync(OutgoingBubbleStyle style)
+    {
+        var a = Settings.Current.Appearance;
+        if (style == OutgoingBubbleStyle.Custom && (a.OutgoingColors.Count == 0 || a.OutgoingBubble == OutgoingBubbleStyle.Custom))
+            return EditOutgoingColorsAsync();
+        if (style == a.OutgoingBubble) return Task.CompletedTask;
+        _touched = true;
+        return SaveAsync(s => s.Appearance.OutgoingBubble = style);
+    }
+
+    private async Task EditOutgoingColorsAsync()
+    {
+        if (_editing) return;
+        _editing = true;
+        try
+        {
+            var result = await Dialogs.ShowAsync<BubbleColorsDialog>(L["settings.appearance.bubbleColorsTitle"], new Dictionary<string, object?>
+            {
+                [nameof(BubbleColorsDialog.Initial)] = Settings.Current.Appearance.OutgoingColors.ToList(),
+            }, new DialogOptions { Presentation = OverlayPresentation.Auto });
+            if (result is List<string> { Count: > 0 } colors)
+            {
+                _touched = true;
+                await SaveAsync(s =>
+                {
+                    s.Appearance.OutgoingColors = colors;
+                    s.Appearance.OutgoingBubble = OutgoingBubbleStyle.Custom;
+                });
+            }
+        }
+        finally
+        {
+            _editing = false;
+        }
+    }
+
+    private Task PickTintAsync(string key)
+    {
+        if (string.Equals(key, Settings.Current.Appearance.IncomingTint, StringComparison.OrdinalIgnoreCase)) return Task.CompletedTask;
+        _touched = true;
+        return SaveAsync(s => s.Appearance.IncomingTint = key);
+    }
+
+    /// <summary>"Свой" among the skies: picks the own background kept from before, or (chosen, or none yet) edits it.</summary>
+    private async Task PickOwnAppAsync()
+    {
+        var a = Settings.Current.Appearance;
+        var chosen = string.Equals(a.Wallpaper, ThemeCatalog.CustomWallpaperKey, StringComparison.OrdinalIgnoreCase);
+        if (a.CustomBackground is not null && !chosen)
+        {
+            _touched = true;
+            await FadeAsync();
+            await SaveAsync(s => s.Appearance.Wallpaper = ThemeCatalog.CustomWallpaperKey);
+            return;
+        }
+        var result = await EditAsync(BackdropTarget.App, L["settings.background.appTitle"], a.CustomBackground, null);
+        if (result?.App is { } app)
+        {
+            _touched = true;
+            await FadeAsync();
+            await Photos.SetAppBackgroundAsync(app);
+        }
+    }
+
+    private async Task FollowAppAsync()
+    {
+        if (Settings.Current.Appearance.ChatBackground is null) return;
+        _touched = true;
+        await FadeAsync();
+        await Photos.SetChatDefaultAsync(null);
+    }
+
+    private async Task EditChatsAsync()
+    {
+        var result = await EditAsync(BackdropTarget.ChatDefault, L["settings.background.chatsTitle"], null, Settings.Current.Appearance.ChatBackground);
+        if (result is null) return;
+        _touched = true;
+        await FadeAsync();
+        await Photos.SetChatDefaultAsync(result.Reset ? null : result.Backdrop);
+    }
+
+    private async Task<BackdropEditorResult?> EditAsync(BackdropTarget target, string title, AppBackground? app, Backdrop? backdrop)
+    {
+        if (_editing) return null;
+        _editing = true;
+        try
+        {
+            return await Dialogs.ShowAsync<BackdropEditor>(title, new Dictionary<string, object?>
+            {
+                [nameof(BackdropEditor.Target)] = target,
+                [nameof(BackdropEditor.App)] = app?.Clone(),
+                [nameof(BackdropEditor.Initial)] = backdrop?.Clone(),
+            }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto, Class = "sm-dialog--solid" }) as BackdropEditorResult;
+        }
+        finally
+        {
+            _editing = false;
+        }
     }
 
     private Task PreviewFontAsync(double value)
@@ -344,7 +619,8 @@
     private async Task ResetAsync()
     {
         if (!await Dialogs.ConfirmAsync(L["settings.appearance.resetTitle"], L["settings.appearance.resetText"], L["settings.appearance.resetConfirm"])) return;
-        await Settings.UpdateAsync(s => s.Appearance = new AppearanceSettings());
+        // Single chats keep their own backgrounds (they were set in those chats, not here).
+        await Settings.UpdateAsync(s => s.Appearance = new AppearanceSettings { ChatBackgrounds = s.Appearance.ChatBackgrounds });
         ReadSliders();
     }
 

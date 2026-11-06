@@ -44,8 +44,8 @@ Reuse kit keys freely (e.g. `common.cancel`, `common.save`, `common.copy`, `comm
 
 | Lifetime | Services |
 |---|---|
-| Singleton (no JS) | `ILocalizer` (`Localizer`), `FormatService`, `MessagePreviewFormatter` (also as Core's `IMessagePreviewFormatter`), `ThemeCatalog`, `ToneCatalog`, `EmojiCatalog`, `EmojiRecents`, `RecentSearches`, `HapticFeedback`, `AvatarUploader` |
-| Scoped | `AppJs`, `UiDispatcher`, `LayoutService`, `ThemeService`, `NavigationService`, `DialogService`, `ToastService`, `SoundService` (= `ISoundService`), `LinkService`, `ShareHelper`, `ChatActions` |
+| Singleton (no JS) | `ILocalizer` (`Localizer`), `FormatService`, `MessagePreviewFormatter` (also as Core's `IMessagePreviewFormatter`), `ThemeCatalog`, `ToneCatalog`, `EmojiCatalog`, `EmojiRecents`, `RecentSearches`, `HapticFeedback`, `AvatarUploader`, `ReminderTexts` (as Core's `IReminderTexts`) |
+| Scoped | `AppJs`, `UiDispatcher`, `LayoutService`, `ThemeService`, `NavigationService`, `DialogService`, `ToastService`, `SoundService` (= `ISoundService`), `LinkService`, `ShareHelper`, `ChatActions`, `AvatarOverlays`, `AvatarFlows` |
 
 Host `index.html` (both hosts) must include, in this order:
 
@@ -204,7 +204,9 @@ Nav.OpenChat(chatId, seq);                     // "/chat/{id}?seq=123" → ChatP
 Nav.OpenChatInfo(chatId);  Nav.OpenUser(userId);  Nav.OpenUsername("anna");
 Nav.GoToSection(ShellSection.Settings);        // tab bar / rail semantics
 Nav.HandleDeepLink(uri);                       // skymessage://…, https://server/u|join|chat/…; false if not ours
-// State: CurrentUrl, CurrentPath, Section, LastDirection, CanGoBack, BackStack, HasOverlays, Changed (event)
+// State: CurrentUrl, CurrentPath, Section, LastDirection, CanGoBack, BackStack, HasOverlays, Changed (event),
+//        IsLeavingPage (overlays are being dismissed by a navigation, not by Back: read it inside the dismiss callback),
+//        IsNavigating (a navigation started here has not arrived: do not push an overlay entry for the current page now)
 // Helpers: NavigationService.ChatIdOf(path), ChatSubPageOf(path), IsTopLevel(path), SectionOf(path), PathOf(url)
 ```
 
@@ -233,7 +235,9 @@ private async Task CloseViewerAsync()                  // the overlay closes its
 ```
 
 `OverlayHandle.CloseAsync()` also closes overlays opened above it. Never call `NavigationManager` directly and
-don't use `NavigationLock` while overlays are open.
+don't use `NavigationLock` while overlays are open. An entry that stands for a state of its page rather than a layer on
+top (the chat list's folder on phones: Back returns to "All chats") keeps that state when `IsLeavingPage` says a
+navigation closed it, and registers again (never while `IsNavigating` or another overlay is open) once its page is back.
 
 ---
 
@@ -280,11 +284,42 @@ Theme.Catalog.WallpaperCss(key, dark)   // background shorthand for preview tile
 Theme.Catalog.BubbleOutColor(hex, dark) // outgoing bubble color for previews
 ThemeCatalog.NormalizeHex("#6c5ce7")    // "#6C5CE7" or null (custom accent validation)
 await Theme.PreviewAsync(appearanceCopy); … await Theme.EndPreviewAsync();   // live preview without saving
+
+// Colors and backgrounds of one's own (SPEC §8.2): paints for previews and tiles, all per theme
+Theme.Catalog.OutgoingPaint(appearance, dark)   // BubblePaint(Background, Solid, Ink, Meta, Danger) of my bubbles as set
+Theme.Catalog.AccentBubble(hex, style, dark)    // my bubble in an accent, Gradient or Solid (white ink, stops deepened ≤ 20%)
+ThemeCatalog.OnAccentInk(from, to)              // text on an accent fill (--sm-on-accent): white unless the middle is very light
+Theme.Catalog.CustomBubble(colors, dark)        // my own 1–2 colors
+Theme.Catalog.IncomingPaint(tintKey, dark)      // their bubbles; Theme.Catalog.IncomingTints: default, lavender, peach, mint, sky, sand
+Theme.Catalog.AppPaint(appearance, dark) / ChatPaint(appearance, dark) / Paint(backdrop, dark, screen)
+                                                // BackdropPaint(Css, Base, Stars, Photo, Blur, Dim, Veil): a still picture of a
+                                                // background; the app's (screen) under its readability floor
+ThemeCatalog.ScreenVeil(colors, dark) / ScreenGradient(colors, dark) / ScreenVeilRows(cells, dark) / ScreenVeilCss(rows, dim, dark)
+                                                // the floor that keeps root-screen text readable (titles 7:1, text-2 4.5:1)
+Theme.Catalog.SystemBars(appearance, dark)      // (DarkContent, Hex) of the system bars over the app's background
+Theme.Catalog.AccentPalette / BubblePalette     // PaletteColor(Hex, NameKey) ready-made colors, named for screen readers
+Theme.Catalog.Palette(appearance, dark)         // PreviewPalette: the tokens a mock screen needs to show one theme in the other
+Theme.Catalog.BackdropGradients                 // GradientPreset(Key, NameKey, Colors, Angle) for the gradient editor
+ThemeCatalog.Readable(stops, lightInk, darkInk) // the ink for a fill and the fill kept at ≥ 4.5:1 (Contrast, WorstContrast, Samples)
 ```
 
 Saving appearance = `Settings.UpdateAsync(s => s.Appearance.X = …)`; ThemeService re-applies automatically
-(CSS variables, `data-theme`, reduced motion, compact list, system bars via `ISystemUiService`). Accent names:
-`L[accent.NameKey]`, custom: `theme.accent.custom`; modes: `theme.mode.system|light|dark`.
+(CSS variables, `data-theme`, reduced motion, compact list, system bars via `ISystemUiService`, the pictures of the
+user's own backgrounds through boot.js, `ThemeState.Scenes`: per theme the slots with one's own background for
+`html[data-sky-own]` and the color under the system bars). A screen that runs under the system bars over a background
+of its own holds them with `using var hold = Theme.HoldSystemBars(hex)` (ChatPage on phones; the newest hold wins). Accent names: `L[accent.NameKey]`, custom: `theme.accent.custom`; modes:
+`theme.mode.system|light|dark`; tints `theme.tint.*`; gradients `theme.gradient.*`. Backgrounds with photos are saved
+through `BackdropPhotoService` (Core: `ImportAsync(maxSide)` picks and stores a photo, `SetAppBackgroundAsync`,
+`SetChatDefaultAsync`, `SetChatAsync(chatId, backdrop?)`, `DiscardAsync`; unused photos are deleted by it).
+
+`BackdropPainter` (scoped) paints what the theme CSS cannot: `ChatStyle(chatId)` — inline CSS custom properties for
+a chat with a background of its own (ChatPage puts them on a `display: contents` wrapper around `.chat`, so they never
+touch the sizes chat.js keeps inline on `[data-chat-root]`), `ChatLights(chatId)` (SkyBackdrop `Lights` for it),
+`ChatBase(chatId)` (the color its edges fade into: the system bars' color in it); `Url(photo, blur)` /
+`Image(photo, blur)` — a photo as the backgrounds show it (blur 0..100 baked in by boot.js, with its tone and 8×8
+cells; null until loaded, then `Changed` fires; use blur 0 plus a CSS `filter: blur()` for small live previews);
+`OnScreen(paint, dark)` — a photo's paint with the row-by-row veil the root screens give it (`ScreenFloor` its
+strongest row). Subscribe with `RenderOn(h => Painter.Changed += h, …)`.
 
 ### `LayoutService` (scoped)
 
@@ -375,9 +410,26 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
 * `HapticFeedback` (singleton): `Selection()`, `Tap()`, `LongPress()`, `Success()`, `Warning()` — only when
   supported and `Notifications.InAppVibrate`. Kit toggles/tabs already use it.
 * `AvatarUploader` (singleton): `PickedPhoto? p = await Avatars.PickAsync()` (with `p.PreviewUrl`) →
-  `MediaDto m = await Avatars.UploadAsync(p, progress)` (compressed to 1280 px, metadata stripped, Ready) → pass
-  `m.Id` to `ISkyApi.SetAvatarAsync` / `SetChatAvatarAsync` / `CreateGroupRequest.AvatarMediaId`; then
-  `Auth.UpdateMe(me)` for own profile edits.
+  `MediaDto m = await Avatars.UploadAsync(p, progress)` (compressed to 1280 px, metadata stripped, Ready; a
+  `PickedPhoto.FromJpeg(...)` made on the device — `Prepared` — goes up as it is) → pass `m.Id` to
+  `ISkyApi.SetAvatarAsync` / `SetChatAvatarAsync` / `CreateGroupRequest.AvatarMediaId`; then `Auth.UpdateMe(me)` for
+  own profile edits. **New avatars go through `AvatarFlows`** (scoped, Features/Profile):
+  `PickedPhoto? p = await AvatarSources.ChooseAsync()` (gallery / camera / emoji choice sheet) or
+  `AvatarSources.MakeAsync(key)` with a key from `SourceOptions()` (add your own options to that list): gallery and
+  camera picks open the crop editor, the emoji maker draws its own; both end as a 1024 px prepared JPEG.
+* `AvatarOverlays` (scoped, Features/Profile; hosted once by MainLayout): `ViewUser(summary)`, `ViewChat(chat,
+  earlierPhotos)` (peer or group, nothing for Saved; a group without a photo opens on its earlier ones for who may
+  change it, `ChatDetailsDto.EarlierAvatarCount`), `ViewMine(currentId)` (null: my earlier photos while I have no
+  photo, `MeDto.EarlierAvatarCount`), `HasPhoto(chat, earlierPhotos)` — the full-screen avatar viewer with the
+  history (set as main / delete when `CanManage`); `byte[]? jpeg = await AvatarOverlays.EditAsync(pickedFile)` opens
+  the crop editor directly. Removing a profile or group photo asks with a checkbox "Удалить и прежние фото (N)"
+  (`ISkyApi.DeleteAllMyAvatarsAsync` / `DeleteAllChatAvatarsAsync`) and says that earlier photos stay otherwise.
+* `ProfileLook` (static, Features/Profile): `Accent(key)`, `TintStyle(key)` (`--pc/--pc2` for a profile's ring and
+  main action), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
+  Birthdays: Core's `IBirthdayService.IsBirthdayToday(user)` puts 🎂 after a name (profile, chat header);
+  `BirthdayCard` (Features/ChatList) is the chat list's card; `ReminderTexts.BirthdayTitle(L, names)` words its title
+  and the reminder ("Сегодня день рождения у Анны": Core's `RussianNames.Genitive`, a colon when a name cannot be
+  declined for sure).
 * `ChatActions` (scoped, Features/ChatList): `TogglePinAsync`, `ToggleMuteAsync` (asks duration), `MuteOptions`,
   `ToggleArchiveAsync` (with Undo), `MarkReadAsync`, `ClearHistoryAsync`, `LeaveAsync`, `DeleteAsync` (per chat
   type), `DeleteGroupForEveryoneAsync`, `TitleOf(chat)` — reuse them in the chat header menu. The chat list's swipe
@@ -390,8 +442,16 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
   `user.IsOnline()`, `user.Handle()` ("@name").
 * `AvatarPalette`: `Background(id)` (gradient), `Color(id)` (sender name color), `Initials(name)`.
 * `SettingsRoutes`: section keys `profile, phone, privacy, blocked, passcode, sessions, notifications, appearance,
-  chats, devices, data, language, connection, about` (`blocked` and `passcode` are sub-pages of privacy); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`. Other screens
-  link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them.
+  chats, folders, folder, devices, data, language, connection, about` (`blocked` and `passcode` are sub-pages of
+  `privacy`, `folder` one of `folders`; the folder editor reads `?id=`); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`.
+  Other screens link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them. A
+  sub-page that should keep its back button next to the menu passes `Back="true"` to `SettingsScaffold`.
+* `FolderUi` (static, Features/ChatList): the folder icons (`Icons`: our keys → Lucide glyphs; anything else non-empty
+  is the user's emoji: `GlyphOf`, `EmojiOf`; `IconLabelKeyOf(key)` = their ru/en names, "folders.icon.<key>", for
+  tooltips and screen readers), recommended folders' name keys (`NameKeyOf(preset)`), routes (`SettingsPath`,
+  `EditPath(id?)`) and `PeerIsContact(chat, contacts, users)` — the contact check the folder rules need (use it with
+  Core's `ChatFolderView` / Contracts' `ChatFolderMatcher`, never your own copy of the rules; validate names and icons
+  with `ChatFolderRules.NormalizeName/IsValidName/IsOneEmoji`, the server's own checks). `FolderJs.Path` is `js/folders.js`.
 * `UiDispatcher` (scoped): `Post(work)` / `InvokeAsync(work)` on the renderer from non-component services.
 * `AnonymousPageAttribute`: `@attribute [AnonymousPage]` for signed-out pages.
 * `EmojiCatalog` (singleton): `Categories` (Key, NameKey, Icon, Emoji), `All`, `QuickReactions`
@@ -597,9 +657,18 @@ Theme: `html[data-theme="light"|"dark"]`, plus `data-theme-mode`, `data-reduce-m
 **Tokens** — color: `--sm-accent --sm-accent-hover --sm-accent-soft --sm-on-accent --sm-link --sm-selection
 --sm-bg --sm-surface --sm-surface-2 --sm-surface-3 --sm-text --sm-text-2 --sm-text-3 --sm-border --sm-divider
 --sm-danger(-soft) --sm-success(-soft) --sm-warning(-soft) --sm-online --sm-scrim --sm-hover --sm-press`;
-bubbles: `--sm-bubble-out --sm-bubble-out-text --sm-bubble-out-meta --sm-bubble-in --sm-bubble-in-text
---sm-bubble-in-meta --sm-bubble-radius`; chat background: `--sm-chat-bg` (base color) + `--sm-chat-wallpaper`
-(full `background` shorthand: `background: var(--sm-chat-wallpaper); background-color: var(--sm-chat-bg);`);
+bubbles: `--sm-bubble-out-bg --sm-bubble-out --sm-bubble-out-text --sm-bubble-out-meta --sm-bubble-in --sm-bubble-in-text
+--sm-bubble-in-meta --sm-bubble-radius` (generated for the bubble style and tint in use; the ink keeps 4.5:1); chat
+background: `--sm-chat-bg` (base color; for a photo its tone under the veil) + `--sm-chat-wallpaper` (full `background`
+shorthand: `background: var(--sm-chat-wallpaper); background-color: var(--sm-chat-bg);`), and for SkyBackdrop's chat
+variant `--sm-chat-orb-1/2/3 --sm-chat-stars --sm-chat-clouds --sm-chat-photo --sm-chat-dim --sm-chat-veil` (each falls
+back to the app sky's `--sm-orb-* --sm-stars --sm-clouds --sm-sky-photo --sm-sky-dim --sm-sky-veil`); a photo
+background: `--sm-sky-photo` / `--sm-chat-photo` (a `url()`, set by boot.js on `<html>`, or inline for one chat),
+`--sm-sky-tone` / `--sm-chat-tone` (its average color), `--sm-sky-dim` / `--sm-chat-dim` (the user's veil, 0..1, over
+`--sm-bg`), and behind the root screens the readability floor boot.js measured on the picture: `--sm-sky-veil` (the
+veil as a row-by-row gradient, with `--sm-sky-veil-opacity: 1`) and `--sm-sky-dim-min` (its strongest row);
+`--sm-bubble-out-danger` (a failed status on my bubble); `html[data-sky-own="app chat"]` lists the slots showing a
+background of one's own in the current theme (no sky lights over them);
 shape/motion: `--sm-radius-s/m/l/xl --sm-shadow-1 --sm-shadow-2 --sm-ease --sm-ease-out --sm-dur --sm-dur-fast`;
 type/layout: `--sm-font --sm-font-mono --sm-font-size --sm-header-h --sm-tabbar-h --sm-rail-w --sm-sidebar-w
 --sm-info-w`; insets: `--sm-safe-top/bottom/left/right` and `--sm-kb-inset` (set by the MAUI host; **use the
@@ -623,6 +692,13 @@ sm-msg-in sm-msg-out sm-shake`), exits that name only their end state so they co
 (`sm-fade-out sm-pop-out sm-sheet-out sm-toast-out`), `sm-sheet-spring` and `sm-skeleton-sweep` — all disabled by
 reduced motion (`prefers-reduced-motion` or the Animations setting) except spinners. `@property --row-x/--row-w`
 are registered for swipeable list rows (below).
+
+**Night viewer** (full-screen viewers: MediaViewer, AvatarViewer): app.css carries their shared chrome —
+`.viewer` (always dark; the night palette as `--sm-viewer-glass/-glass-solid/-glass-hover/-blur/-edge/-lift/-text-2`
+for a viewer's own pieces), `__stage __backdrop __track __frame __photo __img`, the glass `__top __bar __btn __who
+__name __date __actions`, `__bottom __count`, `__nav(--prev|--next)`, `.viewer--bare` (chrome hidden) and the
+`sm-viewer-*` intro keyframes. viewer.js relies on these names. A viewer's `.razor.css` sizes `.viewer__frame` and
+styles only what is its own (captions and video controls; the avatar's "set as main").
 
 **Scoped CSS**: put component styles in `Component.razor.css`. Scoping applies only to elements written in that
 `.razor` file — style child components' elements with `.my-wrapper ::deep .their-class` (a scoped ancestor is
@@ -663,15 +739,30 @@ swipeable rows `[data-swipe-row]` with buttons in `[data-swipe-actions="start|en
 `attachFlipList(container, keyAttr, { enter, viewport })` — keyed children glide when reordered (FLIP, transform
 only; not on first render, while covered, under reduced motion or for big changes; `suppress()` before swapping the
 whole list); `attachScrollHide(scroller, target, attr)` — sets `attr` while scrolling down (floating buttons);
-`animateStrip(el, show)` — a strip at the top of the shell slides in/out and the content follows.
+`animateStrip(el, show)` — a strip at the top of the shell slides in/out and the content follows. `attachRowSwipe` stays
+idle while its list carries `data-row-swipe-off` (the folder swipe owns sideways pans then).
+
+`js/folders.js` (import it through `JsModule(js, FolderJs.Path)`): `attachFolderTabs(track, ref)` — the pill under the tab
+marked `[data-active]` inside `[data-folder-row]` (`[data-folder-indicator]`), gliding on change, `preview(index, p)` /
+`settle()` while a swipe runs; a vertical wheel scrolls the strip while it overflows; arrow keys / Home / End move between
+the tabs (`[data-folder-tab]`, one with `tabindex="0"`); a slot `[data-folder-key]` lifted by its long-press (it claims
+the `sm-longpress` event) or dragged with the mouse reorders the folders → `OnTabLift()` / `OnTabsReorder(keys)`;
+`attachFolderSwipe(pane, scroller, head, track, ref)` — the sideways swipe between folders (only while the pane has
+`data-folder-swipe`; .NET gets `OnFolderSwipeThreshold()`, `OnFolderSwipePeek(dir)` — render that neighbour's first rows
+into a `[data-folder-peek="1|-1"]` child of the pane, which the CSS places a width to that side from `--folder-peek-top`
+— then `OnFolderSwipe(index)`, and calls `enter(dir)` once the next folder rendered, then `OnFolderSwipeDone()` when the
+peek panes may go); `attachHandleReorder(list, ref)` — rows `[data-reorder-key]` dragged by `[data-drag-handle]`,
+`OnReorderLift()` / `OnReorder(keys)`.
 
 Every `JsHandle` must be disposed (`await h.DisposeAsync()`), every `DotNetObjectReference` too. All calls
 swallow "page gone" errors. Your own feature JS (`chat.js`, `recorder.js`, `calls.js`, `devices.js`…) is a
 separate ES module you import yourself (`IJSRuntime.InvokeAsync<IJSObjectReference>("import",
 "./_content/SkyMessage.Client.UI/js/chat.js")`).
 
-`boot.js` exposes `window.__smBoot` (theme) and `window.__smHistory` (overlay history) — use them only through
-`NavigationService`/`ThemeService`. `sounds.js` is used only through `ISoundService`.
+`boot.js` exposes `window.__smBoot` (theme, and `photo(src, blur)`: a background picture baked once per session) and
+`window.__smHistory` (overlay history) — use them only through `NavigationService`/`ThemeService`/`BackdropPainter`
+(app.js `backdropUrl(src, blur)` → `{ url, tone }`, `backdropMaxSide()` → the screen's long side in device pixels;
+`AppJs.BackdropUrlAsync` / `BackdropMaxSideAsync`). `sounds.js` is used only through `ISoundService`.
 
 ---
 
@@ -687,11 +778,25 @@ separate ES module you import yourself (`IJSRuntime.InvokeAsync<IJSObjectReferen
 
 ui-kit pages you can link to: `/` (chat list), `/contacts`, `/contacts/import`, `/user/{id}`, `/u/{username}`,
 `/new-group`, `/chat/{id}/info`, `/join/{token}`, `/search` (`?q=` prefill), `/welcome`, `/login`, `/register`.
+Folder pieces (Features/ChatList): `<FolderTabs Items ActiveId OnSelect OnMenu OnReorder />` (pill tabs in a frosted
+capsule, `FolderTabs.Item(Id, Name, Icon, FolderBadge)` — the badge counts unread messages —, `Id` null = "All chats";
+`OnReorder` gets the folder ids after a tab was dragged; `Track` is the strip for the folder swipe),
+`<FolderIconTile Icon Large />` (a folder's icon as a pastel squircle tile), `ChatPickerDialog` (DialogService content:
+`Selected`, `Exclude`; closes with the chosen chat ids) and `FolderEmojiDialog` (one emoji). `ChatListItem.Pinned`
+shows a folder's own pin instead of the global one; `ChatListItem.Still` renders a row that is only looked at (the
+neighbouring folder during a swipe: no long-press menu binding).
+
 Reusable feature components: `UserPicker` / `UserPickerDialog` (Features/Contacts: single or multiple people,
 `Exclude`, result `UserSummaryDto` or `IReadOnlyList<UserSummaryDto>` — e.g. "Forward to…" can use the chat list
-instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarViewerDialog`, `InviteFailuresDialog`,
+instead), `ProfileView` (Features/Profile), `QrShareDialog`, `AvatarOverlays` (avatar viewer and crop editor),
+`AvatarFlows`, `EmojiAvatarDialog`, `BirthdayDialog`, `InviteFailuresDialog`,
 `ChatListItem`, `ChatActions`, `AddContactDialog`, `ServerPickerDialog` + `ServerStatus` (connection settings may
-reuse them; `ServerPickerDialog.Normalize(url)`).
+reuse them; `ServerPickerDialog.Normalize(url)`). Features/Settings: `ColorStrips` (our hue/vividness/lightness picker,
+`@bind`-style `Hex`/`HexChanged`), `GradientEditor` (1–3 color chips + strips, optional presets, palette and
+direction), `BackdropEditor` (DialogService content: `Target` App/ChatDefault/Chat, result `BackdropEditorResult`; open
+it with `Class = "sm-dialog--solid"` — its previews and actions stay in view on bands of the dialog's own color; it
+notes when the readability floor dims a theme), `BackdropPreview` (a mock app screen or chat over a `BackdropPaint` in
+either theme), `BubbleColorsDialog`. Dialog modifier `sm-dialog--solid` (app.css): an opaque dialog.
 
 ---
 

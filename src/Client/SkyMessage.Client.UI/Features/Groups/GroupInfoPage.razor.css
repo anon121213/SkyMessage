@@ -40,6 +40,24 @@
     --sm-dot-ring: var(--sm-bg);
 }
 
+/* The photo itself is the button to the avatar viewer (no photo: nothing to open). */
+.ginfo__avatar-view {
+    position: relative;
+    display: flex;
+    padding: 0;
+    border-radius: 34%;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.ginfo__avatar-view:disabled {
+    cursor: default;
+}
+
+.ginfo__avatar-view:active:not(:disabled) {
+    transform: scale(0.96);
+    transition-duration: 90ms;
+}
+
 /* Change photo: a small accent circle on the corner. */
 .ginfo__avatar-edit {
     position: absolute;

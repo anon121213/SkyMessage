@@ -18,6 +18,9 @@ public static class AvatarPalette
         ("#DDA8FF", "#9446DA"),
     ];
 
+    /// <summary>The palette's gradient pairs (light, deep): emoji avatars use them as backgrounds.</summary>
+    public static IReadOnlyList<(string From, string To)> Pairs => Gradients;
+
     /// <summary>Index into the palette: identical on every device for the same id.</summary>
     public static int IndexOf(Guid id)
     {

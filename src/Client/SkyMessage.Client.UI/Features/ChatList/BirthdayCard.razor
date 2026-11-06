@@ -1,0 +1,84 @@
+@* The birthday card at the top of the chat list on a contact's birthday (a glass card like the update notice): their
+   faces, "Сегодня день рождения у Анны" (ReminderTexts.BirthdayTitle), the age when it shows, and "Поздравить", which
+   opens the chat with them (with several people, one button each). Closing hides it until tomorrow. Off with
+   Settings › Notifications › Birthdays. *@
+@inherits UiComponentBase
+@inject IBirthdayService Celebrations
+@inject IChatListStore ChatList
+@inject IUserStore Users
+@inject NavigationService Nav
+@inject ToastService Toasts
+
+@if (Celebrations.Celebrating is { Count: > 0 } people && !Celebrations.IsCardDismissed)
+{
+    <div class="bday-card sm-glass sm-glass--strong @(_leaving ? "bday-card--leaving" : null)" role="status">
+        <div class="bday-card__faces" aria-hidden="true">
+            @foreach (var person in people.Take(3))
+            {
+                <UserAvatar @key="person.User.Id" UserId="person.User.Id" Embedded="person.User" Size="40" Class="bday-card__face" />
+            }
+            <span class="bday-card__cake">🎂</span>
+        </div>
+        <div class="bday-card__body">
+            <div class="bday-card__title">@ReminderTexts.BirthdayTitle(L, people.Select(NameOf).ToList())</div>
+            <div class="bday-card__text">@Text(people)</div>
+            <div class="bday-card__actions">
+                @foreach (var person in people.Take(3))
+                {
+                    <Button @key="person.User.Id" Size="ButtonSize.Small" Icon="@IconNames.MessageCircleMore" Loading="@(_opening == person.User.Id)"
+                            OnClick="() => CongratulateAsync(person)">
+                        @(people.Count == 1 ? L["birthday.card.congratulate"] : FormatService.FirstName(NameOf(person)))
+                    </Button>
+                }
+            </div>
+        </div>
+        <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="32" Class="bday-card__close" OnClick="DismissAsync" />
+    </div>
+}
+
+@code {
+    private const int LeaveMs = 200;
+    private bool _leaving;
+    private Guid? _opening;
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Celebrations.Changed += h, h => Celebrations.Changed -= h);
+        RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => Celebrations.Celebrating.Any(p => p.User.Id == id));
+    }
+
+    private string NameOf(BirthdayPerson person) => Users.NameOf(person.User.Id, L, person.User);
+
+    private string Text(IReadOnlyList<BirthdayPerson> people)
+    {
+        if (people.Count > 1) return L["birthday.card.wishMany"];
+        return people[0].Age is { } age ? $"{L.Plural("birthday.turns", age)}. {L["birthday.card.wish"]}" : L["birthday.card.wish"];
+    }
+
+    private async Task CongratulateAsync(BirthdayPerson person)
+    {
+        if (_opening is not null) return;
+        _opening = person.User.Id;
+        try
+        {
+            Nav.OpenChat((await ChatList.OpenPrivateChatAsync(person.User.Id)).Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _opening = null;
+        }
+    }
+
+    private async Task DismissAsync()
+    {
+        _leaving = true;
+        StateHasChanged();
+        await Task.Delay(LeaveMs);
+        _leaving = false;
+        await Celebrations.DismissCardAsync();
+    }
+}

@@ -48,5 +48,7 @@
   "platform.files.choose": "Choose a file",
   "platform.files.saveAs": "Save",
   "platform.permission.camera": "Camera access is needed",
-  "platform.permission.microphone": "Microphone access is needed"
+  "platform.permission.microphone": "Microphone access is needed",
+  "platform.channel.reminders": "Reminders",
+  "platform.channel.reminders.description": "Contacts' birthdays and friends who joined SkyMessage"
 }

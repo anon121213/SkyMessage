@@ -12,6 +12,7 @@ public interface IAppDbContext
     DbSet<Session> Sessions { get; }
     DbSet<Contact> Contacts { get; }
     DbSet<Block> Blocks { get; }
+    DbSet<AvatarPhoto> AvatarPhotos { get; }
 
     DbSet<Chat> Chats { get; }
     DbSet<ChatMember> ChatMembers { get; }
@@ -22,6 +23,8 @@ public interface IAppDbContext
     DbSet<MessageMention> MessageMentions { get; }
     DbSet<MessageHidden> HiddenMessages { get; }
     DbSet<PinnedMessage> PinnedMessages { get; }
+    DbSet<ChatFolder> ChatFolders { get; }
+    DbSet<ChatListPreferences> ChatListPreferences { get; }
 
     DbSet<Media> Media { get; }
     DbSet<MediaThumbnail> MediaThumbnails { get; }

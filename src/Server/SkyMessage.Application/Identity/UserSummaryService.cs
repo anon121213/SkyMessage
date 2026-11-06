@@ -6,7 +6,8 @@ namespace SkyMessage.Application.Identity;
 
 /// <summary>
 /// Viewer-dependent user cards in four queries per batch (users, my contact names, who has me as a
-/// contact, who blocked me) plus in-memory presence.
+/// contact, who blocked me) plus in-memory presence. Avatar, presence and birthday follow their privacy levels; a
+/// person who blocked the viewer shows no photo, color or birthday.
 /// </summary>
 internal sealed class UserSummaryService(IAppDbContext db, IPresenceService presence, IClock clock) : IUserSummaryService
 {
@@ -21,7 +22,8 @@ internal sealed class UserSummaryService(IAppDbContext db, IPresenceService pres
             .Where(u => ids.Contains(u.Id))
             .Select(u => new UserRow(
                 u.Id, u.Username, u.DisplayName, u.AvatarMediaId, u.IsDeleted, u.LastSeenAt,
-                u.Privacy.LastSeen, u.Privacy.ProfilePhoto))
+                u.Privacy.LastSeen, u.Privacy.ProfilePhoto, u.ProfileColor,
+                u.BirthDay, u.BirthMonth, u.BirthYear, u.Privacy.Birthday))
             .ToListAsync(cancellationToken);
         if (users.Count == 0) return Empty;
 
@@ -84,6 +86,8 @@ internal sealed class UserSummaryService(IAppDbContext db, IPresenceService pres
         var facts = new PresenceFacts(user.LastSeenLevel, isSelf, user.IsDeleted, ownerBlockedViewer, ownerHasViewer,
             !user.IsDeleted && presence.IsOnline(user.Id), user.LastSeenAt);
         var photoVisible = isSelf || (!ownerBlockedViewer && PrivacyRules.Allows(user.PhotoLevel, ownerHasViewer));
+        var shown = !user.IsDeleted && !ownerBlockedViewer;
+        var birthdayVisible = shown && (isSelf || PrivacyRules.Allows(user.BirthdayLevel, ownerHasViewer));
 
         return new UserSummaryDto
         {
@@ -95,6 +99,8 @@ internal sealed class UserSummaryService(IAppDbContext db, IPresenceService pres
             Presence = PresenceCalculator.For(facts, now),
             IsContact = isContact,
             IsDeleted = user.IsDeleted,
+            ProfileColor = shown ? user.ProfileColor : null,
+            Birthday = birthdayVisible ? IdentityMapping.BirthdayOf(user.BirthDay, user.BirthMonth, user.BirthYear) : null,
         };
     }
 
@@ -106,5 +112,10 @@ internal sealed class UserSummaryService(IAppDbContext db, IPresenceService pres
         bool IsDeleted,
         DateTimeOffset? LastSeenAt,
         PrivacyLevel LastSeenLevel,
-        PrivacyLevel PhotoLevel);
+        PrivacyLevel PhotoLevel,
+        string? ProfileColor,
+        int? BirthDay,
+        int? BirthMonth,
+        int? BirthYear,
+        PrivacyLevel BirthdayLevel);
 }

@@ -1,0 +1,159 @@
+.grad-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.grad-edit__group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.grad-edit__label {
+    padding: 0 4px;
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sm-text-2);
+}
+
+/* Ready-made gradients: one row that scrolls sideways when it does not fit. */
+.grad-edit__presets {
+    display: flex;
+    gap: 12px;
+    margin: 0 -4px;
+    padding: 6px 8px 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+}
+
+.grad-edit__presets::-webkit-scrollbar {
+    display: none;
+}
+
+.grad-edit__palette {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    justify-items: center;
+    gap: 12px 4px;
+    padding: 4px 0;
+}
+
+/* Light swatches carry a dark check and a rim, so they stay visible on the light card. */
+.grad-edit ::deep .sm-swatch {
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+}
+
+.grad-edit ::deep .sm-swatch--selected {
+    box-shadow: 0 0 0 2.5px var(--sm-surface), 0 0 0 4.5px var(--sm-swatch-color, var(--sm-accent));
+}
+
+.grad-edit ::deep .grad-edit__swatch .sm-icon,
+.grad-edit ::deep .grad-edit__preset .sm-icon {
+    color: #FFFFFF;
+    filter: drop-shadow(0 1px 1.5px rgba(20, 10, 60, 0.45));
+}
+
+/* ---- The colors of this gradient: a chip each ---- */
+
+.grad-edit__stops {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.grad-edit__chips {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 4px;
+}
+
+.grad-edit__chip,
+.grad-edit__add {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 34%;
+    font: inherit;
+    cursor: pointer;
+    transition: transform var(--sm-dur) var(--sm-spring);
+}
+
+.grad-edit__chip:active,
+.grad-edit__add:active {
+    transform: scale(0.9);
+    transition-duration: 90ms;
+}
+
+.grad-edit__chip-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--chip);
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+}
+
+/* The chip being edited: a ring in its own color grows in. */
+.grad-edit__chip::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 38%;
+    border: 2.5px solid var(--sm-accent);
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity var(--sm-dur-fast) var(--sm-ease-in), transform var(--sm-dur-fast) var(--sm-ease-in);
+}
+
+.grad-edit__chip.is-active::after {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+.grad-edit__add {
+    color: var(--sm-accent);
+    background: var(--sm-accent-soft);
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sm-accent) 35%, transparent);
+}
+
+/* ---- Direction: a small arrow turns with the slider ---- */
+
+.grad-edit__angle {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 0 2px;
+}
+
+.grad-edit__dial {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-bottom: 2px;
+    border-radius: 50%;
+    color: var(--sm-accent);
+    background: var(--sm-accent-soft);
+}
+
+.grad-edit__dial ::deep .sm-icon {
+    transform: rotate(var(--angle));
+    transition: transform var(--sm-dur) var(--sm-ease-out);
+}
+
+.grad-edit__angle ::deep .grad-edit__angle-slider {
+    flex: 1 1 auto;
+    min-width: 0;
+}

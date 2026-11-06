@@ -66,6 +66,8 @@
             p => p.Calls, (p, v) => p with { Calls = v }),
         new("groups", "settings.privacy.groups", "settings.privacy.groups.hint", IconNames.Users, SettingsTones.Peach, false,
             p => p.GroupInvites, (p, v) => p with { GroupInvites = v }),
+        new("birthday", "birthday.privacy.title", "birthday.privacy.hint", IconNames.Calendar, SettingsTones.Gold, true,
+            p => p.Birthday ?? PrivacyLevel.Contacts, (p, v) => p with { Birthday = v }),
     ];
 
     private readonly CancellationTokenSource _lifetime = new();

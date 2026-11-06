@@ -245,9 +245,12 @@ internal sealed class UserStore : IUserStore, IAccountScoped
             Presence = existing?.Presence ?? new PresenceDto { IsOnline = true, Approx = LastSeenApprox.Online },
             ContactName = existing?.ContactName,
             IsContact = existing?.IsContact ?? false,
+            ProfileColor = me.ProfileColor,
+            Birthday = me.Birthday,
         };
         if (existing is null || existing.Username != summary.Username || existing.DisplayName != summary.DisplayName
-            || existing.AvatarMediaId != summary.AvatarMediaId)
+            || existing.AvatarMediaId != summary.AvatarMediaId || existing.ProfileColor != summary.ProfileColor
+            || existing.Birthday != summary.Birthday)
         {
             Upsert([summary]);
         }

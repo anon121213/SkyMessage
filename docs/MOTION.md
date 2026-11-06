@@ -30,7 +30,8 @@ Shared keyframes: `sm-fade-in`, `sm-pop-in`, `sm-pop` (0.6 → 1.08 → 1), `sm-
 
 Rules:
 1. **Only `transform` and `opacity` animate** in lists, pages and anything that runs during scroll. Never animate
-   `width/height/top/left/margin/box-shadow` on many elements; no `filter`/`backdrop-filter` animations.
+   `width/height/top/left/margin/box-shadow` on many elements; no `filter`/`backdrop-filter` animations. The one
+   exception is the folder tabs' pill: a single absolutely placed element whose width glides with its position.
 2. **Short.** Nothing above 320ms except the call ring and looping indicators. Interactions respond within 1 frame.
 3. **Enter decelerates, exit accelerates**, exits are ~30% shorter than enters.
 4. **Animate changes, not loading.** History pages, resyncs and re-renders appear instantly; only things the user
@@ -45,15 +46,23 @@ Rules:
    exception: they animate for as long as they are visible).
 8. **Ambient decoration** (the sky, the animated logo, call rings) is slow (seconds, not milliseconds),
    subtle, and never competes with content. No sparkles anywhere (DESIGN.md, "No AI clichés"). It pauses under `[inert]` (covered
-   screens), stops with reduced motion and freezes in `html[data-fx="lite"]`.
+   screens), stops with reduced motion and freezes in `html[data-fx="lite"]`. The user's own backgrounds (a gradient, a
+   photo) never move at all: a photo is a still picture with its blur baked in, not a filter, and the sky's lights,
+   clouds and stars are not drawn over them (`html[data-sky-own]`, `SkyBackdrop Lights`), so nothing composites
+   invisible animated layers.
 
 ## 2. Gesture map
 
 | Where | Gesture | Result |
 |---|---|---|
 | Any phone page with a back target (chat, profile, group info, settings pages, media) | drag right (start ≥ 24px from the left edge) | page follows the finger, the page underneath shows through; release past 35% of the width or fast → Back, else springs back |
-| Chat list item | swipe left | reveals Mute and Archive; full swipe archives (Undo toast) |
-| Chat list item | swipe right | reveals Pin and Read; full swipe toggles pin |
+| Chat list (with folders, "Swipe on a chat" = switch folders, the default once there are folders) | swipe left / right | the list follows the finger with the next / previous folder beside it (its first rows, from the top of what is visible) and the tabs' pill moves part of the way (a soft tint under dark labels); past 30% of the width or a flick → both slide on until the neighbour fills the screen and becomes the list without a jump (a shorter folder then scrolls up smoothly to where it ends); short of it they spring back; at the first/last folder it gives a little (rubber band); a haptic tick at the commit point. In `data-fx="lite"` and with reduced motion the list alone moves: it slides out and the next folder slides in from that side |
+| Chat list item ("Swipe on a chat" = chat actions, or no folders) | swipe left | reveals Mute and Archive; full swipe archives (Undo toast) |
+| Chat list item (as above) | swipe right | reveals Pin and Read (in a folder: the folder's own pin); full swipe toggles pin |
+| Folder tab | tap / long-press (right-click) | open the folder (the pill glides, the list slides in from its side) / its menu |
+| A folder's tab (not "All chats") | long-press, then drag sideways (mouse: drag) | the tab lifts, the others glide aside, the strip scrolls by itself near its ends; drop → new order of the folders (synced); letting go without moving (or resting) opens the menu instead |
+| Folder tab strip | drag sideways / vertical mouse wheel | scrolls the tabs when they do not fit (its own pan: no folder swipe there; the wheel goes on to the list at the strip's ends) |
+| Settings › Folders, a folder's handle | drag up/down (any pointer, no long-press) | the row follows, the others glide aside; drop → new order (synced) |
 | Chat list item | long-press | context menu (existing) |
 | Pinned chat list item (2+ pinned) | long-press, then drag up/down (mouse: drag) | lifts the row and reorders the pinned chats; letting go without moving (or resting) opens the menu |
 | Message | swipe left | reply (existing) |
@@ -61,6 +70,8 @@ Rules:
 | Message | long-press | message menu with reactions (existing); the bubble lifts slightly |
 | Composer mic | tap / hold / slide left / slide up | switch voice↔video / record / cancel / lock (existing) |
 | Media viewer | swipe sideways / down, pinch, double-tap | next-prev / close / zoom (existing) |
+| Avatar viewer (profile, group info, chat header photo) | swipe sideways / down, pinch, double-tap | earlier-later photo of the history / close / zoom; it grows out of the tapped avatar and flies back into it (viewer.js) |
+| Avatar crop editor | drag, pinch, wheel, slider | pan / zoom 1–5× (the photo always covers the square); rotate and flip glide 240 ms |
 | Expanded call screen | drag down | minimize to the call bar |
 | Bottom sheet, phone menu | drag down | close (existing) |
 | In-app notification banner | swipe up | dismiss (existing) |
@@ -71,8 +82,14 @@ Coexistence:
   list does not scroll under it (it scrolls by itself near the edges). Before the lift, swipes and scrolling win.
 - Swipe-back only claims **rightward** horizontal pans; message swipe-to-reply only **leftward**; chat list items
   claim both but live on a root page (no swipe-back there).
-- An element that owns horizontal drags itself (sliders, horizontal scrollers, the PiP window, the media viewer, the
-  composer, the recorder) carries `data-no-swipe-back`; swipe-back never starts inside it.
+- On the chat list either the folder swipe or the row swipe owns sideways pans, never both: the setting picks one
+  (`data-folder-swipe` on the list pane, `data-row-swipe-off` on the scroller). The folder swipe is touch/pen only (mouse
+  users click the tabs, scroll the strip with the wheel and move between tabs with the arrow keys), leaves a pinned row
+  lifted for reordering alone, and is off in the archive. Folder pins drag like global ones (long-press, then up/down).
+- A folder's tab lifted by its long-press owns the touch like a lifted pinned row: the strip does not scroll under it.
+  Before the lift, sideways drags scroll the strip.
+- An element that owns horizontal drags itself (sliders, horizontal scrollers, the PiP window, the media and avatar
+  viewers, the crop editor, the composer, the recorder) carries `data-no-swipe-back`; swipe-back never starts inside it.
 - A recognizer decides its axis after ~8px (`|dx| > 1.5·|dy|` for horizontal) and only then captures the pointer, so
   vertical scrolling stays native (`touch-action: pan-y` on horizontally swipeable surfaces).
 - The Android system back gesture keeps the screen edges; ours starts 24px in.

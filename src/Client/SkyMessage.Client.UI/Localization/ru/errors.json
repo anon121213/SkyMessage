@@ -30,6 +30,8 @@
   "error.chat_member_limit": "В группе уже максимальное число участников.",
   "error.invite_invalid": "Ссылка-приглашение больше не действует.",
   "error.not_a_group": "Это не группа.",
+  "error.folder_not_found": "Этой папки больше нет.",
+  "error.folder_limit": "Папок уже максимум — удалите одну, чтобы добавить новую.",
   "error.message_not_found": "Сообщение не найдено.",
   "error.message_empty": "Сообщение пустое.",
   "error.message_edit_expired": "Это сообщение уже нельзя изменить.",

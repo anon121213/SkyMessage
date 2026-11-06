@@ -81,16 +81,22 @@ public static class ClientCoreSetup
         services.AddSingleton<IAppUpdateFeed, AppUpdateFeed>();
         services.AddSingleton<AppUpdateService>();
         services.AddSingleton<IAppUpdateService>(sp => sp.GetRequiredService<AppUpdateService>());
+        services.AddSingleton<BackdropPhotoService>();
 
         // Stores
         services.AddSingleton<IUserStore, UserStore>();
         services.AddSingleton<IChatListStore, ChatListStore>();
+        services.AddSingleton<IChatFolderStore, ChatFolderStore>();
         services.AddSingleton<IMessageStore, MessageStore>();
         services.AddSingleton<IContactStore, ContactStore>();
         services.AddSingleton<ITypingStore, TypingStore>();
         services.AddSingleton<IDraftStore, DraftStore>();
         services.AddSingleton<IAccountLocalStore, AccountLocalStore>();
         services.AddSingleton<ICallService, CallService>();
+        services.AddSingleton<BirthdayService>();
+        services.AddSingleton<IBirthdayService>(sp => sp.GetRequiredService<BirthdayService>());
+        services.AddSingleton<ContactSyncService>();
+        services.AddSingleton<IContactSyncService>(sp => sp.GetRequiredService<ContactSyncService>());
         return services;
     }
 }

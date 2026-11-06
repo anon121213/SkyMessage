@@ -3,10 +3,19 @@
    The header is pinned at the top of the scroller and turns into floating glass once the list scrolls
    (js/app.js attachScrollState); rows swipe to reveal actions (attachRowSwipe), glide when the order changes
    (attachFlipList), and pinned rows can be dragged into another order (attachPinReorder: long-press on touch, drag
-   with the mouse), which the store keeps on the server for all of my devices. *@
+   with the mouse), which the store keeps on the server for all of my devices.
+   Folders: tabs under the header ("All chats" first, FolderTabs; with them the scrolled header is one pane of glass);
+   the pane under the search capsule shows the active folder (its own pins first) and follows the finger when swiped
+   sideways, the neighbouring folder sliding in beside it (js/folders.js: .NET renders that folder's first rows into a
+   peek pane while the gesture runs), unless "Swipe on a chat" is set to the chat actions. On phones Back returns to
+   "All chats" before it leaves the list. The archive row lives in "All chats" (or, hidden, behind a header button).
+   What the rows and tab counters show is built once per change of the stores (not per render). *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IChatListStore ChatList
+@inject IChatFolderStore Folders
+@inject IContactStore Contacts
+@inject IUserStore Users
 @inject IAuthService Auth
 @inject NavigationService Nav
 @inject ChatActions Actions
@@ -15,10 +24,16 @@
 @inject ISettingsService Settings
 @inject HapticFeedback Haptics
 @inject AppJs Js
+@inject IJSRuntime JS
 
+@{
+    Rebuild();
+}
 <div @ref="_root" class="chatlist @(Shell?.IsWide == true ? "chatlist--panel" : null)">
-    <div @ref="_scroll" class="chatlist__scroll sm-scroll">
-        <div @ref="_head" class="chatlist__head">
+    <div @ref="_scroll" class="chatlist__scroll sm-scroll" data-row-swipe-off="@(FolderSwipe ? "" : null)">
+        <div @ref="_head" class="chatlist__head @(ShowTabs ? "chatlist__head--tabs" : null)">
+            @* With the tabs, the scrolled header is one pane of glass behind the bar and the tabs (no gap between them). *@
+            <span class="chatlist__head-glass" aria-hidden="true"></span>
             <AppBar Title="@(_archive ? L["chatlist.archive.title"] : L["chatlist.title"])" Large="!_archive" Back="_archive" OnBack="CloseArchiveAsync"
                     GlassActions="true">
                 <Actions>
@@ -28,11 +43,20 @@
                     }
                     else
                     {
+                        @if (ArchiveInHeader)
+                        {
+                            <IconButton Icon="@IconNames.Archive" Label="@L["chatlist.archive.title"]" Dot="@(ArchivedUnread > 0)" OnClick="OpenArchiveAsync" />
+                        }
                         <IconButton Icon="@IconNames.Plus" Label="@L["chatlist.compose"]" Variant="IconButtonVariant.Filled" StrokeWidth="2.6"
                                     Class="chatlist__compose" OnClick="OpenComposeAsync" />
                     }
                 </Actions>
             </AppBar>
+            @if (ShowTabs)
+            {
+                <FolderTabs @ref="_tabs" Items="TabItems" ActiveId="ActiveFolder?.Id" OnSelect="id => SelectFolderAsync(id)" OnMenu="OpenTabMenuAsync"
+                            OnReorder="ReorderFoldersAsync" />
+            }
         </div>
 
         @if (!_archive)
@@ -45,23 +69,17 @@
             <div class="chatlist__notices">
                 <UpdateNotice />
                 <NotificationPermissionPrompt />
+                <BirthdayCard />
             </div>
         }
 
-        @if (!_archive && ChatList.ArchivedChats.Count > 0)
+        <div @ref="_pane" class="chatlist__pane" data-folder-swipe="@(FolderSwipe ? "" : null)">
+        @if (ArchiveRow)
         {
-            <ListItem Class="chatlist__archive" Icon="@IconNames.Archive" IconColor="var(--sm-accent-2)" Title="@L["chatlist.archive.title"]"
-                      Subtitle="@ArchiveSubtitle" OnClick="OpenArchiveAsync" Chevron="true">
-                <Trailing>
-                    @if (ArchivedUnread > 0)
-                    {
-                        <Badge Count="ArchivedUnread" Muted="true" />
-                    }
-                </Trailing>
-            </ListItem>
+            @ArchiveRowFragment
         }
 
-        @if (Items.Count == 0)
+        @if (_items.Count == 0)
         {
             @if (!ChatList.IsLoaded && ChatList.IsLoading)
             {
@@ -70,6 +88,16 @@
             else if (_archive)
             {
                 <EmptyState Icon="@IconNames.Archive" Title="@L["chatlist.archive.emptyTitle"]" Text="@L["chatlist.archive.emptyText"]" Fill="true" />
+            }
+            else if (ActiveFolder is { } emptyFolder)
+            {
+                <EmptyState Title="@(emptyFolder.ExcludeRead ? L["folders.empty.readTitle"] : L["folders.empty.title"])" Text="@EmptyFolderText(emptyFolder)"
+                            Fill="true" Class="chatlist__empty">
+                    <Art><SkyArt Kind="SkyArtKind.Folder" Size="210" /></Art>
+                    <Actions>
+                        <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.Pencil" OnClick="() => EditFolder(emptyFolder.Id)">@L["folders.menu.edit"]</Button>
+                    </Actions>
+                </EmptyState>
             }
             else if (ChatList.IsLoaded || !ChatList.IsLoading)
             {
@@ -86,12 +114,15 @@
         {
             <div @ref="_rows" class="chatlist__rows @(_entering ? "chatlist__rows--enter" : null)" role="list">
                 @{
-                    var reorderable = Items.Count(c => c.IsPinned) > 1;
+                    var folder = ActiveFolder;
+                    var reorderable = _pinnedCount > 1;
                 }
-                @foreach (var chat in Items)
+                @foreach (var chat in _items)
                 {
+                    var pinned = PinnedHere(chat);
                     <ChatListItem @key="chat.Id" Chat="chat" Selected="@(chat.Id == SelectedChatId)" SwipeActions="@_armed.Contains(chat.Id)"
-                                  Reorderable="@(reorderable && chat.IsPinned)" OnOpen="Open" OnMenu="OpenMenuAsync" OnAction="RunActionAsync" />
+                                  Reorderable="@(reorderable && pinned)" Pinned="@(folder is null ? null : pinned)"
+                                  OnOpen="Open" OnMenu="OpenMenuAsync" OnAction="RunActionAsync" />
                 }
             </div>
             @if (_archive)
@@ -99,6 +130,14 @@
                 <p class="chatlist__hint"><Icon Name="@IconNames.BellOff" Size="14" />@L["chatlist.archive.hint"]</p>
             }
         }
+        @* A swipe in progress: the neighbouring folder beside the list (folders.js moves it with the pane). *@
+        @foreach (var peek in _peeks)
+        {
+            <div @key="peek" class="chatlist__peek" data-folder-peek="@peek.Dir" aria-hidden="true" inert>
+                @PeekContent(peek.FolderId)
+            </div>
+        }
+        </div>
     </div>
 
     <ContextMenu @ref="_menu" Title="@(_menuChat is null ? null : Actions.TitleOf(_menuChat))">
@@ -109,10 +148,11 @@
             {
                 <MenuItem Icon="@IconNames.CheckCheck" Label="@L["chatlist.menu.markRead"]" OnClick="() => Actions.MarkReadAsync(chat)" />
             }
-            @if (!chat.IsArchived)
+            @if (ActiveFolder is not null || !chat.IsArchived)
             {
-                <MenuItem Icon="@(chat.IsPinned ? IconNames.PinOff : IconNames.Pin)" Label="@(chat.IsPinned ? L["chatlist.menu.unpin"] : L["chatlist.menu.pin"])"
-                          OnClick="() => Actions.TogglePinAsync(chat)" />
+                var pinned = PinnedHere(chat);
+                <MenuItem Icon="@(pinned ? IconNames.PinOff : IconNames.Pin)" Label="@(pinned ? L["chatlist.menu.unpin"] : L["chatlist.menu.pin"])"
+                          OnClick="() => TogglePinAsync(chat)" />
             }
             <MenuItem Icon="@(muted ? IconNames.Bell : IconNames.BellOff)" Label="@(muted ? L["chatlist.menu.unmute"] : L["chatlist.menu.mute"])"
                       OnClick="() => Actions.ToggleMuteAsync(chat)" />
@@ -142,13 +182,72 @@
         <MenuDivider />
         <MenuItem Icon="@IconNames.UserRoundPlus" Label="@L["contacts.add"]" OnClick="AddContactAsync" />
     </ContextMenu>
+
+    <ContextMenu @ref="_tabMenu" Title="@(_menuFolder is { } menuFolder ? menuFolder.Name : L["folders.all"])">
+        @if (_menuFolder is { } f)
+        {
+            var position = FolderIndexOf(f.Id);
+            <MenuItem Icon="@IconNames.CheckCheck" Label="@L["folders.menu.markRead"]" OnClick="() => MarkFolderReadAsync(f.Id)" />
+            <MenuItem Icon="@IconNames.Pencil" Label="@L["folders.menu.edit"]" OnClick="() => EditFolder(f.Id)" />
+            @* In place: a step at a time (the tabs also move by a long-press and a drag sideways). *@
+            @if (position > 0)
+            {
+                <MenuItem Icon="@IconNames.ChevronLeft" Label="@L["folders.menu.left"]" OnClick="() => MoveFolderAsync(f.Id, -1)" />
+            }
+            @if (position >= 0 && position < Folders.Folders.Count - 1)
+            {
+                <MenuItem Icon="@IconNames.ChevronRight" Label="@L["folders.menu.right"]" OnClick="() => MoveFolderAsync(f.Id, 1)" />
+            }
+            <MenuDivider />
+            <MenuItem Icon="@IconNames.Trash2" Label="@L["folders.menu.delete"]" Danger="true" OnClick="() => DeleteFolderAsync(f)" />
+        }
+        else
+        {
+            <MenuItem Icon="@IconNames.CheckCheck" Label="@L["folders.menu.markRead"]" OnClick="() => MarkFolderReadAsync(null)" />
+            @if (ChatList.ArchivedChats.Count > 0)
+            {
+                <MenuItem Icon="@IconNames.Archive" Label="@L["folders.menu.archive"]" OnClick="OpenArchiveAsync" />
+            }
+            <MenuItem Icon="@IconNames.Settings2" Label="@L["folders.menu.setup"]" OnClick="OpenFolderSettings" />
+        }
+    </ContextMenu>
 </div>
 
 @code {
     private ContextMenu? _menu;
     private ContextMenu? _compose;
+    private ContextMenu? _tabMenu;
     private ChatSummaryDto? _menuChat;
+    private ChatFolderDto? _menuFolder;
     private bool _archive;
+    // The folder on screen (null = "All chats").
+    private Guid? _folderId;
+    // What the list shows, built by Rebuild() when the stores or what is on screen changed — not on every render (a
+    // folder's rules over every chat for every tab add up on a budget phone).
+    private int _changes;
+    private (int Changes, Guid? Folder, bool Archive, Guid? Keep, Guid? Selected) _builtFor = (-1, null, false, null, null);
+    private IReadOnlyList<ChatSummaryDto> _items = [];
+    private HashSet<Guid> _pins = [];
+    private int _pinnedCount;
+    private int _archivedUnread;
+    private FolderBadge _allBadge;
+    private Dictionary<Guid, FolderBadge> _badges = [];
+    // The chat last opened from the folder on screen: an "unread" folder keeps it after Back (phones have no chat open
+    // next to the list), until another chat is opened or the folder switched.
+    private Guid? _keptChatId;
+    // A swipe in progress: the neighbouring folders shown beside the list (null = "All chats"; 1 = the next one, on the right).
+    private readonly List<(Guid? FolderId, int Dir)> _peeks = [];
+    private const int PeekRows = 14;
+    // Phones: Back returns to "All chats" first while another folder is on screen (a history entry, like the archive's).
+    private OverlayHandle? _folderBack;
+    private bool _folderBackOpening;
+    private FolderTabs? _tabs;
+    private ElementReference _pane;
+    private JsModule? _folderModule;
+    private JsObject? _folderSwipe;
+    private bool _folderSwipeAttached;
+    // A folder switch rendered: the new list slides in from this side (folders.js enter).
+    private int? _enterFrom;
     private OverlayHandle? _archiveOverlay;
     private ElementReference _root;
     private ElementReference _head;
@@ -170,11 +269,125 @@
 
     [CascadingParameter] public ShellContext? Shell { get; set; }
 
-    private IReadOnlyList<ChatSummaryDto> Items => _archive ? ChatList.ArchivedChats : ChatList.Chats;
-
     private Guid? SelectedChatId => Shell?.IsWide == true ? NavigationService.ChatIdOf(Nav.CurrentPath) : null;
 
-    private int ArchivedUnread => ChatList.ArchivedChats.Count(c => c.UnreadCount > 0 && !c.IsMuted(DateTimeOffset.UtcNow));
+    /// <summary>Unread messages of the archived chats that are not muted (the dock counts them too).</summary>
+    private int ArchivedUnread => _archivedUnread;
+
+    /// <summary>The folder on screen; null = "All chats" (also when the folder was deleted meanwhile).</summary>
+    private ChatFolderDto? ActiveFolder => !_archive && _folderId is { } id ? Folders.Get(id) : null;
+
+    private bool ShowTabs => !_archive && Folders.Folders.Count > 0;
+
+    /// <summary>Sideways swipes switch folders (else they reveal the chat's actions, as without folders).</summary>
+    private bool FolderSwipe => ShowTabs && Settings.Current.Chats.ChatSwipe != ChatSwipeMode.Actions;
+
+    private bool ArchiveRow => !_archive && ActiveFolder is null && ArchiveRowInAllChats;
+
+    private bool ArchiveRowInAllChats => !Folders.Settings.HideArchive && ChatList.ArchivedChats.Count > 0;
+
+    private bool ArchiveInHeader => !_archive && Folders.Settings.HideArchive && ChatList.ArchivedChats.Count > 0;
+
+    /// <summary>The chat an "unread" folder keeps although it was read: the one open (next to the list), else the last one opened from it.</summary>
+    private Guid? KeepChatId => SelectedChatId ?? ChatList.ActiveChatId ?? _keptChatId;
+
+    /// <summary>A store the list is built from changed (any thread): the next render rebuilds.</summary>
+    private void Touch() => Interlocked.Increment(ref _changes);
+
+    private IEnumerable<ChatSummaryDto> AllChats() => ChatList.Chats.Concat(ChatList.ArchivedChats);
+
+    /// <summary>The rows, the active folder's pins and the counters, when anything they are made of changed since the last build.</summary>
+    private void Rebuild()
+    {
+        var keep = KeepChatId;
+        var key = (Volatile.Read(ref _changes), _archive ? null : _folderId, _archive, keep, SelectedChatId);
+        if (key == _builtFor) return;
+        _builtFor = key;
+        var now = DateTimeOffset.UtcNow;
+        var folder = ActiveFolder;
+        _pins = folder is null ? [] : [.. folder.PinnedChatIds];
+        _items = _archive ? ChatList.ArchivedChats
+            : folder is null ? ChatList.Chats
+            : ChatFolderView.ChatsOf(folder, AllChats(), PeerIsContact, now, keep);
+        _pinnedCount = 0;
+        foreach (var chat in _items)
+            if (PinnedHere(chat)) _pinnedCount++;
+        _archivedUnread = ChatList.ArchivedChats.Where(c => !c.IsMuted(now)).Sum(c => Math.Max(0, c.UnreadCount));
+
+        var folders = Folders.Folders;
+        _badges = [];
+        if (folders.Count == 0) return;
+        _allBadge = ChatFolderView.BadgeOf(ChatList.Chats, now);
+        var badges = ChatFolderView.BadgesOf(folders, AllChats().ToList(), PeerIsContact, now);
+        for (var i = 0; i < folders.Count; i++) _badges[folders[i].Id] = badges[i];
+    }
+
+    private bool PeerIsContact(ChatSummaryDto chat) => FolderUi.PeerIsContact(chat, Contacts, Users);
+
+    private string EmptyFolderText(ChatFolderDto folder)
+    {
+        if (folder.ExcludeRead) return L["folders.empty.readText"];
+        // Only channels, which no chat is yet: say so instead of pointing at the rules.
+        var channelsOnly = folder.IncludeChannels && !folder.IncludeContacts && !folder.IncludeNonContacts && !folder.IncludeGroups
+                           && folder.IncludedChatIds.Count == 0;
+        return channelsOnly ? L["folders.empty.channelsText"] : L["folders.empty.text"];
+    }
+
+    /// <summary>Pinned where the list shows it: the folder's own pins, else the global ones ("All chats", the archive).</summary>
+    private bool PinnedHere(ChatSummaryDto chat) => ActiveFolder is not null ? _pins.Contains(chat.Id) : chat.IsPinned;
+
+    /// <summary>The tabs: names from the folders, counters from the last build.</summary>
+    private IReadOnlyList<FolderTabs.Item> TabItems
+    {
+        get
+        {
+            var folders = Folders.Folders;
+            var tabs = new List<FolderTabs.Item>(folders.Count + 1) { new(null, L["folders.all"], null, _allBadge) };
+            foreach (var folder in folders)
+                tabs.Add(new(folder.Id, folder.Name, folder.Icon, _badges.GetValueOrDefault(folder.Id)));
+            return tabs;
+        }
+    }
+
+    /// <summary>The archive row (in "All chats" and beside the list while a swipe brings "All chats" in).</summary>
+    private RenderFragment ArchiveRowFragment => __builder =>
+    {
+        <ListItem Class="chatlist__archive" Icon="@IconNames.Archive" IconColor="var(--sm-accent-2)" Title="@L["chatlist.archive.title"]"
+                  Subtitle="@ArchiveSubtitle" OnClick="OpenArchiveAsync" Chevron="true">
+            <Trailing>
+                @if (ArchivedUnread > 0)
+                {
+                    <Badge Count="ArchivedUnread" Muted="true" />
+                }
+            </Trailing>
+        </ListItem>
+    };
+
+    /// <summary>
+    /// A neighbouring folder's first rows as the list will show them once the swipe lands there (same rows, pins and
+    /// selection; still copies, without menus). An empty folder shows nothing: its empty state rises in once it is on screen.
+    /// </summary>
+    private RenderFragment PeekContent(Guid? folderId) => __builder =>
+    {
+        var folder = folderId is { } id ? Folders.Get(id) : null;
+        if (folderId is not null && folder is null) return;
+        if (folder is null && ArchiveRowInAllChats)
+        {
+            @ArchiveRowFragment
+        }
+        IReadOnlyList<ChatSummaryDto> chats = folder is null
+            ? ChatList.Chats
+            : ChatFolderView.ChatsOf(folder, AllChats(), PeerIsContact, DateTimeOffset.UtcNow, SelectedChatId ?? ChatList.ActiveChatId);
+        if (chats.Count == 0) return;
+        var pins = folder is null ? null : folder.PinnedChatIds.ToHashSet();
+        <div class="chatlist__rows" role="presentation">
+            @foreach (var chat in chats.Take(PeekRows))
+            {
+                <ChatListItem @key="chat.Id" Chat="chat" Selected="@(chat.Id == SelectedChatId)" Pinned="@(pins is null ? null : pins.Contains(chat.Id))"
+                              Still="true" />
+            }
+        </div>
+    };
 
     private string ArchiveSubtitle
     {
@@ -187,9 +400,23 @@
 
     protected override void OnInitialized()
     {
+        // Before the renders they request: the list is rebuilt from what changed.
+        Action touch = Touch;
+        ChatList.Changed += touch;
+        Folders.Changed += touch;
+        Contacts.Changed += touch;
+        OnDispose(() =>
+        {
+            ChatList.Changed -= touch;
+            Folders.Changed -= touch;
+            Contacts.Changed -= touch;
+        });
         RenderOn(h => ChatList.Changed += h, h => ChatList.Changed -= h);
         RenderOn(h => Nav.Changed += h, h => Nav.Changed -= h);
         RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        RenderOn(h => Folders.Changed += h, h => Folders.Changed -= h);
+        // Who is a contact decides which folders private chats belong to.
+        RenderOn(h => Contacts.Changed += h, h => Contacts.Changed -= h);
     }
 
     protected override async Task OnInitializedAsync()
@@ -209,6 +436,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // The next folder is on screen: let it slide in (even while other attachments are still on their way).
+        if (_enterFrom is { } entering && _folderSwipe is not null)
+        {
+            _enterFrom = null;
+            await _folderSwipe.InvokeVoidAsync("enter", entering);
+        }
         if (_attaching || IsDisposed) return;
         _attaching = true;
         try
@@ -219,9 +452,27 @@
                 _swipe = await Js.AttachAsync("attachRowSwipe", _scroll, _scroll, _self);
                 _scrollState = await Js.AttachAsync("attachScrollState", _scroll, _root, "data-scrolled", 6);
             }
-            if (_entering && !_enterTimer && Items.Count > 0) EndEnterLater();
+            if (_entering && !_enterTimer && _items.Count > 0) EndEnterLater();
+            // The folder swipe lives as long as the tabs: the pane is always there, the tab strip comes and goes.
+            if (ShowTabs && _tabs is not null && !_folderSwipeAttached)
+            {
+                _folderSwipeAttached = true;
+                _folderModule ??= new JsModule(JS, FolderJs.Path);
+                _folderSwipe = await _folderModule.AttachAsync("attachFolderSwipe", _pane, _scroll, _head, _tabs.Track, _self);
+            }
+            else if (!ShowTabs && _folderSwipeAttached)
+            {
+                _folderSwipeAttached = false;
+                if (_folderSwipe is not null) await _folderSwipe.DisposeAsync();
+                _folderSwipe = null;
+            }
+            if (_enterFrom is { } from)
+            {
+                _enterFrom = null;
+                if (_folderSwipe is not null) await _folderSwipe.InvokeVoidAsync("enter", from);
+            }
             // The rows container comes and goes with the list being empty: follow the current one.
-            var rowsId = Items.Count > 0 ? _rows.Id : null;
+            var rowsId = _items.Count > 0 ? _rows.Id : null;
             if (rowsId != _rowsId)
             {
                 if (_flip is not null) await _flip.DisposeAsync();
@@ -235,6 +486,7 @@
         {
             _attaching = false;
         }
+        await SyncFolderBackAsync();
     }
 
     private void EndEnterLater()
@@ -270,12 +522,55 @@
         if (ids.Count < 2) return;
         try
         {
-            await ChatList.ReorderPinnedAsync(ids);
+            if (ActiveFolder is { } folder) await Folders.ReorderPinnedAsync(folder.Id, ids);
+            else await ChatList.ReorderPinnedAsync(ids);
         }
         catch (Exception ex)
         {
             Toasts.Error(ex);
         }
+    });
+
+    /// <summary>A sideways swipe on the list went past its commit point.</summary>
+    [JSInvokable]
+    public Task OnFolderSwipeThreshold() => InvokeAsync(Haptics.Tap);
+
+    /// <summary>
+    /// A swipe towards <paramref name="dir"/> (1 = the next folder, -1 = the previous one) follows the finger: render that
+    /// folder beside the list (folders.js moves it with the pane).
+    /// </summary>
+    [JSInvokable]
+    public Task OnFolderSwipePeek(int dir) => InvokeAsync(() =>
+    {
+        if (_archive || dir is not (1 or -1) || _peeks.Exists(p => p.Dir == dir)) return;
+        var folders = Folders.Folders;
+        var index = TabIndexOf(ActiveFolder?.Id) + dir;
+        if (index < 0 || index > folders.Count) return;
+        _peeks.Add((index == 0 ? null : folders[index - 1].Id, dir));
+        StateHasChanged();
+    });
+
+    /// <summary>The swipe is over (landed or sprang back): the neighbouring folders go.</summary>
+    [JSInvokable]
+    public Task OnFolderSwipeDone() => InvokeAsync(() =>
+    {
+        if (_peeks.Count == 0) return;
+        _peeks.Clear();
+        StateHasChanged();
+    });
+
+    /// <summary>A swipe slid the list out towards the tab at <paramref name="index"/> ("All chats" is 0).</summary>
+    [JSInvokable]
+    public Task OnFolderSwipe(int index) => InvokeAsync(async () =>
+    {
+        var folders = Folders.Folders;
+        if (index < 0 || index > folders.Count)
+        {
+            // The folders changed under the finger: bring the list back as it is.
+            if (_folderSwipe is not null) await _folderSwipe.InvokeVoidAsync("enter", 0);
+            return;
+        }
+        await SelectFolderAsync(index == 0 ? null : folders[index - 1].Id, fromSwipe: true);
     });
 
     /// <summary>A row crossed its full-swipe point.</summary>
@@ -286,7 +581,7 @@
     [JSInvokable]
     public Task OnRowAction(string key, string action) => InvokeAsync(async () =>
     {
-        if (!Guid.TryParse(key, out var id) || Items.FirstOrDefault(c => c.Id == id) is not { } chat) return;
+        if (!Guid.TryParse(key, out var id) || _items.FirstOrDefault(c => c.Id == id) is not { } chat) return;
         await RunActionAsync((chat, action));
     });
 
@@ -296,7 +591,7 @@
         switch (request.Action)
         {
             case "pin":
-                await Actions.TogglePinAsync(chat);
+                await TogglePinAsync(chat);
                 break;
             case "read":
                 await Actions.MarkReadAsync(chat);
@@ -310,7 +605,181 @@
         }
     }
 
-    private void Open(ChatSummaryDto chat) => Nav.OpenChat(chat.Id);
+    private void Open(ChatSummaryDto chat)
+    {
+        _keptChatId = ActiveFolder is not null ? chat.Id : null;
+        Nav.OpenChat(chat.Id);
+    }
+
+    /// <summary>Pins where the list shows the chat: in the folder on screen, else globally.</summary>
+    private async Task TogglePinAsync(ChatSummaryDto chat)
+    {
+        if (ActiveFolder is not { } folder)
+        {
+            await Actions.TogglePinAsync(chat);
+            return;
+        }
+        var pinned = ChatFolderView.IsPinned(folder, chat.Id);
+        try
+        {
+            await Folders.SetPinnedAsync(folder.Id, chat.Id, !pinned);
+            Toasts.Success(pinned ? L["chatlist.toast.unpinned"] : L["chatlist.toast.pinned"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    // ---- Folders ----
+
+    private int TabIndexOf(Guid? folderId)
+    {
+        if (folderId is not { } id) return 0;
+        var folders = Folders.Folders;
+        for (var i = 0; i < folders.Count; i++)
+            if (folders[i].Id == id) return i + 1;
+        return 0;
+    }
+
+    private async Task SelectFolderAsync(Guid? folderId, bool fromSwipe = false)
+    {
+        var current = ActiveFolder?.Id;
+        if (folderId == current)
+        {
+            if (fromSwipe && _folderSwipe is not null) await _folderSwipe.InvokeVoidAsync("enter", 0);
+            return;
+        }
+        var from = TabIndexOf(current);
+        var to = TabIndexOf(folderId);
+        await SwitchListsAsync();
+        _folderId = folderId;
+        _keptChatId = null;
+        _enterFrom = Math.Sign(to - from);
+        StateHasChanged();
+        // Back to "All chats" by a tab or a swipe: its Back entry goes (it was the way back there).
+        if (folderId is null && _folderBack is { IsOpen: true } back)
+        {
+            _folderBack = null;
+            await back.CloseAsync();
+        }
+    }
+
+    /// <summary>Phones: the folder on screen (not "All chats") keeps a Back entry while the list is the page on top.</summary>
+    private bool WantsFolderBack =>
+        !IsDisposed && Shell is { IsPhone: true, Pane: ShellPane.Base, IsCovered: false } && _folderId is { } id && Folders.Get(id) is not null
+        && Nav.CurrentPath == "/";
+
+    private async Task SyncFolderBackAsync()
+    {
+        if (_folderBackOpening) return;
+        if (WantsFolderBack)
+        {
+            // The entry goes under every overlay (a menu, a dialog): it waits until none is open, and never while a
+            // navigation is on its way (it would end up under the next page). Nav.Changed brings the list back here.
+            if (_folderBack is not null || Nav.HasOverlays || Nav.IsNavigating) return;
+            _folderBackOpening = true;
+            try
+            {
+                var handle = await Nav.OpenOverlayAsync(() =>
+                {
+                    // Read now: a navigation sets it only while it closes the overlays.
+                    var leaving = Nav.IsLeavingPage;
+                    return InvokeAsync(() => OnFolderBackAsync(leaving));
+                });
+                // Back already pressed while the entry was on its way, or the folder went meanwhile.
+                if (_folderBack is null && handle.IsOpen && WantsFolderBack) _folderBack = handle;
+                else await handle.CloseAsync();
+            }
+            finally
+            {
+                _folderBackOpening = false;
+            }
+        }
+        else if (_folderBack is { IsOpen: true } open)
+        {
+            _folderBack = null;
+            await open.CloseAsync();
+        }
+    }
+
+    private async Task OnFolderBackAsync(bool leaving)
+    {
+        _folderBack = null;
+        // A navigation took the entry away (a chat opened from the folder): the folder stays for when the list shows again.
+        if (leaving || IsDisposed) return;
+        await SelectFolderAsync(null);
+    }
+
+    private int FolderIndexOf(Guid folderId)
+    {
+        var folders = Folders.Folders;
+        for (var i = 0; i < folders.Count; i++)
+            if (folders[i].Id == folderId) return i;
+        return -1;
+    }
+
+    /// <summary>The tab menu's "Move left / right": one place in my order of folders.</summary>
+    private async Task MoveFolderAsync(Guid folderId, int delta)
+    {
+        var ids = Folders.Folders.Select(f => f.Id).ToList();
+        var from = ids.IndexOf(folderId);
+        var to = Math.Clamp(from + delta, 0, ids.Count - 1);
+        if (from < 0 || to == from) return;
+        await ReorderFoldersAsync(PinnedOrderRules.Move(ids, from, to));
+    }
+
+    /// <summary>A tab dropped in a new place (or moved from its menu): my folders in the new order.</summary>
+    private async Task ReorderFoldersAsync(IReadOnlyList<Guid> folderIds)
+    {
+        try
+        {
+            await Folders.ReorderAsync(folderIds);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task OpenTabMenuAsync((Guid? Id, MenuPosition Position) request)
+    {
+        _menuFolder = request.Id is { } id ? Folders.Get(id) : null;
+        if (request.Id is not null && _menuFolder is null) return;
+        if (_tabMenu is not null) await _tabMenu.OpenAsync(request.Position);
+    }
+
+    private async Task MarkFolderReadAsync(Guid? folderId)
+    {
+        try
+        {
+            await Folders.MarkReadAsync(folderId);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private void EditFolder(Guid folderId) => Nav.NavigateTo(FolderUi.EditPath(folderId));
+
+    private void OpenFolderSettings() => Nav.NavigateTo(FolderUi.SettingsPath);
+
+    private async Task DeleteFolderAsync(ChatFolderDto folder)
+    {
+        var ok = await Dialogs.ConfirmAsync(L.Format("folders.delete.title", folder.Name), L["folders.delete.text"], L["folders.delete.confirm"], danger: true);
+        if (!ok) return;
+        try
+        {
+            if (_folderId == folder.Id) await SelectFolderAsync(null);
+            await Folders.DeleteAsync(folder.Id);
+            Toasts.Success(L["folders.toast.deleted"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
 
     private async Task OpenMenuAsync((ChatSummaryDto Chat, MenuPosition Position) request)
     {
@@ -379,6 +848,7 @@
     {
         if (_archive) return;
         await SwitchListsAsync();
+        _peeks.Clear();
         _archive = true;
         var overlay = await Nav.OpenOverlayAsync(() => InvokeAsync(async () =>
         {
@@ -411,11 +881,18 @@
             _archiveOverlay = null;
             await overlay.CloseAsync();
         }
+        if (_folderBack is { IsOpen: true } back)
+        {
+            _folderBack = null;
+            await back.CloseAsync();
+        }
         Dispose();
         if (_swipe is not null) await _swipe.DisposeAsync();
         if (_flip is not null) await _flip.DisposeAsync();
         if (_reorder is not null) await _reorder.DisposeAsync();
         if (_scrollState is not null) await _scrollState.DisposeAsync();
+        if (_folderSwipe is not null) await _folderSwipe.DisposeAsync();
+        if (_folderModule is not null) await _folderModule.DisposeAsync();
         _self?.Dispose();
     }
 }

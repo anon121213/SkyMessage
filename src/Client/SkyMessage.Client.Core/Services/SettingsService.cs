@@ -152,6 +152,7 @@ internal sealed class SettingsService : ISettingsService
         s.Appearance.BubbleRadius = Math.Clamp(s.Appearance.BubbleRadius, 4, 24);
         if (string.IsNullOrWhiteSpace(s.Appearance.Accent)) s.Appearance.Accent = "violet";
         if (string.IsNullOrWhiteSpace(s.Appearance.Wallpaper)) s.Appearance.Wallpaper = "aurora";
+        AppearanceRules.Normalize(s.Appearance);
         s.Chats.VoicePlaybackRate = s.Chats.VoicePlaybackRate is >= 0.5 and <= 3 ? s.Chats.VoicePlaybackRate : 1.0;
         if (string.IsNullOrWhiteSpace(s.Chats.QuickReaction)) s.Chats.QuickReaction = "👍";
         SoundCatalog.Normalize(s.Notifications);

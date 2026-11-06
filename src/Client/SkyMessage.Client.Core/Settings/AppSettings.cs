@@ -18,6 +18,7 @@ public sealed class AppSettings
     public DataSettings Data { get; set; } = new();
     public ConnectionSettings Connection { get; set; } = new();
     public UpdateSettings Updates { get; set; } = new();
+    public ContactsSettings Contacts { get; set; } = new();
     /// <summary>"auto" (follow the OS), "ru" or "en".</summary>
     public string Language { get; set; } = "auto";
 
@@ -46,12 +47,32 @@ public sealed class AppearanceSettings
     public string? CustomAccentHex { get; set; }
     /// <summary>85..140.</summary>
     public int FontScalePercent { get; set; } = 100;
-    /// <summary>Built-in wallpaper key or "none".</summary>
+    /// <summary>
+    /// The sky behind the app's screens: a built-in key, "none", or "custom" (<see cref="BackdropRules.CustomWallpaper"/>)
+    /// for the user's own <see cref="CustomBackground"/>.
+    /// </summary>
     public string Wallpaper { get; set; } = "aurora";
     /// <summary>Message bubble corner radius in px, 4..24.</summary>
     public int BubbleRadius { get; set; } = 16;
     public bool Animations { get; set; } = true;
     public bool CompactChatList { get; set; }
+
+    /// <summary>How my bubbles are painted. Settings saved before this existed have none: the accent's gradient, as before.</summary>
+    [JsonConverter(typeof(TolerantEnumConverter<OutgoingBubbleStyle>))]
+    public OutgoingBubbleStyle OutgoingBubble { get; set; } = OutgoingBubbleStyle.Gradient;
+    /// <summary>
+    /// My own bubble colors for <see cref="OutgoingBubbleStyle.Custom"/>: one "#RRGGBB" (flat) or two (a gradient). Kept
+    /// while another style is chosen, so they can be picked again.
+    /// </summary>
+    public List<string> OutgoingColors { get; set; } = [];
+    /// <summary>The other person's bubbles: a key of <see cref="AppearanceRules.IncomingTints"/> ("default": white by day, indigo at night).</summary>
+    public string IncomingTint { get; set; } = AppearanceRules.DefaultTint;
+    /// <summary>"Свой фон" of the app, shown while <see cref="Wallpaper"/> is "custom"; kept while a sky is chosen.</summary>
+    public AppBackground? CustomBackground { get; set; }
+    /// <summary>The chats' background unless a chat has its own; null = the app's background.</summary>
+    public Backdrop? ChatBackground { get; set; }
+    /// <summary>Backgrounds of single chats (chat id → background), set from the chat's menu.</summary>
+    public Dictionary<Guid, Backdrop> ChatBackgrounds { get; set; } = [];
 }
 
 public sealed class ChatBehaviorSettings
@@ -62,6 +83,18 @@ public sealed class ChatBehaviorSettings
     public bool AutoplayVideos { get; set; } = true;
     public bool AutoplayVideoNotes { get; set; } = true;
     public double VoicePlaybackRate { get; set; } = 1.0;
+    /// <summary>What a sideways swipe on a chat in the list does (docs/MOTION.md): switch folders or reveal the chat's actions.</summary>
+    public ChatSwipeMode ChatSwipe { get; set; } = ChatSwipeMode.Auto;
+}
+
+public enum ChatSwipeMode
+{
+    /// <summary>Switch folders once I have folders, else the chat's actions.</summary>
+    Auto,
+    /// <summary>Swiping the list goes to the next or previous folder.</summary>
+    Folders,
+    /// <summary>Swiping a chat reveals its actions (pin, read, mute, archive).</summary>
+    Actions,
 }
 
 public sealed class NotificationSettings
@@ -78,6 +111,11 @@ public sealed class NotificationSettings
     public bool KeepConnectedInBackground { get; set; } = true;
     /// <summary>Mentions and replies to me notify even in muted chats.</summary>
     public bool MentionsBypassMute { get; set; } = true;
+    /// <summary>
+    /// Contacts' birthdays: a reminder at 10:00 on the day (Android: a notification; everywhere: the card on the chat
+    /// list). See <c>IBirthdayService</c>.
+    /// </summary>
+    public bool BirthdayReminders { get; set; } = true;
     /// <summary>
     /// Sound pack (<see cref="SoundCatalog.Packs"/>: wood, bells, piano — our own synthesized sounds). It drives the
     /// message tone, the ringtone and the call sounds. Settings saved before packs existed have none: they get "wood"
@@ -179,6 +217,16 @@ public sealed class ConnectionSettings
     public ProxySettings Proxy { get; set; } = new();
     /// <summary>Allow SignalR to fall back to Server-Sent Events / long polling when WebSockets are blocked.</summary>
     public bool AllowTransportFallback { get; set; } = true;
+}
+
+/// <summary>Phone-book sync (this device's address book, so a per-device choice).</summary>
+public sealed class ContactsSettings
+{
+    /// <summary>
+    /// Re-read the phone book at every start (and when it changes, where the OS tells) and add the people found on
+    /// SkyMessage to my contacts (<c>IContactSyncService</c>). Off until the user turns it on.
+    /// </summary>
+    public bool SyncPhoneContacts { get; set; }
 }
 
 /// <summary>Self-updates (Android): new builds download in the background and install while the app is not in use.</summary>

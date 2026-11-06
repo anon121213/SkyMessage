@@ -38,7 +38,7 @@
 .profile__ring {
     position: absolute;
     inset: -8px;
-    background: var(--sm-accent);
+    background: var(--pc, var(--sm-accent));
     -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
     -webkit-mask-composite: xor;
     mask: var(--sm-squircle) center / 100% 100% no-repeat exclude, var(--sm-squircle) center / calc(100% - 5px) calc(100% - 5px) no-repeat;
@@ -139,8 +139,54 @@ html[data-fx="lite"] .profile__action:not(.profile__action--primary) .profile__a
 
 .profile__action--primary .profile__action-orb {
     color: var(--sm-on-accent);
-    background: var(--sm-accent);
+    background: var(--pc, var(--sm-accent));
     box-shadow: var(--sm-shadow-1);
+}
+
+/* ---------- The person's look: a cover band behind the portrait ---------- */
+
+/* A floating card of sky (or their photo, or a soft wash of their color) under the top of the portrait. */
+.profile__cover {
+    position: relative;
+    height: 9.5rem;
+    margin: 0 12px -5.75rem;
+    border-radius: var(--sm-radius-xl);
+    background: linear-gradient(160deg,
+        color-mix(in srgb, var(--pc, var(--sm-accent)) 36%, var(--sm-bg)) 0%,
+        color-mix(in srgb, var(--pc2, var(--sm-accent-2)) 20%, var(--sm-bg)) 100%);
+    background-size: cover;
+    background-position: center;
+    box-shadow: var(--sm-edge), var(--sm-shadow-1);
+    animation: sm-fade-in var(--sm-dur-slow) ease backwards;
+}
+
+/* A photo cover gets a quiet lower edge, so the ring stays clear against any picture. */
+.profile__cover--photo::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--sm-bg) 45%, transparent) 100%);
+}
+
+/* Over a cover the ring needs a gap of the page's own color: a disc of it under the portrait. */
+.profile--cover .profile__portrait::before {
+    content: "";
+    position: absolute;
+    inset: -13px;
+    background: var(--sm-bg);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+/* 🎂 after the name on the day: a small pop when it appears, no glow. */
+.profile__cake {
+    display: inline-block;
+    margin-left: 0.3em;
+    font-size: 0.85em;
+    line-height: 1;
+    vertical-align: 0.06em;
+    animation: sm-pop var(--sm-dur-slow) var(--sm-spring) backwards;
 }
 
 .profile__action-label {

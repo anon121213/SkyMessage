@@ -8,7 +8,7 @@ namespace SkyMessage.Client.Core.Services;
 /// <summary>
 /// App start and the sign-in/out lifecycle (SPEC §8.1 IClientBootstrapper). <see cref="StartAsync"/> restores the
 /// settings, the session, the endpoint memory and the stores' local caches, then returns — realtime, the chat list,
-/// contacts and the outbox continue in the background (never waiting for the network). On sign-out it stops
+/// folders, contacts and the outbox continue in the background (never waiting for the network). On sign-out it stops
 /// realtime, cancels notifications and the background connection; calls and stores clean up through the account
 /// lifecycle. All stores are constructed here so they subscribe to realtime before the first event. It also starts
 /// the self-updater (<see cref="AppUpdateService"/>) and reads the app passcode before any screen shows
@@ -22,6 +22,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
     private readonly IRealtimeService _realtime;
     private readonly AccountLifecycle _lifecycle;
     private readonly IChatListStore _chatList;
+    private readonly IChatFolderStore _folders;
     private readonly IContactStore _contacts;
     private readonly ILocalNotificationService _notifications;
     private readonly IBackgroundConnectionService _background;
@@ -39,6 +40,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         IRealtimeService realtime,
         AccountLifecycle lifecycle,
         IChatListStore chatList,
+        IChatFolderStore folders,
         IMessageStore messages,
         IUserStore users,
         IContactStore contacts,
@@ -52,17 +54,21 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         ILocalNotificationService notifications,
         IBackgroundConnectionService background,
         AppUpdateService updates,
+        IBirthdayService birthdays,
+        IContactSyncService contactSync,
         AppLockService appLock,
         ILogger<ClientBootstrapper> logger)
     {
-        // messages, users, typing, drafts, calls, coordinators, urls, downloads: constructed for their subscriptions.
-        _ = (messages, users, typing, drafts, calls, notificationCoordinator, audioFocus, mediaUrls, downloads);
+        // messages, users, typing, drafts, calls, coordinators, urls, downloads, birthday reminders, contact sync:
+        // constructed for their subscriptions (the last two start with the account).
+        _ = (messages, users, typing, drafts, calls, notificationCoordinator, audioFocus, mediaUrls, downloads, birthdays, contactSync);
         _settings = settings;
         _auth = auth;
         _endpoints = endpoints;
         _realtime = realtime;
         _lifecycle = lifecycle;
         _chatList = chatList;
+        _folders = folders;
         _contacts = contacts;
         _notifications = notifications;
         _background = background;
@@ -122,6 +128,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         _realtime.StartAsync().Forget(_logger);
         _endpoints.RefreshInfoAsync().Forget(_logger);
         _chatList.LoadAsync().Forget(_logger);
+        _folders.LoadAsync().Forget(_logger);
         _contacts.LoadAsync().Forget(_logger);
         ApplyBackgroundConnectionAsync().Forget(_logger);
         return Task.CompletedTask;

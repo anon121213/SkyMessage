@@ -182,8 +182,12 @@ else
     private string BubbleClass =>
         $"msg__bubble msg__bubble--{Kind.ToString().ToLowerInvariant()} {(IsBare ? "msg__bubble--bare" : null)}";
 
-    /// <summary>The sender's palette color (their avatar's), for names in groups; CSS lightens it on dark bubbles.</summary>
-    private static string SenderStyle(Guid sender) => "--sender:" + AvatarPalette.Color(sender);
+    /// <summary>
+    /// The sender's name color in groups: their profile color when they picked one, else their avatar's palette color;
+    /// CSS lightens it on dark bubbles.
+    /// </summary>
+    private string SenderStyle(Guid sender) =>
+        "--sender:" + SkyMessage.Client.UI.Features.Profile.ProfileLook.NameColor(sender, Users.Get(sender)?.ProfileColor);
 
     protected override void OnParametersSet()
     {

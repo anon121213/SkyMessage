@@ -48,5 +48,7 @@
   "platform.files.choose": "Выберите файл",
   "platform.files.saveAs": "Сохранить",
   "platform.permission.camera": "Нужен доступ к камере",
-  "platform.permission.microphone": "Нужен доступ к микрофону"
+  "platform.permission.microphone": "Нужен доступ к микрофону",
+  "platform.channel.reminders": "Напоминания",
+  "platform.channel.reminders.description": "Дни рождения контактов и друзья, которые пришли в SkyMessage"
 }

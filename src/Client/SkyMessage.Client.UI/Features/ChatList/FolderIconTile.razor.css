@@ -1,0 +1,23 @@
+.folder-tile {
+    flex-shrink: 0;
+}
+
+.folder-tile__emoji {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.folder-tile--large {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 19px;
+}
+
+.folder-tile--large ::deep .sm-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+}
+
+.folder-tile--large .folder-tile__emoji {
+    font-size: 1.875rem;
+}
