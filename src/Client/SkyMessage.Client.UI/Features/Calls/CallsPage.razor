@@ -212,17 +212,14 @@
         </ListItem>
     };
 
-    /// <summary>The empty list: a flat drawing of a phone tile floating among two clouds, ringing, under a small sun.</summary>
+    /// <summary>The empty list: a flat drawing of a phone tile floating between two capsule clouds, ringing.</summary>
     private static RenderFragment EmptyArt => __builder =>
     {
         <div class="calls-art" aria-hidden="true">
             <svg viewBox="0 0 220 170" focusable="false">
-                <circle class="calls-art__sun" cx="186" cy="26" r="11" />
                 <g class="calls-art__cloud calls-art__cloud--back">
-                    <circle cx="50" cy="124" r="17" />
-                    <circle cx="73" cy="111" r="25" />
-                    <circle cx="98" cy="122" r="17" />
-                    <rect x="36" y="121" width="78" height="22" rx="11" />
+                    <rect x="53" y="98" width="42" height="28" rx="14" />
+                    <rect x="36" y="115" width="78" height="28" rx="14" />
                 </g>
                 <g class="calls-art__float">
                     <path d="M50 0C88.6 0 100 11.4 100 50S88.6 100 50 100 0 88.6 0 50 11.4 0 50 0Z" transform="translate(72 40) scale(0.76)" class="calls-art__tile" />
@@ -233,10 +230,8 @@
                     <path class="calls-art__wave calls-art__wave--2" d="M161 42a28 28 0 0 1 16 26" />
                 </g>
                 <g class="calls-art__cloud calls-art__cloud--front">
-                    <circle cx="137" cy="140" r="15" />
-                    <circle cx="160" cy="128" r="22" />
-                    <circle cx="183" cy="139" r="14" />
-                    <rect x="124" y="137" width="72" height="19" rx="9.5" />
+                    <rect x="140" y="116" width="39" height="25" rx="12.5" />
+                    <rect x="124" y="131" width="72" height="25" rx="12.5" />
                 </g>
             </svg>
         </div>

@@ -1,6 +1,6 @@
-@* Appearance: theme (three little flat scenes: dawn with a sun and a drifting cloud, night with a crescent and star
-   dots, both split by a horizon line for "as the device"), accent (gradient pairs), message colors (my bubbles: the
-   accent's gradient, flat, or my own colors; theirs: calm tints), the app's background (mini skies and "Свой": a
+@* Appearance: theme (three little flat scenes: dawn with two capsule clouds, one drifting, night with a crescent and
+   star dots, both split by a horizon line for "as the device"), accent (gradient pairs), message colors (my bubbles:
+   the accent's gradient, flat, or my own colors; theirs: calm tints), the app's background (mini skies and "Свой": a
    gradient or a photo, BackdropEditor), the chats' background (as the app's, or their own), text size and bubble
    roundness, animations, compact list. A slice of a chat at the top shows the result live on the chats' background
    (colors ease over, a new background cross-fades in); sliders preview through ThemeService while dragging, with their
@@ -356,8 +356,8 @@
     private string CurrentAccentName(string? accentKey) =>
         accentKey is null ? L["theme.accent.custom"] : L[(Theme.Catalog.FindAccent(accentKey) ?? Theme.Catalog.DefaultAccent).NameKey];
 
-    /// <summary>A tiny flat sky for each theme mode: dawn with a sun and a cloud, night with a crescent and a few star dots,
-    /// or both split by a thin horizon line.</summary>
+    /// <summary>A tiny flat sky for each theme mode: dawn with capsule clouds (the drifting one in front, a smaller one
+    /// further away), night with a crescent and a few star dots, or both split by a thin horizon line.</summary>
     private RenderFragment ModeScene(ThemeMode mode) => __builder =>
     {
         var both = mode == ThemeMode.System;
@@ -366,13 +366,15 @@
             {
                 <g clip-path="@(both ? "url(#look-clip-day)" : null)">
                     <rect width="120" height="90" fill="url(#look-day)" />
-                    <circle class="look-mode__sun" cx="@(both ? 32 : 82)" cy="@(both ? 26 : 30)" r="11" />
-                    <g class="look-mode__cloud">
-                        <circle cx="@(both ? 22 : 36)" cy="62" r="9" />
-                        <circle cx="@(both ? 33 : 47)" cy="57" r="12" />
-                        <circle cx="@(both ? 44 : 58)" cy="63" r="8" />
-                        <rect x="@(both ? 13 : 27)" y="61" width="40" height="11" rx="5.5" />
-                    </g>
+                    @if (both)
+                    {
+                        @CloudShape("look-mode__cloud", 10, 22, 0.85)
+                    }
+                    else
+                    {
+                        @CloudShape("look-mode__cloud look-mode__cloud--far", 16, 52, 0.65)
+                        @CloudShape("look-mode__cloud", 56, 22, 1)
+                    }
                 </g>
             }
             @if (mode != ThemeMode.Light)
@@ -391,6 +393,20 @@
                 <line class="look-mode__horizon" x1="120" y1="0" x2="0" y2="90" />
             }
         </svg>
+    };
+
+    /// <summary>
+    /// A flat capsule cloud with its top-left corner at (x, y): a short capsule (28 × 14) resting on a long one
+    /// (52 × 14), scaled. The same construction as the signed-out screens' clouds and the empty-chat art. Plain
+    /// coordinates, no transform attribute: the drift animation owns the group's transform.
+    /// </summary>
+    private static RenderFragment CloudShape(string cls, double x, double y, double scale) => __builder =>
+    {
+        double S(double v) => v * scale;
+        <g class="@cls">
+            <rect x="@Num(x + S(11))" y="@Num(y)" width="@Num(S(28))" height="@Num(S(14))" rx="@Num(S(7))" />
+            <rect x="@Num(x)" y="@Num(y + S(8))" width="@Num(S(52))" height="@Num(S(14))" rx="@Num(S(7))" />
+        </g>
     };
 
     /// <summary>A crescent of radius 11 around (cx, cy).</summary>

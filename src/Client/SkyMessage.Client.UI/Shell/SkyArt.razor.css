@@ -5,7 +5,7 @@
     --art-card: #FFFFFF;
     --art-line: rgba(97, 90, 124, 0.32);
     --art-horizon: rgba(97, 90, 124, 0.2);
-    --art-sun: #FFC872;
+    --art-moon: #FFC872;
     --art-warm: #FFAA7F;
     --art-heart: #F47C98;
     --art-star: rgba(106, 75, 255, 0.45);
@@ -21,7 +21,7 @@ html[data-theme="dark"] .sky-art {
     --art-card: #2A2352;
     --art-line: rgba(243, 240, 255, 0.28);
     --art-horizon: rgba(243, 240, 255, 0.14);
-    --art-sun: #F6C46E;
+    --art-moon: #F6C46E;
     --art-warm: #F29C76;
     --art-heart: #E8708E;
     --art-star: rgba(255, 255, 255, 0.7);
@@ -42,7 +42,7 @@ html[data-theme="dark"] .sky-art {
     stroke-linecap: round;
 }
 
-.sky-art__sun { fill: var(--art-sun); }
+.sky-art__moon { fill: var(--art-moon); }
 .sky-art__card { fill: var(--art-card); }
 .sky-art__card--rim { stroke: var(--art-line); stroke-opacity: 0.5; stroke-width: 1; }
 .sky-art__line { fill: var(--art-line); }

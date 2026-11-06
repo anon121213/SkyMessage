@@ -44,16 +44,16 @@ public enum PageBackground
 /// <summary>Illustrations drawn by <see cref="SkyArt"/> (our own artwork in the sky palette).</summary>
 public enum SkyArtKind
 {
-    /// <summary>Two message capsules floating over a cloud in the morning sun (no chats yet).</summary>
+    /// <summary>Two message capsules floating over a cloud, a far cloud drifting by (no chats yet).</summary>
     Chats,
     /// <summary>Two squircle faces with a heart between them (no contacts yet).</summary>
     Contacts,
-    /// <summary>A cloud with a band-aid, a little rain and the sun behind it (something went wrong).</summary>
+    /// <summary>A cloud with a band-aid and a little rain (something went wrong).</summary>
     Crash,
     /// <summary>A crescent moon, a cloud and a floating question mark among stars (unknown address).</summary>
     NotFound,
     /// <summary>A phone with contact rows and a "found" check (phone-book import).</summary>
     PhoneBook,
-    /// <summary>An open folder with a sheet peeking out, resting on a cloud in the morning sun (an empty chat folder).</summary>
+    /// <summary>An open folder with a sheet peeking out, resting on a cloud (an empty chat folder).</summary>
     Folder,
 }
