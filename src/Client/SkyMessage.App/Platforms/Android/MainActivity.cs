@@ -8,6 +8,7 @@ using ActivityFlags = Android.Content.ActivityFlags;
 using SkyMessage.App.Droid;
 using SkyMessage.App.Services;
 using SkyMessage.Client.Core.Platform;
+using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Stores;
 
 namespace SkyMessage.App;
@@ -29,8 +30,10 @@ public class MainActivity : MauiAppCompatActivity
         _backCallback = new BackCallback(this);
         OnBackPressedDispatcher.AddCallback(this, _backCallback);
         (AppServices.Get<ISystemUiService>() as AndroidSystemUiService)?.Apply(this);
-        // A recreated activity has a fresh window: a protected chat still on screen keeps it out of screenshots.
+        // A recreated activity has a fresh window: a protected chat still on screen (or the passcode lock) keeps it out of
+        // screenshots, and with a passcode set the recents picture stays blank (before Android 13 a secure window too).
         (AppServices.Get<IScreenSecurityService>() as AndroidScreenSecurityService)?.Apply(this);
+        (AppServices.Get<IAppLockPlatform>() as AndroidAppLockPlatform)?.Apply(this);
 
         // A recreated activity (or a relaunch from recents) must not replay an old deep link / call action.
         var intent = Intent;
@@ -46,9 +49,16 @@ public class MainActivity : MauiAppCompatActivity
         HandleIntent(intent);
     }
 
+    protected override void OnStart()
+    {
+        base.OnStart();
+        LockIfOverKeyguard();
+    }
+
     protected override void OnResume()
     {
         base.OnResume();
+        LockIfOverKeyguard();
         // In the foreground a foreground service may start: revive the background connection if its process died.
         AndroidBackgroundConnectionService.EnsureRunning(ApplicationContext ?? this);
         // A call showing a picture keeps the screen on, also on a window created meanwhile.
@@ -147,6 +157,7 @@ public class MainActivity : MauiAppCompatActivity
     {
         if (show == _showingOverLockScreen) return;
         _showingOverLockScreen = show;
+        LockIfOverKeyguard();
         try
         {
             if (OperatingSystem.IsAndroidVersionAtLeast(27))
@@ -172,6 +183,26 @@ public class MainActivity : MauiAppCompatActivity
         }
     }
 
+    /// <summary>
+    /// Over the phone's own lock screen only the call may show: with an app passcode set, the chats stay locked behind it
+    /// for whoever holds the phone (minimizing the call shows our lock screen). Checked whenever the activity comes back,
+    /// not only when it starts showing over the lock screen: a call accepted on an unlocked phone stays showable after
+    /// the phone locks during it, and the screen coming on again must not reopen the chats.
+    /// </summary>
+    private void LockIfOverKeyguard()
+    {
+        if (!_showingOverLockScreen) return;
+        try
+        {
+            if (GetSystemService(KeyguardService) is KeyguardManager { IsKeyguardLocked: true })
+                AppServices.Get<IAppLockService>()?.LockNow();
+        }
+        catch (Exception)
+        {
+            // The keyguard state could not be read: the auto-lock still applies.
+        }
+    }
+
     private void HookCallChanges(ICallService calls)
     {
         if (_calls is not null) return;
@@ -180,11 +211,22 @@ public class MainActivity : MauiAppCompatActivity
         calls.Changed += _callChanged;
     }
 
-    /// <summary>Back closes overlays/screens through WebView history; at the root the app goes to background (never finishes).</summary>
+    /// <summary>
+    /// Back closes overlays/screens through WebView history; at the root the app goes to background (never finishes). The
+    /// passcode lock screen has nothing behind it to go back to: Back closes its "Forgot the passcode?" question, else it
+    /// leaves the app (the call screen shown over it still minimizes first).
+    /// </summary>
     private sealed class BackCallback(MainActivity activity) : OnBackPressedCallback(true)
     {
         public override void HandleOnBackPressed()
         {
+            if (AppServices.Get<IAppLockService>() is { } appLock && (appLock.IsLocked || !appLock.IsInitialized)
+                && !SkyMessage.Client.UI.Features.Calls.CallUi.IsCovering)
+            {
+                if (SkyMessage.Client.UI.Features.Passcode.LockUi.TryBack()) return;
+                activity.MoveTaskToBack(true);
+                return;
+            }
             var page = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault()?.Page as MainPage;
             if (page?.TryGoBack() == true) return;
             activity.MoveTaskToBack(true);

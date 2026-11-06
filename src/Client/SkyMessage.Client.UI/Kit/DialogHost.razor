@@ -1,5 +1,5 @@
 @* Renders dialogs opened through DialogService. Placed once in the shell. A dialog that completed stays rendered
-   (closed) for its exit animation before it is removed. *@
+   (closed) for its exit animation before it is removed. DialogReference.SetTitle re-renders the frame. *@
 @implements IDisposable
 @inject DialogService Dialogs
 
@@ -52,9 +52,16 @@
         }
         foreach (var dialog in open)
         {
-            if (!_entries.Exists(e => e.Dialog == dialog)) _entries.Add(new Entry(dialog));
+            if (_entries.Exists(e => e.Dialog == dialog)) continue;
+            _entries.Add(new Entry(dialog));
+            dialog.Updated += OnDialogUpdated;
         }
     }
+
+    private void OnDialogUpdated() => _ = InvokeAsync(() =>
+    {
+        if (!_disposed) StateHasChanged();
+    });
 
     private async Task RemoveLaterAsync(Entry entry)
     {
@@ -62,6 +69,7 @@
         await InvokeAsync(() =>
         {
             if (_disposed || !_entries.Remove(entry)) return;
+            entry.Dialog.Updated -= OnDialogUpdated;
             StateHasChanged();
         });
     }
@@ -70,5 +78,6 @@
     {
         _disposed = true;
         Dialogs.Changed -= OnChanged;
+        foreach (var entry in _entries) entry.Dialog.Updated -= OnDialogUpdated;
     }
 }

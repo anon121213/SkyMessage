@@ -491,7 +491,12 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   AuthService↔Api cycle (raw auth channel). `GetUsersAsync` splits > 200 ids.
 - **IAuthService**: "auth.v1" in `ISecureStore`; refresh 60 s before expiry under `IInterProcessLock`
   ("sky-auth-refresh"), re-reading the store first; refresh 401 `refresh_token_invalid` → `LogoutAsync(false)`;
-  network errors keep the session. `UserChanged` for me → `RefreshMeAsync`.
+  network errors keep the session. `UserChanged` for me → `RefreshMeAsync`. A sign-out is the user's choice when this
+  device revokes the session (`LogoutAsync()`: "Sign out", "Forgot the passcode?", switching to another server) or
+  with `byChoice` (deleting the account: `LogoutAsync(false, byChoice: true)`, the server already ended the session at
+  the user's request); it first runs `AccountLifecycle.OnSignOutByChoice` — also when the server's own sign-out
+  (`SessionRevoked`, sent before the answer to the deletion) is running or has just finished, then for the account that
+  sign-out ended — and, while the session still works, `OnBeforeSignOut` (calls hang up) before the server is told.
 - **IRealtimeService**: hub URL `Resolve("hubs/realtime")`, `AccessTokenProvider`, transports WebSockets|SSE|
   LongPolling (WebSockets only when `AllowTransportFallback=false`), **`UseStatefulReconnect = true`**
   (server allows it), `HttpConnectionOptions.Proxy` from `IHttpHandlerFactory.CreateProxy` and
@@ -546,7 +551,51 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   its `CommandRequested` and `ILocalNotificationService.CallActionInvoked` feed `RequestCommand`/accept/
   decline. Incoming in background → `ShowIncomingCallAsync`.
 - **INotificationCoordinator** per its doc; badge = `TotalUnread` via `SetBadgeCountAsync`; notification taps
-  open `DeepLinks.AppChatUri(chatId)`.
+  open `DeepLinks.AppChatUri(chatId)`. While the app passcode locks the app, messages notify through the system
+  even in foreground (no in-app banner); with "hide notification text" the notification says only
+  "SkyMessage: New message" (`LocalNotification.Hidden`: the chat's earlier lines go too), and the moment the lock
+  engages every message notification already on screen gets the same text (`ILocalNotificationService.RedactMessagesAsync`:
+  Android re-posts them silently, also those an earlier run of the process left in the shade, and the summary stops
+  naming chats; browsers re-show them by tag; iOS replaces them with one per chat).
+- **IAppLockService** (app passcode, "код-пароль"; rules in `AppLockRules`, per device and for the whole app): a 4-
+  or 6-digit code; only a salted PBKDF2-HMAC-SHA256 hash is stored (`PasscodeHasher`: 16-byte salt, rounds calibrated
+  when the code is set to ≈ 0.25 s per check on this device, 10,000–600,000, kept with the hash; the browser derives
+  it with WebCrypto through `IAppLockPlatform.DeriveKeyAsync`, the same bytes as .NET's) in `ISecureStore`
+  ("passcode.v1" with the options, "passcode.attempts.v1"), plus a plain marker that one is set ("passcode.set.v1" in
+  `IPreferencesStore`; written after the record, removed before it). Reads use `ISecureStore.TryGetAsync`, which
+  reports a failed read instead of wiping the store; a store that cannot be read, a damaged record, or a record gone
+  while the marker says one was set (Android's secure storage drops what it cannot decrypt) all lock with no code
+  matching — only signing out removes them. With a passcode: every cold start is locked (`ClientBootstrapper` reads it
+  before the first screen, also when loading the settings or restoring the session failed; the UI's start fallback
+  reads it too, and the shell stays covered until it has been read: `IsInitialized`); leaving the app
+  (`IAppLifecycle`) for longer than the auto-lock delay locks it — immediately / 1 min (default) / 5 min / 1 h / 5 h —
+  measured with the wall, process and boot clock (`IAppLockPlatform.SinceBoot`): sleep counts, a wall clock moved back
+  locks (without a boot clock) and never helps; a check every 5 s while away locks before the user is back, so
+  returning never shows chats for a moment; "immediately" locks as the app leaves, except for the app's own
+  pickers/camera/system screens (`ExpectReturn`: a trip announced within `AppLockRules.OwnTripWindow` (1 min) of
+  leaving gets `OwnTripGrace` (2 min); it covers one leave and ends when the app is back, so a picker result that
+  never came cannot soften the auto-lock later; the browser's file pickers announce it too, since a phone browser
+  hides the page while its picker or camera is up); `LockNow`. Five wrong codes in a row pause the checks for 30 s,
+  each further one doubles the pause up to 1 h; with a boot clock the wall clock is not used for the pause at all —
+  after a phone restart only the time since that restart counts (the pause is re-anchored to it) — so moving the clock,
+  restarting the app or the phone never shortens it; the count survives restarts, is shared by browser tabs and starts
+  over after a right code or fingerprint. While locked the window is secure (`IScreenCaptureGuard`); while a passcode
+  is set the recents picture shows no content. Change and turn off need the current code. Signing out by choice
+  ("Sign out", "Forgot the passcode?", switching to another server, deleting the account:
+  `AccountLifecycle.OnSignOutByChoice`) removes the passcode before the session goes, the app staying locked until it
+  has; a sign-out the user did not ask for (the session expired, was ended from another device or another server
+  answered) keeps it for the account that set it (the record names it), nothing locks while signed out, and the next
+  sign-in of that account with the password opens the app (the count starts over) with the passcode on again. Any
+  other account never inherits it: its sign-in removes the passcode (nobody else knows the code), and so does a
+  session of another account restored at start (one whose sign-in ended before the passcode was removed); a record
+  that names no account (unreadable) is removed by the next sign-in with a password. Browsers:
+  every tab is an instance of the app on the same storage (`IAppLockPlatform.Announce`/`Signaled`, web-platform.js
+  `skyPlatform.passcode`: a BroadcastChannel, storage events). "Lock now" locks every tab, a right code or fingerprint
+  in one opens all of them, turning it off opens them; turned on in another tab, a hidden tab locks at once and a
+  visible one stays open; changes to the stored passcode reach the others at once and are re-read before every check,
+  change and on the way back (a stale tab cannot set a second passcode over another's or write an old one back); a
+  passcode that vanished elsewhere leaves a locked tab locked (that could be a sign-out there). Each tab measures its
+  own time away; a new tab starts locked. Native apps have one instance and read the keystore at start only.
 - **IBirthdayService** (`Services/Birthdays.cs`): contacts whose birthday (as their privacy shows it) is today
   (`Celebrating`, with the age when the year shows), the chat list's card closable for the day (`IAccountLocalStore`),
   `IsBirthdayToday(user)` for the 🎂 next to anyone's name, and reminders at 10:00 local time for the next 14 days
@@ -744,7 +793,12 @@ Pin, Forward (chat picker), Select (multi: forward/delete), Save, Delete for me/
 **ui-settings-calls** builds Settings (`/settings`, `/settings/{section}`): profile edit (avatar upload,
 name, username with availability, bio), phone (detect via `IPhoneNumberService` on Android, manual entry with
 region, unlink, "who can find me by number"), privacy & security (all levels, blocked users, active
-sessions, change password, delete account, sign out), notifications & sounds (toggles incl. keep connected
+sessions, the app passcode — `/settings/passcode`: turn on with a 4- or 6-digit code entered twice, change, auto-lock
+delay, fingerprint/face unlock (shown where `IAppLockPlatform.SupportsBiometrics`, confirmed by the system prompt once),
+hide notification text while locked, lock now, turn off; the code steps run in `Features/Passcode/PasscodeDialog`;
+where a passcode blocks screenshots (`IAppLockPlatform.BlocksScreenshotsWhileSet`: Android 8–12) both states say so —,
+change password, delete account (then signs out by choice: `LogoutAsync(false, byChoice: true)`), sign out),
+notifications & sounds (toggles incl. keep connected
 in background + battery exemption via `IBackgroundConnectionService`; on iOS a hint that the app must stay
 open to receive calls until push lands; sound pack cards, tone pickers and the user's own message tone / ringtone, with previews through `ISoundService`), appearance (theme, accents, message colors (my bubbles' style, their tint), the
 app's background (skies + "Свой": gradient or photo, per theme or both) and the chats' background with a live preview, font size, bubble radius,
@@ -774,6 +828,21 @@ offer to re-enable it) executing `ICallService.CommandRequested` and reporting `
 (vendor the UMD build of npm `livekit-client@2.22.4` + LICENSE into `wwwroot/lib/livekit/`), maps
 participants by `metadata.userId` (identity is per device), reports through a `DotNetObjectReference`.
 `devices.js` serves both settings and calls.
+
+**App passcode** (`Features/Passcode`): `LockScreen`, rendered once by `MainLayout`, covers the signed-in shell while
+`IAppLockService.IsLocked` (z-index 990: over dialogs, menus, banners and toasts), and — without a keypad — while the
+stored passcode is still being read. The shell stays mounted underneath, `inert` with its animations paused, and every
+`ShellContext` reports `IsCovered` (no read marks, autoplay or active chat; notifications go through the system). The
+calm sky, the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`, a fresh one for
+every lock; no system keyboard; on a computer digits and Backspace type through `js/passcode.js`, Escape does not reach
+the app underneath); wrong codes shake the dots (rose) with a haptic, the hint says how many tries are left before a
+pause, the pause after five counts down on the hint line; the fingerprint key and a one-time automatic prompt per lock
+when allowed (not while a call rings or is live, where it would cover the call screen: it then waits for the next
+return to the app); "Forgot the passcode?" confirms in place and signs out of this device (`IAuthService.LogoutAsync`:
+local data cleared, passcode removed); Android Back and Escape close that question (`LockUi.TryBack`). An active call
+stays reachable: "Back to the call" expands the call screen, which goes above the lock while locked (an incoming call
+opens it by itself), with the toasts it raises above it (`shell--call-over-lock`); minimizing it shows the lock again.
+Android Back on the lock screen otherwise moves the app to the background.
 
 **Localization**: `ILocalizer` reads embedded JSON `Localization/{lang}/{area}.json` (flat keys like
 `"chat.composer.placeholder"`); areas owned as in §4; error codes → `errors.json` (`"error.<code>"`).
@@ -807,7 +876,7 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   POST_NOTIFICATIONS, FOREGROUND_SERVICE + _MICROPHONE + _CAMERA + _REMOTE_MESSAGING (background connection —
   not dataSync, which is capped at 6 h/day on targetSdk 35+), RECEIVE_BOOT_COMPLETED (restart the background
   service on boot / package replaced when enabled), WAKE_LOCK, VIBRATE, BLUETOOTH_CONNECT,
-  REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, USE_FULL_SCREEN_INTENT, WRITE_EXTERNAL_STORAGE maxSdkVersion 28;
+  REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, USE_FULL_SCREEN_INTENT, USE_BIOMETRIC, WRITE_EXTERNAL_STORAGE maxSdkVersion 28;
   `allowBackup="false"`; `<queries>` for IMAGE_CAPTURE, VIDEO_CAPTURE, VIEW (https/mailto/tel) and SEND;
   DEBUG-only `UsesCleartextTraffic`; `skymessage://` and notification deep links. Call service type derived
   from granted permissions (microphone; camera added only in foreground); Accept/AcceptVideo notification
@@ -846,6 +915,17 @@ participants by `metadata.userId` (identity is per device), reports through a `D
   (transient focus for ringing, calls, recordings), BackgroundConnectionService (low-priority persistent foreground
   service + battery exemption prompt), NetworkStatusService (Connectivity), SystemUiService, HapticsService,
   ShareService, FileSaveService (+ gallery), FileOpener, MediaFileStore (cache dir), AppLifecycle,
+  AppLockPlatform (app passcode: framework BiometricPrompt on Android 10+ with weak biometrics so face unlock counts,
+  USE_BIOMETRIC; no recents picture while a passcode is set — `setRecentsScreenshotEnabled(false)` on Android 13+;
+  below, a window that stays FLAG_SECURE for as long as a passcode is set (those versions take the picture before an
+  app can react — with gesture navigation while it is still resumed — and leave out only a window that was secure all
+  along), so the app cannot be screenshotted meanwhile and the passcode settings say so
+  (`IAppLockPlatform.BlocksScreenshotsWhileSet`); `SystemClock.elapsedRealtime` as the boot clock; Back on the lock
+  screen closes its "Forgot the passcode?" question, else leaves the app unless the call screen is over it; shown over
+  the phone's own lock screen for a call, the app locks (`LockNow`) whenever the activity starts or resumes over a
+  locked keyguard — also for a call accepted while the phone was unlocked and locked during it — so minimizing the call
+  never shows chats there; `ActivityResults` launches, camera capture and the own-sound picker announce
+  `ExpectReturn`; iOS/Mac: keypad only),
   ReminderNotificationService (Android: "Reminders" channel; future ones as alarms allowed while idle —
   `setExactAndAllowWhileIdle` on Android 8–11, where it needs no permission and an inexact alarm could come days late,
   `setAndAllowWhileIdle` on 12+, at most an hour late — whose receiver posts the stored text unless it is late by

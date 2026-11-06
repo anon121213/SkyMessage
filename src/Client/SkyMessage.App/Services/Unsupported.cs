@@ -58,6 +58,40 @@ public sealed class UnsupportedScreenSecurityService : IScreenSecurityService
 }
 
 /// <summary>
+/// iOS and macOS: the app passcode works with the keypad only (Face ID / Touch ID are not wired up yet, so the setting is
+/// hidden); there is no boot clock exposed here, the auto-lock uses the wall and process clocks.
+/// </summary>
+public sealed class UnsupportedAppLockPlatform : IAppLockPlatform
+{
+    public void Announce(AppLockSignal signal)
+    {
+    }
+
+    public event Action<AppLockSignal>? Signaled
+    {
+        add { }
+        remove { }
+    }
+
+    public bool SupportsBiometrics => false;
+
+    public bool CanUseBiometrics => false;
+
+    public TimeSpan? SinceBoot => null;
+
+    public Task<BiometricOutcome> AuthenticateAsync(BiometricPromptText text, CancellationToken cancellationToken = default) =>
+        Task.FromResult(BiometricOutcome.Unavailable);
+
+    public void SetHiddenInRecents(bool hidden)
+    {
+    }
+
+    public bool BlocksScreenshotsWhileSet => false;
+
+    public Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length) => Task.FromResult<byte[]?>(null);
+}
+
+/// <summary>
 /// Apple: the call's audio session (play-and-record, not mixable) already interrupts other audio, and there is no
 /// focus to ask for around recordings; the "pause music" setting is hidden.
 /// </summary>

@@ -1,12 +1,17 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using SkyMessage.Client.Core.Platform;
+using SkyMessage.Client.Core.Services;
 using SkyMessage.Contracts;
 
 namespace SkyMessage.Web.Platform;
 
-/// <summary>Hidden &lt;input type=file&gt; (gallery = image/* + video/*, camera via the capture attribute on phones).</summary>
-public sealed class WebFilePickerService(WebBridge bridge, WebBlobs blobs, ILogger<WebFilePickerService> logger) : IFilePickerService
+/// <summary>
+/// Hidden &lt;input type=file&gt; (gallery = image/* + video/*, camera via the capture attribute on phones). A phone
+/// browser hides the page while its picker or camera is up: the trip is announced to the app passcode, so "lock
+/// immediately" does not lock the app for choosing a photo.
+/// </summary>
+public sealed class WebFilePickerService(WebBridge bridge, WebBlobs blobs, IAppLockService appLock, ILogger<WebFilePickerService> logger) : IFilePickerService
 {
     public Task<IReadOnlyList<PickedFile>> PickMediaAsync(bool allowMultiple, CancellationToken cancellationToken = default) =>
         PickAsync("image/*,video/*", allowMultiple, null, cancellationToken);
@@ -29,6 +34,7 @@ public sealed class WebFilePickerService(WebBridge bridge, WebBlobs blobs, ILogg
     {
         try
         {
+            using var trip = appLock.ExpectReturn();
             var picked = await bridge.Js.InvokeAsync<PickedBlob[]>("skyPlatform.files.pick", cancellationToken, accept, multiple, capture).ConfigureAwait(false);
             return picked.Take(Limits.MaxAttachmentsPerMessage).Select(p => blobs.ToPickedFile(p.Ref, p.Name, p.Type, p.Size)).ToList();
         }

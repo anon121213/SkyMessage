@@ -11,6 +11,8 @@ namespace SkyMessage.Client.Core.Services;
 /// tabs/processes by <see cref="IInterProcessLock"/> ("sky-auth-refresh"), re-reading the stored session inside
 /// the lock first because another instance may already have rotated the refresh token. A rejected refresh
 /// (401 refresh_token_invalid and other permanent errors) signs out locally; network errors keep the session.
+/// Signing out by choice runs <see cref="AccountLifecycle.OnSignOutByChoice"/> first, also when the server ended the
+/// session a moment before (deleting the account: its <c>SessionRevoked</c> arrives before the answer).
 /// </summary>
 internal sealed class AuthService : IAuthService, ITokenSource
 {
@@ -37,6 +39,9 @@ internal sealed class AuthService : IAuthService, ITokenSource
     private Task? _initialize;
     private Task<StoredSession?>? _refresh;
     private Task? _logout;
+    // Under _lock: whether the running sign-out is the user's choice, and the last one that ended in this run.
+    private bool _logoutByChoice;
+    private EndedSession? _lastSignOut;
 
     public AuthService(
         AuthSessionStore sessions,
@@ -142,17 +147,26 @@ internal sealed class AuthService : IAuthService, ITokenSource
         return await _channel.CheckUsernameAsync(username.Trim().TrimStart('@'), token, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task LogoutAsync(bool revokeOnServer = true)
+    public Task LogoutAsync(bool revokeOnServer = true, bool byChoice = false)
     {
+        // This device ending its session is always the user's choice; the server ending it is not, except at their request.
+        byChoice |= revokeOnServer;
         lock (_lock)
         {
-            if (_logout is { IsCompleted: false } running) return running;
-            _logout = LogoutCoreAsync(revokeOnServer);
+            if (_logout is { IsCompleted: false } running)
+            {
+                if (!byChoice || _logoutByChoice) return running;
+                _logoutByChoice = true;
+                _logout = ByChoiceAfterAsync(running);
+                return _logout;
+            }
+            _logoutByChoice = byChoice;
+            _logout = LogoutCoreAsync(revokeOnServer, byChoice);
             return _logout;
         }
     }
 
-    private async Task LogoutCoreAsync(bool revokeOnServer)
+    private async Task LogoutCoreAsync(bool revokeOnServer, bool byChoice)
     {
         await Task.Yield();
         var session = _sessions.Current;
@@ -163,12 +177,17 @@ internal sealed class AuthService : IAuthService, ITokenSource
                 _state = AuthState.SignedOut;
                 RaiseChanged();
             }
+            // The server signed this device out a moment ago, before the user's own request got here.
+            if (byChoice) await ByChoiceAfterwardsAsync().ConfigureAwait(false);
             return;
         }
 
         _signingOut = true;
         try
         {
+            // What the user set up on this device for the account (the app passcode) goes first, even if the app is closed
+            // halfway through the rest.
+            if (byChoice) await _lifecycle.SignOutByChoiceAsync(session.UserId).ConfigureAwait(false);
             if (revokeOnServer)
             {
                 // Calls are hung up while the token still works, then the session is revoked server-side.
@@ -188,7 +207,8 @@ internal sealed class AuthService : IAuthService, ITokenSource
 
             _me = null;
             _state = AuthState.SignedOut;
-            _logger.LogInformation("Signed out (server revoke requested: {Revoke})", revokeOnServer);
+            lock (_lock) _lastSignOut = new EndedSession(session.UserId, byChoice);
+            _logger.LogInformation("Signed out (server revoke requested: {Revoke}, by choice: {ByChoice})", revokeOnServer, byChoice);
             RaiseChanged();
             await _lifecycle.SignedOutAsync(session.UserId).ConfigureAwait(false);
         }
@@ -196,6 +216,37 @@ internal sealed class AuthService : IAuthService, ITokenSource
         {
             _signingOut = false;
         }
+    }
+
+    /// <summary>
+    /// The user's sign-out, asked for while one they did not ask for is running: deleting the account, whose session the
+    /// server ends (and says so over realtime) before it answers. Once that sign-out is done, the choice still applies.
+    /// </summary>
+    private async Task ByChoiceAfterAsync(Task running)
+    {
+        try
+        {
+            await running.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "The sign-out in progress failed");
+        }
+        await ByChoiceAfterwardsAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Runs the by-choice hooks for the account the last sign-out of this run ended, unless they ran already.</summary>
+    private async Task ByChoiceAfterwardsAsync()
+    {
+        Guid userId;
+        lock (_lock)
+        {
+            if (_lastSignOut is not { ByChoice: false } last) return;
+            _lastSignOut = last with { ByChoice = true };
+            userId = last.UserId;
+        }
+        _logger.LogInformation("The session had ended already; signing out by choice");
+        await _lifecycle.SignOutByChoiceAsync(userId).ConfigureAwait(false);
     }
 
     private async Task RevokeOnServerAsync(StoredSession session)
@@ -347,6 +398,7 @@ internal sealed class AuthService : IAuthService, ITokenSource
 
         _me = session.Me;
         _state = AuthState.SignedIn;
+        lock (_lock) _lastSignOut = null;
         _logger.LogInformation("Signed in as {UserId}", session.UserId);
         RaiseChanged();
         await _lifecycle.ActivateAsync(session.UserId).ConfigureAwait(false);
@@ -500,4 +552,7 @@ internal sealed class AuthService : IAuthService, ITokenSource
     private string? Region() => _platform.CountryCode is { Length: 2 } code ? code.ToUpperInvariant() : null;
 
     private void RaiseChanged() => EventRaiser.Raise(Changed, _logger);
+
+    /// <summary>A session that ended in this run: whose it was, and whether the by-choice hooks ran for it.</summary>
+    private sealed record EndedSession(Guid UserId, bool ByChoice);
 }

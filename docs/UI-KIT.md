@@ -174,6 +174,19 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
 * `TabBar` / `IconRail` show `TotalUnread` on Chats (the badge pops in / bumps); the active pill slides between
   areas and the selected icon bounces; the rail's avatar opens Settings. `TabBar Active="section"` shows another
   area as active (the shell passes the root screen's area).
+* `LockScreen` (Features/Passcode) — the app passcode's lock screen, rendered by MainLayout and shown while
+  `IAppLockService.IsLocked` (and, without a keypad, until `IsInitialized`): z-index 990, above dialogs (900), menus
+  (950), banners (960) and toasts (980); while locked the shell gets `.shell--locked` and the call screen moves above it
+  (996); while that call screen covers the lock, `.shell--call-over-lock` lifts the toasts above it too (997) — other
+  toasts stay under the lock. Everything underneath stays mounted but `inert` with its animations paused, and every
+  `ShellContext.IsCovered` is true (the ChatPage rule then stops read marks, autoplay and the active chat). Its
+  confirmation ("Forgot the passcode?") is drawn on the lock screen itself — a `DialogService` dialog would open under
+  it; Android Back (`LockUi.TryBack()`, called by MainActivity first) and Escape (`js/passcode.js holdEscape`) close it.
+  `PasscodePad` (`Length`, `Disabled`, `OnComplete(code)`, optional `ExtraIcon`/`OnExtra` key left of 0, `LockScreen`;
+  `FailAsync()` = rose dots + shake + haptic, `Clear()`) is the keypad for any passcode step: no text field, so phones
+  never open the system keyboard; `js/passcode.js` sends a computer's digit keys and Backspace to the pad in front (not
+  inert, not covered at its center). The lock screen keys its pad by `IAppLockService.LockCount`: every lock starts
+  with an empty, working pad.
 * `BootSplash`, `CrashScreen` (`Compact` inside panes), `NotFoundView`, `RedirectTo`, `AuthLayout`.
 
 ---
@@ -349,8 +362,10 @@ Custom dialog content component:
 ```
 
 Results complete after the dialog's history entry is gone, so you can navigate right after `await`.
+`Dialog.SetTitle(text)` re-renders the frame's title (multi-step dialogs such as the passcode steps use it).
 `DialogOptions`: `Size` (Small/Medium/Large), `Dismissible`, `ShowClose`, `Presentation` (Dialog/Sheet/Auto),
-`Flush` (no body padding), `Class`.
+`Flush` (no body padding), `Class` (on the frame; `sm-dialog--solid` makes it opaque, so nothing colored behind tints
+the content — the passcode steps use it).
 
 ### `ToastService` (scoped)
 
@@ -426,11 +441,11 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
 * `PeopleExtensions`: `Users.Resolve(id, embedded)`, `user.NameOf(L)`, `Users.NameOf(id, L, embedded)`,
   `user.IsOnline()`, `user.Handle()` ("@name").
 * `AvatarPalette`: `Background(id)` (gradient), `Color(id)` (sender name color), `Initials(name)`.
-* `SettingsRoutes`: section keys `profile, phone, privacy, blocked, sessions, notifications, appearance, chats,
-  folders, folder, devices, data, language, connection, about` (`blocked` and `folder` are sub-pages of `privacy` and
-  `folders`; the folder editor reads `?id=`); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`. Other screens
-  link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them. A sub-page that should
-  keep its back button next to the menu passes `Back="true"` to `SettingsScaffold`.
+* `SettingsRoutes`: section keys `profile, phone, privacy, blocked, passcode, sessions, notifications, appearance,
+  chats, folders, folder, devices, data, language, connection, about` (`blocked` and `passcode` are sub-pages of
+  `privacy`, `folder` one of `folders`; the folder editor reads `?id=`); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`.
+  Other screens link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them. A
+  sub-page that should keep its back button next to the menu passes `Back="true"` to `SettingsScaffold`.
 * `FolderUi` (static, Features/ChatList): the folder icons (`Icons`: our keys → Lucide glyphs; anything else non-empty
   is the user's emoji: `GlyphOf`, `EmojiOf`; `IconLabelKeyOf(key)` = their ru/en names, "folders.icon.<key>", for
   tooltips and screen readers), recommended folders' name keys (`NameKeyOf(preset)`), routes (`SettingsPath`,
@@ -484,9 +499,9 @@ BatteryCharging Bell BellOff BellRing Bluetooth Bold BookOpen BookUser Bookmark 
 Check CheckCheck ChevronDown ChevronLeft ChevronRight ChevronUp ChevronsDown Circle CircleAlert CircleCheck
 CircleCheckBig CircleDot CircleEllipsis CircleHelp CircleMinus CirclePause CirclePlay CirclePlus CircleStop
 CircleUser CircleUserRound CircleX Clock Cloud CloudAlert CloudDownload CloudOff Code Coffee Contact ContactRound
-Copy CornerDownLeft CornerUpLeft CornerUpRight Crown Database DoorOpen Download Ear Earth Ellipsis
+Copy CornerDownLeft CornerUpLeft CornerUpRight Crown Database Delete DoorOpen Download Ear Earth Ellipsis
 EllipsisVertical Eraser Expand ExternalLink Eye EyeOff FastForward File FileArchive FileAudio FileDown FileImage
-FileText FileVideo Film Flag FlipHorizontal2 FolderOpen Forward Gauge Ghost Globe GripHorizontal GripVertical
+FileText FileVideo Film Fingerprint Flag FlipHorizontal2 FolderOpen Forward Gauge Ghost Globe GripHorizontal GripVertical
 Hand HardDrive Hash Headphones Heart History Hourglass House Image ImagePlus ImageUp Images Inbox Info Italic
 KeyRound Keyboard Languages Laptop LayoutGrid Leaf LifeBuoy Lightbulb Link Link2 Link2Off List ListChecks
 ListFilter ListOrdered ListX LoaderCircle Lock LockOpen LogIn LogOut Mail Maximize2 Menu MessageCircle

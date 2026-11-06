@@ -26,9 +26,18 @@ public interface IPlatformInfo
 public interface ISecureStore
 {
     Task<string?> GetAsync(string key);
+    /// <summary>
+    /// Like <see cref="GetAsync"/>, but a store that cannot be read comes back as not <see cref="SecureStoreRead.Ok"/>
+    /// instead of "nothing stored", and nothing is wiped to recover from it (Android's <see cref="GetAsync"/> resets an
+    /// unusable keystore). For values whose absence would open something: the app passcode.
+    /// </summary>
+    Task<SecureStoreRead> TryGetAsync(string key);
     Task SetAsync(string key, string value);
     Task RemoveAsync(string key);
 }
+
+/// <summary>A secure-store read: <see cref="Ok"/> with a null <see cref="Value"/> is "nothing stored".</summary>
+public readonly record struct SecureStoreRead(bool Ok, string? Value);
 
 public interface IPreferencesStore
 {
@@ -191,7 +200,11 @@ public interface IPermissionService
     Task OpenAppSettingsAsync();
 }
 
-public sealed record LocalNotification(Guid ChatId, Guid? MessageId, string Title, string Body, bool Silent);
+/// <summary>
+/// A message notification. <see cref="Hidden"/>: the app passcode hides who wrote what (the title and body are already
+/// neutral), so the chat's notification starts over with this one line — none of its earlier lines stay visible.
+/// </summary>
+public sealed record LocalNotification(Guid ChatId, Guid? MessageId, string Title, string Body, bool Silent, bool Hidden = false);
 
 public enum CallNotificationAction
 {
@@ -210,6 +223,13 @@ public interface ILocalNotificationService
     Task<bool> RequestPermissionAsync();
     Task ShowMessageAsync(LocalNotification notification);
     Task CancelForChatAsync(Guid chatId);
+    /// <summary>
+    /// The app passcode locked the app with "hide notification text" on: every message notification already on screen
+    /// (also those an earlier run of the app posted) is replaced, without a sound, by <paramref name="title"/> and
+    /// <paramref name="body"/> ("SkyMessage" / "New message") for its chat, and summaries stop naming chats. Tapping one
+    /// still opens its chat (behind the lock screen). Never throws.
+    /// </summary>
+    Task RedactMessagesAsync(string title, string body);
     Task ShowIncomingCallAsync(CallDto call, string callerName);
     Task CancelCallAsync(Guid callId);
     /// <summary>App icon badge (total unread); no-op where unsupported.</summary>
@@ -401,6 +421,74 @@ public interface IScreenSecurityService
 {
     bool IsSupported { get; }
     void SetSecure(bool secure);
+}
+
+/// <summary>How a system fingerprint/face prompt ended (<see cref="IAppLockPlatform.AuthenticateAsync"/>).</summary>
+public enum BiometricOutcome
+{
+    Succeeded,
+    /// <summary>The user closed the prompt or chose to type the passcode instead.</summary>
+    Cancelled,
+    /// <summary>Too many failed tries: the system disabled the sensor for a while.</summary>
+    LockedOut,
+    /// <summary>No sensor, nothing enrolled, the setting is off, or the prompt could not be shown.</summary>
+    Unavailable,
+}
+
+/// <summary>Texts of the system biometric prompt, localized by the caller.</summary>
+public sealed record BiometricPromptText(string Title, string? Subtitle, string CancelText);
+
+/// <summary>What another instance of the app on this device (a browser tab) tells the others about the passcode.</summary>
+public enum AppLockSignal
+{
+    /// <summary>It was locked on request ("Lock now"): the whole app locks.</summary>
+    Locked,
+    /// <summary>The right passcode or a fingerprint opened it, or the passcode was turned off: the whole app opens.</summary>
+    Unlocked,
+    /// <summary>The stored passcode, its options or the attempt count changed: read them again.</summary>
+    StoreChanged,
+}
+
+/// <summary>
+/// Platform side of the app passcode (<see cref="Services.IAppLockService"/>). Android: fingerprint or face unlock
+/// through the system BiometricPrompt (Android 10+, weak biometrics allowed so face unlock counts), the recent-apps
+/// switcher kept free of the app's content while a passcode is set (Android 13+ without a recents screenshot, older
+/// versions with a window that stays FLAG_SECURE meanwhile: <see cref="BlocksScreenshotsWhileSet"/>) and the boot clock.
+/// Browser, iOS, Mac: no biometrics (the setting is hidden), the rest does nothing. Browsers run one instance of the app
+/// per tab, all on the same storage: <see cref="Announce"/> and <see cref="Signaled"/> keep them one app (BroadcastChannel
+/// and storage events); elsewhere there is one instance and both do nothing. Implementations never throw.
+/// </summary>
+public interface IAppLockPlatform
+{
+    /// <summary>Tells the app's other instances on this device (<see cref="AppLockSignal.Locked"/> or <see cref="AppLockSignal.Unlocked"/>).</summary>
+    void Announce(AppLockSignal signal);
+    /// <summary>Another instance locked or opened the app, or changed the stored passcode (any thread).</summary>
+    event Action<AppLockSignal>? Signaled;
+    /// <summary>The platform can unlock with a fingerprint or face at all (the setting is shown).</summary>
+    bool SupportsBiometrics { get; }
+    /// <summary>A fingerprint or face is enrolled and the sensor can be used right now.</summary>
+    bool CanUseBiometrics { get; }
+    /// <summary>Shows the system prompt (from the foreground); completes when it is answered or dismissed.</summary>
+    Task<BiometricOutcome> AuthenticateAsync(BiometricPromptText text, CancellationToken cancellationToken = default);
+    /// <summary>While true, the recent-apps switcher shows no picture of the app's content.</summary>
+    void SetHiddenInRecents(bool hidden);
+    /// <summary>
+    /// Keeping the content out of the recent-apps switcher also blocks screenshots of the app for as long as a passcode
+    /// is set: Android 8–12, where only a window that is secure all along stays out of that picture (it is taken before
+    /// the app could react — with gesture navigation even before the app pauses). The passcode settings say so.
+    /// </summary>
+    bool BlocksScreenshotsWhileSet { get; }
+    /// <summary>
+    /// PBKDF2-HMAC-SHA256 of the passcode (UTF-8) with the platform's own crypto, where that is much faster than .NET's
+    /// (browsers: WebCrypto — .NET runs interpreted there); null to use .NET's. Both give the same bytes.
+    /// </summary>
+    Task<byte[]?> DeriveKeyAsync(string passcode, byte[] salt, int iterations, int length);
+    /// <summary>
+    /// Time since the device booted, deep sleep included (Android SystemClock.elapsedRealtime); null where there is no
+    /// such clock. Unlike the wall clock the user cannot move it, unlike the process clock it keeps running while the
+    /// phone sleeps, so the auto-lock and the pause after wrong passcodes are measured with it when it exists.
+    /// </summary>
+    TimeSpan? SinceBoot { get; }
 }
 
 /// <summary>

@@ -6,7 +6,10 @@ namespace SkyMessage.Client.UI.Features.Settings;
 /// <summary>A settings screen: route key (<see cref="SettingsRoutes"/>), title key, icon and the hue of its pastel tile (<see cref="SettingsTones"/>).</summary>
 public sealed record SettingsSectionInfo(string Key, string TitleKey, string Icon, string Color);
 
-/// <summary>The settings menu, grouped. "blocked" is a sub-page of privacy and has no menu row of its own.</summary>
+/// <summary>
+/// The settings menu, grouped. "blocked" and "passcode" are sub-pages of privacy, "folder" one of folders: none of them
+/// has a menu row of its own.
+/// </summary>
 public static class SettingsCatalog
 {
     public static IReadOnlyList<SettingsSectionInfo> Account { get; } =
@@ -35,9 +38,11 @@ public static class SettingsCatalog
     ];
 
     private static readonly SettingsSectionInfo BlockedInfo = new(SettingsRoutes.Blocked, "settings.blocked.title", IconNames.Ban, SettingsTones.Rose);
+    private static readonly SettingsSectionInfo PasscodeInfo = new(SettingsRoutes.Passcode, "passcode.title", IconNames.Lock, SettingsTones.Violet);
     private static readonly SettingsSectionInfo FolderInfo = new(SettingsRoutes.Folder, "folders.edit.title", IconNames.FolderOpen, SettingsTones.Mint);
 
-    public static IEnumerable<SettingsSectionInfo> All => Account.Concat(App).Concat(Help).Append(BlockedInfo).Append(FolderInfo);
+    public static IEnumerable<SettingsSectionInfo> All =>
+        Account.Concat(App).Concat(Help).Append(BlockedInfo).Append(PasscodeInfo).Append(FolderInfo);
 
     /// <summary>Known section key (case-insensitive) in its canonical form, else null.</summary>
     public static string? Normalize(string? key) =>
@@ -46,7 +51,7 @@ public static class SettingsCatalog
     /// <summary>The menu row that represents a section (sub-pages highlight their parent).</summary>
     public static string MenuKeyOf(string key) => key switch
     {
-        SettingsRoutes.Blocked => SettingsRoutes.Privacy,
+        SettingsRoutes.Blocked or SettingsRoutes.Passcode => SettingsRoutes.Privacy,
         SettingsRoutes.Folder => SettingsRoutes.Folders,
         _ => key,
     };
@@ -54,7 +59,7 @@ public static class SettingsCatalog
     /// <summary>Where Back goes from a section opened by a deep link.</summary>
     public static string ParentPathOf(string key) => key switch
     {
-        SettingsRoutes.Blocked => SettingsRoutes.PathOf(SettingsRoutes.Privacy),
+        SettingsRoutes.Blocked or SettingsRoutes.Passcode => SettingsRoutes.PathOf(SettingsRoutes.Privacy),
         SettingsRoutes.Folder => SettingsRoutes.PathOf(SettingsRoutes.Folders),
         _ => "/settings",
     };

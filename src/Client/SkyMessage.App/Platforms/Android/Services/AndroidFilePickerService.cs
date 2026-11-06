@@ -116,6 +116,8 @@ public sealed class AndroidFilePickerService(ILogger<AndroidFilePickerService> l
     {
         try
         {
+            // The camera app is a trip of our own: the app passcode does not lock "immediately" for it.
+            using var trip = SkyMessage.App.Services.AppServices.Get<SkyMessage.Client.Core.Services.IAppLockService>()?.ExpectReturn();
             var result = await MainThread.InvokeOnMainThreadAsync(capture).ConfigureAwait(false);
             if (result is null || string.IsNullOrEmpty(result.FullPath) || !File.Exists(result.FullPath)) return null;
             var path = result.FullPath;

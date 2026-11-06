@@ -12,6 +12,7 @@
 @inject AppJs Js
 @inject UiDispatcher Dispatcher
 @inject IAppUpdateService Updates
+@inject IAppLockService AppLock
 @inject ILogger<Routes> Logger
 
 <ErrorBoundary @ref="_boundary">
@@ -115,6 +116,9 @@
                 Logger.LogError(ex, "Session restore failed");
             }
         }
+        // The app passcode is read before any signed-in screen, however the start went (idempotent, never throws; until
+        // it has been read the shell stays covered).
+        await AppLock.InitializeAsync();
         _lastState = Auth.State;
         if (_lastState == AuthState.SignedIn) _postSignInTarget = null;
         _ready = true;

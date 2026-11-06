@@ -160,6 +160,13 @@ background of one's own (root screens) gets a readability floor: titles 7:1, sec
   grouped glass cards with pastel tiles.
 - **Auth** (welcome/login/register): the sky (soft lights, clouds or stars, comet at night), the animated logo, the
   wordmark in a solid color, forms on a glass card, staggered entrance.
+- **Lock screen** (app passcode): the theme's calm sky (no comet) over everything, the logo mark (60px, no tile), the
+  title in the display font, one hint line (rose for mistakes and the pause countdown), dots that fill with the accent
+  gradient, and a keypad of round translucent glass keys (card color + glass rim, no backdrop blur on twelve keys) with
+  Montserrat digits — no letters, no system keyboard; erase and the fingerprint are plain glyph keys. "Forgot the
+  passcode?" is a quiet accent link; its sign-out confirmation is a frosted card on the same screen. A live call shows
+  a mint capsule "Back to the call" at the top. Settings flows reuse the keypad in a sheet (phones) or a dialog with an
+  opaque frame (`sm-dialog--solid`: the button it opens over must not tint the glass behind the dots).
 - **Calls**: a calm deep night sky with soft low-saturation light, avatar squircle 132px with subtle pulsing rings
   (`sm-ring`), glass control circles 64px, rose gradient hang-up. Calls list rows like chat rows; missed = rose.
 - **Media viewer**: night background, glass top/bottom bars.

@@ -19,11 +19,28 @@ public sealed class WebPreferencesStore(WebBridge bridge) : IPreferencesStore
 
 /// <summary>
 /// Browsers have no OS keystore: tokens live in localStorage ("sm.s.*") of this origin only. The CSP forbids
-/// inline and third-party scripts, which is what protects them.
+/// inline and third-party scripts, which is what protects them. The app passcode's salted PBKDF2 hash and its attempt
+/// count ("passcode.v1", "passcode.attempts.v1") are stored here too, in the clear as far as the browser is concerned:
+/// anyone with access to this browser profile's developer tools can read or delete them, so in a browser the passcode
+/// only keeps a casual onlooker out of an open tab — it is not a protection against the person who controls the computer.
 /// </summary>
 public sealed class WebSecureStore(WebBridge bridge) : ISecureStore
 {
     public Task<string?> GetAsync(string key) => Task.FromResult(bridge.Sync?.Invoke<string?>("skyPlatform.secure.get", key));
+
+    public Task<SecureStoreRead> TryGetAsync(string key)
+    {
+        try
+        {
+            return Task.FromResult(bridge.Sync is { } sync
+                ? new SecureStoreRead(true, sync.Invoke<string?>("skyPlatform.secure.get", key))
+                : new SecureStoreRead(false, null));
+        }
+        catch (JSException)
+        {
+            return Task.FromResult(new SecureStoreRead(false, null));
+        }
+    }
 
     public Task SetAsync(string key, string value)
     {
