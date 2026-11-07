@@ -78,7 +78,7 @@
 }
 
 .profile__presence--me {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-weight: 600;
 }
 
@@ -115,7 +115,8 @@
     width: 3.5rem;
     height: 3.5rem;
     border-radius: 50%;
-    color: var(--sm-accent);
+    /* The accent as icon ink on the glass: readable for any accent, a very light custom one too. */
+    color: var(--sm-accent-text);
     background: var(--sm-glass);
     -webkit-backdrop-filter: var(--sm-blur);
     backdrop-filter: var(--sm-blur);

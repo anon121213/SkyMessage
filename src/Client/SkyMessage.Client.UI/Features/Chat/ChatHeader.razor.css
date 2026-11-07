@@ -151,7 +151,7 @@ html[data-fx="lite"] .chead {
     display: flex;
     align-items: center;
     gap: 7px;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-weight: 500;
 }
 
@@ -230,7 +230,7 @@ html[data-fx="lite"] .chead {
 }
 
 .chead__actions ::deep .chead__call {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 /* The online dot: a plain mint dot ringed in the capsule's colour (the kit's dot also glows). */

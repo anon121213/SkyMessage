@@ -395,6 +395,34 @@ public sealed partial class ThemeCatalogTests
     }
 
     [Fact]
+    public void Accent_text_reads_on_the_sky_for_any_accent()
+    {
+        // The accent as text and icons straight on the sky and surfaces (--sm-accent-text): 4.5:1 where the dawn is
+        // darkest and where the night is lightest, for every accent — the palette's, mid tones, a very light one.
+        var lightSky = Color.Parse("#E1D9F8");
+        var nightSky = Color.Parse("#221A4A");
+        var random = new Random(4511);
+        var accents = Catalog.Accents.Select(a => a.Hex).Concat(Catalog.AccentPalette.Select(p => p.Hex)).Concat(["#FFE08A", "#C7EFD3", "#FFFFFF", "#000000"])
+            .Concat(Enumerable.Range(0, 200).Select(_ => $"#{random.Next(0, 0x1000000):X6}"));
+        foreach (var hex in accents)
+        {
+            var state = Catalog.BuildState(new AppearanceSettings { CustomAccentHex = hex });
+            var day = Color.Parse(VarOf(Block(state, dark: false), "--sm-accent-text")!);
+            var night = Color.Parse(VarOf(Block(state, dark: true), "--sm-accent-text")!);
+            ThemeCatalog.Contrast(day, lightSky).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinTextContrast, hex);
+            ThemeCatalog.Contrast(night, nightSky).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinTextContrast, hex);
+        }
+
+        // Accents that read already stay themselves; the released violet deepens a little by day and stays at night.
+        ThemeCatalog.AccentTextInk(Color.Parse("#3F4A5C"), dark: false).Hex.ShouldBe("#3F4A5C");
+        VarOf(Block(Catalog.BuildState(new AppearanceSettings()), dark: false), "--sm-accent-text").ShouldBe("#5D42DF", "as app.css says before the theme applies");
+        VarOf(Block(Catalog.BuildState(new AppearanceSettings()), dark: true), "--sm-accent-text").ShouldBe("#8B73FF");
+        // A very light accent no longer nearly vanishes: a deep shade of its hue.
+        var yellow = ThemeCatalog.AccentTextInk(Color.Parse("#FFE08A"), dark: false);
+        ThemeCatalog.Contrast(yellow, Color.White).ShouldBeGreaterThan(5);
+    }
+
+    [Fact]
     public void The_time_and_a_failed_status_on_any_bubble_keep_3_to_1()
     {
         var random = new Random(3141);

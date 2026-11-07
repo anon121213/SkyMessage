@@ -134,6 +134,10 @@ public sealed class ThemeCatalog
     private const string FailedOnDeep = "#FFD3DC";
     /// <summary>The rose a failed status starts from on a light bubble (dark ink): app.css's --sm-danger.</summary>
     private const string FailedOnLight = "#E2334D";
+    /// <summary>The day's sky where it is darkest behind text (the dawn's violet light): accent text by day reads 4.5:1 on it.</summary>
+    private const string LightSkyShade = "#E1D9F8";
+    /// <summary>The night's sky where it is lightest behind text: accent text at night reads 4.5:1 on it.</summary>
+    private const string DarkSkyLight = "#221A4A";
     /// <summary>The phone a gradient's top is judged on (width : height), for the color under the status bar.</summary>
     private const double ScreenWidth = 9;
     private const double ScreenHeight = 19.5;
@@ -377,6 +381,25 @@ public sealed class ThemeCatalog
     /// middle is very light, as released.
     /// </summary>
     public static Color OnAccentInk(Color from, Color to) => Color.Mix(from, to, 0.5).Luminance > 0.42 ? Color.Parse(LightText) : Color.White;
+
+    /// <summary>
+    /// Accent-colored text and icons straight on the theme's surfaces and sky (--sm-accent-text: links on the lock screen,
+    /// the profile's actions, the chat header's call, the unread divider): <paramref name="accent"/> (at night its lighter
+    /// version) moved away from the background in small steps — toward black by day, toward white at night — until it
+    /// reads <see cref="MinTextContrast"/> on the sky where that is hardest; most accents stay as they are or deepen a
+    /// little, a very light custom accent gets a deep shade of its hue instead of nearly vanishing.
+    /// </summary>
+    public static Color AccentTextInk(Color accent, bool dark)
+    {
+        var background = Color.Parse(dark ? DarkSkyLight : LightSkyShade);
+        var away = dark ? Color.White : Color.Black;
+        for (var step = 0; step * ReadableStep <= 1; step++)
+        {
+            var ink = Rounded(Color.Mix(accent, away, step * ReadableStep));
+            if (Contrast(ink, background) >= MinTextContrast) return ink;
+        }
+        return away;
+    }
 
     /// <summary>My bubbles as the appearance paints them in a theme (Gradient, Solid or my own colors).</summary>
     public BubblePaint OutgoingPaint(AppearanceSettings appearance, bool dark)
@@ -746,6 +769,7 @@ public sealed class ThemeCatalog
         if (!dark)
         {
             Var(css, "--sm-accent", accent.Hex);
+            Var(css, "--sm-accent-text", AccentTextInk(accent, dark: false).Hex);
             Var(css, "--sm-accent-2", accent2.Hex);
             Var(css, "--sm-accent-hover", Color.Mix(accent, Color.Black, 0.1).Hex);
             Var(css, "--sm-accent-soft", accent.Rgba(0.11));
@@ -760,6 +784,7 @@ public sealed class ThemeCatalog
             var light = Color.Mix(accent, Color.White, accent.Luminance < 0.12 ? 0.34 : 0.22);
             var light2 = Color.Mix(accent2, Color.White, 0.24);
             Var(css, "--sm-accent", light.Hex);
+            Var(css, "--sm-accent-text", AccentTextInk(light, dark: true).Hex);
             Var(css, "--sm-accent-2", light2.Hex);
             Var(css, "--sm-accent-hover", Color.Mix(light, Color.White, 0.12).Hex);
             Var(css, "--sm-accent-soft", light.Rgba(0.16));

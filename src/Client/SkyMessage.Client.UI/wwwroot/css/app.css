@@ -69,6 +69,10 @@
 :root,
 html[data-theme="light"] {
   --sm-accent: #6A4BFF;
+  /* The accent as text and icons straight on surfaces and the sky (4.5:1 where the dawn is darkest; ThemeCatalog
+     derives it for any accent), and the rose for small text such as a hint after a mistake (4.5:1 likewise). */
+  --sm-accent-text: #5D42DF;
+  --sm-danger-text: #B91F3B;
   --sm-accent-2: #9A48F0;
   --sm-accent-hover: #5B3CF0;
   --sm-accent-soft: rgba(106, 75, 255, 0.11);
@@ -153,6 +157,8 @@ html[data-theme="light"] {
 /* Dark: "night" — deep indigo with an aurora and stars, smoked glass. */
 html[data-theme="dark"] {
   --sm-accent: #9584FF;
+  --sm-accent-text: #9584FF;
+  --sm-danger-text: #FF6B86;
   --sm-accent-2: #B36BFF;
   --sm-accent-hover: #A898FF;
   --sm-accent-soft: rgba(149, 132, 255, 0.16);
@@ -396,8 +402,8 @@ html[data-reduce-motion="true"] .sm-progress-ring--indeterminate > svg {
 .sm-mono { font-family: var(--sm-font-mono); }
 .sm-muted { color: var(--sm-text-2); }
 .sm-faint { color: var(--sm-text-3); }
-.sm-accent-text { color: var(--sm-accent); }
-.sm-danger-text { color: var(--sm-danger); }
+.sm-accent-text { color: var(--sm-accent-text); }
+.sm-danger-text { color: var(--sm-danger-text); }
 .sm-success-text { color: var(--sm-success); }
 .sm-strong { font-weight: 600; }
 .sm-center-text { text-align: center; }
