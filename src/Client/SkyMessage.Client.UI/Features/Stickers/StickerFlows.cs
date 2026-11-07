@@ -39,6 +39,40 @@ public static class StickerFlows
         }
     }
 
+    /// <summary>
+    /// Takes a pack out of my panel with an Undo that puts it back where it was (adding goes first, so the old order is
+    /// asked for again). <paramref name="held"/> is the pack when its stickers are known (else it is loaded for the undo).
+    /// </summary>
+    public static async Task RemoveFromPanelAsync(ILocalizer l, IStickerStore stickers, ToastService toasts, Guid packId, string title,
+        StickerPackDto? held = null)
+    {
+        var order = stickers.State.Installed.Select(p => p.Id).ToList();
+        try
+        {
+            await stickers.UninstallAsync(packId);
+        }
+        catch (Exception ex)
+        {
+            toasts.Error(ex);
+            return;
+        }
+        toasts.Show(l.Format("stickers.pack.removed", title), ToastKind.Info, l["common.undo"], async () =>
+        {
+            try
+            {
+                var pack = held ?? await stickers.LoadPackAsync(packId);
+                await stickers.InstallAsync(pack);
+                var now = stickers.State.Installed.Select(p => p.Id).ToHashSet();
+                var previous = order.Where(now.Contains).ToList();
+                if (previous.Count > 1) await stickers.ReorderAsync(previous);
+            }
+            catch (Exception ex)
+            {
+                toasts.Error(ex);
+            }
+        });
+    }
+
     private static PromptOptions TitlePrompt(ILocalizer l, string title, string? initial, string confirm) => new()
     {
         Title = title,

@@ -8,9 +8,16 @@
 
 .spack__head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     min-height: 2.75rem;
+}
+
+.spack__head-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
 }
 
 .spack__titles {
@@ -18,16 +25,21 @@
     min-width: 0;
 }
 
+/* Up to two lines: a 64-character title is read whole on phones too. */
 .spack__title {
+    display: -webkit-box;
     margin: 0;
     overflow: hidden;
     color: var(--sm-text);
     font-family: var(--sm-font-display);
     font-size: 1.25rem;
     font-weight: 700;
+    line-height: 1.25;
     letter-spacing: -0.015em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
 }
 
 .spack__meta {
@@ -63,10 +75,17 @@
     display: none;
 }
 
+.spack__item {
+    display: block;
+}
+
 .spack__cell {
+    display: block;
+    width: 100%;
     aspect-ratio: 1;
     padding: 6px;
     border-radius: 18px;
+    -webkit-touch-callout: none;
     transition: transform 320ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
 }
 

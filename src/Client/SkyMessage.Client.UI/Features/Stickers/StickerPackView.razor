@@ -1,8 +1,12 @@
-@* One sticker pack as anyone sees it before (or after) adding it: its title, how many stickers, all of them in a grid,
-   and the one action that matters — «Добавить N стикеров», or «Удалить набор» once it is in my panel; its creator also
-   gets «Изменить». A deleted pack says so (stickers already sent keep showing in the chats). The pack's link can be
-   shared. Used by the pack sheet (a tap on a sticker in a chat) and the /addstickers/{slug} page. *@
+@* One sticker pack as anyone sees it before (or after) adding it: its title (up to two lines), how many stickers, all of
+   them in a grid (a tap or a hold shows one large, with favorites — not when the pack was opened from a chat with
+   content protection, where only taking one out of the favorites stays), and the one action that matters — «Добавить N
+   стикеров», or «Удалить набор» once it is in my panel; its creator gets «Изменить» and «Убрать из панели» instead
+   (deleting the pack for everyone is the editor's). A deleted pack says so; a link to no pack says it is not there
+   (deleted, or a wrong link). The pack's link can be shared. Used by the pack sheet (a tap on a sticker or a pack link
+   in a chat) and the /addstickers/{slug} page. *@
 @inherits UiComponentBase
+@implements IAsyncDisposable
 @inject IStickerStore Stickers
 @inject IAuthService Auth
 @inject ILinkBuilder Links
@@ -11,6 +15,7 @@
 @inject ToastService Toasts
 @inject HapticFeedback Haptics
 @inject NavigationService Nav
+@inject IJSRuntime JS
 
 <div class="spack @Class">
     @if (_pack is { } pack)
@@ -28,7 +33,13 @@
                     }
                 </div>
             </div>
-            <IconButton Icon="@IconNames.Share2" Label="@L["stickers.pack.share"]" Variant="IconButtonVariant.Tonal" Size="40" OnClick="() => ShareAsync(pack)" />
+            <div class="spack__head-actions">
+                <IconButton Icon="@IconNames.Share2" Label="@L["stickers.pack.share"]" Variant="IconButtonVariant.Tonal" Size="40" OnClick="() => ShareAsync(pack)" />
+                @if (OnClose.HasDelegate)
+                {
+                    <IconButton Icon="@IconNames.X" Label="@L["common.close"]" Size="40" OnClick="() => OnClose.InvokeAsync()" />
+                }
+            </div>
         </div>
         @if (pack.Stickers.Count == 0)
         {
@@ -36,14 +47,16 @@
         }
         else
         {
-            <div class="spack__grid" role="list">
+            <div class="spack__grid" role="list" aria-label="@pack.Title" @ref="_grid">
                 @foreach (var sticker in pack.Stickers)
                 {
                     var item = sticker;
-                    <button type="button" role="listitem" class="spack__cell" title="@StickerUi.EmojiLine(item)" aria-label="@StickerUi.EmojiLine(item)"
-                            @onclick="() => PreviewAsync(item)">
-                        <StickerImage Media="item.Media" Alt="@StickerUi.EmojiLine(item)" />
-                    </button>
+                    <div class="spack__item" role="listitem" @key="item.Id">
+                        <button type="button" class="spack__cell" data-hold="@item.Id" title="@StickerUi.EmojiLine(item)" aria-label="@StickerUi.EmojiLine(item)"
+                                @onclick="() => PreviewAsync(item)">
+                            <StickerImage Media="item.Media" />
+                        </button>
+                    </div>
                 }
             </div>
         }
@@ -54,7 +67,9 @@
             }
             @if (installed)
             {
-                <Button Variant="ButtonVariant.DangerGhost" Icon="@IconNames.Trash2" Loading="_busy" OnClick="() => RemoveAsync(pack)">@L["stickers.pack.remove"]</Button>
+                <Button Variant="ButtonVariant.DangerGhost" Icon="@(mine ? IconNames.CircleMinus : IconNames.Trash2)" Loading="_busy" OnClick="() => RemoveAsync(pack)">
+                    @(mine ? L["stickers.pack.removeFromPanel"] : L["stickers.pack.remove"])
+                </Button>
             }
             else if (pack.Stickers.Count > 0)
             {
@@ -66,7 +81,9 @@
     }
     else if (_gone)
     {
-        <EmptyState Icon="@IconNames.Ghost" Title="@L["stickers.pack.goneTitle"]" Text="@L["stickers.pack.goneText"]" />
+        @* A sticker's pack (by its id) was deleted; a link may also just be wrong. *@
+        <EmptyState Icon="@IconNames.Ghost" Title="@(Slug is null ? L["stickers.pack.goneTitle"] : L["stickers.pack.notFoundTitle"])"
+                    Text="@(Slug is null ? L["stickers.pack.goneText"] : L["stickers.pack.notFoundText"])" />
     }
     else if (_error is not null)
     {
@@ -87,17 +104,28 @@
 </div>
 
 @code {
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+
     private StickerPackDto? _pack;
     private bool _gone;
     private bool _busy;
     private string? _error;
     private string? _loadedFor;
+    private ElementReference _grid;
+    private JsModule? _module;
+    private JsObject? _hold;
+    private DotNetObjectReference<StickerPackView>? _self;
+    private Guid? _holdFor;
 
     [Parameter] public Guid? PackId { get; set; }
     /// <summary>The slug of a pack link (instead of <see cref="PackId"/>).</summary>
     [Parameter] public string? Slug { get; set; }
+    /// <summary>Opened from a chat with content protection: its stickers do not go to favorites from here.</summary>
+    [Parameter] public bool Protected { get; set; }
     /// <summary>Asked to go (an edit opened, the pack was removed from inside a sheet).</summary>
     [Parameter] public EventCallback OnDone { get; set; }
+    /// <summary>A close button beside «share» (the card on wide screens; a sheet is closed by its handle and Back).</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public string? Class { get; set; }
 
     protected override void OnInitialized()
@@ -119,6 +147,20 @@
         _loadedFor = key;
         _pack = PackId is { } id ? Stickers.GetPack(id) : null;
         await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The grid is there once the pack is: a hold on a sticker shows it large too (as in the panel).
+        var shown = _pack is { Stickers.Count: > 0 } pack ? pack.Id : (Guid?)null;
+        if (shown == _holdFor) return;
+        if (_hold is not null) await _hold.DisposeAsync();
+        _hold = null;
+        _holdFor = shown;
+        if (shown is null) return;
+        _self ??= DotNetObjectReference.Create(this);
+        _module ??= new JsModule(JS, ModulePath);
+        _hold = await _module.AttachAsync("attachHold", _grid, _self);
     }
 
     private async Task LoadAsync()
@@ -147,8 +189,16 @@
     private async Task PreviewAsync(StickerDto sticker)
     {
         Haptics.Selection();
-        await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: false);
+        await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: false, canFavorite: !Protected || Stickers.IsFavorite(sticker.Id));
     }
+
+    [JSInvokable]
+    public Task OnHold(string key) => InvokeAsync(async () =>
+    {
+        if (!Guid.TryParse(key, out var id) || _pack?.Stickers.FirstOrDefault(s => s.Id == id) is not { } sticker) return;
+        Haptics.LongPress();
+        await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: false, canFavorite: !Protected || Stickers.IsFavorite(sticker.Id));
+    });
 
     private async Task AddAsync(StickerPackDto pack)
     {
@@ -174,12 +224,7 @@
         _busy = true;
         try
         {
-            await Stickers.UninstallAsync(pack.Id);
-            Toasts.Show(L.Format("stickers.pack.removed", pack.Title), ToastKind.Info, L["common.undo"], () => Stickers.InstallAsync(pack));
-        }
-        catch (Exception ex)
-        {
-            Toasts.Error(ex);
+            await StickerFlows.RemoveFromPanelAsync(L, Stickers, Toasts, pack.Id, pack.Title, pack);
         }
         finally
         {
@@ -193,5 +238,13 @@
     {
         await OnDone.InvokeAsync();
         Nav.NavigateTo(StickerUi.EditorPath(pack.Id));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hold is not null) await _hold.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
     }
 }

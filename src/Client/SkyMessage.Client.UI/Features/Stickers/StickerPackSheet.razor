@@ -1,14 +1,36 @@
-@* The pack sheet (DialogService content; a sheet on phones, a card on wide screens): a tap on a sticker in a chat, a
-   pack in the panel or the settings opens it. *@
+@* The pack sheet (DialogService content; a sheet on phones, a card on wide screens): a tap on a sticker in a chat, a pack
+   link tapped in the app, a pack in the panel or the settings opens it over the current screen. The card has no header
+   band of its own: its close button sits beside «share» in the pack's own title row. *@
 @inherits UiComponentBase
+@inject LayoutService Layout
 
-<StickerPackView PackId="PackId" OnDone="() => Dialog.Cancel()" />
+<StickerPackView PackId="PackId" Slug="@Slug" Protected="Protected" OnDone="() => Dialog.Cancel()"
+                 OnClose="@(Layout.IsPhone ? default(EventCallback) : EventCallback.Factory.Create(this, () => Dialog.Cancel()))" />
 
 @code {
     [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
-    [Parameter, EditorRequired] public Guid PackId { get; set; }
+    [Parameter] public Guid? PackId { get; set; }
+    /// <summary>A pack link's slug (instead of <see cref="PackId"/>).</summary>
+    [Parameter] public string? Slug { get; set; }
+    /// <summary>Opened from a chat with content protection (no favorites from here).</summary>
+    [Parameter] public bool Protected { get; set; }
 
-    public static Task ShowAsync(DialogService dialogs, Guid packId) =>
-        dialogs.ShowAsync<StickerPackSheet>(null, new Dictionary<string, object?> { [nameof(PackId)] = packId },
-            new DialogOptions { Size = DialogSize.Medium, Flush = true, Presentation = OverlayPresentation.Auto });
+    private static readonly DialogOptions Options = new()
+    {
+        Size = DialogSize.Medium,
+        Flush = true,
+        ShowClose = false,
+        Presentation = OverlayPresentation.Auto,
+    };
+
+    public static Task ShowAsync(DialogService dialogs, Guid packId, bool protectedChat = false) =>
+        dialogs.ShowAsync<StickerPackSheet>(null, new Dictionary<string, object?>
+        {
+            [nameof(PackId)] = packId,
+            [nameof(Protected)] = protectedChat,
+        }, Options);
+
+    /// <summary>A pack link opened inside the app: the sheet over the current screen instead of a page of its own.</summary>
+    public static Task ShowBySlugAsync(DialogService dialogs, string slug) =>
+        dialogs.ShowAsync<StickerPackSheet>(null, new Dictionary<string, object?> { [nameof(Slug)] = slug }, Options);
 }

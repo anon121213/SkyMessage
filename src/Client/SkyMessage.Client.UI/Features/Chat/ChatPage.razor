@@ -200,7 +200,7 @@
                         <MenuItem Icon="@IconNames.Star" Label="@(favorite ? L["stickers.favorite.remove"] : L["stickers.favorite.add"])"
                                   OnClick="() => ToggleFavoriteAsync(sticker, !favorite)" />
                     }
-                    <MenuItem Icon="@IconNames.LayoutGrid" Label="@L["stickers.menu.pack"]" OnClick="() => StickerPackSheet.ShowAsync(Dialogs, sticker.PackId)" />
+                    <MenuItem Icon="@IconNames.LayoutGrid" Label="@L["stickers.menu.pack"]" OnClick="() => StickerPackSheet.ShowAsync(Dialogs, sticker.PackId, Protected)" />
                 }
                 if (StickerUi.GifOf(message) is { } gif)
                 {
@@ -315,7 +315,7 @@
         _controller.CallAsync = CallAsync;
         _controller.JoinCallAsync = JoinCallAsync;
         _controller.ToggleReactionAsync = ToggleReactionAsync;
-        _controller.OpenStickerAsync = (_, media) => media.Sticker is { } info ? StickerPackSheet.ShowAsync(Dialogs, info.PackId) : Task.CompletedTask;
+        _controller.OpenStickerAsync = (_, media) => media.Sticker is { } info ? StickerPackSheet.ShowAsync(Dialogs, info.PackId, Protected) : Task.CompletedTask;
 
         Action chats = () =>
         {
