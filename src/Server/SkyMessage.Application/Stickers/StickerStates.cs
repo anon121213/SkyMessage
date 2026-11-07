@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SkyMessage.Application.Common.Interfaces;
 using SkyMessage.Application.Common.Mapping;
+using SkyMessage.Application.MediaFiles;
 using SkyMessage.Application.Messaging.Services;
 using SkyMessage.Contracts;
 
@@ -115,9 +116,18 @@ internal sealed class StickerStates(
             .Select(g => new { g.MediaId, g.SavedAt })
             .ToListAsync(ct);
         var gifIds = gifRows.Select(g => g.MediaId).ToList();
+        // The tiny blurred placeholder stays out: the panel shows the posters, and the state goes to every device often.
         var gifMedia = gifIds.Count == 0
             ? new Dictionary<Guid, MediaDto>()
-            : await db.Media.AsNoTracking().Where(m => gifIds.Contains(m.Id)).Select(MediaMapping.Projection).ToDictionaryAsync(m => m.Id, ct);
+            : await db.Media.AsNoTracking().Where(m => gifIds.Contains(m.Id)).Select(MediaMapping.ProjectionWithoutMini).ToDictionaryAsync(m => m.Id, ct);
+        // Still mine to send: my own upload, or in a message I can see (as IMediaAccessService decides for one media).
+        var visible = MediaAccessService.AttachmentsVisibleTo(db, userId);
+        var available = gifIds.Count == 0
+            ? []
+            : (await db.Media.AsNoTracking()
+                .Where(m => gifIds.Contains(m.Id) && (m.OwnerId == userId || visible.Contains(m.Id)))
+                .Select(m => m.Id)
+                .ToListAsync(ct)).ToHashSet();
 
         return new StickerStateDto
         {
@@ -126,10 +136,9 @@ internal sealed class StickerStates(
             Mine = mineIds.Select(refs.GetValueOrDefault).OfType<StickerPackRefDto>().ToList(),
             Favorites = favoriteIds.Select(stickers.GetValueOrDefault).OfType<StickerDto>().ToList(),
             Recent = recentIds.Select(stickers.GetValueOrDefault).OfType<StickerDto>().ToList(),
-            // The tiny blurred placeholder stays out: the panel shows the posters, and the state goes to every device often.
             Gifs = gifRows
                 .Where(g => gifMedia.ContainsKey(g.MediaId))
-                .Select(g => new SavedGifDto { Media = gifMedia[g.MediaId] with { MiniThumbnail = null }, SavedAt = g.SavedAt })
+                .Select(g => new SavedGifDto { Media = gifMedia[g.MediaId], SavedAt = g.SavedAt, Unavailable = !available.Contains(g.MediaId) })
                 .ToList(),
         };
     }

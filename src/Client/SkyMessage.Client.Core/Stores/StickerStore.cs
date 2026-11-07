@@ -104,7 +104,7 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
             {
                 var state = await _api.GetStickerStateAsync(_lifecycle.AccountToken).ConfigureAwait(false);
                 if (generation != _generation) return;
-                Accept(state, generation);
+                Accept(state, generation, loaded: true);
                 _loadedFromServer = true;
             }
             catch (Exception ex) when (ex is ApiException or OperationCanceledException)
@@ -434,13 +434,15 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
     // ---- State ----
 
     /// <summary>A state from the server (answer, GET or event): kept when it is not older than the one held.</summary>
-    private void Accept(StickerStateDto incoming, int generation)
+    /// <param name="loaded">Asked for (a GET): at the same revision it still brings what the server decides as it builds
+    /// a state (which saved GIFs I can still see).</param>
+    private void Accept(StickerStateDto incoming, int generation, bool loaded = false)
     {
         bool changed;
         lock (_lock)
         {
             if (generation != _generation) return;
-            changed = AcceptCore(incoming);
+            changed = AcceptCore(incoming, loaded);
         }
         if (!changed) return;
         RaiseChanged();
@@ -449,10 +451,15 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
     }
 
     // Under _lock.
-    private bool AcceptCore(StickerStateDto incoming)
+    private bool AcceptCore(StickerStateDto incoming, bool loaded)
     {
-        // Same revision = the same state (the server numbers every change).
-        if (_isLoaded && !_serverFromCache && incoming.Revision <= _server.Revision) return false;
+        if (_isLoaded && !_serverFromCache)
+        {
+            // Same revision = the same changes (the server numbers every one) — but whether I can still see a saved GIF
+            // follows other people's actions (a message deleted for everyone): a load at the same revision brings it.
+            if (incoming.Revision < _server.Revision) return false;
+            if (incoming.Revision == _server.Revision && (!loaded || SameGifs(incoming.Gifs, _server.Gifs))) return false;
+        }
         _server = Clean(incoming);
         _serverFromCache = false;
         _isLoaded = true;
@@ -510,6 +517,9 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
         foreach (var change in _pending) state = change(state);
         _state = state;
     }
+
+    private static bool SameGifs(IReadOnlyList<SavedGifDto>? a, IReadOnlyList<SavedGifDto> b) =>
+        a is not null && a.Count == b.Count && a.Zip(b).All(p => p.First?.Media?.Id == p.Second.Media.Id && p.First.Unavailable == p.Second.Unavailable);
 
     /// <summary>A state as received may miss lists (older caches): never null inside.</summary>
     private static StickerStateDto Clean(StickerStateDto state) => state with

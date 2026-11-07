@@ -93,6 +93,35 @@ public sealed class StickerStoreTests
     }
 
     [Fact]
+    public async Task A_reload_at_the_same_revision_brings_which_saved_gifs_i_can_no_longer_see()
+    {
+        var h = new Harness();
+        var gif = new MediaDto { Id = Guid.CreateVersion7(), Kind = MediaKind.Video, Status = MediaStatus.Ready, IsAnimation = true };
+        var state = new StickerStateDto { Revision = 5, Gifs = [new SavedGifDto { Media = gif, SavedAt = DateTimeOffset.UtcNow }] };
+        await h.LoadAsync(state);
+        h.Store.State.Gifs.Single().Unavailable.ShouldBeFalse();
+
+        // Someone deleted its message for everyone: my revision did not move, the server's verdict did.
+        var gone = state with { Gifs = [state.Gifs[0] with { Unavailable = true }] };
+        var changes = 0;
+        h.Store.Changed += () => changes++;
+        h.Raise(gone);
+        h.Store.State.Gifs.Single().Unavailable.ShouldBeFalse("an event at the same revision is the same change");
+        h.Api.GetStickerStateAsync(Arg.Any<CancellationToken>()).Returns(gone);
+        await h.Store.LoadAsync(force: true);
+        h.Store.State.Gifs.Single().Unavailable.ShouldBeTrue();
+        changes.ShouldBe(1);
+
+        // The same answer again changes nothing.
+        await h.Store.LoadAsync(force: true);
+        changes.ShouldBe(1);
+        // And media cleanup took it later: gone from the list at the same revision too.
+        h.Api.GetStickerStateAsync(Arg.Any<CancellationToken>()).Returns(state with { Gifs = [] });
+        await h.Store.LoadAsync(force: true);
+        h.Store.State.Gifs.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Suggestions_come_from_installed_packs_in_my_order_whatever_the_emoji_variant()
     {
         var h = new Harness();

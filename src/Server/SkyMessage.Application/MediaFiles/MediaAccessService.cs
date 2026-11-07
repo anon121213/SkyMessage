@@ -36,23 +36,27 @@ internal sealed class MediaAccessService(IAppDbContext db, IPrivacyService priva
         return true;
     }
 
+    /// <summary>
+    /// The media attached to a message <paramref name="viewerId"/> can see: not deleted, in a chat they are a member of
+    /// (not deleted), after their cleared history and not hidden for them. The attachment part of
+    /// <see cref="CanViewAsync"/>, for checking many media at once (saved GIFs).
+    /// </summary>
+    internal static IQueryable<Guid> AttachmentsVisibleTo(IAppDbContext db, Guid viewerId) =>
+        from attachment in db.MessageAttachments
+        join message in db.Messages on attachment.MessageId equals message.Id
+        join member in db.ChatMembers on message.ChatId equals member.ChatId
+        join chat in db.Chats on message.ChatId equals chat.Id
+        where message.DeletedAt == null
+              && member.UserId == viewerId
+              && message.Seq > member.ClearedUpToSeq
+              && !chat.IsDeleted
+              && !db.HiddenMessages.Any(h => h.MessageId == message.Id && h.UserId == viewerId)
+        select attachment.MediaId;
+
     private async Task<bool> IsAllowedAsync(Guid viewerId, Guid mediaId, Guid ownerId, CancellationToken cancellationToken)
     {
         // Most reads are chat attachments: attachment → message → the viewer's membership of that chat.
-        var inVisibleMessage = await (
-                from attachment in db.MessageAttachments
-                join message in db.Messages on attachment.MessageId equals message.Id
-                join member in db.ChatMembers on message.ChatId equals member.ChatId
-                join chat in db.Chats on message.ChatId equals chat.Id
-                where attachment.MediaId == mediaId
-                      && message.DeletedAt == null
-                      && member.UserId == viewerId
-                      && message.Seq > member.ClearedUpToSeq
-                      && !chat.IsDeleted
-                      && !db.HiddenMessages.Any(h => h.MessageId == message.Id && h.UserId == viewerId)
-                select attachment.Id)
-            .AnyAsync(cancellationToken);
-        if (inVisibleMessage) return true;
+        if (await AttachmentsVisibleTo(db, viewerId).AnyAsync(id => id == mediaId, cancellationToken)) return true;
 
         // A sticker of a pack that exists: anyone may look at the pack before installing it.
         if (await db.Stickers.AnyAsync(s => s.MediaId == mediaId, cancellationToken)) return true;

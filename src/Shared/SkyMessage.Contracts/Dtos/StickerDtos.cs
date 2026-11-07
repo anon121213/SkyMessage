@@ -61,6 +61,12 @@ public sealed record SavedGifDto
 {
     public MediaDto Media { get; init; } = new();
     public DateTimeOffset SavedAt { get; init; }
+    /// <summary>
+    /// I can no longer see it (its message was deleted for everyone, or it is in a chat I left or cleared, and it is not
+    /// my own upload): it cannot be sent again, only removed from the list. Decided when the state is built, so it can
+    /// change without a new revision (a reload with the same revision brings it).
+    /// </summary>
+    public bool Unavailable { get; init; }
 }
 
 /// <summary>
