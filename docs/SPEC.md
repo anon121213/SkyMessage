@@ -615,7 +615,8 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   / app start and on `IDeviceContactsWatcher.Changed` (5 s after a burst, and at least 30 min after the previous
   sync). The numbers go to find-by-phones only when their set changed (a hash per account) or a day has passed, and
   never during a pause after a 429 (the server's window plus 30 s; a sync is scheduled for its end, and no sync is
-  ever scheduled sooner than 5 s ahead). They go in key order, 1000 per request and at most 5 requests per sync (half
+  ever scheduled sooner than 5 s ahead). A sync the network or the server cut short (no connection, a timeout, 5xx)
+  tries again 15 min later, the wait doubling with each failure in a row up to a day (never before a pause ends). They go in key order, 1000 per request and at most 5 requests per sync (half
   the window, the import shares it); a look-up cut short by that or by a 429 keeps the people found so far and goes on
   with the other numbers after the pause, so a phone book of any size finishes. It adds the
   people found as synced contacts; synced contacts whose number left the phone book are removed (not when the phone

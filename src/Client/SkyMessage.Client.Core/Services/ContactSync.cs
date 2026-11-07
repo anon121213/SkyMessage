@@ -29,6 +29,8 @@ public sealed record ContactSyncResult(int Added, IReadOnlyList<PhoneBookMatch> 
 /// numbers changed, and otherwise once a day to find people who joined: in requests of <see cref="Limits.FindByPhonesMax"/>,
 /// at most <see cref="ContactSyncService.LookUpsPerRun"/> in one go. A look-up cut short by that or by a 429 keeps the
 /// people found so far and goes on with the other numbers once the server's window has passed — no sync runs sooner.
+/// A sync cut short by the network or the server (no connection, a timeout, 5xx) tries again
+/// <see cref="ContactSyncService.RetryAfter"/> later, the wait doubling with each failure in a row up to a day.
 /// A synced contact whose number left the phone book is removed, and one renamed there takes the new name (people the
 /// user added or renamed by hand are never touched). The first sync, and the first after turning sync on, adds people
 /// quietly; later ones announce, once, people whose number was already in the phone book at the previous look-up —
@@ -102,6 +104,12 @@ internal sealed class ContactSyncService : IContactSyncService, IAccountScoped
     /// window's quota (<see cref="Limits.PhoneLookupsPerWindow"/>): the import shares it.
     /// </summary>
     internal const int LookUpsPerRun = Limits.PhoneLookupsPerWindow / 2;
+    /// <summary>
+    /// A sync cut short by the network or the server (no connection, a timeout, 5xx) tries again this long after, the
+    /// wait doubling with every failure in a row up to <see cref="FullCheckEvery"/>: a scheduled check is not lost on
+    /// a flaky line.
+    /// </summary>
+    internal static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(15);
 
     private enum Reason
     {
@@ -132,6 +140,8 @@ internal sealed class ContactSyncService : IContactSyncService, IAccountScoped
     private DateTimeOffset? _lastSyncAt;
     private DateTimeOffset _laterAt;
     private CancellationTokenSource? _later;
+    /// <summary>Syncs in a row that the network or the server cut short (under <see cref="_gate"/>).</summary>
+    private int _failures;
 
     public ContactSyncService(
         IContactStore contacts,
@@ -195,49 +205,21 @@ internal sealed class ContactSyncService : IContactSyncService, IAccountScoped
     {
         if (!IsEnabled || _lifecycle.ActiveUserId is not { } account) return ContactSyncResult.None;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ContactSyncState? state = null;
         try
         {
-            if (!IsEnabled || _lifecycle.ActiveUserId != account) return ContactSyncResult.None;
-            // Never a permission dialog out of the blue: only a granted permission is used.
-            if (await _permissions.CheckAsync(AppPermission.Contacts).ConfigureAwait(false) != PermissionState.Granted)
-            {
-                SetBlocked(true);
-                return ContactSyncResult.None;
-            }
-            SetBlocked(false);
-            SetSyncing(true);
-
-            await _contacts.LoadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            var book = await _contacts.ReadPhoneBookAsync(cancellationToken).ConfigureAwait(false);
-            if (_lifecycle.ActiveUserId != account || !IsEnabled) return ContactSyncResult.None;
-            var now = _time.GetUtcNow();
-            lock (_lock) _lastSyncAt = now;
-
-            var state = await _local.GetAsync<ContactSyncState>(StateKey).ConfigureAwait(false) ?? new ContactSyncState();
-            if (reason == Reason.TurnedOn)
-            {
-                // Everyone again, quietly: they may have joined any time while sync was off.
-                state.Quiet = true;
-                state.Round = new ContactSyncRound();
-            }
-            // Number key → the entry (a number written twice counts once).
-            var numbers = new Dictionary<string, PhoneBookEntry>(StringComparer.Ordinal);
-            foreach (var entry in book) numbers.TryAdd(NumberKey(entry.Number), entry);
-            var numbersHash = SetHash(numbers.Keys);
-
-            var removed = await RemoveGoneAsync(state, numbers).ConfigureAwait(false);
-
-            var paused = state.PausedUntil is { } until && until > now ? until : (DateTimeOffset?)null;
-            var due = state.Round is not null || state.NumbersHash != numbersHash || state.LookedUpAt is not { } last || now - last >= FullCheckEvery;
-            if (due && paused is null) return await LookUpAsync(account, state, numbers, numbersHash, removed, now, cancellationToken).ConfigureAwait(false);
-
-            var renamedHere = await RenameFromPhoneBookAsync(state, numbers).ConfigureAwait(false);
-            await _local.SetAsync(StateKey, state).ConfigureAwait(false);
-            // Due but paused: the sync at the pause's end looks up. Else the daily check, which never comes before a
-            // pause ends (that sync covers whatever is due then).
-            if (due && paused is { } resume) Later(resume);
-            else if (state.LookedUpAt is { } at) Later(Latest(at + FullCheckEvery, paused ?? now));
-            return new ContactSyncResult(0, [], removed, renamedHere);
+            var result = await RunAsync(reason, account, s => state = s, cancellationToken).ConfigureAwait(false);
+            _failures = 0;
+            return result;
+        }
+        catch (ApiException ex) when (ex.IsTransient && _lifecycle.ActiveUserId == account && IsEnabled)
+        {
+            // No connection, a timeout or a server error: whatever started this sync (a start, a change, the daily
+            // check) gets another go later instead of waiting for the next start or phone-book change.
+            var retryAt = RetryAt(++_failures, state?.PausedUntil);
+            _logger.LogInformation("Contact sync did not finish ({Error}), trying again at {RetryAt}", ex.Code, retryAt);
+            Later(retryAt);
+            return ContactSyncResult.None;
         }
         catch (Exception ex) when (ex is ApiException or OperationCanceledException)
         {
@@ -249,6 +231,65 @@ internal sealed class ContactSyncService : IContactSyncService, IAccountScoped
             SetSyncing(false);
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// When a sync cut short <paramref name="failures"/> times in a row tries again: <see cref="RetryAfter"/>, doubling
+    /// with each failure up to <see cref="FullCheckEvery"/>, and never before a rate-limit pause ends.
+    /// </summary>
+    private DateTimeOffset RetryAt(int failures, DateTimeOffset? pausedUntil)
+    {
+        var wait = RetryAfter * Math.Pow(2, Math.Clamp(failures - 1, 0, 16));
+        if (wait > FullCheckEvery) wait = FullCheckEvery;
+        var at = _time.GetUtcNow() + wait;
+        return pausedUntil is { } until && until > at ? until : at;
+    }
+
+    /// <summary>One sync under <see cref="_gate"/>: <paramref name="loaded"/> receives the state once it is read.</summary>
+    private async Task<ContactSyncResult> RunAsync(Reason reason, Guid account, Action<ContactSyncState> loaded, CancellationToken cancellationToken)
+    {
+        if (!IsEnabled || _lifecycle.ActiveUserId != account) return ContactSyncResult.None;
+        // Never a permission dialog out of the blue: only a granted permission is used.
+        if (await _permissions.CheckAsync(AppPermission.Contacts).ConfigureAwait(false) != PermissionState.Granted)
+        {
+            SetBlocked(true);
+            return ContactSyncResult.None;
+        }
+        SetBlocked(false);
+        SetSyncing(true);
+
+        await _contacts.LoadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        var book = await _contacts.ReadPhoneBookAsync(cancellationToken).ConfigureAwait(false);
+        if (_lifecycle.ActiveUserId != account || !IsEnabled) return ContactSyncResult.None;
+        var now = _time.GetUtcNow();
+        lock (_lock) _lastSyncAt = now;
+
+        var state = await _local.GetAsync<ContactSyncState>(StateKey).ConfigureAwait(false) ?? new ContactSyncState();
+        loaded(state);
+        if (reason == Reason.TurnedOn)
+        {
+            // Everyone again, quietly: they may have joined any time while sync was off.
+            state.Quiet = true;
+            state.Round = new ContactSyncRound();
+        }
+        // Number key → the entry (a number written twice counts once).
+        var numbers = new Dictionary<string, PhoneBookEntry>(StringComparer.Ordinal);
+        foreach (var entry in book) numbers.TryAdd(NumberKey(entry.Number), entry);
+        var numbersHash = SetHash(numbers.Keys);
+
+        var removed = await RemoveGoneAsync(state, numbers).ConfigureAwait(false);
+
+        var paused = state.PausedUntil is { } until && until > now ? until : (DateTimeOffset?)null;
+        var due = state.Round is not null || state.NumbersHash != numbersHash || state.LookedUpAt is not { } last || now - last >= FullCheckEvery;
+        if (due && paused is null) return await LookUpAsync(account, state, numbers, numbersHash, removed, now, cancellationToken).ConfigureAwait(false);
+
+        var renamedHere = await RenameFromPhoneBookAsync(state, numbers).ConfigureAwait(false);
+        await _local.SetAsync(StateKey, state).ConfigureAwait(false);
+        // Due but paused: the sync at the pause's end looks up. Else the daily check, which never comes before a
+        // pause ends (that sync covers whatever is due then).
+        if (due && paused is { } resume) Later(resume);
+        else if (state.LookedUpAt is { } at) Later(Latest(at + FullCheckEvery, paused ?? now));
+        return new ContactSyncResult(0, [], removed, renamedHere);
     }
 
     /// <summary>

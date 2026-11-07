@@ -625,6 +625,56 @@ public sealed class ContactSyncServiceTests
     }
 
     [Fact]
+    public async Task A_check_the_network_cuts_short_tries_again_later_reading_the_phone_book_once_per_try()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        await h.SignInAsync();
+        await h.SettledAsync();
+        var daily = Start + ContactSyncService.FullCheckEvery;
+        h.Clock.Pending.ShouldBe([daily]);
+
+        // The daily check meets a dead line: it is not lost, it comes again a quarter of an hour later.
+        h.LookUpFails = () => new ApiException(0, ClientErrorCodes.Network);
+        h.Clock.Advance(ContactSyncService.FullCheckEvery);
+        await h.IdleAfterAsync(2, "the daily check fails");
+        var reads = h.Reads;
+        h.Clock.Pending.ShouldBe([daily + ContactSyncService.RetryAfter]);
+
+        // The server fails the retry: the next one waits twice as long.
+        h.LookUpFails = () => new ApiException(503, "server_error");
+        h.Clock.Advance(ContactSyncService.RetryAfter);
+        await h.IdleAfterAsync(3, "the first retry fails too");
+        h.Reads.ShouldBe(reads + 1, "one reading of the phone book per try");
+        var second = daily + 3 * ContactSyncService.RetryAfter;
+        h.Clock.Pending.ShouldBe([second]);
+
+        // The line is back: the retry looks up and finds who joined, and the daily rhythm goes on from there.
+        h.LookUpFails = () => null;
+        h.Save("Олег");
+        h.Clock.Advance(2 * ContactSyncService.RetryAfter);
+        await h.IdleAfterAsync(4, "the second retry gets through");
+        h.Reads.ShouldBe(reads + 2);
+        h.Book.Count.ShouldBe(2);
+        h.Clock.Pending.ShouldBe([second + ContactSyncService.FullCheckEvery]);
+    }
+
+    [Fact]
+    public async Task A_refused_request_is_not_retried()
+    {
+        var h = new Harness();
+        h.Save("Мама");
+        await h.SignInAsync();
+        await h.SettledAsync();
+
+        // A 4xx other than a rate limit will not get better by asking again: the next check is the daily one.
+        h.LookUpFails = () => new ApiException(400, ErrorCodes.Validation);
+        h.Save("Олег");
+        (await h.Service.SyncNowAsync()).ShouldBe(ContactSyncResult.None);
+        h.Clock.Pending.ShouldBe([Start + ContactSyncService.FullCheckEvery]);
+    }
+
+    [Fact]
     public async Task A_phone_book_too_big_for_one_window_is_looked_up_over_several_and_keeps_what_each_part_found()
     {
         var h = new Harness();
