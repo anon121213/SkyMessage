@@ -432,6 +432,23 @@ public sealed partial class ThemeCatalogTests
     }
 
     [Fact]
+    public void A_profile_color_carries_its_own_ink_whoever_looks()
+    {
+        // The main action is painted in the profile's color, so its ink is that color's (white: every profile color is a
+        // deep accent) — not the viewer's --sm-on-accent, which a very light accent of their own turns dark.
+        foreach (var key in SkyMessage.Contracts.ProfileStyle.Colors)
+        {
+            var accent = Catalog.FindAccent(key).ShouldNotBeNull(key);
+            var style = SkyMessage.Client.UI.Features.Profile.ProfileLook.TintStyle(key).ShouldNotBeNull(key);
+            style.ShouldContain($"--pc:{accent.Hex};");
+            style.ShouldContain("--pc-ink:#FFFFFF");
+            // The orb's icon (24 px on a 56 px fill) keeps the 3:1 of icons on every profile color.
+            ThemeCatalog.Contrast(Color.White, Color.Parse(accent.Hex)).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinMetaContrast, key);
+        }
+        SkyMessage.Client.UI.Features.Profile.ProfileLook.TintStyle(null).ShouldBeNull("the default look follows the viewer's accent");
+    }
+
+    [Fact]
     public void The_time_and_a_failed_status_on_any_bubble_keep_3_to_1()
     {
         var random = new Random(3141);

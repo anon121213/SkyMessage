@@ -38,9 +38,20 @@ public static class ProfileLook
     /// <summary>A person's name color in groups: their profile color when they picked one, else their avatar's.</summary>
     public static string NameColor(Guid userId, string? profileColor) => Accent(profileColor)?.Hex ?? AvatarPalette.Color(userId);
 
-    /// <summary>CSS custom properties that tint a profile (<c>--pc</c>, <c>--pc2</c>); null for the default look.</summary>
+    /// <summary>
+    /// CSS custom properties that tint a profile (<c>--pc</c>, <c>--pc2</c>, and <c>--pc-ink</c> for text on a fill of
+    /// <c>--pc</c>: the main action's orb); null for the default look. The ink is the profile color's own (every profile
+    /// color is a deep accent: white), never the viewer's <c>--sm-on-accent</c>, so a profile looks the same to everyone.
+    /// </summary>
     public static string? TintStyle(string? profileColor) =>
-        Accent(profileColor) is { } accent ? $"--pc:{accent.Hex};--pc2:{accent.Hex2}" : null;
+        Accent(profileColor) is { } accent ? $"--pc:{accent.Hex};--pc2:{accent.Hex2};--pc-ink:{InkOn(accent.Hex)}" : null;
+
+    /// <summary>Text on a fill of a profile color: <see cref="ThemeCatalog.OnAccentInk"/> of that color alone.</summary>
+    public static string InkOn(string hex)
+    {
+        var color = ThemeCatalog.Color.Parse(hex);
+        return ThemeCatalog.OnAccentInk(color, color).Hex;
+    }
 
     public static bool IsCover(string? key) => key is not null && Covers.ContainsKey(key);
 

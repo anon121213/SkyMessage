@@ -138,8 +138,9 @@ html[data-fx="lite"] .profile__action:not(.profile__action--primary) .profile__a
     height: 1.5rem;
 }
 
+/* Painted in the profile's color with that color's own ink (--pc-ink, ProfileLook), else in my accent with its ink. */
 .profile__action--primary .profile__action-orb {
-    color: var(--sm-on-accent);
+    color: var(--pc-ink, var(--sm-on-accent));
     background: var(--pc, var(--sm-accent));
     box-shadow: var(--sm-shadow-1);
 }

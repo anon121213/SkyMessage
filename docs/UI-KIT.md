@@ -434,7 +434,7 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
   the crop editor directly. Removing a profile or group photo asks with a checkbox "Удалить и прежние фото (N)"
   (`ISkyApi.DeleteAllMyAvatarsAsync` / `DeleteAllChatAvatarsAsync`) and says that earlier photos stay otherwise.
 * `ProfileLook` (static, Features/Profile): `Accent(key)`, `TintStyle(key)` (`--pc/--pc2` for a profile's ring and
-  main action), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
+  main action, `--pc-ink` the main action's own ink, so a profile looks the same to every viewer), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
   Birthdays: Core's `IBirthdayService.IsBirthdayToday(user)` puts 🎂 after a name (profile, chat header);
   `BirthdayCard` (Features/ChatList) is the chat list's card (faces, one line, one "Поздравить": with several people a
   `ContextMenu` chooser of their faces and full names); `ReminderTexts.BirthdayTitle(L, names)` words its title

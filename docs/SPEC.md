@@ -747,8 +747,9 @@ photos and a group's I may change: set as main, delete — and the **crop editor
 dimmed veil, drag/pinch/wheel/slider zoom 1–5×, quarter turns, flip; Done draws a 1024 px JPEG on the device).
 `AvatarFlows` turns gallery/camera picks (pre-shrunk to 2048 px by the device's compressor, HEIC included) and the
 emoji maker (`EmojiAvatarDialog`: an emoji on an `AvatarPalette` gradient) into prepared photos that
-`AvatarUploader` sends as they are. `ProfileLook` maps profile colors to the accent pairs (ring, main action, a soft
-cover wash, sender names in groups) and cover keys to calm skies for both themes. Settings › Profile edits links,
+`AvatarUploader` sends as they are. `ProfileLook` maps profile colors to the accent pairs (ring, main action with the
+color's own ink — the same for every viewer —, a soft cover wash, sender names in groups) and cover keys to calm skies
+for both themes. Settings › Profile edits links,
 color, cover (gradients or a photo) and the birthday (`BirthdayDialog`); Privacy has the Birthday level;
 Notifications the birthday reminders switch; the chat list shows `BirthdayCard` (faces, one line, one "Поздравить" —
 with several people it opens a chooser with their full names; second in the chat list's notice slot, which shows one
