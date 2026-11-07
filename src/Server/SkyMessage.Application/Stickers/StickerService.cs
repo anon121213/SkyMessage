@@ -18,6 +18,7 @@ internal sealed class StickerService(
     ICurrentUser currentUser,
     IClock clock,
     StickerStates states,
+    StickerRecentsPublisher recentsPublisher,
     ILogger<StickerService> logger) : IStickerService, IStickerRecents
 {
     public Task<StickerStateDto> GetStateAsync(CancellationToken cancellationToken = default) =>
@@ -183,7 +184,7 @@ internal sealed class StickerService(
                 }
                 await db.SaveChangesAsync(ct);
                 return !first;
-            }, CancellationToken.None);
+            }, CancellationToken.None, publishSoon: true);
         }
         catch (Exception ex)
         {
@@ -196,10 +197,10 @@ internal sealed class StickerService(
     /// <summary>
     /// Runs one change of <paramref name="userId"/>'s state: the packs it points into are shared first, then the user's row
     /// is locked. <paramref name="change"/> returns whether the state changed (only then the revision moves and the state
-    /// goes to the user's devices).
+    /// goes to the user's devices — at once, or with <paramref name="publishSoon"/> once for a burst of such changes).
     /// </summary>
     private async Task<StickerStateDto> MutateAsync(Guid userId, IReadOnlyCollection<Guid> packs,
-        Func<DateTimeOffset, CancellationToken, Task<bool>> change, CancellationToken ct)
+        Func<DateTimeOffset, CancellationToken, Task<bool>> change, CancellationToken ct, bool publishSoon = false)
     {
         var now = clock.UtcNow;
         StickerStateDto state;
@@ -221,7 +222,8 @@ internal sealed class StickerService(
         }
         db.ChangeTracker.Clear();
 
-        if (changed) await states.PublishAsync([userId], userId, state);
+        if (changed && publishSoon) recentsPublisher.Schedule(userId);
+        else if (changed) await states.PublishAsync([userId], userId, state);
         return state;
     }
 }

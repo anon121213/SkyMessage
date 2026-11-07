@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace SkyMessage.Application.Stickers;
 
@@ -8,6 +9,8 @@ public static class StickersFeature
     public static IServiceCollection AddStickersFeature(this IServiceCollection services)
     {
         // The sticker images (IStickerMediaFactory) are made in Infrastructure (SkiaSharp, chunk storage).
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<StickerRecentsPublisher>();
         services.AddScoped<StickerStates>();
         services.AddScoped<StickerService>();
         services.AddScoped<IStickerService>(sp => sp.GetRequiredService<StickerService>());
