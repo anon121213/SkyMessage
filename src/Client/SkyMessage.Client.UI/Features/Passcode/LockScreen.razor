@@ -1,8 +1,8 @@
 @* The app passcode's lock screen (docs/DESIGN.md "Lock screen"): rendered once by MainLayout and shown while
-   IAppLockService.IsLocked, over every screen, dialog and toast of the shell. The calm sky, the logo mark, "Enter the
-   passcode", the dots and our glass keypad (PasscodePad); the fingerprint key when the user allowed it (offered by
-   itself once per lock while the app is in front, not during a call). Wrong codes shake the dots; after five a pause
-   counts down.
+   IAppLockService.IsLocked, over every screen, dialog and toast of the shell. The calm sky, the logo mark (shown
+   finished, never Animated: this screen comes back on every lock), "Enter the passcode", the dots and our glass keypad
+   (PasscodePad); the fingerprint key when the user allowed it (offered by itself once per lock while the app is in
+   front, not during a call). Wrong codes shake the dots; after five a pause counts down.
    "Forgot the passcode?" signs out of this device after a confirmation shown right here (dialogs live under the lock);
    Back (Android) and Escape close that question first (LockUi). An active call stays reachable: "Back to the call"
    opens the call screen, which shows above the lock (an incoming call opens it by itself). It appears at once, opaque
@@ -38,7 +38,7 @@
                 }
 
                 <header class="lock__head">
-                    <Logo Size="@(Layout.Height is > 0 and < 620 ? 44 : 60)" Mark="true" Animated="true" Class="lock__logo" />
+                    <Logo Size="@(Layout.Height is > 0 and < 620 ? 26 : 35)" Mark="true" Class="lock__logo" />
                     @if (Known)
                     {
                         <h1 id="lock-title" class="lock__title">@L["passcode.lock.title"]</h1>

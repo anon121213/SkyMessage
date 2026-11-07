@@ -190,13 +190,14 @@ construction, the palette and the export script: `docs/brand/README.md`.
   aside for the welcome lockup; on wide screens it stays beside the column. Welcome shows the lockup (mark + wordmark in
   a solid colour) as its title, sign in / new account the app-icon tile; the first signed-out screen of an app run
   opens the logo's horizon (the intro), later ones show it finished; forms on a glass card, staggered entrance.
-- **Lock screen** (app passcode): the theme's calm sky (no comet) over everything, the logo mark (60px, no tile), the
-  title in the display font, one hint line (rose for mistakes and the pause countdown), dots that fill with the accent
-  gradient, and a keypad of round translucent glass keys (card color + glass rim, no backdrop blur on twelve keys) with
-  Montserrat digits — no letters, no system keyboard; erase and the fingerprint are plain glyph keys. "Forgot the
-  passcode?" is a quiet accent link; its sign-out confirmation is a frosted card on the same screen. A live call shows
-  a mint capsule "Back to the call" at the top. Settings flows reuse the keypad in a sheet (phones) or a dialog with an
-  opaque frame (`sm-dialog--solid`: the button it opens over must not tint the glass behind the dots).
+- **Lock screen** (app passcode): the theme's calm sky (no comet) over everything, the logo mark (35px, 26px on short
+  phones; shown finished, no motion), the title in the display font, one hint line (rose for mistakes and the pause
+  countdown), dots that fill with the accent gradient, and a keypad of round translucent glass keys (card color + glass
+  rim, no backdrop blur on twelve keys) with Montserrat digits — no letters, no system keyboard; erase and the
+  fingerprint are plain glyph keys. "Forgot the passcode?" is a quiet accent link; its sign-out confirmation is a
+  frosted card on the same screen. A live call shows a mint capsule "Back to the call" at the top. Settings flows reuse
+  the keypad in a sheet (phones) or a dialog with an opaque frame (`sm-dialog--solid`: the button it opens over must
+  not tint the glass behind the dots).
 - **Calls**: a calm deep night sky with soft low-saturation light, avatar squircle 132px with subtle pulsing rings
   (`sm-ring`), glass control circles 64px, rose gradient hang-up. Calls list rows like chat rows; missed = rose.
 - **Media viewer**: night background, glass top/bottom bars.

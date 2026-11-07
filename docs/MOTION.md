@@ -121,7 +121,8 @@ Coexistence:
 ## 3. The passcode lock screen
 
 - It appears at once, opaque (fading in would show the chats for a moment), and leaves with a 180 ms fade
-  (`sm-fade-out`, accelerating) once unlocked. "Back to the call" drops in (`sm-drop-in`).
+  (`sm-fade-out`, accelerating) once unlocked. "Back to the call" drops in (`sm-drop-in`). The logo mark is shown
+  finished (no horizon opening: this screen comes back on every lock).
 - A dot fills with a 140 ms spring (scale 0.55 → 1); keys press down to 0.9 with `--sm-spring` (transform only, no
   ripple, no glow).
 - A wrong code turns the dots rose and shakes their row once (`sm-shake`, 360 ms) with a Warning haptic: an outcome,
