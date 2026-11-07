@@ -1,10 +1,15 @@
 // Sticker and GIF panels: one delegated long-press for every cell (a panel holds hundreds of them, so no per-cell
 // binding). A cell is [data-hold="<key>"]. Holding it ~450 ms (moving less than 10 px) or right-clicking it reports
-// OnHold(key) and swallows the click that follows, so a hold never also sends. Scrolling cancels a hold. The pack strip's
-// wheel scrolls it sideways.
+// OnHold(key) once and swallows the click that ends the hold wherever it lands (the preview that just opened under the
+// finger must not get it). Scrolling cancels a hold. The pack strip's wheel scrolls it sideways.
 
 const HOLD_MS = 450;
 const SLOP_PX = 10;
+// Android fires contextmenu for the same touch at its own long-press timeout (400–500 ms, longer with the accessibility
+// "touch & hold delay"): within this long after our hold fired (or while the finger is still down) it is that hold.
+const NATIVE_GRACE_MS = 900;
+// The click that ends a hold comes with the release or soon after it.
+const SWALLOW_MS = 600;
 
 function noop() { }
 
@@ -17,77 +22,132 @@ function safeInvoke(ref, method, ...args) {
   }
 }
 
+/**
+ * The hold of attachHold without the DOM (tools/ui-check/sticker-hold.mjs drives it with a fake clock): pointer events
+ * call down(key, x, y, id) / move(x, y, id) / up() / cancel(), a contextmenu on a cell calls context(key), and every
+ * click asks click() whether to swallow it. `clock` = { now(), set(fn, ms) → id, clear(id) }; `fire(key)` reports a hold.
+ * One touch fires at most once: our timer or Android's own long-press (contextmenu), whichever comes first.
+ */
+export function holdGesture(clock, fire) {
+  let timer = null;
+  let start = null;
+  let firedAt = 0;
+  let releasedAt = 0;
+  let held = false;
+
+  const stopTimer = () => {
+    if (timer !== null) clock.clear(timer);
+    timer = null;
+  };
+  const doFire = (key) => {
+    stopTimer();
+    start = null;
+    firedAt = clock.now();
+    releasedAt = held ? 0 : firedAt;
+    fire(key);
+  };
+
+  return {
+    down(key, x, y, id) {
+      stopTimer();
+      held = true;
+      firedAt = 0;
+      releasedAt = 0;
+      start = { key, x, y, id };
+      timer = clock.set(() => {
+        timer = null;
+        if (start) doFire(start.key);
+      }, HOLD_MS);
+    },
+    move(x, y, id) {
+      if (timer === null || !start || id !== start.id) return;
+      if (Math.abs(x - start.x) > SLOP_PX || Math.abs(y - start.y) > SLOP_PX) {
+        stopTimer();
+        start = null;
+      }
+    },
+    up() {
+      if (held && firedAt && !releasedAt) releasedAt = clock.now();
+      held = false;
+      stopTimer();
+      start = null;
+    },
+    cancel() {
+      held = false;
+      stopTimer();
+      start = null;
+    },
+    context(key) {
+      // The hold already fired for this touch (Android's long-press after our timer): the same gesture.
+      if (firedAt && (held || clock.now() - firedAt < NATIVE_GRACE_MS)) return;
+      // Android's long-press came first: it is this touch's hold, fired now (once).
+      if (timer !== null && start) {
+        doFire(start.key);
+        return;
+      }
+      // A right-click.
+      doFire(key);
+    },
+    click() {
+      if (!firedAt) return false;
+      const swallow = held || !releasedAt || clock.now() - releasedAt <= SWALLOW_MS;
+      firedAt = 0;
+      return swallow;
+    },
+  };
+}
+
 /** Long-press / right-click on [data-hold] cells inside `root` → ref.OnHold(key). */
 export function attachHold(root, ref) {
   if (!root) return { dispose: noop };
-  let timer = 0;
-  let start = null;
-  let swallowUntil = 0;
-
+  const clock = {
+    now: () => performance.now(),
+    set: (fn, ms) => setTimeout(fn, ms),
+    clear: (id) => clearTimeout(id),
+  };
+  const gesture = holdGesture(clock, (key) => safeInvoke(ref, 'OnHold', key));
   const cellOf = (target) => (target && target.closest ? target.closest('[data-hold]') : null);
 
-  const cancel = () => {
-    if (timer) clearTimeout(timer);
-    timer = 0;
-    start = null;
-  };
-
   const onDown = (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const cell = cellOf(e.target);
     if (!cell || !root.contains(cell)) return;
-    cancel();
-    start = { x: e.clientX, y: e.clientY, cell, id: e.pointerId };
-    timer = setTimeout(() => {
-      timer = 0;
-      const held = start;
-      start = null;
-      if (!held || !held.cell.isConnected) return;
-      swallowUntil = performance.now() + 700;
-      safeInvoke(ref, 'OnHold', held.cell.getAttribute('data-hold'));
-    }, HOLD_MS);
+    gesture.down(cell.getAttribute('data-hold'), e.clientX, e.clientY, e.pointerId);
   };
-
-  const onMove = (e) => {
-    if (!start || e.pointerId !== start.id) return;
-    if (Math.abs(e.clientX - start.x) > SLOP_PX || Math.abs(e.clientY - start.y) > SLOP_PX) cancel();
-  };
-
-  const onUp = () => { if (timer) cancel(); };
-
+  const onMove = (e) => gesture.move(e.clientX, e.clientY, e.pointerId);
+  const onUp = () => gesture.up();
+  const onCancel = () => gesture.cancel();
+  // Wherever the click lands: the scrim of the dialog the hold just opened, too.
   const onClick = (e) => {
-    if (performance.now() < swallowUntil && cellOf(e.target)) {
-      e.preventDefault();
-      e.stopPropagation();
-      swallowUntil = 0;
-    }
+    if (!gesture.click()) return;
+    e.preventDefault();
+    e.stopPropagation();
   };
-
   const onContext = (e) => {
     const cell = cellOf(e.target);
     if (!cell || !root.contains(cell)) return;
     e.preventDefault();
-    cancel();
-    safeInvoke(ref, 'OnHold', cell.getAttribute('data-hold'));
+    gesture.context(cell.getAttribute('data-hold'));
   };
 
   root.addEventListener('pointerdown', onDown, { passive: true });
-  root.addEventListener('pointermove', onMove, { passive: true });
-  root.addEventListener('pointerup', onUp, { passive: true });
-  root.addEventListener('pointercancel', cancel, { passive: true });
-  root.addEventListener('scroll', cancel, { passive: true, capture: true });
-  root.addEventListener('click', onClick, true);
+  // The finger may leave the cell (or a dialog may open under it) before it lifts.
+  window.addEventListener('pointermove', onMove, { passive: true });
+  window.addEventListener('pointerup', onUp, { passive: true, capture: true });
+  window.addEventListener('pointercancel', onCancel, { passive: true, capture: true });
+  root.addEventListener('scroll', onCancel, { passive: true, capture: true });
+  window.addEventListener('click', onClick, true);
   root.addEventListener('contextmenu', onContext);
 
   return {
     dispose() {
-      cancel();
+      gesture.cancel();
       root.removeEventListener('pointerdown', onDown);
-      root.removeEventListener('pointermove', onMove);
-      root.removeEventListener('pointerup', onUp);
-      root.removeEventListener('pointercancel', cancel);
-      root.removeEventListener('scroll', cancel, true);
-      root.removeEventListener('click', onClick, true);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      root.removeEventListener('scroll', onCancel, true);
+      window.removeEventListener('click', onClick, true);
       root.removeEventListener('contextmenu', onContext);
     }
   };
