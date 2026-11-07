@@ -489,8 +489,23 @@ If you also implement `IAsyncDisposable`, call `Dispose()` at the end of `Dispos
 ```razor
 <Icon Name="@IconNames.Search" />                 @* 20 px *@
 <Icon Name="@IconNames.Mic" Size="24" StrokeWidth="2.4" Title="Микрофон" Spin="false" />
-<Logo Size="64" />   <Logo Size="40" Mark="true" />   @* tile / cloud only *@
+<Logo Size="64" />                          @* the tile: the app icon on its squircle, Size = the side *@
+<Logo Size="40" Mark="true" />              @* the mark alone in the theme's brand colours, Size = its height *@
+<Logo Size="52" Wordmark="true" />          @* the lockup: mark + "SkyMessage" on the horizon, Size = its height *@
+<Logo Size="52" Wordmark="true" Animated="true" /> @* any variant: the horizon opens once when it appears (About) *@
 ```
+
+The logo is «Горизонт» (docs/brand, DESIGN.md §5): the tile keeps white and peach on the Night-indigo ground in both
+themes; `Mark` and `Wordmark` follow the theme (`--sm-brand-sky/-dawn/-ink`). The lockup's width follows its height
+(≈ 5.77 × Size) and shrinks to a narrow parent (`max-width: 100%`); use it wherever the name stands next to the logo
+(boot splash, welcome, About, the Settings footer) instead of typing "SkyMessage" beside a tile. Its letters stand on
+the horizon, 38/177.33 of its height above its bottom edge — to put text on the same baseline inline, give the logo
+`vertical-align: calc(-<Size> * 38 / 177.33)` (SettingsMenu's footer). `Mark` and `Wordmark` measure the symbol itself:
+Size is the mark's height. Before «Горизонт» `Mark` drew a padded 456-unit box (its symbol about 0.5–0.66 of Size), so a
+`Mark` size carried over from older code must shrink to about 0.58× to keep its look (60 → 35, 44 → 26).
+`Animated` plays once and never loops; only About opens with it — never the boot splash, the signed-out screens (they
+follow the splash's finished mark: AuthHeader's `Intro` only lets the finished logo settle in) or a screen that comes
+back often, such as the lock screen (MOTION.md, "The logo"). `Class` goes on the root `<svg>`.
 
 Icons are Lucide (ISC, `lucide-static` 1.57.0, license in `wwwroot/licenses/lucide.txt`), embedded as
 `IconNames.*` constants. Available: ALargeSmall Apple Archive ArchiveRestore ArrowDown ArrowDownToLine ArrowLeft

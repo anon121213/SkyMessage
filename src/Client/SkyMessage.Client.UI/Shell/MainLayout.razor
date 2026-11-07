@@ -22,7 +22,7 @@
         <div @ref="_phone" class="shell__phone" inert="@Locked">
             <div class="shell__root @(TabBarShown ? "shell__root--tabbar" : null) @(BaseCovered ? "is-covered" : null) @_rootAnim" inert="@BaseCovered"
                  data-swipe-under="@(UnderIsRoot ? "" : null)">
-                <SkyBackdrop Sparkles="false" Comet="false" Class="shell__sky" />
+                <SkyBackdrop Comet="false" Class="shell__sky" />
                 <div class="shell__base">
                     <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Base, BaseCovered || Locked))">
                         <ErrorBoundary @ref="_baseBoundary">
@@ -61,7 +61,7 @@
     else
     {
         <div class="shell__wide @(ShowSidebar ? "shell__wide--sidebar" : null)" inert="@Locked">
-            <SkyBackdrop Sparkles="false" Comet="false" Class="shell__sky" />
+            <SkyBackdrop Comet="false" Class="shell__sky" />
             <IconRail />
             @if (ShowSidebar)
             {

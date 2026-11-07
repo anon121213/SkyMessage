@@ -21,11 +21,22 @@
 
 .auth-head__logo {
     display: flex;
-    margin: 18px 0 22px;
+    justify-content: center;
+    margin: 4px 0 16px;
 }
 
-.auth-head--compact .auth-head__logo {
-    margin: 4px 0 16px;
+/* ---------- Welcome: the lockup is the title (it shrinks to fit narrow screens) ---------- */
+
+.auth-head__brand {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 30px 0 6px;
+}
+
+.auth-head__brand .auth-head__logo {
+    width: 100%;
+    margin: 0;
 }
 
 /* ---------- Text: solid colors, the display font carries the brand ---------- */
@@ -39,11 +50,6 @@
     color: var(--sm-text);
 }
 
-.auth-head__title--wordmark {
-    font-size: 2.375rem;
-    letter-spacing: -0.03em;
-}
-
 .auth-head__subtitle {
     max-width: 340px;
     margin-top: 10px;
@@ -54,6 +60,7 @@
 }
 
 .auth-head--hero .auth-head__subtitle {
+    margin-top: 14px;
     font-size: 1.0625rem;
 }
 

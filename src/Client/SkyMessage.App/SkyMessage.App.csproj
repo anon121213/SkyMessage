@@ -62,9 +62,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Our own artwork: soft violet to sky-blue gradient cloud, no speech-bubble tail. -->
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#3D2BD9" />
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1245" BaseSize="128,128" />
+    <!--
+      Our own artwork, «Горизонт» (docs/brand, files written by tools/brand/export.py): an outgoing message bubble cut
+      by the horizon, white sky over a peach dawn band, on the Night-indigo ground.
+      Android: the adaptive icon from appicon.svg / appiconfg.svg (docs/brand/bg.svg / fg.svg); the themed (monochrome)
+      layer is Platforms/Android/Resources/drawable/appicon_monochrome.xml (docs/brand/mono.svg).
+      iOS / Mac Catalyst: one opaque full-bleed layer, Apple/appicon.svg (the launcher view, as apple-touch-icon.png):
+      the adaptive layers would leave the mark at 39 % of the whole 108 dp canvas instead of 58 %. Same file name, so
+      the asset catalog stays "appicon" (Info.plist XSAppIconAssets).
+      Splash: the same mark on the ground color. Android 8-11 draw it at BaseSize (mark about 112 dp); Android 12+ fit
+      MAUI's 108 dp splash image to the 192 dp icon circle whatever the BaseSize (mark about 75 dp, never clipped).
+    -->
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#2A1F86"
+              Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'" />
+    <MauiIcon Include="Resources\AppIcon\Apple\appicon.svg" Color="#2A1F86"
+              Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'" />
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#2A1F86" BaseSize="288,288" />
     <!--
       Our synthesized sound packs, rendered by tools/tones. iOS/Mac: the IMA4 CAF copies at the bundle root,
       used as notification sounds (iOS plays no Ogg there); in-app playback uses Client.UI's wwwroot/sounds.

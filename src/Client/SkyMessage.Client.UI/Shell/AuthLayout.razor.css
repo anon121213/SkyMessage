@@ -9,7 +9,7 @@
     color: var(--sm-text);
 }
 
-/* ---------- Decoration: flat shapes only ---------- */
+/* ---------- Decoration: flat shapes only, never behind the header ---------- */
 
 .auth-deco {
     position: absolute;
@@ -19,19 +19,7 @@
     pointer-events: none;
 }
 
-/* By day: a plain warm disc low in the corner, no glow. */
-.auth-deco__sun {
-    position: absolute;
-    top: calc(28px + var(--sm-inset-top));
-    right: -34px;
-    width: 112px;
-    height: 112px;
-    border-radius: 50%;
-    background: #FFDDAA;
-    opacity: 0.85;
-}
-
-/* By night: a pale crescent instead. */
+/* By night: a pale crescent in the corner (no sun by day: the logo carries the dawn). */
 .auth-deco__moon {
     position: absolute;
     top: calc(30px + var(--sm-inset-top));
@@ -41,32 +29,26 @@
     display: none;
     fill: #EDE6FF;
     opacity: 0.92;
-}
-
-html[data-theme="dark"] .auth-deco__sun {
-    display: none;
+    transition: opacity var(--sm-dur-slow) var(--sm-ease);
 }
 
 html[data-theme="dark"] .auth-deco__moon {
     display: block;
 }
 
-/* Three flat clouds at the edges, drifting a few pixels (transform only). */
+/* Three flat capsule clouds at the edges, drifting a few pixels (transform only). */
 .auth-deco__cloud {
     position: absolute;
     overflow: visible;
+    opacity: 0.78;
     animation: auth-cloud 16s ease-in-out infinite;
 }
 
-.auth-deco__puff {
+.auth-deco__shape {
     fill: #FFFFFF;
 }
 
-.auth-deco__cloud {
-    opacity: 0.78;
-}
-
-html[data-theme="dark"] .auth-deco__puff {
+html[data-theme="dark"] .auth-deco__shape {
     fill: #B6A6FF;
 }
 
@@ -74,14 +56,18 @@ html[data-theme="dark"] .auth-deco__cloud {
     opacity: 0.08;
 }
 
+/* Phones: the column fills the width, so the header band (the lockup or the tile and title) stays empty: the clouds
+   live in the lower half, and the moon gives way to the welcome screen's lockup (its white bubble is moon enough). */
 .auth-deco__cloud--1 {
-    top: calc(120px + var(--sm-inset-top));
-    left: -70px;
-    width: 172px;
+    bottom: calc(9% + var(--sm-inset-bottom));
+    right: -48px;
+    width: 132px;
+    animation-duration: 21s;
+    animation-delay: -4s;
 }
 
 .auth-deco__cloud--2 {
-    top: 47%;
+    top: 54%;
     right: -80px;
     width: 156px;
     animation-duration: 19s;
@@ -89,11 +75,17 @@ html[data-theme="dark"] .auth-deco__cloud {
 }
 
 .auth-deco__cloud--3 {
-    bottom: 5%;
+    bottom: calc(4% + var(--sm-inset-bottom));
     left: -92px;
     width: 220px;
     animation-duration: 22s;
     animation-delay: -11s;
+}
+
+@media (max-width: 767.98px) {
+    .auth-shell:has(.auth-head--hero) .auth-deco__moon {
+        opacity: 0;
+    }
 }
 
 @keyframes auth-cloud {
@@ -141,35 +133,33 @@ html[data-reduce-motion="true"] .auth-deco * {
         max-width: 440px;
     }
 
-    .auth-deco__sun {
-        top: 64px;
-        right: 9%;
-        width: 150px;
-        height: 150px;
-    }
-
+    /* Wide screens: everything sits beside the column (440px, centered), whatever the width: an edge is never closer
+       than 20px to it, and on narrower screens a shape slides off the side instead. */
     .auth-deco__moon {
         top: 64px;
-        right: 10%;
+        right: auto;
+        left: max(calc(50% + 250px), calc(90% - 92px));
         width: 92px;
         height: 92px;
     }
 
     .auth-deco__cloud--1 {
         top: 15%;
-        left: 7%;
+        bottom: auto;
+        right: auto;
+        left: min(7%, calc(50% - 490px));
         width: 250px;
     }
 
     .auth-deco__cloud--2 {
         top: 54%;
-        right: 7%;
+        right: min(7%, calc(50% - 450px));
         width: 210px;
     }
 
     .auth-deco__cloud--3 {
         bottom: 6%;
-        left: 15%;
+        left: min(15%, calc(50% - 530px));
         width: 290px;
     }
 }

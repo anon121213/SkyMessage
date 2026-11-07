@@ -1,0 +1,61 @@
+{
+  "concept": "Горизонт (bubble-horizon), v2",
+  "colors": [
+    {
+      "name": "Night indigo",
+      "hex": "#2A1F86",
+      "gradientTo": "#4A35C8",
+      "role": "Brand background: the icon tile is one vertical two-stop gradient #2A1F86 → #4A35C8. Also the mark's sky piece and the wordmark on light surfaces.",
+      "roleRu": "Фон бренда: плитка иконки — один вертикальный градиент #2A1F86 → #4A35C8. На светлом — небо знака и логотип.",
+      "contrast": {
+        "white_on_it": 12.82,
+        "white_on_gradient_bottom": 7.97,
+        "on_light_bg_F6F3FF": 11.71
+      }
+    },
+    {
+      "name": "Sky white",
+      "hex": "#FFFFFF",
+      "role": "The bubble above the horizon on the icon and on dark surfaces; wordmark on dark.",
+      "roleRu": "Пузырь над горизонтом на иконке и на тёмном; логотип на тёмном.",
+      "contrast": {
+        "on_night": 12.82,
+        "on_dusk": 7.97,
+        "on_dark_bg_0D0B1E": 19.38
+      }
+    },
+    {
+      "name": "Dawn peach",
+      "hex": "#FFAE86",
+      "onLightVariant": "#D9622F",
+      "role": "The dawn band under the horizon: the brand's one warm note. #FFAE86 on the icon and dark surfaces, #D9622F on light surfaces (3.34:1 on #F6F3FF, about 2.9:1 on the light sky behind the lockups; a logo has no contrast requirement).",
+      "roleRu": "Полоса рассвета под горизонтом — единственный тёплый цвет бренда. #FFAE86 на иконке и на тёмном, #D9622F на светлом (3,34:1 на #F6F3FF, около 2,9:1 на светлом небе за логотипом; у логотипа нет требований к контрасту).",
+      "contrast": {
+        "on_night": 7.11,
+        "on_dusk": 4.42,
+        "on_dark_bg_0D0B1E": 10.75,
+        "deep_on_light_bg_F6F3FF": 3.34,
+        "deep_on_white": 3.66,
+        "deep_on_light_sky_ECE6FF": 3.02,
+        "deep_on_lockup_sky_E7DEFF": 2.84
+      }
+    },
+    {
+      "name": "Accent violet",
+      "hex": "#6A4BFF",
+      "uiAccent": true,
+      "role": "UI accent (unchanged from the app): primary buttons, outgoing bubbles, links, active pills. The light sibling of Night indigo (same hue family); white text passes AA.",
+      "roleRu": "Акцент интерфейса (как в приложении): основные кнопки, исходящие пузыри, ссылки, активные элементы. Светлый родственник Night indigo; белый текст проходит AA.",
+      "contrast": {
+        "white_text_on_it": 5.17,
+        "on_light_bg_F6F3FF": 4.72
+      }
+    }
+  ],
+  "rules": [
+    "Flat colour only. The single two-stop gradient lives in the icon background.",
+    "Sky above the horizon, dawn below it; never swap them. Sky: white on dark, Night indigo on light. Dawn: #FFAE86 on dark, #D9622F on light.",
+    "The horizon gap is always negative space (the surface shows through), 1m thick; the dawn band is 2m.",
+    "The wordmark is one solid colour: Night indigo on light, white on dark; its baseline sits on the horizon."
+  ]
+}

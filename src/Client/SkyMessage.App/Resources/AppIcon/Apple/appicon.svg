@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SkyMessage app icon for iOS and Mac Catalyst «Горизонт»: the launcher view (units 76..380 of the
+     108 dp canvas, docs/brand/bg.svg + fg.svg) full bleed, one opaque layer: the same drawing as the web
+     apple-touch-icon.png, the mark at 58 % of the icon. The system draws the corners. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="304" height="304" viewBox="76 76 304 304">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A1F86"/>
+      <stop offset="1" stop-color="#4A35C8"/>
+    </linearGradient>
+  </defs>
+  <rect x="76" y="76" width="304" height="304" fill="url(#ground)"/>
+  <path fill="#FFFFFF" d="M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z"/>
+  <path fill="#FFAE86" d="M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z"/>
+</svg>

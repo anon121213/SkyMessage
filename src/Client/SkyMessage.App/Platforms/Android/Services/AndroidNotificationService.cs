@@ -25,7 +25,6 @@ public sealed class AndroidNotificationService : ILocalNotificationService
     private const int MaxLinesPerChat = 6;
     /// <summary>A post this recent may not be listed by the system yet (posting is asynchronous there).</summary>
     private const long RecentPostMs = 5_000;
-    private static readonly int AccentColor = unchecked((int)0xFF6A4BFF);
 
     private readonly NotificationChannels _channels;
     private readonly NativeStrings _strings;
@@ -217,7 +216,7 @@ public sealed class AndroidNotificationService : ILocalNotificationService
 
             var builder = new NotificationCompat.Builder(Context, channel)
                 .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-                .SetColor(AccentColor)!
+                .SetColor(NotificationChannels.AccentColor)!
                 .SetContentTitle(callerName)!
                 .SetContentText(_strings[call.IsVideo ? "platform.call.incomingVideo" : "platform.call.incoming"])!
                 .SetCategory(NotificationCompat.CategoryCall)!
@@ -336,7 +335,7 @@ public sealed class AndroidNotificationService : ILocalNotificationService
     {
         var builder = new NotificationCompat.Builder(Context, channel)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-            .SetColor(AccentColor)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle(title)!
             .SetContentText(lines.Count > 0 ? lines[^1] : "")!
             .SetContentIntent(content)!
@@ -381,7 +380,7 @@ public sealed class AndroidNotificationService : ILocalNotificationService
         var content = AppIntents.ActivityPendingIntent(Context, AppIntents.MessagesSummaryNotificationId, AppIntents.ActivityIntent(Context, null));
         var summary = new NotificationCompat.Builder(Context, channel)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-            .SetColor(AccentColor)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle(_strings["platform.notification.newMessage"])!
             .SetContentIntent(content)!
             .SetStyle(style)!
@@ -397,7 +396,7 @@ public sealed class AndroidNotificationService : ILocalNotificationService
     private Notification PublicVersion(string channel) =>
         new NotificationCompat.Builder(Context, channel)
             .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-            .SetColor(AccentColor)!
+            .SetColor(NotificationChannels.AccentColor)!
             .SetContentTitle("SkyMessage")!
             .SetContentText(_strings["platform.notification.newMessage"])!
             .Build()!;

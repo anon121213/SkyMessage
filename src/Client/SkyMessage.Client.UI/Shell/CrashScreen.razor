@@ -1,11 +1,11 @@
-@* Friendly error screen for an ErrorBoundary: a cloud with a band-aid by the sun, a calm explanation and the way
-   back. Full screen (the app's last resort) it brings its own sky; inside a pane it sits on the pane's. *@
+@* Friendly error screen for an ErrorBoundary: a cloud with a band-aid and a little rain, a calm explanation and the
+   way back. Full screen (the app's last resort) it brings its own sky; inside a pane it sits on the pane's. *@
 @inject NavigationService Nav
 
 <div class="crash @(Compact ? "crash--compact" : null)">
     @if (!Compact)
     {
-        <SkyBackdrop Sparkles="false" Comet="false" />
+        <SkyBackdrop Comet="false" />
     }
     <div class="crash__content">
         <EmptyState Title="@L["crash.title"]" Text="@L["crash.text"]">

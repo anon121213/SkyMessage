@@ -7,18 +7,12 @@
     text-align: center;
 }
 
-.about-hero__logo {
+/* The lockup (it shrinks to fit a narrow column). */
+.about-hero__brand {
     display: flex;
-    margin-bottom: 12px;
-}
-
-.about-hero__name {
-    font-family: var(--sm-font-display);
-    font-size: 1.875rem;
-    font-weight: 700;
-    line-height: 1.15;
-    letter-spacing: -0.03em;
-    color: var(--sm-text);
+    justify-content: center;
+    width: 100%;
+    margin: 10px 0 12px;
 }
 
 /* The version as a small glass capsule. */

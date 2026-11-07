@@ -1,7 +1,10 @@
 @* Logo, title and subtitle of a signed-out screen, with an optional glass back button (pinned to the top of the page:
-   the page is .auth-page, see LoginPage.razor.css). The welcome screen (not Compact) gets the large logo and the
-   "SkyMessage" wordmark; sign in / new account a smaller logo and a plain title. With Intro (first signed-out screen of
-   the app run) the logo settles in gently. *@
+   the page is .auth-page, see LoginPage.razor.css). The welcome screen (not Compact) shows the lockup as its title: the
+   «Горизонт» mark and the "SkyMessage" wordmark standing on its horizon (Title stays the heading's text for screen
+   readers); sign in / new account the app icon tile and a plain title. The logo is always finished, never Animated:
+   these screens follow the splash's finished mark, and a bubble shown whole before its horizon opens would read as
+   the mark closing between two screens. With Intro (the first signed-out screen of the app run, AuthIntro) it settles
+   in, once; every later signed-out screen shows it in place. *@
 @inject NavigationService Nav
 
 @if (BackTo is not null)
@@ -11,10 +14,22 @@
     </div>
 }
 <header class="auth-head @(Compact ? "auth-head--compact" : "auth-head--hero") @(Intro ? "auth-head--intro" : null)">
-    <div class="auth-head__logo" aria-hidden="true">
-        <Logo Size="@(Compact ? 72 : 112)" Animated="true" Class="auth-head__mark" />
-    </div>
-    <h1 class="auth-head__title @(Compact ? null : "auth-head__title--wordmark")">@Title</h1>
+    @if (Compact)
+    {
+        <div class="auth-head__logo" aria-hidden="true">
+            <Logo Size="72" Class="auth-head__mark" />
+        </div>
+        <h1 class="auth-head__title">@Title</h1>
+    }
+    else
+    {
+        <h1 class="auth-head__brand">
+            <span class="sm-sr-only">@Title</span>
+            <span class="auth-head__logo" aria-hidden="true">
+                <Logo Size="56" Wordmark="true" Class="auth-head__mark" />
+            </span>
+        </h1>
+    }
     @if (Subtitle is not null)
     {
         <p class="auth-head__subtitle">@Subtitle</p>
@@ -29,7 +44,10 @@
     /// <summary>Fallback target of the back button (null hides it).</summary>
     [Parameter] public string? BackTo { get; set; }
     [Parameter] public bool Compact { get; set; }
-    /// <summary>Play the brand intro (<see cref="AuthIntro"/>: the first signed-out screen of an app run).</summary>
+    /// <summary>
+    /// Play the brand intro (<see cref="AuthIntro"/>: the first signed-out screen of an app run): the finished logo
+    /// settles in. Without it the logo is simply there.
+    /// </summary>
     [Parameter] public bool Intro { get; set; }
 
     private Task BackAsync() => Nav.GoBackAsync(BackTo ?? NavigationService.WelcomePath);

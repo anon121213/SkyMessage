@@ -357,7 +357,7 @@ public sealed class AndroidAppUpdateInstaller(IAppLifecycle lifecycle, ILogger<A
             var open = AppIntents.ActivityPendingIntent(context, AppIntents.UpdatedNotificationId, AppIntents.ActivityIntent(context, null));
             var notification = new NotificationCompat.Builder(context, NotificationChannels.Updates)
                 .SetSmallIcon(Resource.Drawable.ic_stat_skymessage)!
-                .SetColor(unchecked((int)0xFF6A4BFF))!
+                .SetColor(NotificationChannels.AccentColor)!
                 .SetContentTitle(strings?.Format("platform.update.installed", AppInfo.Current.VersionString) ?? "SkyMessage")!
                 .SetContentText(strings?["platform.update.tapToOpen"] ?? "")!
                 .SetContentIntent(open)!

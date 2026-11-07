@@ -1,85 +1,83 @@
-@* SkyMessage logo (our own artwork, docs/DESIGN.md): a warm sun rising behind a white cloud with three sparkles, on a
-   twilight squircle (deep indigo → violet → rose, a peach glow on the horizon). Mark = sun and cloud without the tile,
-   the cloud filled with the twilight gradient. Animated = the sun breathes, the cloud floats, the sparkles glint. The
-   app icon and splash (SkyMessage.App/Resources) draw the same picture. *@
-<svg class="sm-logo @(Animated ? "sm-logo--animated" : null) @Class" style="@($"width:{Rem};height:{Rem}")" viewBox="0 0 456 456" role="img" aria-label="SkyMessage">
-    <defs>
-        <linearGradient id="@($"{_id}-sky")" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#3D2BD9" />
-            <stop offset="0.52" stop-color="#7B3FEA" />
-            <stop offset="1" stop-color="#D452A8" />
-        </linearGradient>
-        <radialGradient id="@($"{_id}-horizon")" cx="0.78" cy="1.02" r="0.72">
-            <stop offset="0" stop-color="#FFB37A" stop-opacity="0.9" />
-            <stop offset="1" stop-color="#FFB37A" stop-opacity="0" />
-        </radialGradient>
-        <radialGradient id="@($"{_id}-light")" cx="0.22" cy="0.08" r="0.62">
-            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28" />
-            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
-        </radialGradient>
-        <radialGradient id="@($"{_id}-sun")" cx="0.42" cy="0.38" r="0.62">
-            <stop offset="0" stop-color="#FFF6D2" />
-            <stop offset="0.45" stop-color="#FFCB6E" />
-            <stop offset="1" stop-color="#FF8A65" />
-        </radialGradient>
-        <radialGradient id="@($"{_id}-halo")" cx="0.5" cy="0.5" r="0.5">
-            <stop offset="0.45" stop-color="#FFD58A" stop-opacity="0.6" />
-            <stop offset="1" stop-color="#FFD58A" stop-opacity="0" />
-        </radialGradient>
-        <linearGradient id="@($"{_id}-cloud")" gradientUnits="userSpaceOnUse" x1="0" y1="150" x2="0" y2="345">
-            <stop offset="0" stop-color="#FFFFFF" />
-            <stop offset="1" stop-color="#E9E1FF" />
-        </linearGradient>
-        <linearGradient id="@($"{_id}-cloud-mark")" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#6A4BFF" />
-            <stop offset="1" stop-color="#B04FE0" />
-        </linearGradient>
-    </defs>
-    @if (!Mark)
+@* SkyMessage logo «Горизонт» (docs/brand): an outgoing message bubble (a circle with one tight square corner at the
+   bottom right) cut near its base by a straight horizon: the sky above the cut, a warm dawn band below it, the cut
+   itself always empty (the surface shows through). Flat, the app icon's geometry exactly (docs/brand/fg.svg: 456 units
+   = 108 dp, the gap is 1m = 12.67 units).
+   - Tile (default): the app icon as launchers show it (docs/brand/icon.svg): the mark in white and peach on the
+     Night-indigo squircle, the brand's one gradient. Size = the side.
+   - Mark: the symbol alone in the theme's brand colors (--sm-brand-sky / --sm-brand-dawn: Night indigo and the deep
+     dawn #D9622F on light, white and peach on dark). Tight box, Size = its height.
+   - Wordmark: the lockup (docs/brand/lockup.svg): the mark and "SkyMessage" (Montserrat 700 outlines) in one solid
+     color (--sm-brand-ink), the letters standing on the horizon. Size = its height; the width follows and shrinks to
+     fit a narrow parent.
+   - Animated: the horizon opens once when the logo appears. The bubble shows whole first (two seam strips, clipped to
+     its silhouette, fill the cut with sky and dawn), then the strips slide apart into the two pieces and the cut
+     opens (docs/MOTION.md, "The logo"). At rest the strips lie outside their clip, so the finished logo is exactly the
+     static one. Without Animated there are no strips. Only About uses it: never the boot splash (often gone before
+     the cut could open), the signed-out screens (they follow the splash's finished mark, which must not close) or the
+     lock screen (it comes back on every lock). *@
+<svg class="sm-logo @VariantClass @(Animated ? "sm-logo--animated" : null) @Class" style="@Style" viewBox="@ViewBox" role="img" aria-label="SkyMessage">
+    @if (IsTile)
     {
-        <path d="M228 0C404 0 456 52 456 228S404 456 228 456 0 404 0 228 52 0 228 0Z" fill="@($"url(#{_id}-sky)")" />
-        <path d="M228 0C404 0 456 52 456 228S404 456 228 456 0 404 0 228 52 0 228 0Z" fill="@($"url(#{_id}-horizon)")" />
-        <path d="M228 0C404 0 456 52 456 228S404 456 228 456 0 404 0 228 52 0 228 0Z" fill="@($"url(#{_id}-light)")" />
+        <defs>
+            <linearGradient id="@($"{_id}-ground")" x1="0" y1="0" x2="0" y2="456" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#2A1F86" />
+                <stop offset="1" stop-color="#4A35C8" />
+            </linearGradient>
+        </defs>
+        <path d="@TilePath" fill="@($"url(#{_id}-ground)")" />
     }
-    <g class="sm-logo__sun">
-        <circle cx="292" cy="186" r="116" fill="@($"url(#{_id}-halo)")" />
-        <circle cx="292" cy="186" r="72" fill="@($"url(#{_id}-sun)")" />
-    </g>
-    <g class="sm-logo__cloud">
-        @if (!Mark)
-        {
-            <ellipse cx="236" cy="352" rx="128" ry="16" fill="#2A1470" opacity="0.18" />
-        }
-        <g fill="@(Mark ? $"url(#{_id}-cloud-mark)" : $"url(#{_id}-cloud)")">
-            <circle cx="168" cy="268" r="62" />
-            <circle cx="238" cy="230" r="80" />
-            <circle cx="312" cy="280" r="54" />
-            <rect x="106" y="262" width="262" height="78" rx="39" ry="39" />
-        </g>
-    </g>
-    @if (!Mark)
+    <path class="sm-logo__sky" fill="#FFFFFF" d="@SkyPath" />
+    <path class="sm-logo__dawn" fill="#FFAE86" d="@DawnPath" />
+    @if (Animated)
     {
-        <g fill="#FFFFFF">
-            <path class="sm-logo__spark" transform="translate(98 104) scale(1.25)" opacity="0.95"
-                  d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z" />
-            <path class="sm-logo__spark sm-logo__spark--2" transform="translate(372 78) scale(0.8)" opacity="0.85"
-                  d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z" />
-            <path class="sm-logo__spark sm-logo__spark--3" transform="translate(380 360) scale(0.65)" opacity="0.8"
-                  d="M12 0C12.7 6.6 17.4 11.3 24 12 17.4 12.7 12.7 17.4 12 24 11.3 17.4 6.6 12.7 0 12 6.6 11.3 11.3 6.6 12 0Z" />
+        <clipPath id="@($"{_id}-horizon")"><path d="@HorizonPath" /></clipPath>
+        <g clip-path="@($"url(#{_id}-horizon)")">
+            <rect class="sm-logo__sky sm-logo__seam sm-logo__seam--up" fill="#FFFFFF" x="140" y="266.33" width="180" height="15.67" />
+            <rect class="sm-logo__dawn sm-logo__seam sm-logo__seam--down" fill="#FFAE86" x="140" y="278.67" width="180" height="12.33" />
         </g>
+    }
+    @if (Wordmark)
+    {
+        <path class="sm-logo__word" transform="translate(348.33 272.33)" d="@WordPath" />
     }
 </svg>
 
 @code {
+    // docs/brand: fg.svg (sky, dawn), icon.svg (the squircle tile), lockup.svg (the letters); tools/brand/export.py --check
+    // verifies they are still the brand's paths. HorizonPath is the bubble's silhouette from 6 units above the cut to
+    // 6 units below it (the circle R 88.67 at 221.67 on the left, the straight right side), where the seams may show.
+    // Closed, the sky seam covers 266.33..282 and the dawn seam 278.67..291 on top of it: they overlap each other and
+    // the two pieces generously, so no hairline of the surface shows through before the cut opens.
+    private const string SkyPath = "M148.9,272.33 A88.67,88.67 0 0 1 221.67,133 A88.67,88.67 0 0 1 310.33,221.67 L310.33,272.33 Z";
+    private const string DawnPath = "M310.33,285 L310.33,304 A6.33,6.33 0 0 1 304,310.33 L221.67,310.33 A88.67,88.67 0 0 1 159.61,285 Z";
+    private const string TilePath = "M380.00,228.00 L379.97,266.70 L379.87,279.06 L379.71,288.03 L379.48,295.32 L379.18,301.55 L378.82,307.06 L378.40,312.01 L377.91,316.52 L377.35,320.68 L376.72,324.53 L376.03,328.13 L375.26,331.51 L374.43,334.68 L373.52,337.68 L372.55,340.51 L371.50,343.19 L370.38,345.74 L369.18,348.15 L367.91,350.45 L366.56,352.63 L365.13,354.70 L363.61,356.67 L362.01,358.55 L360.32,360.32 L358.55,362.01 L356.67,363.61 L354.70,365.13 L352.63,366.56 L350.45,367.91 L348.15,369.18 L345.74,370.38 L343.19,371.50 L340.51,372.55 L337.68,373.52 L334.68,374.43 L331.51,375.26 L328.13,376.03 L324.53,376.72 L320.68,377.35 L316.52,377.91 L312.01,378.40 L307.06,378.82 L301.55,379.18 L295.32,379.48 L288.03,379.71 L279.06,379.87 L266.70,379.97 L228.00,380.00 L189.30,379.97 L176.94,379.87 L167.97,379.71 L160.68,379.48 L154.45,379.18 L148.94,378.82 L143.99,378.40 L139.48,377.91 L135.32,377.35 L131.47,376.72 L127.87,376.03 L124.49,375.26 L121.32,374.43 L118.32,373.52 L115.49,372.55 L112.81,371.50 L110.26,370.38 L107.85,369.18 L105.55,367.91 L103.37,366.56 L101.30,365.13 L99.33,363.61 L97.45,362.01 L95.68,360.32 L93.99,358.55 L92.39,356.67 L90.87,354.70 L89.44,352.63 L88.09,350.45 L86.82,348.15 L85.62,345.74 L84.50,343.19 L83.45,340.51 L82.48,337.68 L81.57,334.68 L80.74,331.51 L79.97,328.13 L79.28,324.53 L78.65,320.68 L78.09,316.52 L77.60,312.01 L77.18,307.06 L76.82,301.55 L76.52,295.32 L76.29,288.03 L76.13,279.06 L76.03,266.70 L76.00,228.00 L76.03,189.30 L76.13,176.94 L76.29,167.97 L76.52,160.68 L76.82,154.45 L77.18,148.94 L77.60,143.99 L78.09,139.48 L78.65,135.32 L79.28,131.47 L79.97,127.87 L80.74,124.49 L81.57,121.32 L82.48,118.32 L83.45,115.49 L84.50,112.81 L85.62,110.26 L86.82,107.85 L88.09,105.55 L89.44,103.37 L90.87,101.30 L92.39,99.33 L93.99,97.45 L95.68,95.68 L97.45,93.99 L99.33,92.39 L101.30,90.87 L103.37,89.44 L105.55,88.09 L107.85,86.82 L110.26,85.62 L112.81,84.50 L115.49,83.45 L118.32,82.48 L121.32,81.57 L124.49,80.74 L127.87,79.97 L131.47,79.28 L135.32,78.65 L139.48,78.09 L143.99,77.60 L148.94,77.18 L154.45,76.82 L160.68,76.52 L167.97,76.29 L176.94,76.13 L189.30,76.03 L228.00,76.00 L266.70,76.03 L279.06,76.13 L288.03,76.29 L295.32,76.52 L301.55,76.82 L307.06,77.18 L312.01,77.60 L316.52,78.09 L320.68,78.65 L324.53,79.28 L328.13,79.97 L331.51,80.74 L334.68,81.57 L337.68,82.48 L340.51,83.45 L343.19,84.50 L345.74,85.62 L348.15,86.82 L350.45,88.09 L352.63,89.44 L354.70,90.87 L356.67,92.39 L358.55,93.99 L360.32,95.68 L362.01,97.45 L363.61,99.33 L365.13,101.30 L366.56,103.37 L367.91,105.55 L369.18,107.85 L370.38,110.26 L371.50,112.81 L372.55,115.49 L373.52,118.32 L374.43,121.32 L375.26,124.49 L376.03,127.87 L376.72,131.47 L377.35,135.32 L377.91,139.48 L378.40,143.99 L378.82,148.94 L379.18,154.45 L379.48,160.68 L379.71,167.97 L379.87,176.94 L379.97,189.30 Z";
+    private const string WordPath = "M39.65 1.52Q29.01 1.52 19.25 -1.33Q9.5 -4.18 3.55 -8.74L10.51 -24.19Q16.21 -20.14 24 -17.54Q31.79 -14.95 39.77 -14.95Q45.85 -14.95 49.59 -16.15Q53.33 -17.35 55.1 -19.51Q56.87 -21.66 56.87 -24.45Q56.87 -27.99 54.09 -30.08Q51.3 -32.17 46.74 -33.5Q42.18 -34.83 36.67 -36.04Q31.16 -37.24 25.65 -39.01Q20.14 -40.79 15.58 -43.57Q11.02 -46.36 8.17 -50.92Q5.32 -55.48 5.32 -62.57Q5.32 -70.17 9.44 -76.44Q13.55 -82.71 21.85 -86.45Q30.15 -90.19 42.69 -90.19Q51.05 -90.19 59.15 -88.22Q67.26 -86.26 73.47 -82.33L67.13 -66.75Q60.93 -70.3 54.72 -72.01Q48.51 -73.72 42.56 -73.72Q36.61 -73.72 32.81 -72.33Q29.01 -70.93 27.36 -68.72Q25.71 -66.5 25.71 -63.59Q25.71 -60.17 28.5 -58.08Q31.29 -55.99 35.85 -54.72Q40.41 -53.45 45.92 -52.19Q51.43 -50.92 56.94 -49.27Q62.45 -47.63 67.01 -44.84Q71.57 -42.05 74.42 -37.49Q77.27 -32.93 77.27 -25.97Q77.27 -18.49 73.09 -12.29Q68.91 -6.08 60.61 -2.28Q52.31 1.52 39.65 1.52Z M105.01 -13.93 105.51 -38 137.31 -68.15H160.87L130.34 -37.11L120.08 -28.75ZM88.67 0V-93.99H108.43V0ZM139.46 0 116.41 -28.63 128.82 -43.95 163.4 0Z M175.69 25.59Q170.37 25.59 165.17 23.94Q159.98 22.29 156.69 19.38L163.91 5.32Q166.19 7.35 169.16 8.49Q172.14 9.63 175.05 9.63Q179.23 9.63 181.7 7.66Q184.17 5.7 186.2 1.14L189.75 -7.22L191.27 -9.37L215.71 -68.15H234.71L203.93 4.18Q200.64 12.41 196.4 17.1Q192.15 21.79 187.02 23.69Q181.89 25.59 175.69 25.59ZM187.34 2.66 156.94 -68.15H177.33L200.89 -11.15Z M242.95 0V-88.67H259.92L297.67 -26.09H288.67L325.79 -88.67H342.63L342.89 0H323.63L323.51 -59.15H327.05L297.41 -9.37H288.17L257.89 -59.15H262.2V0Z M395.07 1.01Q383.42 1.01 374.62 -3.55Q365.81 -8.11 361 -16.02Q356.19 -23.94 356.19 -34.07Q356.19 -44.33 360.94 -52.25Q365.69 -60.17 373.92 -64.66Q382.15 -69.16 392.54 -69.16Q402.55 -69.16 410.59 -64.92Q418.63 -60.67 423.32 -52.76Q428.01 -44.84 428.01 -33.82Q428.01 -32.68 427.88 -31.22Q427.75 -29.77 427.63 -28.5H372.27V-40.03H417.24L409.64 -36.61Q409.64 -41.93 407.49 -45.85Q405.33 -49.78 401.53 -52Q397.73 -54.21 392.67 -54.21Q387.6 -54.21 383.74 -52Q379.87 -49.78 377.72 -45.79Q375.57 -41.8 375.57 -36.35V-33.31Q375.57 -27.74 378.04 -23.5Q380.51 -19.25 385 -17.04Q389.5 -14.82 395.58 -14.82Q401.03 -14.82 405.14 -16.47Q409.26 -18.11 412.68 -21.41L423.19 -10.01Q418.51 -4.69 411.41 -1.84Q404.32 1.01 395.07 1.01Z M462.84 1.01Q454.1 1.01 446.06 -1.08Q438.01 -3.17 433.33 -6.33L439.91 -20.52Q444.6 -17.61 451 -15.77Q457.39 -13.93 463.6 -13.93Q470.44 -13.93 473.29 -15.58Q476.14 -17.23 476.14 -20.14Q476.14 -22.55 473.92 -23.75Q471.71 -24.95 468.03 -25.59Q464.36 -26.22 459.99 -26.85Q455.62 -27.49 451.19 -28.56Q446.75 -29.64 443.08 -31.79Q439.41 -33.95 437.19 -37.62Q434.97 -41.29 434.97 -47.12Q434.97 -53.58 438.71 -58.52Q442.45 -63.46 449.54 -66.31Q456.63 -69.16 466.51 -69.16Q473.48 -69.16 480.7 -67.64Q487.92 -66.12 492.73 -63.21L486.15 -49.15Q481.21 -52.06 476.2 -53.14Q471.2 -54.21 466.51 -54.21Q459.93 -54.21 456.89 -52.44Q453.85 -50.67 453.85 -47.88Q453.85 -45.35 456.06 -44.08Q458.28 -42.81 461.95 -42.05Q465.63 -41.29 470 -40.72Q474.37 -40.15 478.8 -39.01Q483.23 -37.87 486.84 -35.78Q490.45 -33.69 492.73 -30.08Q495.01 -26.47 495.01 -20.65Q495.01 -14.31 491.21 -9.44Q487.41 -4.56 480.26 -1.77Q473.1 1.01 462.84 1.01Z M528.83 1.01Q520.09 1.01 512.05 -1.08Q504.01 -3.17 499.32 -6.33L505.91 -20.52Q510.59 -17.61 516.99 -15.77Q523.39 -13.93 529.59 -13.93Q536.43 -13.93 539.28 -15.58Q542.13 -17.23 542.13 -20.14Q542.13 -22.55 539.92 -23.75Q537.7 -24.95 534.03 -25.59Q530.35 -26.22 525.98 -26.85Q521.61 -27.49 517.18 -28.56Q512.75 -29.64 509.07 -31.79Q505.4 -33.95 503.18 -37.62Q500.97 -41.29 500.97 -47.12Q500.97 -53.58 504.7 -58.52Q508.44 -63.46 515.53 -66.31Q522.63 -69.16 532.51 -69.16Q539.47 -69.16 546.69 -67.64Q553.91 -66.12 558.73 -63.21L552.14 -49.15Q547.2 -52.06 542.2 -53.14Q537.19 -54.21 532.51 -54.21Q525.92 -54.21 522.88 -52.44Q519.84 -50.67 519.84 -47.88Q519.84 -45.35 522.06 -44.08Q524.27 -42.81 527.95 -42.05Q531.62 -41.29 535.99 -40.72Q540.36 -40.15 544.79 -39.01Q549.23 -37.87 552.84 -35.78Q556.45 -33.69 558.73 -30.08Q561.01 -26.47 561.01 -20.65Q561.01 -14.31 557.21 -9.44Q553.41 -4.56 546.25 -1.77Q539.09 1.01 528.83 1.01Z M613.7 0V-13.3L612.43 -16.21V-40.03Q612.43 -46.36 608.57 -49.91Q604.71 -53.45 596.73 -53.45Q591.28 -53.45 586.02 -51.74Q580.77 -50.03 577.09 -47.12L570 -60.93Q575.57 -64.85 583.43 -67.01Q591.28 -69.16 599.39 -69.16Q614.97 -69.16 623.58 -61.81Q632.19 -54.47 632.19 -38.89V0ZM592.93 1.01Q584.95 1.01 579.25 -1.71Q573.55 -4.43 570.51 -9.12Q567.47 -13.81 567.47 -19.63Q567.47 -25.71 570.44 -30.27Q573.42 -34.83 579.88 -37.43Q586.34 -40.03 596.73 -40.03H614.84V-28.5H598.88Q591.91 -28.5 589.32 -26.22Q586.72 -23.94 586.72 -20.52Q586.72 -16.72 589.7 -14.5Q592.67 -12.29 597.87 -12.29Q602.81 -12.29 606.73 -14.63Q610.66 -16.97 612.43 -21.53L615.47 -12.41Q613.32 -5.83 607.62 -2.41Q601.92 1.01 592.93 1.01Z M681.34 25.59Q671.71 25.59 662.78 23.24Q653.85 20.9 647.9 16.21L655.75 2.03Q660.06 5.57 666.71 7.66Q673.36 9.75 679.82 9.75Q690.33 9.75 695.08 5.07Q699.83 0.38 699.83 -8.87V-19.13L701.1 -36.23L700.85 -53.45V-68.15H719.59V-11.4Q719.59 7.6 709.71 16.59Q699.83 25.59 681.34 25.59ZM678.3 -3.29Q668.8 -3.29 661.14 -7.41Q653.47 -11.53 648.85 -18.94Q644.23 -26.35 644.23 -36.23Q644.23 -46.23 648.85 -53.64Q653.47 -61.05 661.14 -65.11Q668.8 -69.16 678.3 -69.16Q686.91 -69.16 693.5 -65.68Q700.09 -62.19 703.76 -54.91Q707.43 -47.63 707.43 -36.23Q707.43 -24.95 703.76 -17.67Q700.09 -10.39 693.5 -6.84Q686.91 -3.29 678.3 -3.29ZM682.23 -19.51Q687.42 -19.51 691.47 -21.6Q695.53 -23.69 697.81 -27.49Q700.09 -31.29 700.09 -36.23Q700.09 -41.29 697.81 -45.03Q695.53 -48.77 691.47 -50.86Q687.42 -52.95 682.23 -52.95Q677.03 -52.95 672.98 -50.86Q668.93 -48.77 666.58 -45.03Q664.24 -41.29 664.24 -36.23Q664.24 -31.29 666.58 -27.49Q668.93 -23.69 672.98 -21.6Q677.03 -19.51 682.23 -19.51Z M770.51 1.01Q758.86 1.01 750.06 -3.55Q741.25 -8.11 736.44 -16.02Q731.63 -23.94 731.63 -34.07Q731.63 -44.33 736.38 -52.25Q741.13 -60.17 749.36 -64.66Q757.59 -69.16 767.98 -69.16Q777.99 -69.16 786.03 -64.92Q794.07 -60.67 798.76 -52.76Q803.45 -44.84 803.45 -33.82Q803.45 -32.68 803.32 -31.22Q803.19 -29.77 803.07 -28.5H747.71V-40.03H792.68L785.08 -36.61Q785.08 -41.93 782.93 -45.85Q780.77 -49.78 776.97 -52Q773.17 -54.21 768.11 -54.21Q763.04 -54.21 759.18 -52Q755.31 -49.78 753.16 -45.79Q751.01 -41.8 751.01 -36.35V-33.31Q751.01 -27.74 753.48 -23.5Q755.95 -19.25 760.44 -17.04Q764.94 -14.82 771.02 -14.82Q776.47 -14.82 780.58 -16.47Q784.7 -18.11 788.12 -21.41L798.63 -10.01Q793.95 -4.69 786.85 -1.84Q779.76 1.01 770.51 1.01Z";
+    private const string HorizonPath = "M145.07,266.33 L310.33,266.33 L310.33,291 L166.39,291 A88.67,88.67 0 0 1 145.07,266.33 Z";
+
     private readonly string _id = "sm-logo-" + Guid.NewGuid().ToString("N")[..8];
 
-    /// <summary>Size in px at 100% font scale.</summary>
+    /// <summary>Size in px at 100% font scale: the tile's side, the mark's or the lockup's height.</summary>
     [Parameter] public double Size { get; set; } = 64;
-    /// <summary>Sun and cloud only (gradient cloud), without the tile.</summary>
+    /// <summary>The symbol alone, in the theme's brand colors (no tile).</summary>
     [Parameter] public bool Mark { get; set; }
-    /// <summary>Ambient motion: breathing sun, floating cloud, glinting sparkles.</summary>
+    /// <summary>The lockup: the mark and "SkyMessage" on the horizon (wins over <see cref="Mark"/>).</summary>
+    [Parameter] public bool Wordmark { get; set; }
+    /// <summary>
+    /// The horizon opens once when the logo appears (no loop; off with reduced motion and in lite mode). Only where the
+    /// brand is presented (About, docs/MOTION.md "The logo"): never right after the splash's finished mark, on
+    /// short-lived or on often-repeated screens.
+    /// </summary>
     [Parameter] public bool Animated { get; set; }
     [Parameter] public string? Class { get; set; }
 
-    private string Rem => (Size / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "rem";
+    private bool IsTile => !Mark && !Wordmark;
+
+    private string VariantClass => Wordmark ? "sm-logo--wordmark" : Mark ? "sm-logo--mark" : "sm-logo--tile";
+
+    private string ViewBox => Wordmark ? "133 133 1022.83 177.33" : Mark ? "133 133 177.33 177.33" : "76 76 304 304";
+
+    // The lockup sets its width only: the height follows the viewBox (and the max-width of a narrow parent).
+    private string Style => Wordmark ? $"width:{Rem(Size * 1022.83 / 177.33)}" : $"width:{Rem(Size)};height:{Rem(Size)}";
+
+    private static string Rem(double px) => (px / 16).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "rem";
 }

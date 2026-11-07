@@ -384,10 +384,6 @@ html[data-fx="lite"] .mlist__empty-card {
     overflow: visible;
 }
 
-.mlist__art-sun {
-    fill: var(--sm-gold);
-}
-
 .mlist__art-cloud {
     fill: color-mix(in srgb, var(--sm-accent) 20%, var(--sm-surface));
 }
@@ -396,11 +392,21 @@ html[data-theme="dark"] .mlist__art-cloud {
     fill: color-mix(in srgb, var(--sm-accent) 34%, var(--sm-surface));
 }
 
+.mlist__art-horizon {
+    stroke: color-mix(in srgb, var(--sm-accent) 30%, var(--sm-surface));
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+html[data-theme="dark"] .mlist__art-horizon {
+    stroke: color-mix(in srgb, var(--sm-accent) 42%, var(--sm-surface));
+}
+
 /* The face of the cloud: a waving hand (or Saved Messages' bookmark), centred on its body. */
 .mlist__art-face {
     position: absolute;
-    left: calc(51% - 1.25rem);
-    top: calc(61% - 1.25rem);
+    left: calc(49.4% - 1.25rem);
+    top: calc(49.5% - 1.25rem);
     display: flex;
     align-items: center;
     justify-content: center;

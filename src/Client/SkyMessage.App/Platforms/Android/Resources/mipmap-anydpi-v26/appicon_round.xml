@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SkyMessage adaptive icon. Replaces the one MAUI generates from <MauiIcon> (same background and foreground layers,
+     resizetizer output @mipmap/appicon_background / appicon_foreground): the themed-icon layer of Android 13+ is the
+     exact vector of docs/brand/mono.svg (@drawable/appicon_monochrome) instead of a copy of the foreground bitmap. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/appicon_background" />
+    <foreground android:drawable="@mipmap/appicon_foreground" />
+    <monochrome android:drawable="@drawable/appicon_monochrome" />
+</adaptive-icon>

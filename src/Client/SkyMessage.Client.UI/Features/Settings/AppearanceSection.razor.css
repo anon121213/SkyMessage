@@ -278,15 +278,16 @@ html[data-fx="lite"] .look-preview__head {
     color: var(--sm-text);
 }
 
-/* Flat shapes; only the cloud drifts a little and the star dots twinkle softly. */
-.look-mode__sun {
-    fill: #FFC66E;
-}
-
+/* Flat shapes; only the near cloud drifts a little and the star dots twinkle softly. */
 .look-mode__cloud {
     fill: #FFFFFF;
     opacity: 0.95;
     animation: look-cloud 8s ease-in-out infinite;
+}
+
+.look-mode__cloud--far {
+    opacity: 0.7;
+    animation: none;
 }
 
 .look-mode__star {

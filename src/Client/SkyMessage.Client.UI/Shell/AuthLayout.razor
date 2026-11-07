@@ -1,13 +1,14 @@
 @* Layout of the signed-out screens (welcome, login, register): the sky with a few restrained, flat decorations — three
-   soft clouds drifting at the edges, a plain sun disc by day, a crescent moon by night — and one centered column of
-   content on top. Pure decoration (aria-hidden): still under reduced motion and in data-fx="lite". *@
+   capsule clouds drifting at the edges and a crescent moon by night — and one centered column of content on top. The
+   decorations keep clear of the header (the logo and the title): on phones they stay in the lower half and the moon
+   leaves the welcome screen's lockup alone; on wide screens they sit beside the column. Pure decoration (aria-hidden):
+   still under reduced motion and in data-fx="lite". *@
 @inherits LayoutComponentBase
 @inject LayoutService Layout
 
 <div class="auth-shell">
-    <SkyBackdrop Sparkles="false" Comet="false" />
+    <SkyBackdrop Comet="false" />
     <div class="auth-deco" aria-hidden="true">
-        <span class="auth-deco__sun"></span>
         <svg class="auth-deco__moon" viewBox="0 0 64 64" focusable="false">
             <path d="M38 8a24 24 0 1 0 18 40A20 20 0 0 1 38 8Z" />
         </svg>
@@ -34,14 +35,13 @@
 @code {
     private ErrorBoundary? _boundary;
 
-    // A flat puff (three circles on a rounded base); its color comes from the theme.
+    // A flat capsule cloud (a short capsule resting on a long one, the kit's capsule shape); its color comes from the
+    // theme. The same construction as the empty-chat art and the Appearance scenes.
     private static readonly RenderFragment Cloud = __builder =>
     {
-        <g class="auth-deco__puff">
-            <circle cx="78" cy="70" r="38" />
-            <circle cx="128" cy="52" r="48" />
-            <circle cx="178" cy="76" r="32" />
-            <rect x="36" y="66" width="180" height="46" rx="23" />
+        <g class="auth-deco__shape">
+            <rect x="60" y="25" width="116" height="44" rx="22" />
+            <rect x="12" y="51" width="216" height="44" rx="22" />
         </g>
     };
 }

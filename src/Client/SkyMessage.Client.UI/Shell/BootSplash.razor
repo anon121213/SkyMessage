@@ -1,11 +1,12 @@
-@* Shown until settings and the session are restored (no network wait): the sky with the animated logo and the wordmark,
-   continuing the Android splash (same night color and picture). *@
+@* Shown until settings and the session are restored (no network wait): the sky with the lockup — the «Горизонт» mark
+   and the wordmark standing on its horizon — rising in after the Android splash (the same mark on the brand ground).
+   The mark is shown finished, never Animated: this screen often lasts only a fraction of a second, so the horizon
+   opening would be cut off and only its first frames (the bubble without its cut) would show. *@
 <div class="boot-splash" aria-busy="true">
     <SkyBackdrop />
-    <div class="boot-splash__mark">
-        <Logo Size="104" Animated="true" />
+    <div class="boot-splash__brand">
+        <Logo Size="52" Wordmark="true" />
     </div>
-    <div class="boot-splash__word">SkyMessage</div>
     @if (ShowSpinner)
     {
         <Spinner Size="26" Class="boot-splash__spinner" />

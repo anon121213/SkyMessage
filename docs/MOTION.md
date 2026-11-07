@@ -26,7 +26,7 @@ Shared keyframes: `sm-fade-in`, `sm-pop-in`, `sm-pop` (0.6 → 1.08 → 1), `sm-
 `sm-msg-in` (incoming message), `sm-msg-out` (outgoing message), `sm-shake`, `sm-spin`, `sm-shimmer`, `sm-pulse`,
 `sm-dialog-in`, `sm-menu-in`, `sm-toast-in`, `sm-float`, `sm-ring` (pulsing ring), `sm-burst`
 (particles: set `--dx/--dy`), `sm-draw` (stroke drawing), the sky's `sm-orb-a/b/c`, `sm-cloud-drift`, `sm-twinkle`,
-`sm-comet`.
+`sm-comet`, and the logo's own `sm-logo-horizon-up/down` (below).
 
 Rules:
 1. **Only `transform` and `opacity` animate** in lists, pages and anything that runs during scroll. Never animate
@@ -44,12 +44,38 @@ Rules:
    reaction, a long-press menu. Never on plain taps.
 7. `will-change` only while a gesture or animation runs; remove it afterwards (the ambient sky layers are the
    exception: they animate for as long as they are visible).
-8. **Ambient decoration** (the sky, the animated logo, call rings) is slow (seconds, not milliseconds),
+8. **Ambient decoration** (the sky, call rings) is slow (seconds, not milliseconds),
    subtle, and never competes with content. No sparkles anywhere (DESIGN.md, "No AI clichés"). It pauses under `[inert]` (covered
    screens), stops with reduced motion and freezes in `html[data-fx="lite"]`. The user's own backgrounds (a gradient, a
    photo) never move at all: a photo is a still picture with its blur baked in, not a filter, and the sky's lights,
    clouds and stars are not drawn over them (`html[data-sky-own]`, `SkyBackdrop Lights`), so nothing composites
    invisible animated layers.
+
+### The logo
+
+`<Logo Animated="true">` plays **one** motion, once, when it appears: **the horizon opens**. The bubble shows whole
+for a beat — sky and dawn meeting, no cut — then the cut opens from the middle to its full width (1m) and the mark
+rests exactly as drawn. Delay 280 ms (the screen's own entrance comes first), `--sm-dur-xslow` (480 ms),
+`cubic-bezier(0.3, 0, 0.2, 1)`: a soft start, a long settle.
+
+Where: **only About**, when it opens — the one screen that presents the brand, opened on purpose. Everywhere else the
+logo is simply there, finished, its cut open:
+- **Never on the boot splash.** It often lasts a fraction of a second (100–300 ms on a normal start), so the opening
+  would be cut off and only its first frames — the bubble without its cut — would show. The boot splash continues the
+  Android splash, which already shows the finished mark; its lockup only rises in.
+- **Never on the signed-out screens.** They follow that finished mark (the Android splash, the boot splash), so a
+  bubble shown whole before it opens would read as the mark closing between two screens. The first signed-out screen
+  of an app run (`AuthIntro`: welcome, or sign in / new account when the run starts there) lets the finished logo
+  settle in once (`auth-logo-in`, 520 ms: it fades in, rising 10 px and growing from 0.92); later ones (welcome ↔ sign
+  in ↔ new account) show it in place.
+- Not on screens that come back often (the lock screen): the motion is a greeting, not a loading indicator.
+
+- How: two seam strips in the bubble's silhouette (a clip path) fill the cut; `sm-logo-horizon-up/down` slide them
+  apart (transform only) until their edges meet the sky's bottom and the dawn band's top; at rest they lie outside the
+  clip, so the finished logo is pixel-identical to a static one. Nothing loops, nothing glows, no shimmer, nothing
+  rises like a sun.
+- Reduced motion (the setting or the OS) and `html[data-fx="lite"]` skip it: the logo is simply there, finished.
+- A re-render does not replay it; only a newly created `Animated` logo plays it again (About, each time it opens).
 
 ## 2. Gesture map
 
@@ -97,7 +123,8 @@ Coexistence:
 ## 3. The passcode lock screen
 
 - It appears at once, opaque (fading in would show the chats for a moment), and leaves with a 180 ms fade
-  (`sm-fade-out`, accelerating) once unlocked. "Back to the call" drops in (`sm-drop-in`).
+  (`sm-fade-out`, accelerating) once unlocked. "Back to the call" drops in (`sm-drop-in`). The logo mark is shown
+  finished (no horizon opening: this screen comes back on every lock).
 - A dot fills with a 140 ms spring (scale 0.55 → 1); keys press down to 0.9 with `--sm-spring` (transform only, no
   ripple, no glow).
 - A wrong code turns the dots rose and shakes their row once (`sm-shake`, 360 ms) with a Warning haptic: an outcome,
