@@ -61,5 +61,5 @@
 }
 
 .server-picker__reg ::deep .sm-icon {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }

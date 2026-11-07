@@ -49,7 +49,7 @@
 
 .folder-edit__icon.is-selected {
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     box-shadow: inset 0 0 0 2px var(--sm-accent);
 }
 
@@ -59,7 +59,7 @@ html[data-input="keyboard"] .folder-edit__icon:focus-visible {
 }
 
 .folder-edit__add {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-weight: 600;
 }

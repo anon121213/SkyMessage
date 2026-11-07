@@ -114,9 +114,10 @@
     box-shadow: 0 0 0 2px var(--sm-glass-solid);
 }
 
+/* As on the dock: a white badge on the active pill, its count in the accent deep enough for white (--sm-accent-on-white). */
 .rail__item--active .rail__badge ::deep .sm-badge:not(.sm-badge--muted) {
     background: #FFFFFF;
-    color: var(--sm-accent);
+    color: var(--sm-accent-on-white);
     box-shadow: none;
 }
 

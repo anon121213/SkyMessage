@@ -64,7 +64,7 @@ html[data-fx="lite"] .cbar {
     padding: 0 12px;
     border-radius: 999px;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-size: 0.875rem;
     font-weight: 700;

@@ -239,7 +239,7 @@ html[data-fx="lite"] .smedia__list {
     border-radius: 13px;
     -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
     mask: var(--sm-squircle) center / 100% 100% no-repeat;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     background: var(--sm-accent-soft);
     background: linear-gradient(140deg, color-mix(in srgb, var(--sm-accent) 24%, transparent), color-mix(in srgb, var(--sm-accent) 9%, transparent));
 }

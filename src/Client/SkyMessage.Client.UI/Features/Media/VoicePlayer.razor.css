@@ -181,7 +181,7 @@
     padding: 0 7px;
     border-radius: 999px;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-size: 0.6875rem;
     font-weight: 700;

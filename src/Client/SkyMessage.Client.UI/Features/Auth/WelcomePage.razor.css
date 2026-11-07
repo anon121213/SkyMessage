@@ -78,7 +78,7 @@
     -webkit-backdrop-filter: var(--sm-blur);
     backdrop-filter: var(--sm-blur);
     box-shadow: var(--sm-edge), var(--sm-shadow-1);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 @media (hover: hover) {

@@ -83,5 +83,5 @@
 }
 
 .info-title__text ::deep .info-title__sub.sm-presence--online {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }

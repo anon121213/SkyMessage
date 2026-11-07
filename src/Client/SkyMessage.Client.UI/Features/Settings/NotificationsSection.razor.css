@@ -46,7 +46,7 @@
 .notif-hint ::deep .sm-icon {
     flex-shrink: 0;
     margin-top: 1px;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 @keyframes notif-ring {

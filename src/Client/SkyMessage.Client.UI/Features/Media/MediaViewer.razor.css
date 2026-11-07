@@ -167,7 +167,7 @@ html[data-fx="lite"] .viewer__vbar {
     width: 2.625rem;
     height: 2.625rem;
     border-radius: 50%;
-    color: #FFFFFF;
+    color: var(--sm-on-accent);
     background: var(--sm-accent);
     transition: transform var(--sm-dur) var(--sm-spring);
 }

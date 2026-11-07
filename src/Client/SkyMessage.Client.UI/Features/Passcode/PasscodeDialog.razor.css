@@ -38,7 +38,7 @@
     border: 0;
     border-radius: 999px;
     background: transparent;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-size: 0.875rem;
     font-weight: 600;

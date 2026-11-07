@@ -36,7 +36,7 @@
 }
 
 .contacts__search ::deep .sm-search .sm-icon {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 /* Quick actions on one glass card with pastel squircle tiles. */
@@ -164,7 +164,7 @@ html[data-fx="lite"] .contacts__rows--enter ::deep .contact-row {
     width: auto;
     margin: 4px 8px 0;
     border-radius: 22px;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .contacts__scroll ::deep .contacts__skeleton {

@@ -106,7 +106,7 @@ html[data-fx="lite"] .chatlist__head--tabs .chatlist__head-glass {
 }
 
 .chatlist__search ::deep .sm-icon {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .chatlist__search:active {
@@ -254,7 +254,7 @@ html[data-fx="lite"] .chatlist__rows--enter ::deep .chat-row-wrap {
 .chatlist__hint ::deep .sm-icon {
     flex-shrink: 0;
     margin-top: 2px;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .chatlist__scroll ::deep .chatlist__empty {

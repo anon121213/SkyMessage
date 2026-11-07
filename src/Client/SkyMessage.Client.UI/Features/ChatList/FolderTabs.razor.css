@@ -153,7 +153,7 @@ html[data-input="keyboard"] .folder-tab:focus-visible {
     padding: 0 6px;
     border-radius: 999px;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-size: 0.75rem;
     font-weight: 700;
     line-height: 1.25rem;
@@ -173,5 +173,5 @@ html[data-input="keyboard"] .folder-tab:focus-visible {
 
 .folder-tabs__track[data-previewing] .folder-tab[data-active] .folder-tab__count {
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }

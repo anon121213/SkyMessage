@@ -7,12 +7,12 @@
     width: 1.5rem;
     height: 1.5rem;
     border-radius: 50%;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     box-shadow: inset 0 0 0 2px var(--sm-accent);
 }
 
 .tone-add .sm-list-item__title {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .tone-own__actions {

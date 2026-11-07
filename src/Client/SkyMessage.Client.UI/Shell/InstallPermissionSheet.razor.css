@@ -13,7 +13,7 @@
     width: 4.5rem;
     height: 4.5rem;
     margin: 4px auto 2px;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .permission-sheet__art::before {

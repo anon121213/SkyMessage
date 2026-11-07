@@ -173,13 +173,13 @@
 
 /* Call back: a softly tinted round button with a hairline rim (no backdrop blur on list rows). */
 .calls-item__end ::deep .calls-item__call:not(.sm-icon-btn--filled) {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     background: var(--sm-accent-soft);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 16%, transparent);
 }
 
 html[data-theme="dark"] .calls-item__end ::deep .calls-item__call:not(.sm-icon-btn--filled) {
-    color: color-mix(in srgb, var(--sm-accent) 70%, #FFFFFF);
+    color: color-mix(in srgb, var(--sm-accent-text) 70%, #FFFFFF);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sm-accent) 24%, transparent);
 }
 

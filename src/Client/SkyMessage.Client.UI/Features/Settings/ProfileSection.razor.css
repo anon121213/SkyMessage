@@ -217,7 +217,7 @@
 
 .profile-form ::deep .sm-field:focus-within .sm-field__label,
 .profile-form ::deep .sm-field__box:focus-within .sm-field__prefix {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 /* The live username check: free / taken icons pop in. */

@@ -28,5 +28,5 @@
 
 .bday__privacy ::deep .sm-icon {
     flex-shrink: 0;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }

@@ -139,7 +139,7 @@ html[data-fx="lite"] .pinbar {
 
 .pinbar__title {
     overflow: hidden;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-size: 0.75rem;
     font-weight: 700;
@@ -177,6 +177,6 @@ html[data-fx="lite"] .pinbar {
     height: 2.25rem;
     border-radius: 50%;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     transform: rotate(35deg);
 }

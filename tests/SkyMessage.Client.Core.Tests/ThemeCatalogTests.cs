@@ -420,12 +420,20 @@ public sealed partial class ThemeCatalogTests
             var night = Color.Parse(VarOf(Block(state, dark: true), "--sm-accent-text")!);
             ThemeCatalog.Contrast(day, lightSky).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinTextContrast, hex);
             ThemeCatalog.Contrast(night, nightSky).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinTextContrast, hex);
+            // On the white chip of the dock's active pill, in both themes (the night's own ink is too light for white).
+            foreach (var dark in new[] { false, true })
+            {
+                var onWhite = Color.Parse(VarOf(Block(state, dark), "--sm-accent-on-white")!);
+                ThemeCatalog.Contrast(onWhite, Color.White).ShouldBeGreaterThanOrEqualTo(ThemeCatalog.MinTextContrast, $"{hex} dark={dark}");
+            }
         }
 
         // Accents that read already stay themselves; the released violet deepens a little by day and stays at night.
         ThemeCatalog.AccentTextInk(Color.Parse("#3F4A5C"), dark: false).Hex.ShouldBe("#3F4A5C");
         VarOf(Block(Catalog.BuildState(new AppearanceSettings()), dark: false), "--sm-accent-text").ShouldBe("#5D42DF", "as app.css says before the theme applies");
         VarOf(Block(Catalog.BuildState(new AppearanceSettings()), dark: true), "--sm-accent-text").ShouldBe("#8B73FF");
+        foreach (var dark in new[] { false, true })
+            VarOf(Block(Catalog.BuildState(new AppearanceSettings()), dark), "--sm-accent-on-white").ShouldBe("#5D42DF", "as app.css says before the theme applies");
         // A very light accent no longer nearly vanishes: a deep shade of its hue.
         var yellow = ThemeCatalog.AccentTextInk(Color.Parse("#FFE08A"), dark: false);
         ThemeCatalog.Contrast(yellow, Color.White).ShouldBeGreaterThan(5);

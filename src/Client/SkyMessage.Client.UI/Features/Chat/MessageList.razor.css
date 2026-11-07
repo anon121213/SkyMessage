@@ -235,7 +235,7 @@ html[data-fx="lite"] .mlist__fab {
 }
 
 .mlist__fab--mention {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     transition: transform var(--sm-dur) var(--sm-spring), opacity var(--sm-dur-fast) var(--sm-ease-out), visibility 0s,
         translate var(--sm-dur) var(--sm-ease);
 }
@@ -248,7 +248,7 @@ html[data-fx="lite"] .mlist__fab {
 @media (hover: hover) {
     .mlist__fab:hover {
         background: var(--sm-glass-strong);
-        color: var(--sm-accent);
+        color: var(--sm-accent-text);
     }
 }
 
@@ -412,7 +412,7 @@ html[data-theme="dark"] .mlist__art-horizon {
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-size: 1.875rem;
     line-height: 1;
 }

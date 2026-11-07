@@ -120,10 +120,11 @@
     box-shadow: 0 0 0 2px var(--sm-glass-solid);
 }
 
-/* On the pill the badge turns white so it never melts into the gradient. */
+/* On the pill the badge turns white so it never melts into the gradient, its count in the accent deep enough for white
+   in either theme (--sm-accent-on-white: a very light accent of one's own would vanish on it). */
 .tab-bar__item--active .tab-bar__badge ::deep .sm-badge:not(.sm-badge--muted) {
     background: #FFFFFF;
-    color: var(--sm-accent);
+    color: var(--sm-accent-on-white);
     box-shadow: none;
 }
 

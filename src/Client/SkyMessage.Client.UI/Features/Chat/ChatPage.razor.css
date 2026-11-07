@@ -116,7 +116,7 @@
     -webkit-backdrop-filter: var(--sm-blur);
     backdrop-filter: var(--sm-blur);
     box-shadow: var(--sm-edge), var(--sm-shadow-3);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-weight: 700;
     pointer-events: none;
@@ -134,7 +134,7 @@
     width: 4.5rem;
     height: 4.5rem;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
     mask: var(--sm-squircle) center / 100% 100% no-repeat;
 }
@@ -310,7 +310,7 @@ html[data-fx="lite"] .chat-select {
     margin-left: 2px;
     border-radius: 50%;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     transition: transform var(--sm-dur) var(--sm-spring), background-color var(--sm-dur-fast) ease;
     animation: sm-pop var(--sm-dur-slow) var(--sm-spring) 140ms backwards;
 }

@@ -77,7 +77,7 @@
 }
 
 .settings-hero__handle {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-weight: 600;
 }
 
@@ -98,7 +98,7 @@
     padding: 0 10px 0 14px;
     border-radius: 999px;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-size: 0.8125rem;
     font-weight: 700;

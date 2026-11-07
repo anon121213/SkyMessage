@@ -52,7 +52,7 @@
     height: 1.25rem;
     border-radius: 50%;
     background: var(--sm-accent);
-    color: #FFFFFF;
+    color: var(--sm-on-accent);
     box-shadow: 0 0 0 2px var(--sm-glass-solid);
     animation: sm-pop var(--sm-dur-slow) var(--sm-spring) 220ms backwards;
 }

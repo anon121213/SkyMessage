@@ -55,12 +55,12 @@ html[data-fx="lite"] .folders-list__row[data-dragging] {
 }
 
 .folders-list__row[data-dragging] .folders-list__handle {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     cursor: grabbing;
 }
 
 .folders-create {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-weight: 600;
 }

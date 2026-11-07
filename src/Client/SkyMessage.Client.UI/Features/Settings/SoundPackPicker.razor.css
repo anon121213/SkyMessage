@@ -131,7 +131,7 @@ html[data-theme="dark"] .snd-packs {
 }
 
 .snd-pack.is-selected .snd-pack__name {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .snd-pack__hint {
@@ -156,7 +156,7 @@ html[data-theme="dark"] .snd-packs {
     padding: 0 0 0 2px;
     border: 0;
     border-radius: 50%;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     background: var(--sm-card-solid);
     box-shadow: var(--sm-shadow-1);
     cursor: pointer;

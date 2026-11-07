@@ -274,7 +274,7 @@ html[data-theme="dark"] .msg--lifted .msg__swipe--bubble::before {
     border-radius: 50%;
     background: color-mix(in srgb, var(--sm-surface) 82%, transparent);
     box-shadow: var(--sm-edge), var(--sm-shadow-1);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     opacity: 0;
     transform: scale(0.4);
     pointer-events: none;
@@ -510,7 +510,7 @@ html[data-theme="dark"] .msg__sender {
 }
 
 .msg__fwd-text strong {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-weight: 700;
 }
@@ -728,7 +728,7 @@ html[data-theme="dark"] .msg__sender {
 }
 
 .msg__meta--pill .msg__status--read {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 /* A mark that changes on screen draws itself; the second check of "read" follows the first. */
@@ -833,13 +833,14 @@ html[data-theme="dark"] .msg__sender {
     width: 2.75rem;
     height: 2.75rem;
     background: var(--sm-grad);
-    color: #FFFFFF;
+    color: var(--sm-on-accent);
     -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
     mask: var(--sm-squircle) center / 100% 100% no-repeat;
 }
 
 .msg__call-icon--missed {
     background: var(--sm-grad-danger);
+    color: #FFFFFF;
 }
 
 .msg--out .msg__bubble .msg__call-icon:not(.msg__call-icon--missed) {
@@ -886,7 +887,7 @@ html[data-theme="dark"] .msg__sender {
     height: 2.25rem;
     border-radius: 50%;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     transition: transform var(--sm-dur) var(--sm-spring);
 }
 

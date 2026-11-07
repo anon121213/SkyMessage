@@ -69,9 +69,11 @@
 :root,
 html[data-theme="light"] {
   --sm-accent: #6A4BFF;
-  /* The accent as text and icons straight on surfaces and the sky (4.5:1 where the dawn is darkest; ThemeCatalog
-     derives it for any accent), and the rose for small text such as a hint after a mistake (4.5:1 likewise). */
+  /* The accent as text and icons straight on surfaces, glass and the sky (4.5:1 where the dawn is darkest; ThemeCatalog
+     derives it for any accent; --sm-accent stays for fills), the same on a white chip in either theme (the badge on the
+     dock's active pill), and the rose for small text such as a hint after a mistake (4.5:1 likewise). */
   --sm-accent-text: #5D42DF;
+  --sm-accent-on-white: #5D42DF;
   --sm-danger-text: #B91F3B;
   --sm-accent-2: #9A48F0;
   --sm-accent-hover: #5B3CF0;
@@ -158,6 +160,7 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   --sm-accent: #9584FF;
   --sm-accent-text: #9584FF;
+  --sm-accent-on-white: #5D42DF;
   --sm-danger-text: #FF6B86;
   --sm-accent-2: #B36BFF;
   --sm-accent-hover: #A898FF;
@@ -414,7 +417,7 @@ html[data-reduce-motion="true"] .sm-progress-ring--indeterminate > svg {
 .sm-break { overflow-wrap: anywhere; word-break: break-word; }
 .sm-nums { font-variant-numeric: tabular-nums; }
 /* Accent-colored text. (Gradient-filled text is not part of the design: docs/DESIGN.md, "No AI clichés".) */
-.sm-gradient-text { color: var(--sm-accent); }
+.sm-gradient-text { color: var(--sm-accent-text); }
 
 /* ---------- Layout utilities ---------- */
 
@@ -775,9 +778,9 @@ html[data-fx="lite"] .sm-logo__seam, html[data-reduce-motion="true"] .sm-logo__s
 @media (hover: hover) { .sm-btn--primary:hover:not(:disabled) { filter: brightness(1.06) saturate(1.05); } }
 .sm-btn--secondary { background: var(--sm-surface); color: var(--sm-text); box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1); }
 @media (hover: hover) { .sm-btn--secondary:hover:not(:disabled) { background: var(--sm-surface-2); } }
-.sm-btn--tonal { background: var(--sm-accent-soft); color: var(--sm-accent); }
+.sm-btn--tonal { background: var(--sm-accent-soft); color: var(--sm-accent-text); }
 @media (hover: hover) { .sm-btn--tonal:hover:not(:disabled) { filter: brightness(0.97) saturate(1.1); } }
-.sm-btn--ghost { background: transparent; color: var(--sm-accent); }
+.sm-btn--ghost { background: transparent; color: var(--sm-accent-text); }
 @media (hover: hover) { .sm-btn--ghost:hover:not(:disabled) { background: var(--sm-accent-soft); } }
 .sm-btn--danger { background: var(--sm-grad-danger); color: #fff; box-shadow: var(--sm-shadow-1); }
 .sm-btn--danger-ghost { background: transparent; color: var(--sm-danger); }
@@ -817,7 +820,7 @@ html[data-fx="lite"] .sm-logo__seam, html[data-reduce-motion="true"] .sm-logo__s
 }
 .sm-icon-btn:active:not(:disabled)::after { opacity: 0.12; transform: none; transition-duration: 60ms, var(--sm-dur-fast); }
 .sm-icon-btn:disabled { opacity: 0.4; }
-.sm-icon-btn--active { color: var(--sm-accent); }
+.sm-icon-btn--active { color: var(--sm-accent-text); }
 .sm-icon-btn--tonal { background: var(--sm-surface-2); color: var(--sm-text); }
 .sm-icon-btn--filled { background: var(--sm-grad); color: var(--sm-on-accent); box-shadow: var(--sm-glow-s); }
 @media (hover: hover) { .sm-icon-btn--filled:hover:not(:disabled) { background: var(--sm-grad); color: var(--sm-on-accent); filter: brightness(1.07); } }
@@ -876,7 +879,7 @@ html[data-fx="lite"] .sm-icon-btn--glass { background: var(--sm-glass-solid); -w
 :root [data-composer-input]:focus-visible { outline: none; }
 textarea.sm-field__input { height: auto; padding: 14px 0; resize: none; line-height: 1.42; }
 .sm-field__prefix, .sm-field__suffix { color: var(--sm-text-3); flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; }
-.sm-field__box:focus-within .sm-field__prefix { color: var(--sm-accent); }
+.sm-field__box:focus-within .sm-field__prefix { color: var(--sm-accent-text); }
 .sm-field__box .sm-icon-btn { --size: 2.125rem; margin-right: -8px; }
 .sm-field__box .sm-icon-btn .sm-icon { width: 1.125rem; height: 1.125rem; }
 .sm-field__meta { display: flex; gap: 8px; padding: 0 6px; font-size: 0.8125rem; color: var(--sm-text-2); }
@@ -895,7 +898,7 @@ textarea.sm-field__input { height: auto; padding: 14px 0; resize: none; line-hei
 .sm-select__value { flex: 1 1 auto; min-width: 0; padding: 14px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sm-select__value--empty { color: var(--sm-text-3); }
 .sm-select__chevron { display: inline-flex; color: var(--sm-text-3); transition: transform var(--sm-dur) var(--sm-ease); }
-.sm-select__button[aria-expanded="true"] .sm-select__chevron { transform: rotate(180deg); color: var(--sm-accent); }
+.sm-select__button[aria-expanded="true"] .sm-select__chevron { transform: rotate(180deg); color: var(--sm-accent-text); }
 
 /* Switch: a capsule that fills with the accent gradient; the knob springs across. */
 .sm-switch { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; }
@@ -969,7 +972,7 @@ textarea.sm-field__input { height: auto; padding: 14px 0; resize: none; line-hei
 /* Slider: gradient fill, a pearl knob with a halo. */
 .sm-slider { display: flex; flex-direction: column; gap: 6px; }
 .sm-slider__head { display: flex; justify-content: space-between; font-size: 0.875rem; color: var(--sm-text-2); }
-.sm-slider__value { font-variant-numeric: tabular-nums; color: var(--sm-accent); font-family: var(--sm-font-display); font-weight: 700; }
+.sm-slider__value { font-variant-numeric: tabular-nums; color: var(--sm-accent-text); font-family: var(--sm-font-display); font-weight: 700; }
 .sm-slider input[type="range"] {
   --fill: 50%;
   appearance: none;
@@ -1017,7 +1020,7 @@ textarea.sm-field__input { height: auto; padding: 14px 0; resize: none; line-hei
   box-shadow: inset 0 0 0 1px var(--sm-border);
   transition: box-shadow var(--sm-dur) var(--sm-ease), background-color var(--sm-dur) var(--sm-ease);
 }
-.sm-search:focus-within { box-shadow: inset 0 0 0 1.5px var(--sm-accent); background: var(--sm-surface); color: var(--sm-accent); }
+.sm-search:focus-within { box-shadow: inset 0 0 0 1.5px var(--sm-accent); background: var(--sm-surface); color: var(--sm-accent-text); }
 .sm-search input { flex: 1 1 auto; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font-size: 1rem; color: var(--sm-text); }
 .sm-search input::placeholder { color: var(--sm-text-3); }
 .sm-search input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
@@ -1132,7 +1135,7 @@ html[data-theme="dark"] .sm-list-item__icon--plain { background: transparent; co
 .sm-badge--dot { min-width: 0.625rem; width: 0.625rem; height: 0.625rem; padding: 0; }
 .sm-badge--mention .sm-icon { width: 0.875rem; height: 0.875rem; stroke-width: 2.6; }
 .sm-badge--mention { padding: 0; background: var(--sm-grad-warm); color: #4A1A06; }
-.sm-badge--label { background: var(--sm-accent-soft); color: var(--sm-accent); box-shadow: none; height: 1.375rem; padding: 0 9px; font-size: 0.6875rem; letter-spacing: 0.04em; }
+.sm-badge--label { background: var(--sm-accent-soft); color: var(--sm-accent-text); box-shadow: none; height: 1.375rem; padding: 0 9px; font-size: 0.6875rem; letter-spacing: 0.04em; }
 .sm-badge--outline { background: transparent; color: var(--sm-text-2); box-shadow: inset 0 0 0 1px var(--sm-border); }
 /* Badge Animate/Pop: a count that just appeared pops in, a changed one bumps. */
 .sm-badge--pop { animation: sm-pop var(--sm-dur-slow) var(--sm-spring); }
@@ -1222,7 +1225,7 @@ html[data-theme="dark"] .sm-list-item__icon--plain { background: transparent; co
   width: 6.5rem;
   height: 6.5rem;
   margin-bottom: 14px;
-  color: var(--sm-accent);
+  color: var(--sm-accent-text);
   animation: sm-float 6s ease-in-out infinite;
 }
 .sm-empty__art::before {
@@ -1351,7 +1354,7 @@ html[data-fx="lite"] .sm-overlay--sheet .sm-dialog { box-shadow: 0 24px 0 0 var(
 @media (hover: hover) { .sm-menu-item:hover:not(:disabled) { background: var(--sm-hover); } }
 .sm-menu-item:active:not(:disabled) { background: var(--sm-press); transform: scale(0.98); }
 .sm-menu-item:disabled { opacity: 0.45; }
-.sm-menu-item .sm-icon { color: var(--sm-accent); }
+.sm-menu-item .sm-icon { color: var(--sm-accent-text); }
 .sm-menu-item--danger, .sm-menu-item--danger .sm-icon { color: var(--sm-danger); }
 .sm-menu-item__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sm-menu-item__hint { color: var(--sm-text-3); font-size: 0.8125rem; }
@@ -1572,13 +1575,13 @@ html[data-fx="lite"] .viewer__nav { background: var(--sm-viewer-glass-solid); -w
   height: 2rem;
   padding: 6px;
   border-radius: 50%;
-  color: #fff;
+  color: var(--sm-on-accent);
   background: var(--sm-grad);
   
 }
-.sm-toast--success > .sm-icon:first-child { background: var(--sm-grad-success);  }
+.sm-toast--success > .sm-icon:first-child { background: var(--sm-grad-success); color: #fff;  }
 .sm-toast--warning > .sm-icon:first-child { background: var(--sm-grad-warm); color: #4A1A06;  }
-.sm-toast--error > .sm-icon:first-child { background: var(--sm-grad-danger);  }
+.sm-toast--error > .sm-icon:first-child { background: var(--sm-grad-danger); color: #fff;  }
 .sm-toast__action { flex-shrink: 0; padding: 8px 12px; border-radius: 12px; color: #CFC4FF; font-family: var(--sm-font-display); font-weight: 700; font-size: 0.875rem; }
 .sm-toast__action:hover { background: rgba(255, 255, 255, 0.08); }
 .sm-toast__action:active { background: rgba(255, 255, 255, 0.14); }
@@ -1607,7 +1610,7 @@ html[data-fx="lite"] .viewer__nav { background: var(--sm-viewer-glass-solid); -w
   transition: color var(--sm-dur) ease;
 }
 @media (hover: hover) { .sm-tab:hover { color: var(--sm-text); } }
-.sm-tab--active { color: var(--sm-accent); }
+.sm-tab--active { color: var(--sm-accent-text); }
 .sm-tab--active::after {
   content: "";
   position: absolute;
@@ -1645,7 +1648,7 @@ html[data-fx="lite"] .viewer__nav { background: var(--sm-viewer-glass-solid); -w
   text-overflow: ellipsis;
   transition: background-color var(--sm-dur) ease, color var(--sm-dur) ease, box-shadow var(--sm-dur) ease;
 }
-.sm-segmented__item--active { background: var(--sm-surface); color: var(--sm-accent); box-shadow: var(--sm-shadow-1); }
+.sm-segmented__item--active { background: var(--sm-surface); color: var(--sm-accent-text); box-shadow: var(--sm-shadow-1); }
 html[data-theme="dark"] .sm-segmented__item--active { background: var(--sm-surface-3); color: var(--sm-text); }
 
 /* ---------- Progress ring ---------- */
@@ -1694,7 +1697,7 @@ html[data-theme="dark"] .sm-segmented__item--active { background: var(--sm-surfa
 .sm-emoji-picker__tab { display: inline-flex; align-items: center; justify-content: center; flex: 1 0 2.375rem; height: 2.375rem; border-radius: 12px; color: var(--sm-text-3); transition: color var(--sm-dur) ease, background-color var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring); }
 .sm-emoji-picker__tab:active { transform: scale(0.9); }
 .sm-emoji-picker__tab .sm-icon { width: 1.25rem; height: 1.25rem; }
-.sm-emoji-picker__tab--active { color: var(--sm-accent); background: var(--sm-accent-soft); }
+.sm-emoji-picker__tab--active { color: var(--sm-accent-text); background: var(--sm-accent-soft); }
 .sm-emoji-picker__scroll { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 10px; }
 .sm-emoji-picker__heading { position: sticky; top: -4px; z-index: 1; padding: 10px 6px 6px; font-family: var(--sm-font-display); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sm-text-3); background: linear-gradient(var(--sm-glass-strong) 70%, transparent); }
 .sm-emoji-picker__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.625rem, 1fr)); }

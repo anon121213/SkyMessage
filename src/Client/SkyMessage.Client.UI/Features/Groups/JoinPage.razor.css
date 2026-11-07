@@ -45,7 +45,7 @@
 }
 
 .join__invited {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .join__title {
@@ -69,7 +69,7 @@
 }
 
 .join__members ::deep .sm-icon {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .join__description {

@@ -33,7 +33,7 @@
         @if (Filter.Length == 0)
         {
             <div class="contacts__actions">
-                <ListItem Icon="@IconNames.UserRoundPlus" IconColor="var(--sm-accent)" Title="@L["contacts.add"]" Chevron="true" OnClick="AddAsync" />
+                <ListItem Icon="@IconNames.UserRoundPlus" IconColor="var(--sm-accent-text)" Title="@L["contacts.add"]" Chevron="true" OnClick="AddAsync" />
                 @if (DeviceContacts.IsSupported)
                 {
                     <ListItem Icon="@IconNames.BookUser" IconColor="var(--sm-success)" Title="@L["contacts.import.entry"]" Chevron="true" OnClick="@(() => Nav.NavigateTo("/contacts/import"))" />
@@ -86,7 +86,7 @@
             </div>
             @if (Filter.Length > 0)
             {
-                <ListItem Icon="@IconNames.Search" IconColor="var(--sm-accent)" Class="contacts__everywhere" Title="@L.Format("contacts.filter.searchAll", Filter)" OnClick="SearchEverywhere" />
+                <ListItem Icon="@IconNames.Search" IconColor="var(--sm-accent-text)" Class="contacts__everywhere" Title="@L.Format("contacts.filter.searchAll", Filter)" OnClick="SearchEverywhere" />
             }
         }
     </div>

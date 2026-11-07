@@ -383,11 +383,13 @@ public sealed class ThemeCatalog
     public static Color OnAccentInk(Color from, Color to) => Color.Mix(from, to, 0.5).Luminance > 0.42 ? Color.Parse(LightText) : Color.White;
 
     /// <summary>
-    /// Accent-colored text and icons straight on the theme's surfaces and sky (--sm-accent-text: links on the lock screen,
-    /// the profile's actions, the chat header's call, the unread divider): <paramref name="accent"/> (at night its lighter
-    /// version) moved away from the background in small steps — toward black by day, toward white at night — until it
-    /// reads <see cref="MinTextContrast"/> on the sky where that is hardest; most accents stay as they are or deepen a
-    /// little, a very light custom accent gets a deep shade of its hue instead of nearly vanishing.
+    /// Accent-colored text and icons straight on the theme's surfaces, glass and sky (--sm-accent-text: links, the chat
+    /// list's unread times, typing line and ticks, folder tab counts, menu icons, the lock screen's link, the profile's
+    /// actions — the accent itself stays for fills): <paramref name="accent"/> (at night its lighter version) moved away
+    /// from the background in small steps — toward black by day, toward white at night — until it reads
+    /// <see cref="MinTextContrast"/> on the sky where that is hardest; most accents stay as they are or deepen a little,
+    /// a very light custom accent gets a deep shade of its hue instead of nearly vanishing. The day's ink also reads on
+    /// white, so it is the accent on a white chip in either theme too (--sm-accent-on-white: the dock's active badge).
     /// </summary>
     public static Color AccentTextInk(Color accent, bool dark)
     {
@@ -766,6 +768,7 @@ public sealed class ThemeCatalog
         var gradient = $"linear-gradient(135deg, {from.Hex} 0%, {to.Hex} 100%)";
         Var(css, "--sm-grad", gradient);
         Var(css, "--sm-on-accent", OnAccentInk(from, to).Hex);
+        Var(css, "--sm-accent-on-white", AccentTextInk(accent, dark: false).Hex);
         if (!dark)
         {
             Var(css, "--sm-accent", accent.Hex);

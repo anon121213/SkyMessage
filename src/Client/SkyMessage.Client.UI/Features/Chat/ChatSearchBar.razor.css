@@ -68,7 +68,7 @@ html[data-fx="lite"] .csearch {
 }
 
 .csearch__nav ::deep .sm-icon-btn {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .csearch__nav ::deep .sm-icon-btn:disabled {

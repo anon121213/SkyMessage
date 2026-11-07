@@ -39,7 +39,7 @@
     padding: 0 16px;
     border-radius: var(--sm-bubble-radius, 20px);
     background: var(--sm-bubble-in);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     box-shadow: inset 0 0 0 1px rgba(80, 60, 170, 0.06), var(--sm-shadow-1);
 }
 

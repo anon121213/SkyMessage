@@ -17,7 +17,7 @@
     -webkit-backdrop-filter: var(--sm-blur);
     backdrop-filter: var(--sm-blur);
     box-shadow: var(--sm-edge), var(--sm-shadow-1);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .search__box ::deep .sm-search:focus-within {
@@ -60,14 +60,14 @@ html[data-fx="lite"] .search__box ::deep .sm-search {
 }
 
 .search__overline ::deep .sm-icon {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .search__heading ::deep .sm-btn--link {
     font-family: var(--sm-font-display);
     font-size: 0.8125rem;
     font-weight: 700;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 /* Results and recent rows sit on frosted cards (.sm-section__body) a little in from the edges. */
@@ -120,7 +120,7 @@ html[data-fx="lite"] .search__box ::deep .sm-search {
     border-radius: 4px;
     background: var(--sm-accent-soft);
     box-shadow: 0 0 0 2px var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-weight: 700;
 }
 
