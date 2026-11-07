@@ -65,7 +65,7 @@
             <IconRail />
             @if (ShowSidebar)
             {
-                <aside class="shell__sidebar sm-glass">
+                <aside class="shell__sidebar">
                     <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Sidebar, Locked))">
                         @if (Nav.Section == ShellSection.Contacts)
                         {
@@ -101,7 +101,7 @@
             {
                 @if (Layout.HasInfoColumn)
                 {
-                    <aside class="shell__info sm-glass">
+                    <aside class="shell__info">
                         <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.Info, Locked))">
                             @Guarded
                         </CascadingValue>
@@ -111,7 +111,7 @@
                 {
                     <div class="shell__info-overlay">
                         <div class="shell__info-scrim" @onclick="CloseInfoAsync"></div>
-                        <aside class="shell__info shell__info--floating sm-glass sm-glass--strong">
+                        <aside class="shell__info shell__info--floating">
                             <CascadingValue Value="@(new ShellContext(Layout.Mode, ShellPane.InfoOverlay, Locked))">
                                 @Guarded
                             </CascadingValue>

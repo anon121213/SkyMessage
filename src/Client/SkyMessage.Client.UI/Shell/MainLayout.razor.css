@@ -169,7 +169,32 @@ html[data-theme="dark"] .shell__layer {
     margin-left: 12px;
     border-radius: var(--sm-radius-xl);
     overflow: hidden;
+    box-shadow: var(--sm-shadow-2);
     animation: shell-panel-in var(--sm-dur-xslow) var(--sm-ease-out) 60ms backwards;
+}
+
+/* The panels' frosted glass (as .sm-glass) on a layer of their own: a backdrop filter on a panel itself would make it
+   the containing block of every fixed popover inside it — the chat list's menus and choosers, the info column's — which
+   would then be placed from the panel's corner and clipped by its edge instead of opening where they were asked for. */
+.shell__sidebar::before,
+.shell__info::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--sm-glass);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge);
+    pointer-events: none;
+}
+
+html[data-fx="lite"] .shell__sidebar::before,
+html[data-fx="lite"] .shell__info::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
 }
 
 /* The gap between the list panel and the content is the handle; a thin accent thread shows where to grab. */
@@ -270,6 +295,7 @@ html.sm-resizing .shell__resizer::after {
     margin-left: 12px;
     border-radius: var(--sm-radius-xl);
     overflow: hidden;
+    box-shadow: var(--sm-shadow-2);
     animation: shell-panel-in var(--sm-dur-slow) var(--sm-ease-out) backwards;
 }
 
@@ -292,8 +318,12 @@ html.sm-resizing .shell__resizer::after {
 .shell__info--floating {
     width: min(420px, 92%);
     margin-left: 0;
-    box-shadow: var(--sm-edge), var(--sm-shadow-3);
+    box-shadow: var(--sm-shadow-3);
     animation: shell-float-in var(--sm-dur-slow) var(--sm-spring-soft) backwards;
+}
+
+.shell__info--floating::before {
+    background: var(--sm-glass-strong);
 }
 
 @keyframes shell-panel-in {
