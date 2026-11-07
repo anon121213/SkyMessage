@@ -1,5 +1,6 @@
 @* The app passcode's lock screen (docs/DESIGN.md "Lock screen"): rendered once by MainLayout and shown while
-   IAppLockService.IsLocked, over every screen, dialog and toast of the shell. The calm sky, the logo mark (shown
+   IAppLockService.IsLocked, over every screen, dialog and toast of the shell. The theme's calm sky (the default one
+   when the app has a background of its own, so the rose hint and the link read as on the sky), the logo mark (shown
    finished, never Animated: this screen comes back on every lock), "Enter the passcode", the dots and our glass keypad
    (PasscodePad); the fingerprint key when the user allowed it (offered by itself once per lock while the app is in
    front, not during a call). Wrong codes shake the dots; after five a pause counts down.
@@ -24,7 +25,8 @@
     var paused = RetryIn > TimeSpan.Zero;
     <div @ref="_root" class="lock @(_leaving ? "lock--leaving" : null)" role="dialog" aria-modal="true"
          aria-labelledby="@(Known ? "lock-title" : null)" aria-label="@(Known ? null : "SkyMessage")" tabindex="-1">
-        <SkyBackdrop Comet="false" />
+        @* The theme's calm sky, also over a background of one's own (its lights drawn: LockScreen.razor.css). *@
+        <SkyBackdrop Comet="false" Lights="true" />
         <div class="lock__scroll">
             <div class="lock__column">
                 @if (CallLive)

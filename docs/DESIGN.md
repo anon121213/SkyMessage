@@ -196,11 +196,12 @@ construction, the palette and the export script: `docs/brand/README.md`.
   a solid colour) as its title, sign in / new account the app-icon tile, always finished (the cut open, as on the
   splash just before); on the first signed-out screen of an app run it settles in (the intro); forms on a glass card,
   staggered entrance.
-- **Lock screen** (app passcode): the theme's calm sky (no comet) over everything, the logo mark (35px, 26px on short
-  phones; shown finished, no motion), the title in the display font, one hint line (rose for mistakes and the pause
-  countdown), dots that fill with the accent gradient, and a keypad of round translucent glass keys (card color + glass
-  rim, no backdrop blur on twelve keys) with Montserrat digits — no letters, no system keyboard; erase and the
-  fingerprint are plain glyph keys. "Forgot the passcode?" is a quiet accent link; its sign-out confirmation is a
+- **Lock screen** (app passcode): the theme's calm sky (no comet) over everything — the default sky also when the app
+  has a background of its own, so the rose hint and the accent link read as on the sky (4.5:1) — the logo mark (35px,
+  26px on short phones; shown finished, no motion), the title in the display font, one hint line (rose for mistakes and
+  the pause countdown), dots that fill with the accent gradient, and a keypad of round translucent glass keys (card
+  color + glass rim, no backdrop blur on twelve keys) with Montserrat digits — no letters, no system keyboard; erase and
+  the fingerprint are plain glyph keys. "Forgot the passcode?" is a quiet accent link; its sign-out confirmation is a
   frosted card on the same screen. A live call shows a mint capsule "Back to the call" at the top. Settings flows reuse
   the keypad in a sheet (phones) or a dialog with an opaque frame (`sm-dialog--solid`: the button it opens over must
   not tint the glass behind the dots).

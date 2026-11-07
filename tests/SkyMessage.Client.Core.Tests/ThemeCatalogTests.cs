@@ -273,6 +273,15 @@ public sealed partial class ThemeCatalogTests
         floor.Inks.ShouldBe([new ScreenInk("#F3F0FF", 7), new ScreenInk("#B4ACD5", 4.5), new ScreenInk("#7D76A2", 3)],
             "titles, previews, and at night the times and overlines");
 
+        // Over a background of one's own the lock screen keeps the theme's calm sky (the default one, with its lights).
+        var aurora = Catalog.FindWallpaper(ThemeCatalog.DefaultWallpaperKey);
+        VarOf(night, "--sm-calm-sky").ShouldBe(aurora.Dark.Gradient);
+        VarOf(night, "--sm-calm-orb-1").ShouldBe(aurora.Dark.Orb1);
+        VarOf(night, "--sm-calm-stars").ShouldBe("1");
+        VarOf(night, "--sm-calm-clouds").ShouldBe("0");
+        VarOf(Block(state, dark: false), "--sm-calm-sky").ShouldBe(aurora.Light.Gradient, "an own gradient by day too");
+        VarOf(Block(state, dark: false), "--sm-calm-clouds").ShouldBe("1");
+        VarOf(Block(Catalog.BuildState(new AppearanceSettings()), dark: true), "--sm-calm-sky").ShouldBeNull("a sky needs no stand-in");
 
         Catalog.BuildState(a).Images.ShouldBeEmpty("without a place for pictures there are none to show");
     }

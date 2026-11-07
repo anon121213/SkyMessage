@@ -840,6 +840,15 @@ public sealed class ThemeCatalog
                 Var(css, "--sm-sky-dim", Num(paint.Dim));
                 if (photoSource is not null) images.Add(new ThemeImage("sky", theme, photoSource(photo), own.Blur, ScreenFloorOf(dark)));
             }
+            // The lock screen keeps the theme's calm sky (the default one) over a background of one's own: the floor
+            // above holds the screens' text colors only, and the lock's rose hint and accent link need the sky.
+            var calm = dark ? FindWallpaper(DefaultWallpaperKey).Dark : FindWallpaper(DefaultWallpaperKey).Light;
+            Var(css, "--sm-calm-sky", calm.Gradient);
+            Var(css, "--sm-calm-orb-1", calm.Orb1);
+            Var(css, "--sm-calm-orb-2", calm.Orb2);
+            Var(css, "--sm-calm-orb-3", calm.Orb3);
+            Var(css, "--sm-calm-stars", Num(calm.Stars));
+            Var(css, "--sm-calm-clouds", dark ? "0" : "1");
         }
         else
         {

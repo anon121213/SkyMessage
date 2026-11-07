@@ -20,6 +20,21 @@
     pointer-events: none;
 }
 
+/* Over a background of one's own the lock keeps the theme's calm sky (ThemeCatalog's --sm-calm-*: the default sky with
+   its lights), not the picture or the gradient: their readability floor holds the screens' text colors only, and the
+   lines that tell someone what went wrong and how to get out — the rose hint, the "forgot" link — need the sky. */
+html[data-sky-own~="app"] .lock {
+    --sm-sky: var(--sm-calm-sky);
+    --sm-orb-1: var(--sm-calm-orb-1);
+    --sm-orb-2: var(--sm-calm-orb-2);
+    --sm-orb-3: var(--sm-calm-orb-3);
+    --sm-stars: var(--sm-calm-stars);
+    --sm-clouds: var(--sm-calm-clouds);
+    --sm-sky-photo: none;
+    --sm-sky-veil-opacity: 0;
+    --sm-sky-dim: 0;
+}
+
 .lock__scroll {
     position: relative;
     z-index: 1;
@@ -115,8 +130,9 @@
     text-wrap: balance;
 }
 
+/* The rose and the accent as text (--sm-danger-text, --sm-accent-text): 4.5:1 on the sky in both themes. */
 .lock__hint--error {
-    color: var(--sm-danger);
+    color: var(--sm-danger-text);
 }
 
 .lock__forgot {
@@ -125,7 +141,7 @@
     border: 0;
     border-radius: 999px;
     background: transparent;
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-size: 0.9375rem;
     font-weight: 600;

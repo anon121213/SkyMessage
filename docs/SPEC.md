@@ -673,9 +673,10 @@ derived from the id. Respect `prefers-reduced-motion` and the Animations setting
   Chats that follow the app look the same; a chat's own background has no floor (its text sits on bubbles and glass).
   The editor says when the floor dims a theme (a note only: its mocks already show the dimmed result and the chosen
   colors stay as they are) and lists the ready-made gradients that suit the edited theme first. Over one's own
-  backgrounds no sky lights, clouds or stars are drawn (`html[data-sky-own]`, `SkyBackdrop Lights`). The system bars
-  follow what lies under them: the top of the app's background (the browser's theme-color too), or a chat's own
-  background while it is on a phone's screen (`ThemeService.HoldSystemBars`).
+  backgrounds no sky lights, clouds or stars are drawn (`html[data-sky-own]`, `SkyBackdrop Lights`), and the passcode's
+  lock screen shows the theme's calm sky (the default one, `--sm-calm-*`) instead: its rose hint and its link need the
+  sky's contrast. The system bars follow what lies under them: the top of the app's background (the browser's
+  theme-color too), or a chat's own background while it is on a phone's screen (`ThemeService.HoldSystemBars`).
 - The chats' background (`ChatBackground`, null = the app's) and one chat's (`ChatBackgrounds[chatId]`, from the chat
   header menu, "Фон чата"): a sky, a gradient or a photo; "reset" goes back to the default. Single chats' backgrounds
   belong to the account: a chat that is gone for me (`ChatRemoved`, or missing from a full chat list after an offline
@@ -839,7 +840,8 @@ participants by `metadata.userId` (identity is per device), reports through a `D
 `IAppLockService.IsLocked` (z-index 990: over dialogs, menus, banners and toasts), and — without a keypad — while the
 stored passcode is still being read. The shell stays mounted underneath, `inert` with its animations paused, and every
 `ShellContext` reports `IsCovered` (no read marks, autoplay or active chat; notifications go through the system). The
-calm sky, the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`, a fresh one for
+calm sky (the theme's default one over a background of one's own; the hint and the link use `--sm-danger-text` and
+`--sm-accent-text`, 4.5:1 on it), the logo mark, "Enter your passcode", the dots and our own glass keypad (`PasscodePad`, a fresh one for
 every lock; no system keyboard; on a computer digits and Backspace type through `js/passcode.js`, Escape does not reach
 the app underneath); wrong codes shake the dots (rose) with a haptic, the hint says how many tries are left before a
 pause, the pause after five counts down on the hint line; the fingerprint key and a one-time automatic prompt per lock
