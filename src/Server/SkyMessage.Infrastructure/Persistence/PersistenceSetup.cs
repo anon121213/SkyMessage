@@ -29,9 +29,8 @@ public static class PersistenceSetup
             .UseSnakeCaseNamingConvention();
 
     /// <summary>
-    /// When Server:MigrateOnStartup is true: applies migrations, or — while the project has no migrations
-    /// yet (early development) — creates the schema from the model. After model changes in that phase,
-    /// recreate the dev database (<c>docker compose down -v</c>). Migrations are owned by the lead only.
+    /// When Server:MigrateOnStartup is true: applies the migrations (one per feature, docs/DEV-WORKFLOW.md "Server
+    /// changes"), or — for a model without migrations — creates the schema from the model.
     /// </summary>
     public static async Task InitializeDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {

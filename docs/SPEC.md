@@ -97,9 +97,11 @@ Api `AddLiveKitProxy/MapLiveKitProxy`. Controllers are discovered automatically.
   row (or the specific error code).
 - Realtime payloads are viewer-independent (`MessageDto`, `ChatInfoDto`, events); viewer-dependent data
   (`ChatSummaryDto`, `UserSummaryDto`) is fetched via REST when an event says so.
-- **Migrations**: never run `dotnet ef migrations add`. While the repo has no migrations the API (and tests)
-  create the schema with `EnsureCreated` (`PersistenceSetup.EnsureCreatedWithExtrasAsync`). The lead
-  generates the single initial migration after integration.
+- **Migrations** (docs/DEV-WORKFLOW.md, "Server changes"): one EF migration per feature, named after it and made with
+  `dotnet ef migrations add`; never edit an existing migration — if `develop` gained another one meanwhile, the
+  integrator re-creates the feature's migration on top. The API applies them on startup (`Server:MigrateOnStartup`)
+  and the integration tests' `ApiFactory` applies them too; `EnsureCreated`
+  (`PersistenceSetup.EnsureCreatedWithExtrasAsync`) is only the fallback for a model without migrations (fixtures).
 - Logging: structured, ids only. Async with `CancellationToken` everywhere.
 - Tests: xUnit v3 + Shouldly + NSubstitute. Run with `dotnet test --project <csproj>` (Microsoft.Testing.Platform).
 
