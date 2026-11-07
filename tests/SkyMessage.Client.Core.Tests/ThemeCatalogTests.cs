@@ -480,8 +480,9 @@ public sealed partial class ThemeCatalogTests
             }
         }
 
-        // The soft ones need nothing by day, the deep ones nothing at night.
-        foreach (var key in new[] { "dawn", "mint", "lagoon", "peach" })
+        // The soft ones need nothing by day (Сирень included: its lower stop keeps text-2 at 4.5:1), the deep ones
+        // nothing at night.
+        foreach (var key in new[] { "dawn", "lilac", "mint", "lagoon", "peach" })
             ThemeCatalog.ScreenGradient(Catalog.BackdropGradients.Single(g => g.Key == key).Colors, dark: false).ShouldBe(Catalog.BackdropGradients.Single(g => g.Key == key).Colors);
         foreach (var key in new[] { "dusk", "night", "forest", "evening" })
             ThemeCatalog.ScreenGradient(Catalog.BackdropGradients.Single(g => g.Key == key).Colors, dark: true).ShouldBe(Catalog.BackdropGradients.Single(g => g.Key == key).Colors);

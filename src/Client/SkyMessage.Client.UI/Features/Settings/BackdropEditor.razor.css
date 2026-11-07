@@ -64,22 +64,24 @@
 }
 
 /* The readability floor dims the app's background in a theme: a quiet note with the one-tap fix. */
+/* The readability floor dims the background in a theme: a quiet note (the mocks above already show the result). */
 .bd-edit__floor {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 10px;
+    align-items: flex-start;
+    gap: 10px;
     padding: 10px 12px;
     border-radius: var(--sm-radius-m);
     background: var(--sm-accent-soft);
 }
 
 .bd-edit__floor ::deep .bd-edit__floor-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
     color: var(--sm-accent);
 }
 
 .bd-edit__floor-text {
-    flex: 1 1 12rem;
+    flex: 1 1 auto;
     min-width: 0;
     font-size: 0.875rem;
     line-height: 1.4;

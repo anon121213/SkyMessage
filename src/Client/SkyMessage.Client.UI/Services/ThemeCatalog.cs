@@ -202,7 +202,7 @@ public sealed class ThemeCatalog
     public IReadOnlyList<GradientPreset> BackdropGradients { get; } =
     [
         new("dawn", "theme.gradient.dawn", ["#FFE7D6", "#FFDCE8", "#E4DCFF"], 165),
-        new("lilac", "theme.gradient.lilac", ["#EEE8FF", "#D8CCFF"], 180),
+        new("lilac", "theme.gradient.lilac", ["#EEE8FF", "#DED4FF"], 180),
         new("mint", "theme.gradient.mint", ["#E1F6EB", "#D4EEF4"], 160),
         new("lagoon", "theme.gradient.lagoon", ["#DCEFFF", "#E2E0FF"], 200),
         new("peach", "theme.gradient.peach", ["#FFF1E1", "#FFDACD"], 150),

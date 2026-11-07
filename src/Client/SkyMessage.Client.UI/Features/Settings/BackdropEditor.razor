@@ -4,8 +4,8 @@
    (Chat) can be a sky too, and go back to the default. Two mocks on top, by day and at night, show the result live
    (BackdropPreview) and stay in view while the controls scroll under them; Cancel and Save stay at the bottom. The
    app's background is shown as the root screens show it, under its readability floor (ThemeCatalog.ScreenVeil): when
-   the floor dims it in a theme, a note says so, and for a gradient "Приглушить" puts the veiled colors into the edited
-   values (a gradient shared by both themes gets one per theme); a photo is veiled row by row, only where needed.
+   the floor dims it in a theme, a note says so — it only informs: the mocks already show the dimmed result, and the
+   colors chosen stay as they are (a gradient as a whole, a photo row by row, only where needed).
    Result: BackdropEditorResult; photos picked here that end up unused are discarded when it closes. *@
 @inherits UiComponentBase
 @inject ThemeService Theme
@@ -31,10 +31,6 @@
         <div class="bd-edit__floor" role="status">
             <Icon Name="@IconNames.Info" Size="18" Class="bd-edit__floor-icon" />
             <span class="bd-edit__floor-text">@L[dimmed switch { (true, true) => "settings.background.floor.both", (false, true) => "settings.background.floor.dark", _ => "settings.background.floor.light" }]</span>
-            @if (FloorFixable)
-            {
-                <Button Variant="ButtonVariant.Tonal" Size="ButtonSize.Small" OnClick="ApplyFloor">@L["settings.background.floor.apply"]</Button>
-            }
         </div>
     }
 
@@ -276,32 +272,6 @@
 
     /// <summary>A veil this light is not worth a note.</summary>
     private const double FloorSlack = 0.02;
-
-    /// <summary>
-    /// A gradient is dimmed as a whole: its veiled colors can be put into the editor. A photo is veiled row by row, only
-    /// where its text needs it — a uniform dim would only darken the rest — so it keeps the note alone.
-    /// </summary>
-    private bool FloorFixable => DimmedThemes is { } dimmed
-        && (dimmed.Light && ShownIn(false).Kind == BackdropKind.Gradient || dimmed.Dark && ShownIn(true).Kind == BackdropKind.Gradient);
-
-    /// <summary>
-    /// "Приглушить": a gradient's veiled colors go into the edited values, so the chips show what the screens show. One
-    /// gradient for both themes cannot carry both floors (the veil is the theme's own color): it becomes one per theme,
-    /// showing the theme that changed.
-    /// </summary>
-    private void ApplyFloor()
-    {
-        if (DimmedThemes is not { } dimmed) return;
-        var (light, dark) = dimmed;
-        if (_sameForBoth)
-        {
-            _sameForBoth = false;
-            _dark = _light.Clone();
-            _editDark = dark;
-        }
-        if (light && _light.Kind == BackdropKind.Gradient) _light.Colors = ThemeCatalog.ScreenGradient(_light.Colors, dark: false).ToList();
-        if (dark && _dark.Kind == BackdropKind.Gradient) _dark.Colors = ThemeCatalog.ScreenGradient(_dark.Colors, dark: true).ToList();
-    }
 
     /// <summary>The ready-made gradients, those that suit the edited theme first (soft ones by day, deep ones at night).</summary>
     private IReadOnlyList<GradientPreset> Presets => EditingDark ? _presetsDark : _presetsLight;

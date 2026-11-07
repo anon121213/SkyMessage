@@ -671,11 +671,11 @@ derived from the id. Respect `prefers-reduced-motion` and the Animations setting
   as they are); a photo is measured by boot.js on the part the window shows (8×8 cells) and veiled row by row
   (`--sm-sky-veil`, never less than the user's dim; `ScreenVeilRows`), so a light sky over dark hills keeps its sky.
   Chats that follow the app look the same; a chat's own background has no floor (its text sits on bubbles and glass).
-  The editor says when the floor dims a theme ("Приглушить" puts a gradient's veiled colors into it) and lists the
-  ready-made gradients that suit the edited theme first. Over one's own backgrounds no sky lights, clouds or stars
-  are drawn (`html[data-sky-own]`, `SkyBackdrop Lights`). The system bars follow what lies under them: the top of
-  the app's background (the browser's theme-color too), or a chat's own background while it is on a phone's screen
-  (`ThemeService.HoldSystemBars`).
+  The editor says when the floor dims a theme (a note only: its mocks already show the dimmed result and the chosen
+  colors stay as they are) and lists the ready-made gradients that suit the edited theme first. Over one's own
+  backgrounds no sky lights, clouds or stars are drawn (`html[data-sky-own]`, `SkyBackdrop Lights`). The system bars
+  follow what lies under them: the top of the app's background (the browser's theme-color too), or a chat's own
+  background while it is on a phone's screen (`ThemeService.HoldSystemBars`).
 - The chats' background (`ChatBackground`, null = the app's) and one chat's (`ChatBackgrounds[chatId]`, from the chat
   header menu, "Фон чата"): a sky, a gradient or a photo; "reset" goes back to the default. Single chats' backgrounds
   belong to the account: a chat that is gone for me (`ChatRemoved`, or missing from a full chat list after an offline
