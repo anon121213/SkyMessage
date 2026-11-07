@@ -11,7 +11,8 @@
    "All chats" before it leaves the list. The archive row lives in "All chats" (or, hidden, behind a header button).
    What the rows and tab counters show is built once per change of the stores (not per render).
    Notices (an update, a birthday, the notification prompt) take one slot above the rows, one card at a time; a card that
-   arrives or changes once the rows are on screen does not move them under a finger (js/app.js attachNoticeAnchor). *@
+   arrives or changes once the rows are on screen does not move them under a finger (js/app.js attachNoticeAnchor: in
+   view it waits until the slot scrolls away or nobody sees the list, out of view the list keeps the rows in place). *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IChatListStore ChatList
@@ -268,6 +269,8 @@
     private JsHandle? _reorder;
     private JsHandle? _scrollState;
     private JsHandle? _noticeAnchor;
+    // What the notices' anchor was last told: nobody sees the list (ShellContext.IsCovered).
+    private bool _noticesCovered;
     private bool _attaching;
     // The rows rise in once when the screen first shows them (cleared after the animation; later changes glide).
     private const int EnterMs = 1300;
@@ -451,7 +454,12 @@
             _enterFrom = null;
             await _folderSwipe.InvokeVoidAsync("enter", entering);
         }
-        if (_attaching || IsDisposed) return;
+        if (IsDisposed) return;
+        if (_attaching)
+        {
+            await SyncNoticeCoverAsync();
+            return;
+        }
         _attaching = true;
         try
         {
@@ -496,7 +504,20 @@
         {
             _attaching = false;
         }
+        await SyncNoticeCoverAsync();
         await SyncFolderBackAsync();
+    }
+
+    /// <summary>
+    /// Tells the notices' anchor whether anybody sees the list: under a page (phones) or the lock screen, a card that
+    /// waited for the rows' sake simply takes its place (js/app.js attachNoticeAnchor).
+    /// </summary>
+    private async Task SyncNoticeCoverAsync()
+    {
+        var covered = Shell?.IsCovered == true;
+        if (_noticeAnchor is null || covered == _noticesCovered) return;
+        _noticesCovered = covered;
+        await _noticeAnchor.InvokeVoidAsync("cover", covered);
     }
 
     private void EndEnterLater()

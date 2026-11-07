@@ -267,8 +267,9 @@ html[data-fx="lite"] .chatlist__rows--enter ::deep .chat-row-wrap {
 }
 
 /* The notice slot above the rows: the update, birthday and notification-permission cards, one at a time — the first
-   that shows hides the ones after it (NoticeSlot) — and nothing (no gap) when none does. Its space is padding, so
-   js/app.js attachNoticeAnchor measures all of what the rows move by. */
+   that shows hides the ones after it (NoticeSlot) — and nothing (no gap) when none does. A card that came while the
+   slot was in view waits hidden behind the one shown (data-notice-waiting, js/app.js attachNoticeAnchor, which
+   measures all of what the rows move by: the card's own margins, inside the slot). */
 .chatlist__notices {
     display: flex;
     flex-direction: column;
@@ -279,15 +280,12 @@ html[data-fx="lite"] .chatlist__rows--enter ::deep .chat-row-wrap {
     display: none;
 }
 
-.chatlist__notices:not(:empty) {
-    padding-top: 2px;
-    padding-bottom: 10px;
-}
-
 .chatlist__notices ::deep .chatlist-notice {
     width: 100%;
+    margin: 2px 0 10px;
 }
 
-.chatlist__notices ::deep .chatlist-notice ~ .chatlist-notice {
+.chatlist__notices ::deep .chatlist-notice[data-notice-waiting],
+.chatlist__notices ::deep .chatlist-notice:not([data-notice-waiting]) ~ .chatlist-notice {
     display: none;
 }

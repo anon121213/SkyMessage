@@ -176,10 +176,15 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
   update card, the birthday card and the notification prompt, **one at a time** — the first that has something to
   show (in that order) hides the ones after it until it goes (`.chatlist-notice` on each card's root; each reports
   `NoticeSlot.Report(kind, showing)` after rendering). Under 700 px of height every card is a one-row strip (its
-  title, the action, the close). The cards stay mounted under the archive (hidden). A card that arrives or changes
-  once the rows are on screen does not move them (`js/app.js attachNoticeAnchor`: the list scrolls by the change in
-  the same frame; a short list keeps its height until it is back at the top; a shorter card keeps the slot's height
-  at the top); before that, and after the user touched a card, the cards simply take their place.
+  title, the action, the close).
+  The cards stay mounted under the archive (hidden). A card that arrives or changes once the rows are on screen does
+  not move them (`js/app.js attachNoticeAnchor`): while the slot is in view (the list at or near its top) a new card
+  waits, hidden (`data-notice-waiting`), behind the one shown — scrolling the list for it would fold the large header
+  over half of the card — and comes once the slot has scrolled out of view, once nobody sees the list (a page or the
+  lock screen over it: `ChatListPanel` calls `cover`; the app in the background; the archive), when the user closes
+  the card shown, or on the next start; out of view the list scrolls by the change in the same frame (a short list
+  keeps its height until it is back at the top); a shorter card keeps the slot's height at the top. Before the rows
+  are on screen, and after the user touched a card, the cards simply take their place.
 * `TabBar` / `IconRail` show `TotalUnread` on Chats (the badge pops in / bumps); the active pill slides between
   areas and the selected icon bounces; the rail's avatar opens Settings. `TabBar Active="section"` shows another
   area as active (the shell passes the root screen's area).

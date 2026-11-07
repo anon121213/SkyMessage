@@ -1557,33 +1557,57 @@ export function attachScrollState(scroller, target, attr, threshold) {
 }
 
 // The chat list's notice slot (ChatListPanel .chatlist__notices: an update, a birthday, the notification prompt) sits
-// above the rows. A card that arrives once the rows are on screen — an update found seconds after start, a birthday,
-// the next card in line taking the slot — must not move them under a finger about to tap one:
-// • the slot grew by itself: the list scrolls down by as much in the same frame (before it is painted; less what the
-//   browser's own scroll anchoring already did), so the rows stay where they were and the new card waits above them,
-//   under the header (scrolling up shows it). A list too short to scroll that far keeps the height it had at its end
-//   (--chatlist-hold-min, the pane's min-height) until it is back at the top.
+// above the rows. A card that comes by itself once the rows are on screen — an update found seconds after start, a
+// birthday, the next card in line taking the slot — must not move them under a finger about to tap one:
+// • while the slot is in view (the list at or near its top) the card waits, hidden (data-notice-waiting), behind the
+//   one shown, before it is ever drawn — scrolling the list by its height instead would fold the large header into the
+//   compact bar over half of the card. It comes once the slot has scrolled out of view under the header (then as
+//   below: it waits above the rows, and back at the top it is there), once nobody sees the list (a page or the lock
+//   screen over it — `cover(true)` —, the app in the background, the archive), when the user changes the slot (closes
+//   the card shown), or on the next start.
+// • out of view, the slot grows: the list scrolls down by as much in the same frame (before it is painted; less what
+//   the browser's own scroll anchoring already did), so the rows stay where they were and the new card waits above
+//   them, under the header (scrolling up shows it). A list too short to scroll that far keeps the height it had at its
+//   end (--chatlist-hold-min, the pane's min-height) until it is back at the top.
 // • it shrank by itself (a shorter card took the slot): the list scrolls up by as much when it can; at the top the slot
 //   keeps its height instead (min-height) until the user touches it or it scrolls out of view.
 // Left alone: changes the user caused in the slot (a card closed, the next one taking its place), everything while the
-// list's rows are not there yet or still rising in (`pane` has no settled .chatlist__rows) — the cards then simply take
-// their place — and the slot hidden or shown again (the archive). `head`: the sticky header the rows pass under.
+// list's rows are not there yet or still rising in (`pane` has no settled .chatlist__rows) or nobody sees the list —
+// the cards then simply take their place —, the card on screen changing by itself, and the slot hidden or shown again
+// (the archive). `head`: the sticky header the rows pass under.
 export function attachNoticeAnchor(slot, scroller, pane, head) {
-  if (!slot || !scroller || !pane || typeof ResizeObserver !== 'function') return { dispose: noop };
+  if (!slot || !scroller || !pane || typeof ResizeObserver !== 'function') return { dispose: noop, cover: noop };
   const USER_MS = 1500;
+  const WAITING = 'data-notice-waiting';
   let height = slot.offsetHeight;
   let hidden = slot.offsetParent === null;
   let touchedAt = -Infinity;
   let held = false;
   let reserve = 0;
+  let covered = false;
   // The scroll position as of the last scroll event: a change found here since then is the browser's own anchoring.
   let lastTop = scroller.scrollTop;
+  const headBottom = () => (head ? head.getBoundingClientRect().bottom : scroller.getBoundingClientRect().top);
+  // The slot reaches below the header: a card coming into it now would be seen. Measured on scrolls and resizes, so a
+  // card can be told to wait before it is ever laid out.
+  const measureInView = () => slot.getBoundingClientRect().top + slot.offsetHeight > headBottom() + 0.5;
+  let inView = measureInView();
+  const isCard = (el) => el.classList.contains('chatlist-notice');
+  // The card on screen: the first one not waiting (the slot's CSS hides the ones after it).
+  const shownCard = () => {
+    for (const el of slot.children) if (isCard(el) && !el.hasAttribute(WAITING)) return el;
+    return null;
+  };
+  let shown = shownCard();
+  // Nobody sees the list: a page or the lock screen over it (cover), the app in the background.
+  const away = () => covered || document.visibilityState === 'hidden';
+  const userChanged = () => performance.now() - touchedAt < USER_MS;
   // The pane keeps `px` more than its height now (its flex-grow would otherwise give back any room at the end).
   const holdMore = (px) => {
     pane.style.setProperty('--chatlist-hold-min', `${Math.ceil(pane.offsetHeight + px)}px`);
     held = true;
   };
-  const release = () => {
+  const releaseHold = () => {
     if (!held) return;
     pane.style.removeProperty('--chatlist-hold-min');
     held = false;
@@ -1593,24 +1617,70 @@ export function attachNoticeAnchor(slot, scroller, pane, head) {
     slot.style.minHeight = reserve ? `${reserve}px` : '';
   };
   const rowsSettled = () => !!pane.querySelector(':scope > .chatlist__rows:not(.chatlist__rows--enter)');
+  // A card waits now (cheap to ask on every scroll).
+  let waits = false;
+  // The cards that came into the slot by themselves wait behind the one shown (behind nothing when it went): true
+  // when one did.
+  const waitBehind = () => {
+    let any = false;
+    for (const el of slot.children) {
+      if (!isCard(el) || el.hasAttribute(WAITING)) continue;
+      if (el === shown) break;
+      el.setAttribute(WAITING, '');
+      any = true;
+    }
+    if (any) waits = true;
+    return any;
+  };
+  // The waiting cards take their place. `now`: nobody sees the list, so they simply do (no scroll keeps the rows).
+  const letIn = (now) => {
+    if (!waits) return;
+    waits = false;
+    for (const el of slot.querySelectorAll(`:scope > [${WAITING}]`)) el.removeAttribute(WAITING);
+    if (now) {
+      if (reserve) setReserve(0);
+      height = slot.offsetHeight;
+      inView = measureInView();
+    }
+    shown = shownCard();
+  };
   const touched = () => {
     touchedAt = performance.now();
     if (reserve) setReserve(0);
+  };
+  // Blazor added or removed a card: one that would show now waits while the slot is in view (before it is laid out).
+  const onCards = () => {
+    if (slot.hidden || away() || userChanged() || !rowsSettled()) letIn(away());
+    else if (inView) waitBehind();
+    shown = shownCard();
   };
   const adjust = () => {
     if (slot.offsetParent === null) {
       hidden = true;
       if (reserve) setReserve(0);
+      letIn(false);
       return;
     }
     const next = slot.offsetHeight;
-    const delta = next - height;
+    const before = height;
+    const delta = next - before;
     height = next;
     // Shown again (the archive closed): what it holds now is simply there.
     if (hidden) { hidden = false; return; }
-    if (held && scroller.scrollTop <= 0) release();
-    if (Math.abs(delta) < 1 || performance.now() - touchedAt < USER_MS || !rowsSettled()) return;
-    const shift = delta - (scroller.scrollTop - lastTop);
+    if (held && scroller.scrollTop <= 0) releaseHold();
+    if (Math.abs(delta) < 1 || userChanged() || !rowsSettled()) return;
+    // What the browser's own scroll anchoring did since the last scroll event (the slot moved up by as much).
+    const anchored = scroller.scrollTop - lastTop;
+    if (delta > 0 && (away() || slot.getBoundingClientRect().top + anchored + before > headBottom() + 0.5)) {
+      // In view: a card that came in after all waits (one the mutation observer let by); the card on screen may grow by
+      // itself. Nobody looking: it simply takes its place.
+      if (!away() && waitBehind()) {
+        height = slot.offsetHeight;
+        if (scroller.scrollTop !== lastTop) scroller.scrollTop = lastTop;
+      }
+      return;
+    }
+    const shift = delta - anchored;
     if (Math.abs(shift) < 1) return;
     if (shift < 0 && scroller.scrollTop + shift < 0) {
       // Nothing to scroll up by: the slot keeps the height it had (the RO's next round sees no change).
@@ -1625,28 +1695,51 @@ export function attachNoticeAnchor(slot, scroller, pane, head) {
   };
   const observer = new ResizeObserver(() => {
     adjust();
+    shown = shownCard();
     lastTop = scroller.scrollTop;
+    inView = measureInView();
   });
   observer.observe(slot);
+  // The header changing its height moves the slot.
+  if (head) observer.observe(head);
+  const cards = new MutationObserver(onCards);
+  cards.observe(slot, { childList: true });
   const onScroll = () => {
     lastTop = scroller.scrollTop;
-    if (held && lastTop <= 0) release();
-    // The kept height has scrolled out of view under the header: it goes (the observer keeps the rows in place).
-    if (reserve && head && slot.getBoundingClientRect().bottom <= head.getBoundingClientRect().bottom) setReserve(0);
+    if (held && lastTop <= 0) releaseHold();
+    inView = measureInView();
+    // The kept height, or the place a waiting card would take, has scrolled out of view under the header: the height
+    // goes and the cards come in (the observer keeps the rows in place).
+    if (!inView) {
+      if (reserve) setReserve(0);
+      letIn(false);
+    }
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') letIn(true);
   };
   slot.addEventListener('pointerdown', touched, true);
   slot.addEventListener('click', touched, true);
   slot.addEventListener('keydown', touched, true);
   scroller.addEventListener('scroll', onScroll, { passive: true });
+  document.addEventListener('visibilitychange', onVisibility);
   return {
+    // ChatListPanel: a page or the lock screen covers the list (true) or it is back (false).
+    cover(on) {
+      covered = !!on;
+      if (covered) letIn(true);
+    },
     dispose() {
       observer.disconnect();
+      cards.disconnect();
       slot.removeEventListener('pointerdown', touched, true);
       slot.removeEventListener('click', touched, true);
       slot.removeEventListener('keydown', touched, true);
       scroller.removeEventListener('scroll', onScroll);
-      release();
+      document.removeEventListener('visibilitychange', onVisibility);
+      releaseHold();
       setReserve(0);
+      letIn(false);
     }
   };
 }
