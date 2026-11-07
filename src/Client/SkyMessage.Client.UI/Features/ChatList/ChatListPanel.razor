@@ -9,7 +9,9 @@
    sideways, the neighbouring folder sliding in beside it (js/folders.js: .NET renders that folder's first rows into a
    peek pane while the gesture runs), unless "Swipe on a chat" is set to the chat actions. On phones Back returns to
    "All chats" before it leaves the list. The archive row lives in "All chats" (or, hidden, behind a header button).
-   What the rows and tab counters show is built once per change of the stores (not per render). *@
+   What the rows and tab counters show is built once per change of the stores (not per render).
+   Notices (an update, a birthday, the notification prompt) take one slot above the rows, one card at a time; a card that
+   arrives or changes once the rows are on screen does not move them under a finger (js/app.js attachNoticeAnchor). *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IChatListStore ChatList
@@ -65,13 +67,17 @@
                 <Icon Name="@IconNames.Search" Size="18" StrokeWidth="2.2" />
                 <span class="chatlist__search-text">@L["search.placeholder"]</span>
             </button>
-            @* App-level notices sit in the list (they scroll away) instead of floating over headers. *@
-            <div class="chatlist__notices">
-                <UpdateNotice />
-                <NotificationPermissionPrompt />
-                <BirthdayCard />
-            </div>
         }
+        @* App-level notices sit in the list (they scroll away) instead of floating over headers: one card at a time, the
+           first that has something to show (update, birthday, notifications: NoticeSlot). They stay mounted under the
+           archive (hidden), so a closed card stays closed and nothing asks twice. *@
+        <CascadingValue Value="_noticeSlot" IsFixed="true">
+            <div @ref="_notices" class="chatlist__notices" hidden="@_archive">
+                <UpdateNotice />
+                <BirthdayCard />
+                <NotificationPermissionPrompt />
+            </div>
+        </CascadingValue>
 
         <div @ref="_pane" class="chatlist__pane" data-folder-swipe="@(FolderSwipe ? "" : null)">
         @if (ArchiveRow)
@@ -253,12 +259,15 @@
     private ElementReference _head;
     private ElementReference _scroll;
     private ElementReference _rows;
+    private ElementReference _notices;
+    private readonly NoticeSlot _noticeSlot = new();
     private string? _rowsId;
     private DotNetObjectReference<ChatListPanel>? _self;
     private JsHandle? _swipe;
     private JsHandle? _flip;
     private JsHandle? _reorder;
     private JsHandle? _scrollState;
+    private JsHandle? _noticeAnchor;
     private bool _attaching;
     // The rows rise in once when the screen first shows them (cleared after the animation; later changes glide).
     private const int EnterMs = 1300;
@@ -451,6 +460,7 @@
             {
                 _swipe = await Js.AttachAsync("attachRowSwipe", _scroll, _scroll, _self);
                 _scrollState = await Js.AttachAsync("attachScrollState", _scroll, _root, "data-scrolled", 6);
+                _noticeAnchor = await Js.AttachAsync("attachNoticeAnchor", _notices, _scroll, _pane, _head);
             }
             if (_entering && !_enterTimer && _items.Count > 0) EndEnterLater();
             // The folder swipe lives as long as the tabs: the pane is always there, the tab strip comes and goes.
@@ -891,6 +901,7 @@
         if (_flip is not null) await _flip.DisposeAsync();
         if (_reorder is not null) await _reorder.DisposeAsync();
         if (_scrollState is not null) await _scrollState.DisposeAsync();
+        if (_noticeAnchor is not null) await _noticeAnchor.DisposeAsync();
         if (_folderSwipe is not null) await _folderSwipe.DisposeAsync();
         if (_folderModule is not null) await _folderModule.DisposeAsync();
         _self?.Dispose();

@@ -98,6 +98,70 @@
     margin: -4px 0 0 -6px;
 }
 
+/* Short screens (under 700 px of height): a one-row strip — the disc, the title (two short lines at most), the action
+   and the close button — so the chats stay in view; the sentence under the title is left out. */
+@media (max-height: 699.98px) {
+    .update-card {
+        align-items: center;
+        gap: 10px;
+        padding: 7px 4px 7px 8px;
+        border-radius: var(--sm-radius-l);
+    }
+
+    .update-card__disc {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+
+    .update-card__disc ::deep .sm-icon {
+        width: 1.125rem;
+        height: 1.125rem;
+    }
+
+    .update-card__body {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        padding-top: 0;
+    }
+
+    .update-card__title,
+    .update-card__body > .update-card__text:first-child {
+        display: -webkit-box;
+        flex: 1 1 5rem;
+        min-width: 0;
+        padding-top: 0;
+        overflow: hidden;
+        font-size: 0.875rem;
+        line-height: 1.25;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+    }
+
+    .update-card__title + .update-card__text {
+        display: none;
+    }
+
+    .update-card__progress {
+        flex: 1 0 100%;
+        margin-top: 0;
+    }
+
+    .update-card__actions {
+        margin-top: 0;
+    }
+
+    .update-card__actions ::deep .sm-btn .sm-icon {
+        display: none;
+    }
+
+    .update-card ::deep .update-card__close {
+        margin: 0;
+    }
+}
+
 @keyframes update-card-in {
     from { opacity: 0; transform: translateY(-110%) scale(0.94); }
     to { opacity: 1; transform: none; }

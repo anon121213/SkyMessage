@@ -1,7 +1,10 @@
 @* Asks once per device for permission to show notifications (Android 13+, iOS, macOS and browsers need it, or
    background messages and incoming calls stay silent). Native apps show the system dialog shortly after the
-   signed-in shell appears; browsers only allow it from a tap, so they get a glass card dropping in at the top with a
-   bell, the button and a dismiss. *@
+   signed-in shell appears; browsers only allow it from a tap, so they get a glass card at the top with a bell, the
+   button and a dismiss — there as soon as the list is, not dropping in over rows already on screen. It is last in the
+   chat list's notice slot (NoticeSlot): while the update or the birthday card shows it does not start at all (nothing
+   is remembered, a later start asks), and a card arriving later takes the slot until it goes. Short screens get it as a
+   one-row strip. *@
 @inherits UiComponentBase
 @inject ILocalNotificationService LocalNotifications
 @inject IPermissionService Permissions
@@ -12,7 +15,7 @@
 
 @if (_showStrip)
 {
-    <div class="notify-card sm-glass sm-glass--strong @(_leaving ? "notify-card--leaving" : null)" role="status">
+    <div class="notify-card chatlist-notice sm-glass sm-glass--strong @(_leaving ? "notify-card--leaving" : null)" role="status">
         <span class="notify-card__disc" aria-hidden="true">
             <Icon Name="@IconNames.BellRing" Size="22" StrokeWidth="2.2" />
         </span>
@@ -37,18 +40,27 @@
     private bool _busy;
     private bool _checked;
 
+    /// <summary>The chat list's notice slot (one card at a time); null elsewhere.</summary>
+    [CascadingParameter] public NoticeSlot? Slot { get; set; }
+
+    /// <summary>Another card has the slot: this one stays away (asked again on a later start).</summary>
+    private bool SlotTaken => Slot?.IsTakenBesides(NoticeKind.Notifications) == true;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        Slot?.Report(NoticeKind.Notifications, _showStrip);
         if (!firstRender || _checked) return;
         _checked = true;
         try
         {
-            // Let the chat list appear first; a system dialog over a blank screen feels alarming.
-            await Task.Delay(1500);
-            if (IsDisposed || !Settings.Current.Notifications.Enabled) return;
+            // Native apps: let the chat list appear first, a system dialog over a blank screen feels alarming. The
+            // browser's card comes with the list instead of dropping in over rows already on screen.
+            if (Platform.IsNativeApp) await Task.Delay(1500);
+            if (IsDisposed || !Settings.Current.Notifications.Enabled || SlotTaken) return;
             if (!string.IsNullOrEmpty(await Preferences.GetAsync(PromptedKey))) return;
             var state = await Permissions.CheckAsync(AppPermission.Notifications);
             if (state is PermissionState.Granted or PermissionState.Limited or PermissionState.NotApplicable or PermissionState.Restricted) return;
+            if (IsDisposed || SlotTaken) return;
             if (Platform.IsNativeApp)
             {
                 // Android reports "denied" until the first request, so native apps simply ask once per device.
@@ -56,7 +68,7 @@
                 await LocalNotifications.RequestPermissionAsync();
                 return;
             }
-            if (state == PermissionState.Unknown && !IsDisposed)
+            if (state == PermissionState.Unknown)
             {
                 _showStrip = true;
                 StateHasChanged();

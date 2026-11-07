@@ -1,7 +1,9 @@
-@* The birthday card at the top of the chat list on a contact's birthday (a glass card like the update notice): their
-   faces, "Сегодня день рождения у Анны" (ReminderTexts.BirthdayTitle), the age when it shows, and "Поздравить", which
-   opens the chat with them (with several people, one button each). Closing hides it until tomorrow. Off with
-   Settings › Notifications › Birthdays. *@
+@* The birthday card at the top of the chat list on a contact's birthday (a glass card like the update notice, second
+   in the chat list's notice slot: NoticeSlot), kept small so the chats stay in view: their faces with a 🎂, one line —
+   "Сегодня день рождения у Анны" (ReminderTexts.BirthdayTitle) — and one "Поздравить" button, with the age next to it
+   when one person's shows. The button opens the chat with them; with several people it first opens a small chooser
+   with their faces and full names (a sheet on phones, a menu by the button on wide screens). Closing hides the card
+   until tomorrow. Off with Settings › Notifications › Birthdays. Short screens get it as a one-row strip. *@
 @inherits UiComponentBase
 @inject IBirthdayService Celebrations
 @inject IChatListStore ChatList
@@ -9,9 +11,10 @@
 @inject NavigationService Nav
 @inject ToastService Toasts
 
-@if (Celebrations.Celebrating is { Count: > 0 } people && !Celebrations.IsCardDismissed)
+@if (Shows)
 {
-    <div class="bday-card sm-glass sm-glass--strong @(_leaving ? "bday-card--leaving" : null)" role="status">
+    var people = Celebrations.Celebrating;
+    <div class="bday-card chatlist-notice sm-glass sm-glass--strong @(_leaving ? "bday-card--leaving" : null)" role="status">
         <div class="bday-card__faces" aria-hidden="true">
             @foreach (var person in people.Take(3))
             {
@@ -21,14 +24,14 @@
         </div>
         <div class="bday-card__body">
             <div class="bday-card__title">@ReminderTexts.BirthdayTitle(L, people.Select(NameOf).ToList())</div>
-            <div class="bday-card__text">@Text(people)</div>
             <div class="bday-card__actions">
-                @foreach (var person in people.Take(3))
+                <Button Size="ButtonSize.Small" Icon="@IconNames.MessageCircleMore" Loading="@(_opening is not null)" OnClick="CongratulateAsync"
+                        Class="bday-card__action" Title="@L["birthday.card.congratulate"]" aria-label="@L["birthday.card.congratulate"]">
+                    <span class="bday-card__action-label">@L["birthday.card.congratulate"]</span>
+                </Button>
+                @if (people.Count == 1 && people[0].Age is { } age)
                 {
-                    <Button @key="person.User.Id" Size="ButtonSize.Small" Icon="@IconNames.MessageCircleMore" Loading="@(_opening == person.User.Id)"
-                            OnClick="() => CongratulateAsync(person)">
-                        @(people.Count == 1 ? L["birthday.card.congratulate"] : FormatService.FirstName(NameOf(person)))
-                    </Button>
+                    <span class="bday-card__age">@L.Plural("birthday.age", age)</span>
                 }
             </div>
         </div>
@@ -36,10 +39,31 @@
     </div>
 }
 
+@* Several people: whom to congratulate (their full names, as the chat list shows them). *@
+<ContextMenu @ref="_chooser" Title="@L["birthday.card.congratulate"]">
+    @foreach (var person in Celebrations.Celebrating)
+    {
+        <button @key="person.User.Id" type="button" role="menuitem" class="sm-menu-item bday-choice" @onclick="() => ChooseAsync(person)">
+            <UserAvatar UserId="person.User.Id" Embedded="person.User" Size="36" Class="bday-choice__face" />
+            <span class="sm-menu-item__label">@NameOf(person)</span>
+            @if (person.Age is { } age)
+            {
+                <span class="sm-menu-item__hint">@L.Plural("birthday.age", age)</span>
+            }
+        </button>
+    }
+</ContextMenu>
+
 @code {
     private const int LeaveMs = 200;
     private bool _leaving;
     private Guid? _opening;
+    private ContextMenu? _chooser;
+
+    /// <summary>The chat list's notice slot (one card at a time); null elsewhere.</summary>
+    [CascadingParameter] public NoticeSlot? Slot { get; set; }
+
+    private bool Shows => Celebrations.Celebrating.Count > 0 && !Celebrations.IsCardDismissed;
 
     protected override void OnInitialized()
     {
@@ -47,15 +71,29 @@
         RenderOn<Guid>(h => Users.UserChanged += h, h => Users.UserChanged -= h, id => Celebrations.Celebrating.Any(p => p.User.Id == id));
     }
 
+    protected override void OnAfterRender(bool firstRender) => Slot?.Report(NoticeKind.Birthday, Shows);
+
     private string NameOf(BirthdayPerson person) => Users.NameOf(person.User.Id, L, person.User);
 
-    private string Text(IReadOnlyList<BirthdayPerson> people)
+    /// <summary>One person: their chat. Several: the chooser first (by the button on wide screens).</summary>
+    private async Task CongratulateAsync(MouseEventArgs e)
     {
-        if (people.Count > 1) return L["birthday.card.wishMany"];
-        return people[0].Age is { } age ? $"{L.Plural("birthday.turns", age)}. {L["birthday.card.wish"]}" : L["birthday.card.wish"];
+        var people = Celebrations.Celebrating;
+        if (people.Count == 1)
+        {
+            await OpenChatAsync(people[0]);
+            return;
+        }
+        if (people.Count > 1 && _chooser is not null) await _chooser.OpenAsync(e.ClientX > 0 ? e.ClientX : 64, e.ClientY > 0 ? e.ClientY : 64);
     }
 
-    private async Task CongratulateAsync(BirthdayPerson person)
+    private async Task ChooseAsync(BirthdayPerson person)
+    {
+        if (_chooser is not null) await _chooser.CloseAsync();
+        await OpenChatAsync(person);
+    }
+
+    private async Task OpenChatAsync(BirthdayPerson person)
     {
         if (_opening is not null) return;
         _opening = person.User.Id;

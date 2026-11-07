@@ -1556,6 +1556,101 @@ export function attachScrollState(scroller, target, attr, threshold) {
   };
 }
 
+// The chat list's notice slot (ChatListPanel .chatlist__notices: an update, a birthday, the notification prompt) sits
+// above the rows. A card that arrives once the rows are on screen — an update found seconds after start, a birthday,
+// the next card in line taking the slot — must not move them under a finger about to tap one:
+// • the slot grew by itself: the list scrolls down by as much in the same frame (before it is painted; less what the
+//   browser's own scroll anchoring already did), so the rows stay where they were and the new card waits above them,
+//   under the header (scrolling up shows it). A list too short to scroll that far keeps the height it had at its end
+//   (--chatlist-hold-min, the pane's min-height) until it is back at the top.
+// • it shrank by itself (a shorter card took the slot): the list scrolls up by as much when it can; at the top the slot
+//   keeps its height instead (min-height) until the user touches it or it scrolls out of view.
+// Left alone: changes the user caused in the slot (a card closed, the next one taking its place), everything while the
+// list's rows are not there yet or still rising in (`pane` has no settled .chatlist__rows) — the cards then simply take
+// their place — and the slot hidden or shown again (the archive). `head`: the sticky header the rows pass under.
+export function attachNoticeAnchor(slot, scroller, pane, head) {
+  if (!slot || !scroller || !pane || typeof ResizeObserver !== 'function') return { dispose: noop };
+  const USER_MS = 1500;
+  let height = slot.offsetHeight;
+  let hidden = slot.offsetParent === null;
+  let touchedAt = -Infinity;
+  let held = false;
+  let reserve = 0;
+  // The scroll position as of the last scroll event: a change found here since then is the browser's own anchoring.
+  let lastTop = scroller.scrollTop;
+  // The pane keeps `px` more than its height now (its flex-grow would otherwise give back any room at the end).
+  const holdMore = (px) => {
+    pane.style.setProperty('--chatlist-hold-min', `${Math.ceil(pane.offsetHeight + px)}px`);
+    held = true;
+  };
+  const release = () => {
+    if (!held) return;
+    pane.style.removeProperty('--chatlist-hold-min');
+    held = false;
+  };
+  const setReserve = (px) => {
+    reserve = Math.max(0, Math.round(px));
+    slot.style.minHeight = reserve ? `${reserve}px` : '';
+  };
+  const rowsSettled = () => !!pane.querySelector(':scope > .chatlist__rows:not(.chatlist__rows--enter)');
+  const touched = () => {
+    touchedAt = performance.now();
+    if (reserve) setReserve(0);
+  };
+  const adjust = () => {
+    if (slot.offsetParent === null) {
+      hidden = true;
+      if (reserve) setReserve(0);
+      return;
+    }
+    const next = slot.offsetHeight;
+    const delta = next - height;
+    height = next;
+    // Shown again (the archive closed): what it holds now is simply there.
+    if (hidden) { hidden = false; return; }
+    if (held && scroller.scrollTop <= 0) release();
+    if (Math.abs(delta) < 1 || performance.now() - touchedAt < USER_MS || !rowsSettled()) return;
+    const shift = delta - (scroller.scrollTop - lastTop);
+    if (Math.abs(shift) < 1) return;
+    if (shift < 0 && scroller.scrollTop + shift < 0) {
+      // Nothing to scroll up by: the slot keeps the height it had (the RO's next round sees no change).
+      setReserve(next - shift);
+      height = next - shift;
+      return;
+    }
+    const target = scroller.scrollTop + shift;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    if (target > max) holdMore(target - max);
+    scroller.scrollTop = target;
+  };
+  const observer = new ResizeObserver(() => {
+    adjust();
+    lastTop = scroller.scrollTop;
+  });
+  observer.observe(slot);
+  const onScroll = () => {
+    lastTop = scroller.scrollTop;
+    if (held && lastTop <= 0) release();
+    // The kept height has scrolled out of view under the header: it goes (the observer keeps the rows in place).
+    if (reserve && head && slot.getBoundingClientRect().bottom <= head.getBoundingClientRect().bottom) setReserve(0);
+  };
+  slot.addEventListener('pointerdown', touched, true);
+  slot.addEventListener('click', touched, true);
+  slot.addEventListener('keydown', touched, true);
+  scroller.addEventListener('scroll', onScroll, { passive: true });
+  return {
+    dispose() {
+      observer.disconnect();
+      slot.removeEventListener('pointerdown', touched, true);
+      slot.removeEventListener('click', touched, true);
+      slot.removeEventListener('keydown', touched, true);
+      scroller.removeEventListener('scroll', onScroll);
+      release();
+      setReserve(0);
+    }
+  };
+}
+
 // ---- Viewport ---------------------------------------------------------------------------------------------
 
 function cssInset(name) {

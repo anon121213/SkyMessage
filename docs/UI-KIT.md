@@ -167,10 +167,19 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
   (`AppVersionCheck.IsOutdated(app, min)`); the signed-out `ServerStatus` shows the same warning. Settings › About ›
   Updates is `Features/Settings/AboutUpdates.razor`.
 * `NotificationPermissionPrompt` — asks once per device for notification permission after the signed-in shell
-  appears (native: the system dialog via `ILocalNotificationService.RequestPermissionAsync`; browser: a strip with
-  a button, because browsers need a tap). Remembered in `IPreferencesStore` under
-  `NotificationPermissionPrompt.PromptedKey`; skipped when `Notifications.Enabled` is off. The settings screen
-  only needs to offer a manual "turn on" (and `IPermissionService.OpenAppSettingsAsync` when denied).
+  appears (native: the system dialog via `ILocalNotificationService.RequestPermissionAsync`, 1.5 s after the list;
+  browser: a card with a button, because browsers need a tap, there with the list). Remembered in `IPreferencesStore`
+  under `NotificationPermissionPrompt.PromptedKey`; skipped when `Notifications.Enabled` is off, and not started at
+  all while another card has the notice slot (a later start asks). The settings screen only needs to offer a manual
+  "turn on" (and `IPermissionService.OpenAppSettingsAsync` when denied).
+* The chat list's notice slot (`ChatListPanel` `.chatlist__notices`, `Shell/NoticeSlot` cascaded to the cards): the
+  update card, the birthday card and the notification prompt, **one at a time** — the first that has something to
+  show (in that order) hides the ones after it until it goes (`.chatlist-notice` on each card's root; each reports
+  `NoticeSlot.Report(kind, showing)` after rendering). Under 700 px of height every card is a one-row strip (its
+  title, the action, the close). The cards stay mounted under the archive (hidden). A card that arrives or changes
+  once the rows are on screen does not move them (`js/app.js attachNoticeAnchor`: the list scrolls by the change in
+  the same frame; a short list keeps its height until it is back at the top; a shorter card keeps the slot's height
+  at the top); before that, and after the user touched a card, the cards simply take their place.
 * `TabBar` / `IconRail` show `TotalUnread` on Chats (the badge pops in / bumps); the active pill slides between
   areas and the selected icon bounces; the rail's avatar opens Settings. `TabBar Active="section"` shows another
   area as active (the shell passes the root screen's area).
@@ -427,7 +436,8 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
 * `ProfileLook` (static, Features/Profile): `Accent(key)`, `TintStyle(key)` (`--pc/--pc2` for a profile's ring and
   main action), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
   Birthdays: Core's `IBirthdayService.IsBirthdayToday(user)` puts 🎂 after a name (profile, chat header);
-  `BirthdayCard` (Features/ChatList) is the chat list's card; `ReminderTexts.BirthdayTitle(L, names)` words its title
+  `BirthdayCard` (Features/ChatList) is the chat list's card (faces, one line, one "Поздравить": with several people a
+  `ContextMenu` chooser of their faces and full names); `ReminderTexts.BirthdayTitle(L, names)` words its title
   and the reminder ("Сегодня день рождения у Анны": Core's `RussianNames.Genitive`, a colon when a name cannot be
   declined for sure).
 * `ChatActions` (scoped, Features/ChatList): `TogglePinAsync`, `ToggleMuteAsync` (asks duration), `MuteOptions`,

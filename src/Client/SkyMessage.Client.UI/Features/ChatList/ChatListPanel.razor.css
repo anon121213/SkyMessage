@@ -134,6 +134,9 @@ html[data-fx="lite"] .chatlist__head--tabs .chatlist__head-glass {
     display: flex;
     flex-direction: column;
     flex: 1 0 auto;
+    /* A short list keeps the height it had while a card that arrived late waits above its rows, so the list can scroll
+       them back to where they were (js/app.js attachNoticeAnchor; folders.js's own inline min-height wins meanwhile). */
+    min-height: var(--chatlist-hold-min, auto);
     /* Vertical scrolling stays native; sideways drags are the folder swipe's (or the rows'). */
     touch-action: pan-y;
 }
@@ -263,19 +266,28 @@ html[data-fx="lite"] .chatlist__rows--enter ::deep .chat-row-wrap {
     to { opacity: 1; transform: none; }
 }
 
-/* Update / notification-permission cards at the top of the list; empty (no gap) when neither is shown. */
+/* The notice slot above the rows: the update, birthday and notification-permission cards, one at a time — the first
+   that shows hides the ones after it (NoticeSlot) — and nothing (no gap) when none does. Its space is padding, so
+   js/app.js attachNoticeAnchor measures all of what the rows move by. */
 .chatlist__notices {
     display: flex;
     flex-direction: column;
-    gap: 8px;
     padding: 0 12px;
 }
 
-.chatlist__notices:not(:empty) {
-    margin: 2px 0 10px;
+.chatlist__notices[hidden] {
+    display: none;
 }
 
-.chatlist__notices ::deep .notify-card,
-.chatlist__notices ::deep .update-card {
+.chatlist__notices:not(:empty) {
+    padding-top: 2px;
+    padding-bottom: 10px;
+}
+
+.chatlist__notices ::deep .chatlist-notice {
     width: 100%;
+}
+
+.chatlist__notices ::deep .chatlist-notice ~ .chatlist-notice {
+    display: none;
 }

@@ -69,6 +69,64 @@
     margin: -4px 0 0 -6px;
 }
 
+/* Short screens (under 700 px of height): a one-row strip — the bell, the title (two short lines at most), the button
+   and the close button — so the chats stay in view; the sentence under the title is left out. */
+@media (max-height: 699.98px) {
+    .notify-card {
+        align-items: center;
+        gap: 10px;
+        padding: 7px 4px 7px 8px;
+        border-radius: var(--sm-radius-l);
+    }
+
+    .notify-card__disc {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+
+    .notify-card__disc ::deep .sm-icon {
+        width: 1.125rem;
+        height: 1.125rem;
+    }
+
+    .notify-card__body {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-top: 0;
+    }
+
+    .notify-card__title {
+        display: -webkit-box;
+        flex: 1 1 5rem;
+        min-width: 0;
+        overflow: hidden;
+        font-size: 0.875rem;
+        line-height: 1.25;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+    }
+
+    .notify-card__text {
+        display: none;
+    }
+
+    .notify-card__actions {
+        flex-shrink: 0;
+        margin-top: 0;
+    }
+
+    .notify-card__actions ::deep .sm-btn .sm-icon {
+        display: none;
+    }
+
+    .notify-card ::deep .notify-card__close {
+        flex-shrink: 0;
+        margin: 0;
+    }
+}
+
 @keyframes notify-card-in {
     from { opacity: 0; transform: translateY(-110%) scale(0.94); }
     to { opacity: 1; transform: none; }

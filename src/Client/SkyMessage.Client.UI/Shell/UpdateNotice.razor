@@ -3,7 +3,9 @@
    started or a required one runs, and failures in plain words. Web: a new client was deployed, Update reloads. A
    client the server no longer supports (ServerInfoDto.MinClientVersion) with nothing to update to here (an app that
    cannot update itself, a page whose check failed or whose reload brought the old client back) keeps the plain
-   warning. Dismissible for this session; automatic background updates never show a card. *@
+   warning. Dismissible for this session; automatic background updates never show a card. It comes first in the chat
+   list's notice slot (NoticeSlot): while it shows, the birthday card and the notification prompt wait. Short screens
+   get it as a one-row strip (the title and the action). *@
 @inherits UiComponentBase
 @inject IAppUpdateService Updates
 @inject AppUpdatePrompts Prompts
@@ -18,7 +20,7 @@
 @if (card is { } shown && _dismissed != shown.Key)
 {
     var status = Updates.Status;
-    <div class="update-card sm-glass sm-glass--strong @(_leaving ? "update-card--leaving" : null) @(shown.Warning ? "update-card--warning" : null)"
+    <div class="update-card chatlist-notice sm-glass sm-glass--strong @(_leaving ? "update-card--leaving" : null) @(shown.Warning ? "update-card--warning" : null)"
          role="status">
         <span class="update-card__disc" aria-hidden="true"><Icon Name="@shown.Icon" Size="22" StrokeWidth="2.2" /></span>
         <div class="update-card__body">
@@ -62,6 +64,9 @@
     private sealed record Card(CardKind Kind, string Key, string Icon, string? Title, string Text, string? Action = null,
         string? ActionIcon = null, bool Warning = false);
 
+    /// <summary>The chat list's notice slot (one card at a time); null elsewhere.</summary>
+    [CascadingParameter] public NoticeSlot? Slot { get; set; }
+
     protected override void OnInitialized()
     {
         RenderOn(h => Endpoints.Changed += h, h => Endpoints.Changed -= h);
@@ -71,6 +76,7 @@
 
     protected override void OnAfterRender(bool firstRender)
     {
+        Slot?.Report(NoticeKind.Update, Current() is { } card && _dismissed != card.Key);
         // The first ready update without the install permission: explain it once, by itself.
         var status = Updates.Status;
         if (_permissionAskQueued || !Updates.CanSelfUpdate || status.Phase != AppUpdatePhase.Ready || !status.NeedsInstallPermission) return;

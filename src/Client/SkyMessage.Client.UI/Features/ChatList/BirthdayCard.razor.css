@@ -1,5 +1,5 @@
-/* A glass card at the top of the chat list (the notices stack), dropping in once: faces with a small 🎂, the line,
-   the age, and the accent "Поздравить" capsule. */
+/* A glass card at the top of the chat list (the notice slot), dropping in once and kept small: faces with a small 🎂,
+   one line (two or three when it names several people), the accent "Поздравить" capsule and, for one person, the age. */
 .bday-card {
     position: relative;
     display: flex;
@@ -47,34 +47,115 @@
     padding-top: 1px;
 }
 
+/* The line names everyone: a third line rather than a name cut off (the chooser has the full names too). */
 .bday-card__title {
+    display: -webkit-box;
+    overflow: hidden;
     font-family: var(--sm-font-display);
     font-size: 0.9375rem;
     font-weight: 700;
     letter-spacing: -0.005em;
     line-height: 1.3;
     overflow-wrap: anywhere;
-}
-
-.bday-card__text {
-    margin-top: 2px;
-    font-size: 0.875rem;
-    line-height: 1.42;
-    color: var(--sm-text-2);
-    text-wrap: pretty;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
 }
 
 .bday-card__actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    align-items: center;
+    gap: 10px;
     margin-top: 10px;
+}
+
+.bday-card__age {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.875rem;
+    color: var(--sm-text-2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .bday-card ::deep .bday-card__close {
     position: relative;
     flex-shrink: 0;
     margin: -4px 0 0 -6px;
+}
+
+/* The chooser's rows: a face, the full name, the age. */
+.bday-choice {
+    min-height: 3.5rem;
+}
+
+.bday-choice ::deep .bday-choice__face {
+    flex-shrink: 0;
+}
+
+/* Short screens (under 700 px of height): a one-row strip — the first face with the 🎂, the line (two short lines at
+   most), the button as its message orb alone (the word would leave the line no room on a narrow phone; it stays the
+   button's name) and the close button — so the chats stay in view. */
+@media (max-height: 699.98px) {
+    .bday-card {
+        align-items: center;
+        gap: 10px;
+        padding: 7px 4px 7px 8px;
+        border-radius: var(--sm-radius-l);
+    }
+
+    .bday-card__faces {
+        padding-right: 2px;
+    }
+
+    .bday-card__faces ::deep .bday-card__face {
+        --size: 2.25rem !important;
+    }
+
+    .bday-card__faces ::deep .bday-card__face + .bday-card__face {
+        display: none;
+    }
+
+    .bday-card__cake {
+        right: -5px;
+        bottom: -5px;
+        font-size: 0.9375rem;
+    }
+
+    .bday-card__body {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-top: 0;
+    }
+
+    .bday-card__title {
+        flex: 1 1 5rem;
+        min-width: 0;
+        font-size: 0.875rem;
+        line-height: 1.25;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+    }
+
+    .bday-card__actions {
+        flex-shrink: 0;
+        margin-top: 0;
+    }
+
+    .bday-card__action-label,
+    .bday-card__age {
+        display: none;
+    }
+
+    .bday-card__actions ::deep .bday-card__action {
+        width: 2.375rem;
+        padding: 0;
+    }
+
+    .bday-card ::deep .bday-card__close {
+        margin: 0;
+    }
 }
 
 @keyframes bday-card-in {
