@@ -231,6 +231,38 @@ public sealed class StickerStoreTests
     }
 
     [Fact]
+    public async Task An_edit_that_finds_the_pack_deleted_elsewhere_takes_it_out_of_my_lists_at_once()
+    {
+        var h = new Harness();
+        var pack = Pack("Котики", 1, ["😺"]);
+        h.Api.GetStickerPackAsync(pack.Id, Arg.Any<CancellationToken>()).Returns(pack);
+        await h.LoadAsync(State(1, pack) with { Mine = [StickerEdits.RefOf(pack)], Favorites = [pack.Stickers[0]] });
+        await Wait.UntilAsync(() => h.Store.GetPack(pack.Id) is not null, "pack fetched");
+        // Deleted on another of my devices; its StickersChanged has not come.
+        h.Api.AddStickerAsync(pack.Id, Arg.Any<AddStickerRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiException(404, ErrorCodes.StickerPackNotFound, "gone"));
+        h.Uploader.UploadAsync(Arg.Any<MediaUploadRequest>(), Arg.Any<IProgress<double>?>(), Arg.Any<CancellationToken>())
+            .Returns(new MediaDto { Id = Guid.CreateVersion7(), Kind = MediaKind.File, Status = MediaStatus.Ready });
+        var picture = new PickedFile
+        {
+            FileName = "a.png",
+            ContentType = "image/png",
+            Size = 10,
+            OpenReadAsync = _ => Task.FromResult<Stream>(new MemoryStream(new byte[10])),
+        };
+
+        var refused = await Should.ThrowAsync<ApiException>(() => h.Store.AddStickerAsync(pack.Id, picture, ["😺"]));
+
+        refused.Code.ShouldBe(ErrorCodes.StickerPackNotFound);
+        h.Store.State.Installed.ShouldBeEmpty();
+        h.Store.State.Mine.ShouldBeEmpty();
+        h.Store.State.Favorites.ShouldBeEmpty();
+        h.Store.GetPack(pack.Id).ShouldBeNull();
+        await Wait.UntilAsync(() => h.Api.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(ISkyApi.GetStickerStateAsync)) >= 2,
+            "my state is asked for again");
+    }
+
+    [Fact]
     public async Task A_picture_of_unknown_size_is_measured_before_upload_and_one_over_5_mb_is_refused()
     {
         var h = new Harness();

@@ -2,7 +2,8 @@
    in order (moved by their handle; a tap changes a sticker's emoji or deletes it), «Добавить стикеры» from the gallery or
    from files (each picture gets its emoji and, if wanted, a square crop; they upload one after another, each a row with
    its progress — in StickerUploads, so leaving the editor does not stop them), its link to share and, last, deleting the
-   pack. Only the pack's creator gets here with edits. *@
+   pack (its pictures still on their way stop first). Deleted on another of my devices, the pack says it is gone. Only
+   the pack's creator gets here with edits. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IStickerStore Stickers
@@ -115,6 +116,9 @@
     private bool _gone;
     private string? _error;
     private Guid? _loadedFor;
+    // The pack has been among mine in my state since it showed here: leaving that list later means it was deleted.
+    private bool _listed;
+    private bool _deleting;
 
     [SupplyParameterFromQuery(Name = "id")] public Guid? PackId { get; set; }
 
@@ -126,6 +130,14 @@
         {
             // Edits from another of my devices show here too.
             if (_pack is { } shown && Stickers.GetPack(shown.Id) is { } held && held.Version > shown.Version) _pack = held;
+            // Deleted on another of my devices: looked at on the renderer's thread, where the pack loads too.
+            if (!IsDisposed)
+            {
+                _ = InvokeAsync(async () =>
+                {
+                    if (!IsDisposed && Deleted()) await LoadAsync();
+                });
+            }
             RequestRender();
         };
         Stickers.Changed += changed;
@@ -163,7 +175,30 @@
         {
             if (_pack is null) _error = L.Error(ex);
         }
+        Listed();
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Whether my state lists the pack shown among my packs (noted: leaving that list later means it was deleted).
+    /// </summary>
+    private bool Listed()
+    {
+        if (_pack is not { } pack || !Stickers.IsLoaded || !Stickers.State.Mine.Any(p => p.Id == pack.Id)) return false;
+        _listed = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the pack shown has just left my packs (deleted on another of my devices, or found gone by an edit or an
+    /// upload): then the server is asked once more (404 → «Набор удалён»). A pack made a moment ago that my state does
+    /// not list yet is not taken for a deleted one.
+    /// </summary>
+    private bool Deleted()
+    {
+        if (!Mine || _deleting || !Stickers.IsLoaded || Listed() || !_listed) return false;
+        _listed = false;
+        return true;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -292,6 +327,9 @@
         if (_pack is not { } pack) return;
         var ok = await Dialogs.ConfirmAsync(L.Format("stickers.edit.deleteTitle", pack.Title), L["stickers.edit.deleteText"], L["common.delete"], danger: true);
         if (!ok) return;
+        _deleting = true;
+        // Its pictures still on their way stop first: no data spent on them, no «deleted» error for each.
+        Uploads.Cancel(pack.Id);
         try
         {
             await Stickers.DeletePackAsync(pack.Id);
@@ -300,6 +338,7 @@
         }
         catch (Exception ex)
         {
+            _deleting = false;
             Toasts.Error(ex);
         }
     }

@@ -460,7 +460,9 @@ public interface IStickerStore
     Task SaveGifAsync(Guid chatId, Guid messageId, MediaDto gif);
     Task RemoveGifAsync(Guid mediaId);
 
-    // Packs I make. These wait for the server; the pack's stickers here and my state (StickersChanged) follow.
+    // Packs I make. These wait for the server; the pack's stickers here and my state (StickersChanged) follow. An edit
+    // answered 404 sticker_pack_not_found (deleted on another device) takes the pack out of my lists at once, as a
+    // delete does.
     /// <summary>A new pack of mine (installed for me); its id is made here, so a retry is harmless.</summary>
     Task<StickerPackDto> CreatePackAsync(string title);
     Task<StickerPackDto> RenamePackAsync(Guid packId, string title);

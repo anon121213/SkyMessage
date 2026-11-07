@@ -307,7 +307,7 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
     }
 
     public Task<StickerPackDto> RenamePackAsync(Guid packId, string title) =>
-        EditPackAsync(() => _api.RenameStickerPackAsync(packId, title));
+        EditPackAsync(packId, () => _api.RenameStickerPackAsync(packId, title));
 
     public async Task<StickerPackDto> AddStickerAsync(Guid packId, PickedFile image, IReadOnlyList<string> emoji, IProgress<double>? progress = null,
         CancellationToken cancellationToken = default)
@@ -332,7 +332,7 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
             Size = size,
             OpenReadAsync = open,
         }, progress, cancellationToken).ConfigureAwait(false);
-        return await EditPackAsync(() => _api.AddStickerAsync(packId, new AddStickerRequest
+        return await EditPackAsync(packId, () => _api.AddStickerAsync(packId, new AddStickerRequest
         {
             Id = Guid.CreateVersion7(),
             MediaId = source.Id,
@@ -341,20 +341,28 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
     }
 
     public Task<StickerPackDto> SetStickerEmojiAsync(Guid packId, Guid stickerId, IReadOnlyList<string> emoji) =>
-        EditPackAsync(() => _api.UpdateStickerAsync(packId, stickerId, emoji));
+        EditPackAsync(packId, () => _api.UpdateStickerAsync(packId, stickerId, emoji));
 
     public Task<StickerPackDto> DeleteStickerAsync(Guid packId, Guid stickerId) =>
-        EditPackAsync(() => _api.DeleteStickerAsync(packId, stickerId));
+        EditPackAsync(packId, () => _api.DeleteStickerAsync(packId, stickerId));
 
     public Task<StickerPackDto> ReorderStickersAsync(Guid packId, IReadOnlyList<Guid> stickerIds) =>
-        EditPackAsync(() => _api.ReorderStickersAsync(packId, stickerIds));
+        EditPackAsync(packId, () => _api.ReorderStickersAsync(packId, stickerIds));
 
     public async Task DeletePackAsync(Guid packId)
     {
         var generation = _generation;
         await _api.DeleteStickerPackAsync(packId).ConfigureAwait(false);
+        Gone(packId, generation);
+    }
+
+    /// <summary>
+    /// A pack deleted (here, or elsewhere as an edit found out) is not in my lists any more: shown at once, confirmed by
+    /// the next state.
+    /// </summary>
+    private void Gone(Guid packId, int generation)
+    {
         ForgetPack(packId, generation);
-        // Not in my lists any more: shown at once, confirmed by the next state.
         lock (_lock)
         {
             if (generation != _generation) return;
@@ -379,10 +387,20 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
         return buffer.ToArray();
     }
 
-    private async Task<StickerPackDto> EditPackAsync(Func<Task<StickerPackDto>> edit)
+    private async Task<StickerPackDto> EditPackAsync(Guid packId, Func<Task<StickerPackDto>> edit)
     {
         var generation = _generation;
-        var pack = await edit().ConfigureAwait(false);
+        StickerPackDto pack;
+        try
+        {
+            pack = await edit().ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.Code == ErrorCodes.StickerPackNotFound)
+        {
+            // Deleted on another of my devices before this one heard (its StickersChanged is still on the way).
+            Gone(packId, generation);
+            throw;
+        }
         KeepPack(pack, generation);
         return pack;
     }
