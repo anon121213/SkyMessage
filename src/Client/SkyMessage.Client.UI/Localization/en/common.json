@@ -4,6 +4,7 @@
   "app.updateRequired": "The server has been updated — please update the SkyMessage app too, or some things may not work.",
   "app.notifications.prompt": "Turn on notifications so you don't miss messages and calls",
   "app.notifications.title": "Never miss a message",
+  "app.notifications.short": "Turn on notifications",
   "app.notifications.enable": "Turn on",
   "app.update.ready.title": "Update ready",
   "app.update.ready.text": "SkyMessage {0} is downloaded. Installing takes a few seconds.",

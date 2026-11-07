@@ -4,7 +4,7 @@
    button and a dismiss — there as soon as the list is, not dropping in over rows already on screen. It is last in the
    chat list's notice slot (NoticeSlot): while the update or the birthday card shows it does not start at all (nothing
    is remembered, a later start asks), and a card arriving later takes the slot until it goes. Short screens get it as a
-   one-row strip. *@
+   one-row strip with a title of its own ("Включите уведомления"). *@
 @inherits UiComponentBase
 @inject ILocalNotificationService LocalNotifications
 @inject IPermissionService Permissions
@@ -20,7 +20,11 @@
             <Icon Name="@IconNames.BellRing" Size="22" StrokeWidth="2.2" />
         </span>
         <div class="notify-card__body">
-            <div class="notify-card__title">@L["app.notifications.title"]</div>
+            @* The strip (short screens) says it in two words that fit its two lines beside the button. *@
+            <div class="notify-card__title">
+                <span class="notify-card__title-full">@L["app.notifications.title"]</span>
+                <span class="notify-card__title-short">@L["app.notifications.short"]</span>
+            </div>
             <div class="notify-card__text">@L["app.notifications.prompt"]</div>
             <div class="notify-card__actions">
                 <Button Size="ButtonSize.Small" Icon="@IconNames.Bell" Loading="_busy" OnClick="EnableAsync">@L["app.notifications.enable"]</Button>

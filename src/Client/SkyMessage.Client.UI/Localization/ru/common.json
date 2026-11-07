@@ -4,6 +4,7 @@
   "app.updateRequired": "Сервер обновился — обновите и приложение SkyMessage, иначе что-то может не работать.",
   "app.notifications.prompt": "Включите уведомления, чтобы не пропускать сообщения и звонки",
   "app.notifications.title": "Не пропускайте сообщения",
+  "app.notifications.short": "Включите уведомления",
   "app.notifications.enable": "Включить",
   "app.update.ready.title": "Обновление готово",
   "app.update.ready.text": "SkyMessage {0} уже загружен. Установка займёт несколько секунд.",

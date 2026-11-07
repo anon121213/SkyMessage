@@ -176,7 +176,7 @@ Implementation: `MainLayout` marks the top layer `[data-swipe-back]` and the scr
   update card, the birthday card and the notification prompt, **one at a time** — the first that has something to
   show (in that order) hides the ones after it until it goes (`.chatlist-notice` on each card's root; each reports
   `NoticeSlot.Report(kind, showing)` after rendering). Under 700 px of height every card is a one-row strip (its
-  title, the action, the close).
+  title — the notification prompt has a short one of its own, `app.notifications.short` —, the action, the close).
   The cards stay mounted under the archive (hidden). A card that arrives or changes once the rows are on screen does
   not move them (`js/app.js attachNoticeAnchor`): while the slot is in view (the list at or near its top) a new card
   waits, hidden (`data-notice-waiting`), behind the one shown — scrolling the list for it would fold the large header

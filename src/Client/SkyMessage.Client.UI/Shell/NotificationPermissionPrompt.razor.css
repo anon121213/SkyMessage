@@ -51,6 +51,10 @@
     line-height: 1.3;
 }
 
+.notify-card__title-short {
+    display: none;
+}
+
 .notify-card__text {
     margin-top: 2px;
     font-size: 0.875rem;
@@ -69,8 +73,9 @@
     margin: -4px 0 0 -6px;
 }
 
-/* Short screens (under 700 px of height): a one-row strip — the bell, the title (two short lines at most), the button
-   and the close button — so the chats stay in view; the sentence under the title is left out. */
+/* Short screens (under 700 px of height): a one-row strip — the bell, a short title of its own that fits its two lines
+   beside the button ("Включите уведомления": the card's own title would be cut to "Не пропускайте…"), the button and
+   the close button — so the chats stay in view; the sentence under the title is left out. */
 @media (max-height: 699.98px) {
     .notify-card {
         align-items: center;
@@ -106,6 +111,14 @@
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         line-clamp: 2;
+    }
+
+    .notify-card__title-full {
+        display: none;
+    }
+
+    .notify-card__title-short {
+        display: inline;
     }
 
     .notify-card__text {
