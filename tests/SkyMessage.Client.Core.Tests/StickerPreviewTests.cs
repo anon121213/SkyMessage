@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
+using SkyMessage.Client.Core.Infrastructure;
 using SkyMessage.Client.UI.Features.Stickers;
 using SkyMessage.Client.UI.Services;
 using SkyMessage.Contracts;
@@ -50,6 +51,20 @@ public sealed class StickerPreviewTests
         // A plain photo stays a photo.
         ru.FormatPreview(new MessageDto { Type = MessageType.Photo, Attachments = [new MediaDto { Kind = MediaKind.Photo }] })
             .ShouldContain("Фото");
+    }
+
+    [Fact]
+    public void Without_the_ui_the_core_previews_stickers_and_gifs_alike()
+    {
+        CoreStrings.Preview(Sticker("😺"), ru: true).ShouldBe("Стикер 😺");
+        CoreStrings.Preview(Sticker(""), ru: true).ShouldBe("Стикер");
+        CoreStrings.Preview(Sticker("❤️"), ru: false).ShouldBe("Sticker ❤️");
+        CoreStrings.Preview(Gif(), ru: true).ShouldBe("GIF");
+        CoreStrings.Preview(Gif("Танцуем!"), ru: false).ShouldBe("GIF Танцуем!");
+        CoreStrings.Preview(new MessageDto { Type = MessageType.Photo, Attachments = [new MediaDto { Kind = MediaKind.Photo }] }, ru: true)
+            .ShouldBe("🖼 Фото");
+        CoreStrings.Preview(new MessageDto { Type = MessageType.Video, Attachments = [new MediaDto { Kind = MediaKind.Video }] }, ru: false)
+            .ShouldBe("🎬 Video");
     }
 
     [Fact]
