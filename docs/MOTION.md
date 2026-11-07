@@ -86,7 +86,7 @@ logo is simply there, finished, its cut open:
 | Chat list item ("Swipe on a chat" = chat actions, or no folders) | swipe left | reveals Mute and Archive; full swipe archives (Undo toast) |
 | Chat list item (as above) | swipe right | reveals Pin and Read (in a folder: the folder's own pin); full swipe toggles pin |
 | Folder tab | tap / long-press (right-click) | open the folder (the pill glides, the list slides in from its side) / its menu |
-| A folder's tab (not "All chats") | long-press, then drag sideways (mouse: drag) | the tab lifts, the others glide aside, the strip scrolls by itself near its ends; drop → new order of the folders (synced); letting go without moving (or resting) opens the menu instead |
+| A folder's tab (not "All chats") | long-press, then drag sideways (mouse: drag) | the tab lifts, the others glide aside (a neighbour gives way once the tab's leading edge passes its middle, whatever their widths; held at either end of the strip, the tab takes that end's place), the strip scrolls by itself near its ends; drop → new order of the folders (synced); letting go without moving (or resting) opens the menu instead |
 | Folder tab strip | drag sideways / vertical mouse wheel | scrolls the tabs when they do not fit (its own pan: no folder swipe there; the wheel goes on to the list at the strip's ends) |
 | Settings › Folders, a folder's handle | drag up/down (any pointer, no long-press) | the row follows, the others glide aside; drop → new order (synced) |
 | Chat list item | long-press | context menu (existing) |

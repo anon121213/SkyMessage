@@ -1,5 +1,6 @@
 # Every push and pull request: the server with the web client builds without warnings, all three test suites pass
-# (the integration tests start PostgreSQL in Docker through Testcontainers) and the Android app compiles.
+# (the integration tests start PostgreSQL in Docker through Testcontainers), the web client's JS checks in
+# tools/ui-check pass (Node) and the Android app compiles.
 # Pushes to main run this through release.yml (workflow_call) before anything is released.
 #
 # Tests run with `dotnet test --project <dir> --no-build`: global.json selects Microsoft.Testing.Platform, whose
@@ -64,6 +65,9 @@ jobs:
 
       - name: Integration tests (PostgreSQL in Docker)
         run: dotnet test --project tests/SkyMessage.Api.IntegrationTests -c Release --no-build
+
+      - name: UI logic checks (the web client's JS, in Node)
+        run: for check in tools/ui-check/*.mjs; do node "$check"; done
 
   android:
     name: Android compile check

@@ -79,6 +79,18 @@ function activeIndexOf(tabs) {
   return tabs.findIndex((t) => t.hasAttribute('data-active'));
 }
 
+// The place a dragged tab takes among the folders' tabs (`items`: { left, width } in strip order, `from` the dragged
+// one, `dx` how far it moved): how many of the others have their middle behind its leading edge — its left edge when it
+// moved left, its right edge when it moved right. A tab takes a neighbour's place once it covers half of it, however
+// wide either is, and held at either end of the strip (the drag stops there) it takes that end's place.
+export function slotAt(items, from, dx) {
+  const dragged = items[from];
+  const lead = dx < 0 ? dragged.left + dx : dragged.left + dragged.width + dx;
+  let at = 0;
+  items.forEach((item, i) => { if (i !== from && item.left + item.width / 2 < lead) at++; });
+  return at;
+}
+
 // ---- Tabs ---------------------------------------------------------------------------------------------------
 
 export function attachFolderTabs(track, ref) {
@@ -280,10 +292,7 @@ export function attachFolderTabs(track, ref) {
     const dx = Math.max(min, Math.min(max, r.x - r.x0 + scrolled));
     dragged.shift = dx;
     dragged.el.style.transform = `translate3d(${dx.toFixed(1)}px, 0, 0)`;
-    // The place: how many of the other tabs have their middle left of the dragged tab's middle.
-    const middle = dragged.left + dragged.width / 2 + dx;
-    let at = 0;
-    r.items.forEach((item, i) => { if (i !== r.from && item.left + item.width / 2 < middle) at++; });
+    const at = slotAt(r.items, r.from, dx);
     if (at !== r.at) {
       r.at = at;
       const { lefts } = targets(r, at);

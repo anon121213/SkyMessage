@@ -74,6 +74,9 @@ any option it does not know (`-nologo`, `--artifacts-path`, ...) to the test app
 the run reports "Zero tests ran". Build with your options first, then `dotnet test --project ... --no-build` (the
 `ArtifactsPath` property tells it where that build is). `dotnet run --project tests/<X>` also runs a suite.
 
+Logic in the web client's JS that can be judged without a browser has a Node check in `tools/ui-check/` (CI runs every
+`*.mjs` there): `node tools/ui-check/folder-tab-slots.mjs`.
+
 Every feature adds tests for its server rules and client stores. A feature is done when it builds with 0 errors and
 0 warnings, all three test projects pass, the UI has been looked at in both themes, and the branch is committed.
 
