@@ -72,8 +72,9 @@
                 }
             </div>
         }
-        else if (_stickerSuggestions.Count > 0)
+        else if (_stickerSuggestions.Count > 0 && (Layout.IsPhone || !_emojiOpen))
         {
+            @* On wide screens the open panel stands where the strip would and offers the stickers itself. *@
             <StickerSuggestions Items="_stickerSuggestions" OnPick="SendSuggestedStickerAsync" />
         }
         var current = CurrentContext;
@@ -242,7 +243,7 @@
         {
             <div class="composer__emoji @(Layout.IsPhone ? null : "composer__emoji--popover")" @ref="_emojiPanel">
                 <ExpressionPanel OnEmoji="InsertEmojiAsync" OnSticker="SendStickerAsync" OnGif="SendGifAsync" OnLeave="CloseEmojiAsync"
-                                 CanSendMedia="CanSendMedia" Height="@(Layout.IsPhone ? "19.5rem" : "24.5rem")" />
+                                 CanSendMedia="CanSendMedia" Editing="@(_editing is not null)" Height="@(Layout.IsPhone ? "19.5rem" : "24.5rem")" />
             </div>
         }
         @if (Recording && _recordMode == "video")

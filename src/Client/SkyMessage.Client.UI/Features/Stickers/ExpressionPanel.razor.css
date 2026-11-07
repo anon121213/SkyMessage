@@ -64,3 +64,61 @@
 .xpanel__tab:active {
     transform: scale(0.92);
 }
+
+/* An empty or closed Stickers / GIF tab: a small tile, a title, two or three lines and its one action, centred in the
+   panel and never cut by it (the panel body is only ~260 px tall on phones; it scrolls when a large font needs it). */
+.xpanel__body ::deep .xempty {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: safe center;
+    gap: 6px;
+    min-height: 0;
+    padding: 12px 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: var(--sm-text-2);
+    text-align: center;
+    scrollbar-width: none;
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) both;
+}
+
+.xpanel__body ::deep .xempty::-webkit-scrollbar {
+    display: none;
+}
+
+.xpanel__body ::deep .xempty__tile {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 2px;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent-text);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.xpanel__body ::deep .xempty__title {
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.xpanel__body ::deep .xempty__text {
+    max-width: 19rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.xpanel__body ::deep .xempty__actions {
+    display: flex;
+    flex: 0 0 auto;
+    justify-content: center;
+    margin-top: 6px;
+}
