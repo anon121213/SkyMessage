@@ -12,6 +12,7 @@
 @using SkyMessage.Client.UI.Features.Media
 @inject IChatListStore ChatList
 @inject IMessageStore Messages
+@inject IStickerStore Stickers
 @inject IUserStore Users
 @inject IAuthService Auth
 @inject IRealtimeService Realtime
@@ -189,6 +190,29 @@
                 {
                     <MenuItem Icon="@IconNames.Download" Label="@L["chat.menu.save"]" OnClick="() => SaveMediaAsync(message)" />
                 }
+                @* Stickers and GIFs (Features/Stickers): favorites and "Мои GIF" are saving, so not from a protected chat; the
+                   pack can always be opened (adding a pack stays allowed). *@
+                if (StickerUi.StickerOf(message) is { } stickerMedia && StickerUi.AsSticker(stickerMedia) is { } sticker)
+                {
+                    if (!Protected || Stickers.IsFavorite(sticker.Id))
+                    {
+                        var favorite = Stickers.IsFavorite(sticker.Id);
+                        <MenuItem Icon="@IconNames.Star" Label="@(favorite ? L["stickers.favorite.remove"] : L["stickers.favorite.add"])"
+                                  OnClick="() => ToggleFavoriteAsync(sticker, !favorite)" />
+                    }
+                    <MenuItem Icon="@IconNames.LayoutGrid" Label="@L["stickers.menu.pack"]" OnClick="() => StickerPackSheet.ShowAsync(Dialogs, sticker.PackId)" />
+                }
+                if (StickerUi.GifOf(message) is { } gif)
+                {
+                    if (Stickers.IsSavedGif(gif.Id))
+                    {
+                        <MenuItem Icon="@IconNames.Film" Label="@L["stickers.gifs.remove"]" OnClick="() => RemoveGifAsync(gif)" />
+                    }
+                    else if (!Protected)
+                    {
+                        <MenuItem Icon="@IconNames.Film" Label="@L["stickers.menu.saveGif"]" OnClick="() => SaveGifAsync(message, gif)" />
+                    }
+                }
                 <MenuItem Icon="@IconNames.ListChecks" Label="@L["chat.menu.select"]" OnClick="() => EnterSelectionAsync(item)" />
                 <MenuDivider />
                 <MenuItem Icon="@IconNames.Trash2" Label="@L["common.delete"]" Danger="true" OnClick="() => DeleteAsync([item])" />
@@ -291,6 +315,7 @@
         _controller.CallAsync = CallAsync;
         _controller.JoinCallAsync = JoinCallAsync;
         _controller.ToggleReactionAsync = ToggleReactionAsync;
+        _controller.OpenStickerAsync = (_, media) => media.Sticker is { } info ? StickerPackSheet.ShowAsync(Dialogs, info.PackId) : Task.CompletedTask;
 
         Action chats = () =>
         {
@@ -810,6 +835,47 @@
     }
 
     private async Task ForwardFromViewerAsync(MediaViewerItem item) => await ForwardAsync([item.Message]);
+
+    private async Task ToggleFavoriteAsync(StickerDto sticker, bool favorite)
+    {
+        try
+        {
+            await Stickers.SetFavoriteAsync(sticker, favorite);
+            Toasts.Success(favorite ? L["stickers.favorite.added"] : L["stickers.favorite.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SaveGifAsync(MessageDto message, MediaDto gif)
+    {
+        if (Protected) return;
+        try
+        {
+            await Stickers.SaveGifAsync(ChatId, message.Id, gif);
+            Haptics.Success();
+            Toasts.Success(L["stickers.gifs.saved"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task RemoveGifAsync(MediaDto gif)
+    {
+        try
+        {
+            await Stickers.RemoveGifAsync(gif.Id);
+            Toasts.Success(L["stickers.gifs.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
 
     private async Task SaveMediaAsync(MessageDto message)
     {

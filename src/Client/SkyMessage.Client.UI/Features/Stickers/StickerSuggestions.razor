@@ -1,0 +1,19 @@
+@* Stickers for the one emoji in the composer's field: a glass strip over the field with my installed packs' matches.
+   A tap sends the sticker in place of the emoji. It rises in when it appears (the composer renders it only then). *@
+@inherits UiComponentBase
+
+<div class="ssuggest" role="listbox" aria-label="@L["stickers.suggest.label"]" data-no-swipe-back>
+    @foreach (var sticker in Items)
+    {
+        var item = sticker;
+        <button type="button" role="option" aria-selected="false" class="ssuggest__item" title="@StickerUi.EmojiLine(item)" aria-label="@StickerUi.EmojiLine(item)"
+                @onmousedown:preventDefault="true" @onclick="() => OnPick.InvokeAsync(item)">
+            <StickerImage Media="item.Media" Eager="true" Alt="@StickerUi.EmojiLine(item)" />
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<StickerDto> Items { get; set; } = [];
+    [Parameter] public EventCallback<StickerDto> OnPick { get; set; }
+}

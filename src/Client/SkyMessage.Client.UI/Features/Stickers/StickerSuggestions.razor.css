@@ -1,0 +1,56 @@
+/* A frosted strip floating above the composer, like the mention suggestions: the matches side by side, scrolling
+   sideways; the chat underneath does not move. */
+.ssuggest {
+    position: absolute;
+    left: 10px;
+    bottom: 100%;
+    z-index: 30;
+    display: flex;
+    gap: 2px;
+    width: max-content;
+    max-width: calc(100% - 20px);
+    margin-bottom: 2px;
+    padding: 6px;
+    overflow-x: auto;
+    /* The composer lets taps through its gaps (pointer-events: none); the strip takes its own. */
+    pointer-events: auto;
+    overscroll-behavior-x: contain;
+    border-radius: var(--sm-radius-l);
+    background: var(--sm-glass-strong);
+    -webkit-backdrop-filter: var(--sm-blur);
+    backdrop-filter: var(--sm-blur);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+    scrollbar-width: none;
+    transform-origin: 50% 100%;
+    animation: sm-rise-in var(--sm-dur) var(--sm-ease-out) both;
+}
+
+.ssuggest::-webkit-scrollbar {
+    display: none;
+}
+
+html[data-fx="lite"] .ssuggest {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--sm-glass-solid);
+}
+
+.ssuggest__item {
+    flex: 0 0 auto;
+    width: 4.25rem;
+    height: 4.25rem;
+    padding: 5px;
+    border-radius: 16px;
+    transition: transform 320ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .ssuggest__item:hover {
+        background: var(--sm-accent-soft);
+    }
+}
+
+.ssuggest__item:active {
+    transform: scale(0.86);
+    transition-duration: 70ms;
+}

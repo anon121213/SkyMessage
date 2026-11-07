@@ -1,0 +1,79 @@
+@* The composer's panel behind the emoji button: «Эмодзи · Стикеры · GIF». The switch sits at the bottom, under the
+   thumb, as a capsule track whose pill glides to the open tab (the emoji picker's own tabs stay on top). The last tab
+   is remembered on this device. *@
+@inherits UiComponentBase
+@inject AppJs Js
+
+<div class="xpanel" style="--xpanel-h:@Height">
+    <div class="xpanel__body">
+        @switch (_tab)
+        {
+            case Tab.Stickers:
+                <StickerPanel Height="@BodyHeight" CanSend="CanSendMedia" OnPick="OnSticker" OnLeave="OnLeave" />
+                break;
+            case Tab.Gifs:
+                <GifPanel Height="@BodyHeight" CanSend="CanSendMedia" OnPick="OnGif" />
+                break;
+            default:
+                <EmojiPicker OnPick="OnEmoji" Height="@BodyHeight" />
+                break;
+        }
+    </div>
+    <div class="xpanel__switch" role="tablist" aria-label="@L["stickers.panel.label"]">
+        <div class="xpanel__track" style="--tab:@((int)_tab)">
+            <span class="xpanel__pill" aria-hidden="true"></span>
+            @foreach (var tab in Tabs)
+            {
+                var value = tab;
+                <button type="button" role="tab" aria-selected="@(_tab == value ? "true" : "false")"
+                        class="xpanel__tab @(_tab == value ? "xpanel__tab--active" : null)" @onclick="() => SelectAsync(value)">
+                    @L[LabelKey(value)]
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private enum Tab
+    {
+        Emoji = 0,
+        Stickers = 1,
+        Gifs = 2,
+    }
+
+    private const string TabKey = "sm.panel.tab";
+    private static readonly Tab[] Tabs = [Tab.Emoji, Tab.Stickers, Tab.Gifs];
+    private Tab _tab;
+
+    [Parameter] public EventCallback<string> OnEmoji { get; set; }
+    [Parameter] public EventCallback<StickerDto> OnSticker { get; set; }
+    [Parameter] public EventCallback<MediaDto> OnGif { get; set; }
+    /// <summary>A sticker tab action leaves the chat (a new pack, the settings).</summary>
+    [Parameter] public EventCallback OnLeave { get; set; }
+    [Parameter] public bool CanSendMedia { get; set; } = true;
+    /// <summary>The whole panel's height (the switch included).</summary>
+    [Parameter] public string Height { get; set; } = "19.5rem";
+
+    private string BodyHeight => "calc(var(--xpanel-h) - 3.25rem)";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var saved = await Js.LocalGetAsync(TabKey);
+        if (Enum.TryParse<Tab>(saved, out var tab) && Tabs.Contains(tab)) _tab = tab;
+    }
+
+    private static string LabelKey(Tab tab) => tab switch
+    {
+        Tab.Stickers => "stickers.panel.stickers",
+        Tab.Gifs => "stickers.panel.gifs",
+        _ => "stickers.panel.emoji",
+    };
+
+    private async Task SelectAsync(Tab tab)
+    {
+        if (_tab == tab) return;
+        _tab = tab;
+        await Js.LocalSetAsync(TabKey, tab.ToString());
+    }
+}

@@ -1,0 +1,188 @@
+@* One sticker before it is added (or a sticker's emoji being changed): the picture as it is (transparent parts show the
+   dialog through), an optional square crop (the avatar's crop editor in its sticker mode: a transparent PNG), and its
+   emoji — at least one, up to eight, the first is the main one. DialogService content; closes with a
+   NewStickerResult or null. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@using SkyMessage.Client.UI.Features.Profile
+@inject AvatarOverlays Avatars
+@inject IJSRuntime JS
+@inject ILogger<NewStickerDialog> Logger
+
+<div class="nsticker">
+    <div class="nsticker__art">
+        @if (Existing is { } media)
+        {
+            <StickerImage Media="media" Full="true" Eager="true" />
+        }
+        else if (_preview is { } preview)
+        {
+            <img src="@preview.Url" alt="" draggable="false" />
+        }
+        else if (_reading)
+        {
+            <Spinner Size="32" />
+        }
+        else
+        {
+            <Icon Name="@IconNames.ImageUp" Size="32" />
+        }
+    </div>
+    @if (Existing is null)
+    {
+        @if (Problem is { } problem)
+        {
+            <p class="nsticker__problem">@problem</p>
+        }
+        <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="@IconNames.Shrink" Disabled="@(_preview is null)" OnClick="CropAsync">
+            @L["stickers.new.crop"]
+        </Button>
+    }
+
+    <div class="nsticker__label">@L["stickers.new.emoji"]</div>
+    <div class="nsticker__chosen" aria-live="polite">
+        @if (_emoji.Count == 0)
+        {
+            <span class="nsticker__hint">@L["stickers.new.emojiHint"]</span>
+        }
+        @foreach (var emoji in _emoji)
+        {
+            var value = emoji;
+            <button type="button" class="nsticker__chip sm-emoji" title="@L["common.remove"]" aria-label="@L.Format("stickers.new.emojiRemove", value)"
+                    @onclick="() => _emoji.Remove(value)">
+                @value<Icon Name="@IconNames.X" Size="12" StrokeWidth="2.6" />
+            </button>
+        }
+    </div>
+    <div class="nsticker__picker">
+        <EmojiPicker OnPick="Pick" Height="13rem" />
+    </div>
+</div>
+<DialogActions>
+    <Button Variant="ButtonVariant.Ghost" OnClick="() => Dialog.Cancel()">@(Existing is null ? L["stickers.new.skip"] : L["common.cancel"])</Button>
+    <Button Disabled="@(!CanAdd)" OnClick="Done">@(Existing is null ? L["stickers.new.add"] : L["common.save"])</Button>
+</DialogActions>
+
+@code {
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+
+    private sealed record Preview(string Url, int Width, int Height);
+
+    private readonly List<string> _emoji = [];
+    private JsModule? _module;
+    private Preview? _preview;
+    private PickedFile? _file;
+    private bool _reading = true;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    /// <summary>A new sticker's picture.</summary>
+    [Parameter] public PickedFile? File { get; set; }
+    /// <summary>An existing sticker whose emoji are changed (no picture to choose).</summary>
+    [Parameter] public MediaDto? Existing { get; set; }
+    [Parameter] public IReadOnlyList<string>? Emoji { get; set; }
+
+    private bool TooLarge => _file is { Size: > Limits.StickerSourceMaxBytes };
+    private bool TooSmall => _preview is { Width: > 0, Height: > 0 } p && (p.Width < Limits.StickerSourceMinSide || p.Height < Limits.StickerSourceMinSide);
+    private bool Unreadable => !_reading && _preview is null or { Width: 0 };
+    private bool Unsupported => _file is not null && !StickerUi.IsStickerImage(_file.ContentType);
+
+    /// <summary>Why the picture cannot go as it is (a crop fixes size and format), else null.</summary>
+    private string? Problem =>
+        Unreadable ? L["stickers.new.unreadable"]
+        : TooSmall ? L.Format("stickers.new.tooSmall", Limits.StickerSourceMinSide)
+        : TooLarge ? L["stickers.new.tooLarge"]
+        : Unsupported ? L["stickers.new.format"]
+        : null;
+
+    private bool CanAdd => _emoji.Count > 0 && (Existing is not null || (_file is not null && Problem is null));
+
+    protected override void OnInitialized()
+    {
+        _file = File;
+        if (Emoji is { } emoji) _emoji.AddRange(emoji.Take(Limits.StickerEmojiMax));
+        if (Existing is not null) _reading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _file is null) return;
+        _module = new JsModule(JS, ModulePath);
+        await ReadAsync(_file);
+    }
+
+    private async Task ReadAsync(PickedFile file)
+    {
+        _reading = true;
+        StateHasChanged();
+        Preview? read = null;
+        try
+        {
+            await using var stream = await file.OpenReadAsync(CancellationToken.None);
+            using var reference = new DotNetStreamReference(stream, leaveOpen: true);
+            read = _module is null ? null : await _module.InvokeAsync<Preview?>("readImage", reference, file.ContentType);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogInformation(ex, "A sticker's picture could not be read");
+        }
+        var old = _preview;
+        _preview = read;
+        _reading = false;
+        if (old is not null && _module is not null) await _module.InvokeVoidAsync("revokeImage", old.Url);
+        StateHasChanged();
+    }
+
+    private void Pick(string emoji)
+    {
+        if (_emoji.Count >= Limits.StickerEmojiMax) return;
+        var key = StickerRules.EmojiKey(emoji);
+        if (_emoji.Any(e => StickerRules.EmojiKey(e) == key)) return;
+        _emoji.Add(emoji);
+    }
+
+    /// <summary>The crop editor's sticker mode: a square PNG of the sticker size, transparency kept.</summary>
+    private async Task CropAsync()
+    {
+        if (_file is null) return;
+        var png = await Avatars.EditStickerAsync(_file);
+        if (png is not { Length: > 0 }) return;
+        var bytes = png;
+        _file = new PickedFile
+        {
+            FileName = "sticker.png",
+            ContentType = "image/png",
+            Size = bytes.Length,
+            OpenReadAsync = _ => Task.FromResult<Stream>(new MemoryStream(bytes, writable: false)),
+        };
+        await ReadAsync(_file);
+    }
+
+    private void Done()
+    {
+        if (!CanAdd) return;
+        Dialog.Close(new NewStickerResult(Existing is null ? _file : null, _emoji.ToList()));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            if (_preview is not null) await _module.InvokeVoidAsync("revokeImage", _preview.Url);
+            await _module.DisposeAsync();
+        }
+        Dispose();
+    }
+
+    /// <summary>The new-sticker dialog; null when skipped.</summary>
+    public static async Task<NewStickerResult?> ShowAsync(DialogService dialogs, ILocalizer l, PickedFile file) =>
+        await dialogs.ShowAsync<NewStickerDialog>(l["stickers.new.title"], new Dictionary<string, object?> { [nameof(File)] = file },
+            new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as NewStickerResult;
+
+    /// <summary>The emoji of an existing sticker; null when cancelled.</summary>
+    public static async Task<NewStickerResult?> EditAsync(DialogService dialogs, ILocalizer l, StickerDto sticker) =>
+        await dialogs.ShowAsync<NewStickerDialog>(l["stickers.edit.emojiTitle"], new Dictionary<string, object?>
+        {
+            [nameof(Existing)] = sticker.Media,
+            [nameof(Emoji)] = sticker.Emoji,
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as NewStickerResult;
+}

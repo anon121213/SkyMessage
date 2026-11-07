@@ -29,8 +29,9 @@
                 @if (isVideo)
                 {
                     <div @key="item.Media.Id" class="viewer__frame viewer__frame--video" data-frame style="--ar:@AspectText(item.Media)">
+                        @* A GIF (a muted MP4 loop) keeps looping here too. *@
                         <video class="viewer__video" src="@MediaUrls.ContentUrl(item.Media)" poster="@PosterOf(item.Media)"
-                               autoplay playsinline preload="auto" disablepictureinpicture></video>
+                               autoplay playsinline preload="auto" disablepictureinpicture loop="@item.Media.IsAnimation" muted="@item.Media.IsAnimation"></video>
                         @* Shown while the video is paused or has ended (viewer.js sets data-vstate on the viewer). *@
                         <button type="button" class="viewer__play" data-vplay aria-label="@L["media.viewer.play"]" title="@L["media.viewer.play"]">
                             <Icon Name="@IconNames.Play" Size="30" Class="viewer__i-play" />

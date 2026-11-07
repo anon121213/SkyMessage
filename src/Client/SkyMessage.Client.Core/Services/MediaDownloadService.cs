@@ -157,6 +157,8 @@ internal sealed class MediaDownloadService : IMediaDownloadService, IAccountScop
             MediaKind.Voice => true,
             // The size cap is meant for files and videos; a zero cap must not switch photos off.
             MediaKind.Photo => policy.Photos && (policy.MaxFileMb <= 0 || withinLimit),
+            // A GIF is a small muted loop shown like a picture: it follows the photos (stickers are photos already).
+            MediaKind.Video when media.IsAnimation => policy.Photos && (policy.MaxFileMb <= 0 || withinLimit),
             MediaKind.Video or MediaKind.VideoNote => policy.Videos && withinLimit,
             _ => policy.Files && withinLimit,
         };

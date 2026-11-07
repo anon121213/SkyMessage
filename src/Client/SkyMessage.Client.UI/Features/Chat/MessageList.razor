@@ -177,6 +177,8 @@
     private ElementReference _scroller;
     private ElementReference _content;
     private JsModule? _module;
+    /// <summary>Reduced motion or the lite mode (read from the page once): GIFs wait for a tap.</summary>
+    private bool _calmMotion;
     private JsObject? _list;
     private JsObject? _autoplay;
     private PlayerBridge? _player;
@@ -308,6 +310,14 @@
             await _player.InitAsync(_rate);
             _autoplayEnabled = AutoplayAllowed;
             _autoplay = await _player.ObserveAsync(_content, _autoplayEnabled);
+            await using (var stickersJs = new JsModule(JS, "./_content/SkyMessage.Client.UI/js/stickers.js"))
+            {
+                if (await stickersJs.InvokeAsync<bool>("calmMotion"))
+                {
+                    _calmMotion = true;
+                    StateHasChanged();
+                }
+            }
             _lastActive = Active;
             if (!Active) await _list.InvokeVoidAsync("setActive", false);
         }
@@ -349,7 +359,8 @@
             Settings.Current.Chats.AutoplayVideoNotes,
             Settings.Current.Chats.AutoplayVideos,
             _mediaVersion,
-            ContentProtectionRules.IsProtected(chat));
+            ContentProtectionRules.IsProtected(chat),
+            Settings.Current.Chats.AutoplayGifs && !_calmMotion);
 
         var rows = new List<ListRow>(Math.Min(items.Count, MaxRendered) + 16);
         if (items.Count == 0)

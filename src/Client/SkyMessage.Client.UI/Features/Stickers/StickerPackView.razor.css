@@ -1,0 +1,102 @@
+/* A pack: the title in the display font, a calm meta line, the stickers on air (no cells, no frames), the action last. */
+.spack {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 16px 16px;
+}
+
+.spack__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 2.75rem;
+}
+
+.spack__titles {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.spack__title {
+    margin: 0;
+    overflow: hidden;
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.spack__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+    color: var(--sm-text-2);
+    font-size: 0.875rem;
+}
+
+.spack__mine {
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent-text, var(--sm-accent));
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.375rem;
+}
+
+.spack__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
+    gap: 6px;
+    max-height: min(52vh, 26rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.spack__grid::-webkit-scrollbar {
+    display: none;
+}
+
+.spack__cell {
+    aspect-ratio: 1;
+    padding: 6px;
+    border-radius: 18px;
+    transition: transform 320ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .spack__cell:hover {
+        background: var(--sm-accent-soft);
+    }
+}
+
+.spack__cell:active {
+    transform: scale(0.88);
+    transition-duration: 70ms;
+}
+
+.spack__cell--wait {
+    display: block;
+    padding: 8px;
+}
+
+.spack__empty {
+    margin: 4px 0;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.spack__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+}

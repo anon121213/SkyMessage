@@ -1,0 +1,78 @@
+/* Saved GIFs as still first frames in two or three columns, rounded like the chat's media tiles. */
+.gpanel {
+    display: flex;
+    flex-direction: column;
+    height: var(--panel-h, 17rem);
+    min-height: 0;
+}
+
+.gpanel__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 8px 8px 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.gpanel__scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.gpanel__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 6px;
+}
+
+.gpanel__cell {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--sm-text) 6%, transparent);
+    -webkit-touch-callout: none;
+    transition: transform 320ms var(--sm-spring);
+}
+
+.gpanel__cell img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+
+.gpanel__cell:active {
+    transform: scale(0.94);
+    transition-duration: 70ms;
+}
+
+.gpanel__placeholder {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--sm-text-3);
+}
+
+.gpanel__empty,
+.gpanel__notice {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    overflow-y: auto;
+}
+
+.gpanel__notice {
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 28px;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    text-align: center;
+}

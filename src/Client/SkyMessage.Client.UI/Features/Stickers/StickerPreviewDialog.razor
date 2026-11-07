@@ -1,0 +1,83 @@
+@* The large look at a sticker (long-press in the panel, a tap in a pack or a chat): the sticker big, its emoji, and what
+   can be done with it — favorite or not (not from a chat with content protection), send it, open its pack. DialogService
+   content; closes with "send", "pack" or null. *@
+@inherits UiComponentBase
+@inject IStickerStore Stickers
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+
+<div class="sticker-preview">
+    <div class="sticker-preview__art">
+        <StickerImage Media="Sticker.Media" Full="true" Eager="true" Alt="@StickerUi.EmojiLine(Sticker)" Class="sticker-preview__img" />
+    </div>
+    @if (Sticker.Emoji.Count > 0)
+    {
+        <div class="sticker-preview__emoji sm-emoji" aria-label="@L["stickers.preview.emoji"]">
+            @foreach (var emoji in Sticker.Emoji)
+            {
+                <span>@emoji</span>
+            }
+        </div>
+    }
+    <div class="sticker-preview__actions">
+        @if (CanFavorite)
+        {
+            var favorite = Stickers.IsFavorite(Sticker.Id);
+            <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.Star" Class="@(favorite ? "sticker-preview__fav sticker-preview__fav--on" : "sticker-preview__fav")"
+                    Loading="_busy" OnClick="ToggleFavoriteAsync">
+                @(favorite ? L["stickers.favorite.remove"] : L["stickers.favorite.add"])
+            </Button>
+        }
+        @if (CanSend)
+        {
+            <Button Icon="@IconNames.ArrowUp" OnClick="@(() => Dialog.Close("send"))">@L["stickers.preview.send"]</Button>
+        }
+        @if (ShowPack)
+        {
+            <Button Variant="ButtonVariant.Ghost" Icon="@IconNames.LayoutGrid" OnClick="@(() => Dialog.Close("pack"))">@L["stickers.preview.pack"]</Button>
+        }
+    </div>
+</div>
+
+@code {
+    private bool _busy;
+
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public StickerDto Sticker { get; set; } = default!;
+    [Parameter] public bool CanSend { get; set; }
+    [Parameter] public bool CanFavorite { get; set; } = true;
+    [Parameter] public bool ShowPack { get; set; }
+
+    protected override void OnInitialized() => RenderOn(h => Stickers.Changed += h, h => Stickers.Changed -= h);
+
+    private async Task ToggleFavoriteAsync()
+    {
+        var favorite = !Stickers.IsFavorite(Sticker.Id);
+        _busy = true;
+        try
+        {
+            await Stickers.SetFavoriteAsync(Sticker, favorite);
+            Haptics.Selection();
+            Toasts.Success(favorite ? L["stickers.favorite.added"] : L["stickers.favorite.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Opens the preview; the answer is "send", "pack" or null.</summary>
+    public static async Task<string?> ShowAsync(DialogService dialogs, StickerDto sticker, bool canSend, bool canFavorite = true, bool showPack = false) =>
+        await dialogs.ShowAsync<StickerPreviewDialog>(null, new Dictionary<string, object?>
+        {
+            [nameof(Sticker)] = sticker,
+            [nameof(CanSend)] = canSend,
+            [nameof(CanFavorite)] = canFavorite,
+            [nameof(ShowPack)] = showPack,
+        }, new DialogOptions { Size = DialogSize.Small, Flush = true, ShowClose = false, Presentation = OverlayPresentation.Dialog, Class = "sticker-preview-dialog" })
+            as string;
+}

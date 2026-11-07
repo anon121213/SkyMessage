@@ -1,0 +1,197 @@
+@* One sticker pack as anyone sees it before (or after) adding it: its title, how many stickers, all of them in a grid,
+   and the one action that matters — «Добавить N стикеров», or «Удалить набор» once it is in my panel; its creator also
+   gets «Изменить». A deleted pack says so (stickers already sent keep showing in the chats). The pack's link can be
+   shared. Used by the pack sheet (a tap on a sticker in a chat) and the /addstickers/{slug} page. *@
+@inherits UiComponentBase
+@inject IStickerStore Stickers
+@inject IAuthService Auth
+@inject ILinkBuilder Links
+@inject ShareHelper Share
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject NavigationService Nav
+
+<div class="spack @Class">
+    @if (_pack is { } pack)
+    {
+        var installed = Stickers.IsInstalled(pack.Id);
+        var mine = pack.CreatorId == Auth.UserId;
+        <div class="spack__head">
+            <div class="spack__titles">
+                <h2 class="spack__title" dir="auto">@pack.Title</h2>
+                <div class="spack__meta">
+                    <span>@L.Plural("stickers.count", pack.Stickers.Count)</span>
+                    @if (mine)
+                    {
+                        <span class="spack__mine">@L["stickers.pack.mine"]</span>
+                    }
+                </div>
+            </div>
+            <IconButton Icon="@IconNames.Share2" Label="@L["stickers.pack.share"]" Variant="IconButtonVariant.Tonal" Size="40" OnClick="() => ShareAsync(pack)" />
+        </div>
+        @if (pack.Stickers.Count == 0)
+        {
+            <p class="spack__empty">@(mine ? L["stickers.pack.emptyMine"] : L["stickers.pack.empty"])</p>
+        }
+        else
+        {
+            <div class="spack__grid" role="list">
+                @foreach (var sticker in pack.Stickers)
+                {
+                    var item = sticker;
+                    <button type="button" role="listitem" class="spack__cell" title="@StickerUi.EmojiLine(item)" aria-label="@StickerUi.EmojiLine(item)"
+                            @onclick="() => PreviewAsync(item)">
+                        <StickerImage Media="item.Media" Alt="@StickerUi.EmojiLine(item)" />
+                    </button>
+                }
+            </div>
+        }
+        <div class="spack__actions">
+            @if (mine)
+            {
+                <Button Variant="ButtonVariant.Secondary" Icon="@IconNames.Pencil" OnClick="() => Edit(pack)">@L["stickers.pack.edit"]</Button>
+            }
+            @if (installed)
+            {
+                <Button Variant="ButtonVariant.DangerGhost" Icon="@IconNames.Trash2" Loading="_busy" OnClick="() => RemoveAsync(pack)">@L["stickers.pack.remove"]</Button>
+            }
+            else if (pack.Stickers.Count > 0)
+            {
+                <Button Block="@(!mine)" Size="ButtonSize.Large" Icon="@IconNames.Plus" Loading="_busy" OnClick="() => AddAsync(pack)">
+                    @L.Plural("stickers.pack.add", pack.Stickers.Count)
+                </Button>
+            }
+        </div>
+    }
+    else if (_gone)
+    {
+        <EmptyState Icon="@IconNames.Ghost" Title="@L["stickers.pack.goneTitle"]" Text="@L["stickers.pack.goneText"]" />
+    }
+    else if (_error is not null)
+    {
+        <EmptyState Icon="@IconNames.CloudOff" Title="@L["stickers.pack.failed"]" Text="@_error">
+            <Actions><Button Icon="@IconNames.RefreshCw" OnClick="LoadAsync">@L["common.retry"]</Button></Actions>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="spack__head"><Skeleton Width="55%" Height="1.25rem" /></div>
+        <div class="spack__grid" aria-hidden="true">
+            @for (var i = 0; i < 10; i++)
+            {
+                <span class="spack__cell spack__cell--wait"><Skeleton Shape="SkeletonShape.Rect" Width="100%" Height="100%" /></span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private StickerPackDto? _pack;
+    private bool _gone;
+    private bool _busy;
+    private string? _error;
+    private string? _loadedFor;
+
+    [Parameter] public Guid? PackId { get; set; }
+    /// <summary>The slug of a pack link (instead of <see cref="PackId"/>).</summary>
+    [Parameter] public string? Slug { get; set; }
+    /// <summary>Asked to go (an edit opened, the pack was removed from inside a sheet).</summary>
+    [Parameter] public EventCallback OnDone { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // Installing or removing elsewhere (another device) flips the button; edits by the creator refresh the pack.
+        Action changed = () =>
+        {
+            if (_pack is { } shown && Stickers.GetPack(shown.Id) is { } held && held.Version > shown.Version) _pack = held;
+            RequestRender();
+        };
+        Stickers.Changed += changed;
+        OnDispose(() => Stickers.Changed -= changed);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = PackId?.ToString() ?? Slug;
+        if (key is null || key == _loadedFor) return;
+        _loadedFor = key;
+        _pack = PackId is { } id ? Stickers.GetPack(id) : null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _gone = false;
+        try
+        {
+            _pack = PackId is { } id
+                ? await Stickers.LoadPackAsync(id, refresh: true)
+                : await Stickers.LoadPackBySlugAsync(Slug ?? "");
+        }
+        catch (ApiException ex) when (ex.Code == ErrorCodes.StickerPackNotFound)
+        {
+            _pack = null;
+            _gone = true;
+        }
+        catch (Exception ex)
+        {
+            // A pack seen before still shows; only an empty sheet says what went wrong.
+            if (_pack is null) _error = L.Error(ex);
+        }
+        StateHasChanged();
+    }
+
+    private async Task PreviewAsync(StickerDto sticker)
+    {
+        Haptics.Selection();
+        await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: false);
+    }
+
+    private async Task AddAsync(StickerPackDto pack)
+    {
+        _busy = true;
+        try
+        {
+            await Stickers.InstallAsync(pack);
+            Haptics.Success();
+            Toasts.Success(L.Format("stickers.pack.added", pack.Title));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RemoveAsync(StickerPackDto pack)
+    {
+        _busy = true;
+        try
+        {
+            await Stickers.UninstallAsync(pack.Id);
+            Toasts.Show(L.Format("stickers.pack.removed", pack.Title), ToastKind.Info, L["common.undo"], () => Stickers.InstallAsync(pack));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ShareAsync(StickerPackDto pack) => await Share.ShareAsync(Links.StickerPackLink(pack.Slug), pack.Title);
+
+    private async Task Edit(StickerPackDto pack)
+    {
+        await OnDone.InvokeAsync();
+        Nav.NavigateTo(StickerUi.EditorPath(pack.Id));
+    }
+}

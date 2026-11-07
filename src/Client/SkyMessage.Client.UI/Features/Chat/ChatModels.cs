@@ -34,7 +34,8 @@ public sealed record ChatView(
     bool AutoplayNotes,
     bool AutoplayVideos,
     int MediaVersion,
-    bool Protected = false);
+    bool Protected = false,
+    bool AutoplayGifs = true);
 
 /// <summary>Grouping and status of one message row in the list.</summary>
 public sealed record MessageRow(
@@ -85,6 +86,9 @@ public sealed class ChatController
 
     /// <summary>Tap on a reaction chip: add mine or take it back.</summary>
     public Func<MessageItem, string, Task> ToggleReactionAsync { get; set; } = (_, _) => Task.CompletedTask;
+
+    /// <summary>Tap on a sticker: its pack (to add it, or what is left of it).</summary>
+    public Func<MessageItem, MediaDto, Task> OpenStickerAsync { get; set; } = (_, _) => Task.CompletedTask;
 }
 
 /// <summary>A file waiting in the composer's tray (picked, pasted or dropped) until the user sends it.</summary>
@@ -136,6 +140,8 @@ public static class MessageRules
         var m = item.Message;
         if (m.SenderId != me || m.IsDeleted || m.Forward is not null) return false;
         if (m.Type is MessageType.System or MessageType.Call or MessageType.Voice or MessageType.VideoNote) return false;
+        // A sticker has no caption (the server refuses to edit one).
+        if (Stickers.StickerUi.IsSticker(m)) return false;
         if (item.IsPending) return item.SendState is not MessageSendState.Sending;
         return now - m.CreatedAt < TimeSpan.FromHours(Limits.EditWindowHours);
     }

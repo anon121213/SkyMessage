@@ -6,6 +6,7 @@
    the data-* attributes; parts with a tap action of their own carry data-no-dbltap. *@
 @inherits UiComponentBase
 @using SkyMessage.Client.UI.Features.Media
+@using SkyMessage.Client.UI.Features.Stickers
 @inject IUserStore Users
 @inject FormatService Format
 @inject MessagePreviewFormatter Preview
@@ -44,11 +45,14 @@ else
             </div>
         }
         @* msg__swipe--bubble: a real bubble (not a round note or jumbo emoji) — it gets the lift shadow. *@
-        <div class="msg__swipe @(Kind is BubbleKind.Jumbo or BubbleKind.VideoNote ? null : "msg__swipe--bubble")" data-swipe>
+        <div class="msg__swipe @(Kind is BubbleKind.Jumbo or BubbleKind.VideoNote or BubbleKind.Sticker ? null : "msg__swipe--bubble")" data-swipe>
             @switch (Kind)
             {
                 case BubbleKind.Jumbo:
                     @JumboBody
+                    break;
+                case BubbleKind.Sticker:
+                    @StickerBody
                     break;
                 case BubbleKind.VideoNote:
                     @NoteBody
@@ -71,6 +75,8 @@ else
         VideoNote,
         Call,
         Jumbo,
+        /// <summary>A sticker: no bubble, the picture alone with the time on a chip (Features/Stickers).</summary>
+        Sticker,
     }
 
     private enum MetaPlacement
@@ -121,7 +127,7 @@ else
     private bool CanSwipeReply => View.CanSend && !View.SelectionMode && MessageRules.CanReply(Item);
     private bool CanReact => View.CanSend && !View.SelectionMode && MessageRules.CanReact(Item);
     private bool HasReactions => Message.Reactions.Count > 0;
-    private bool HasCaption => !string.IsNullOrEmpty(Message.Text) && Kind is not (BubbleKind.Jumbo or BubbleKind.Call or BubbleKind.Voice or BubbleKind.VideoNote);
+    private bool HasCaption => !string.IsNullOrEmpty(Message.Text) && Kind is not (BubbleKind.Jumbo or BubbleKind.Call or BubbleKind.Voice or BubbleKind.VideoNote or BubbleKind.Sticker);
     private bool HasHead => (Row.ShowSender && Message.SenderId is not null) || Message.Forward is not null || Message.ReplyTo is not null;
 
     private IReadOnlyList<MediaDto> Attachments => Message.Attachments;
@@ -139,6 +145,8 @@ else
     {
         switch (Message.Type)
         {
+            case MessageType.Photo when StickerUi.IsSticker(Message):
+                return BubbleKind.Sticker;
             case MessageType.Photo or MessageType.Video or MessageType.Album:
                 return AttachmentCount > 0 ? BubbleKind.Visual : BubbleKind.Text;
             case MessageType.File or MessageType.Audio:
@@ -340,7 +348,7 @@ else
             var local = media is null ? Locals.FirstOrDefault() : null;
             var aspect = Math.Clamp(media is not null ? AlbumLayout.AspectOf(media) : AlbumLayout.AspectOf(local?.Width, local?.Height), 0.5, 2.2);
             <div class="msg__media msg__media--single" data-no-dbltap style="--ar:@aspect.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)">
-                <MediaTile Media="media" Local="local" Large="true" Autoplay="View.AutoplayVideos" Interactive="Interactive"
+                <MediaTile Media="media" Local="local" Large="true" Autoplay="@(media?.IsAnimation == true ? View.AutoplayGifs : View.AutoplayVideos)" Interactive="Interactive"
                            Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync" OnOpen="() => Controller.OpenMediaAsync(Item, 0)" Overlay="overlay" />
             </div>
         }
@@ -444,6 +452,48 @@ else
             }
             <div class="msg__jumbo-text msg__jumbo-text--@MessageTextLayout.JumboEmojiCount(Message.Text) sm-emoji">@Message.Text</div>
             <div class="msg__note-foot">
+                <span class="msg__meta msg__meta--pill">@MetaContent</span>
+            </div>
+        </div>
+    };
+
+    private RenderFragment StickerBody => __builder =>
+    {
+        var media = Attachments.FirstOrDefault();
+        var sticker = media is null ? null : StickerUi.AsSticker(media);
+        var aspect = media is { Width: > 0, Height: > 0 } ? Math.Clamp((double)media.Width.Value / media.Height.Value, 0.5, 2) : 1;
+        <div class="msg__sticker">
+            @if ((Row.ShowSender && Message.SenderId is not null) || Message.Forward is not null || Message.ReplyTo is not null)
+            {
+                <div class="msg__note-head">
+                    @if (Row.ShowSender && Message.SenderId is { } sender)
+                    {
+                        <div class="msg__sender msg__sender--pill" style="@SenderStyle(sender)" data-no-dbltap @onclick="OpenSenderAsync" @onclick:stopPropagation="@Interactive"><UserName UserId="sender" /></div>
+                    }
+                    @if (Message.Forward is { } forward)
+                    {
+                        <div class="msg__fwd msg__fwd--pill">
+                            <span class="msg__fwd-icon"><Icon Name="@IconNames.Forward" Size="12" StrokeWidth="2.4" /></span>
+                            <span class="msg__fwd-text"><span class="msg__fwd-label">@L["chat.forwarded"]</span> <strong>@ForwardName(forward)</strong></span>
+                        </div>
+                    }
+                    @if (Message.ReplyTo is { } reply)
+                    {
+                        <ReplyQuote Reply="reply" Class="msg__reply msg__reply--pill" OnClick="@JumpCallback(reply)" />
+                    }
+                </div>
+            }
+            @* A tap opens the sticker's pack (to add it); the long-press menu is the message's, as for every message. *@
+            <button type="button" class="msg__sticker-art" data-no-dbltap style="--ar:@aspect.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)"
+                    aria-label="@(sticker is null ? L["stickers.preview.sticker"] : L.Format("stickers.message.label", StickerUi.EmojiLine(sticker)))"
+                    @onclick="OpenStickerAsync" @onclick:stopPropagation="@Interactive">
+                <StickerImage Media="media" Full="true" Fade="true" Alt="@(sticker is null ? null : StickerUi.EmojiLine(sticker))" />
+            </button>
+            <div class="msg__note-foot">
+                @if (HasReactions)
+                {
+                    <ReactionsBar Reactions="Message.Reactions" Mine="@MyReaction" Interactive="@(Interactive && !Item.IsPending)" Animate="_rendered" OnToggle="ToggleReactionAsync" />
+                }
                 <span class="msg__meta msg__meta--pill">@MetaContent</span>
             </div>
         </div>
@@ -570,6 +620,9 @@ else
         Interactive ? Controller.CallAsync(Message.Call?.IsVideo == true) : Task.CompletedTask;
 
     private Task CancelSendAsync() => Controller.CancelSendAsync(Item);
+
+    private Task OpenStickerAsync() =>
+        Interactive && !Item.IsPending && StickerUi.StickerOf(Message) is { } media ? Controller.OpenStickerAsync(Item, media) : Task.CompletedTask;
 
     private Task ToggleReactionAsync(string emoji) => Controller.ToggleReactionAsync(Item, emoji);
 }

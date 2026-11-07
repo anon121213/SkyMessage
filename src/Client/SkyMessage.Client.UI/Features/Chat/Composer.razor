@@ -18,6 +18,7 @@
 @inject IUserStore Users
 @inject IAuthService Auth
 @inject IContactStore Contacts
+@inject IStickerStore Stickers
 @inject ISkyApi Api
 @inject IRealtimeService Realtime
 @inject IFilePickerService Picker
@@ -70,6 +71,10 @@
                     </button>
                 }
             </div>
+        }
+        else if (_stickerSuggestions.Count > 0)
+        {
+            <StickerSuggestions Items="_stickerSuggestions" OnPick="SendSuggestedStickerAsync" />
         }
         var current = CurrentContext;
         if (current is not null) _contextShown = current;
@@ -236,7 +241,8 @@
         @if (_emojiOpen)
         {
             <div class="composer__emoji @(Layout.IsPhone ? null : "composer__emoji--popover")" @ref="_emojiPanel">
-                <EmojiPicker OnPick="InsertEmojiAsync" Height="@(Layout.IsPhone ? "17rem" : "22rem")" />
+                <ExpressionPanel OnEmoji="InsertEmojiAsync" OnSticker="SendStickerAsync" OnGif="SendGifAsync" OnLeave="CloseEmojiAsync"
+                                 CanSendMedia="CanSendMedia" Height="@(Layout.IsPhone ? "19.5rem" : "24.5rem")" />
             </div>
         }
         @if (Recording && _recordMode == "video")
@@ -353,6 +359,8 @@
     private DateTimeOffset _emojiClosedOutsideAt;
     private MentionQuery? _mention;
     private List<UserSummaryDto> _suggestions = [];
+    /// <summary>Stickers for the one emoji in the field (Settings › Chats "Подсказывать стикеры по эмодзи").</summary>
+    private IReadOnlyList<StickerDto> _stickerSuggestions = [];
     private int _suggestIndex;
     private IReadOnlyList<UserSummaryDto>? _members;
     private Task? _membersLoading;
@@ -645,7 +653,18 @@
             }
         }
         UpdateMentions(caret);
+        UpdateStickerSuggestions();
         StateHasChanged();
+    }
+
+    /// <summary>Exactly one emoji and nothing else (no reply being edited, nothing in the tray): matching stickers.</summary>
+    private void UpdateStickerSuggestions()
+    {
+        var text = _text.Trim();
+        _stickerSuggestions = Settings.Current.Chats.SuggestStickers && _editing is null && _staged.Count == 0 && CanSendMedia
+                              && text.Length is > 0 and <= 32 && MessageTextLayout.JumboEmojiCount(text) == 1
+            ? Stickers.Suggest(text)
+            : [];
     }
 
     [JSInvokable]
@@ -773,6 +792,7 @@
         _staged.Clear();
         _compress = true;
         CloseSuggestions();
+        _stickerSuggestions = [];
         CancelDraftTimer();
         _draftDirty = false;
         Drafts.Set(ChatId, null);
@@ -1150,6 +1170,51 @@
     private async Task InsertEmojiAsync(string emoji)
     {
         if (_composerHandle is not null) await _composerHandle.InvokeVoidAsync("insert", emoji);
+    }
+
+    // ---- Stickers and GIFs ----
+
+    /// <summary>A sticker from the panel goes at once (as a reply when one is set); the text being written stays.</summary>
+    private async Task SendStickerAsync(StickerDto sticker)
+    {
+        if (Notice is not null || _editing is not null) return;
+        var reply = TakeReply();
+        await Messages.SendStickerAsync(ChatId, sticker, reply);
+        await ConfigureJsAsync();
+        StateHasChanged();
+        await OnSent.InvokeAsync();
+    }
+
+    private async Task SendGifAsync(MediaDto gif)
+    {
+        if (Notice is not null || _editing is not null) return;
+        var reply = TakeReply();
+        await Messages.SendGifAsync(ChatId, gif, reply);
+        await ConfigureJsAsync();
+        StateHasChanged();
+        await OnSent.InvokeAsync();
+    }
+
+    /// <summary>A suggested sticker takes the emoji's place: the field empties as after any send.</summary>
+    private async Task SendSuggestedStickerAsync(StickerDto sticker)
+    {
+        if (Notice is not null || _editing is not null) return;
+        var reply = _replyTo?.Id ?? _draftReplyId;
+        Haptics.Tap();
+        await ClearAfterSendAsync();
+        await Messages.SendStickerAsync(ChatId, sticker, reply);
+        await OnSent.InvokeAsync();
+    }
+
+    /// <summary>The reply the next message goes with, cleared from the composer (the draft keeps its text).</summary>
+    private Guid? TakeReply()
+    {
+        var reply = _replyTo?.Id ?? _draftReplyId;
+        if (reply is null) return null;
+        _replyTo = null;
+        _draftReplyId = null;
+        ScheduleDraft();
+        return reply;
     }
 
     // ---- Attachments ----

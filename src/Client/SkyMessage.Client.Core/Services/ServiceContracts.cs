@@ -217,6 +217,8 @@ public interface ILinkBuilder
 {
     string ProfileLink(string username);
     string InviteLink(string token);
+    /// <summary>A sticker pack's link: <c>{public base url}/addstickers/{slug}</c>.</summary>
+    string StickerPackLink(string slug);
 }
 
 /// <summary>

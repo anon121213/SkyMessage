@@ -10,6 +10,8 @@ internal sealed class LinkBuilder(IServerEndpointService endpoints) : ILinkBuild
 
     public string InviteLink(string token) => Build(DeepLinks.JoinChatPath(Uri.EscapeDataString(token.Trim())));
 
+    public string StickerPackLink(string slug) => Build(DeepLinks.StickerPackPath(Uri.EscapeDataString(slug.Trim())));
+
     private string Build(string path)
     {
         var baseUri = endpoints.BaseUri;

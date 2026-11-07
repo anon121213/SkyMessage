@@ -1,0 +1,64 @@
+/* A pack's editor: rows of stickers (their picture, their emoji, the handle), like Settings › Folders. */
+.sedit-face {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+.sedit-emoji {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 1.25rem;
+}
+
+.stickers-add {
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+}
+
+/* Positioned: a dragged row travels over the others (js/folders.js attachHandleReorder). */
+.sedit-list {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.sedit-list__row {
+    position: relative;
+    border-radius: 20px;
+}
+
+.sedit-list__row[data-dragging] {
+    background: var(--sm-glass-strong);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+}
+
+html[data-fx="lite"] .sedit-list__row[data-dragging] {
+    background: var(--sm-card-solid);
+}
+
+.sedit-list[data-reordering] ::deep .sm-list-item {
+    background: transparent;
+}
+
+.sedit-list__handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-right: -8px;
+    border-radius: 12px;
+    color: var(--sm-text-3);
+    cursor: grab;
+    touch-action: none;
+}
+
+.sedit-list__row[data-dragging] .sedit-list__handle {
+    color: var(--sm-accent);
+    cursor: grabbing;
+}

@@ -1,0 +1,156 @@
+/* The Stickers tab: the jump strip (pack faces on soft tiles, the active one tinted), then every sticker on air with
+   sticky overline chips like the emoji picker's. Transparent: it takes the glass of the composer's panel. */
+.spanel {
+    display: flex;
+    flex-direction: column;
+    height: var(--panel-h, 17rem);
+    min-height: 0;
+}
+
+.spanel__strip {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+    padding: 8px 8px 4px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+}
+
+.spanel__strip::-webkit-scrollbar {
+    display: none;
+}
+
+.spanel__tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 14px;
+    color: var(--sm-text-3);
+    transition: background-color var(--sm-dur) ease, color var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+.spanel__tab--active {
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent);
+}
+
+.spanel__tab--add {
+    color: var(--sm-text-2);
+}
+
+@media (hover: hover) {
+    .spanel__tab:hover:not(.spanel__tab--active) {
+        background: color-mix(in srgb, var(--sm-text) 6%, transparent);
+        color: var(--sm-text);
+    }
+}
+
+.spanel__tab:active {
+    transform: scale(0.88);
+}
+
+.spanel__tab-face {
+    width: 1.875rem;
+    height: 1.875rem;
+}
+
+.spanel__scroll {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 8px 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.spanel__scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.spanel__heading {
+    position: sticky;
+    top: -2px;
+    z-index: 2;
+    display: flex;
+    padding: 8px 4px 6px;
+    pointer-events: none;
+}
+
+.spanel__heading > span {
+    max-width: 100%;
+    overflow: hidden;
+    padding: 4px 10px 3px;
+    border-radius: 999px;
+    background: var(--sm-glass-strong);
+    box-shadow: var(--sm-edge), 0 4px 12px -6px rgba(40, 24, 110, 0.3);
+    color: var(--sm-text-2);
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+html[data-fx="lite"] .spanel__heading > span {
+    background: var(--sm-glass-solid);
+}
+
+.spanel__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
+    gap: 2px;
+}
+
+.spanel__cell {
+    aspect-ratio: 1;
+    padding: 5px;
+    border-radius: 16px;
+    -webkit-touch-callout: none;
+    transition: transform 320ms var(--sm-spring), background-color var(--sm-dur-fast) ease;
+}
+
+@media (hover: hover) {
+    .spanel__cell:hover {
+        background: var(--sm-accent-soft);
+    }
+}
+
+.spanel__cell:active {
+    transform: scale(0.86);
+    transition-duration: 70ms;
+}
+
+.spanel__cell--wait {
+    display: block;
+    padding: 8px;
+}
+
+.spanel__empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    overflow-y: auto;
+}
+
+.spanel__notice {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 28px;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    text-align: center;
+}

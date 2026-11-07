@@ -1,0 +1,16 @@
+/* The picture keeps its own shape: contained in its square, never cropped or stretched. */
+.sticker-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+}
+
+.sticker-img--empty {
+    border-radius: 22%;
+    background: color-mix(in srgb, var(--sm-text) 6%, transparent);
+}

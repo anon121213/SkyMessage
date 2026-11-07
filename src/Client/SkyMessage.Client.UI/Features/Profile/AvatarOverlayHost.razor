@@ -8,7 +8,7 @@
 }
 @if (Overlays.Editor is { } editor)
 {
-    <AvatarEditor @key="editor" Source="editor.Source" OnDone="bytes => Overlays.CompleteEditor(editor, bytes)" />
+    <AvatarEditor @key="editor" Source="editor.Source" Sticker="editor.Sticker" OnDone="bytes => Overlays.CompleteEditor(editor, bytes)" />
 }
 
 @code {

@@ -1,0 +1,14 @@
+@* The pack sheet (DialogService content; a sheet on phones, a card on wide screens): a tap on a sticker in a chat, a
+   pack in the panel or the settings opens it. *@
+@inherits UiComponentBase
+
+<StickerPackView PackId="PackId" OnDone="() => Dialog.Cancel()" />
+
+@code {
+    [CascadingParameter] public DialogReference Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public Guid PackId { get; set; }
+
+    public static Task ShowAsync(DialogService dialogs, Guid packId) =>
+        dialogs.ShowAsync<StickerPackSheet>(null, new Dictionary<string, object?> { [nameof(PackId)] = packId },
+            new DialogOptions { Size = DialogSize.Medium, Flush = true, Presentation = OverlayPresentation.Auto });
+}

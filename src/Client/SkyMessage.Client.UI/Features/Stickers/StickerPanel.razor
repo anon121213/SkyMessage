@@ -1,0 +1,273 @@
+@* The Stickers tab of the composer's panel: a strip to jump between «Недавние», «Избранные» and every installed pack
+   (each pack's face is its first sticker; the last button makes a new pack), then all of them in one scroll with
+   their names as sticky chips. A tap sends at once; a hold (or right-click) shows the sticker large with
+   favorite / send / its pack (js/stickers.js holds every cell through one delegated listener). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IStickerStore Stickers
+@inject DialogService Dialogs
+@inject NavigationService Nav
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject AppJs Js
+@inject IJSRuntime JS
+
+<div class="spanel" style="--panel-h:@Height">
+    @if (!CanSend)
+    {
+        <div class="spanel__notice">
+            <Icon Name="@IconNames.Lock" Size="22" />
+            <span>@L["stickers.panel.noMedia"]</span>
+        </div>
+    }
+    else if (Sections.Count == 0)
+    {
+        <div class="spanel__empty">
+            <EmptyState Icon="@IconNames.Smile" Title="@L["stickers.panel.emptyTitle"]" Text="@L["stickers.panel.emptyText"]">
+                <Actions>
+                    <Button Icon="@IconNames.Plus" Size="ButtonSize.Small" OnClick="CreateAsync">@L["stickers.settings.create"]</Button>
+                </Actions>
+            </EmptyState>
+        </div>
+    }
+    else
+    {
+        <div class="spanel__strip" role="tablist" @ref="_strip" data-no-swipe-back>
+            @foreach (var part in Sections)
+            {
+                var key = part.Key;
+                var active = key == _active;
+                <button type="button" role="tab" aria-selected="@(active ? "true" : "false")" title="@part.Title" aria-label="@part.Title"
+                        class="spanel__tab @(active ? "spanel__tab--active" : null)" data-strip-key="@key" @onclick="() => JumpAsync(key)">
+                    @if (part.Icon is { } icon)
+                    {
+                        <Icon Name="@icon" Size="20" />
+                    }
+                    else if (part.Cover is { } cover)
+                    {
+                        <span class="spanel__tab-face"><StickerImage Media="cover.Media" Eager="true" /></span>
+                    }
+                </button>
+            }
+            <button type="button" class="spanel__tab spanel__tab--add" title="@L["stickers.settings.create"]" aria-label="@L["stickers.settings.create"]" @onclick="CreateAsync">
+                <Icon Name="@IconNames.Plus" Size="20" />
+            </button>
+            <button type="button" class="spanel__tab spanel__tab--add" title="@L["stickers.panel.manage"]" aria-label="@L["stickers.panel.manage"]" @onclick="Manage">
+                <Icon Name="@IconNames.Settings2" Size="19" />
+            </button>
+        </div>
+        <div class="spanel__scroll" @ref="_scroll">
+            @foreach (var part in Sections)
+            {
+                var item = part;
+                <section class="spanel__section" @key="item.Key" @ref="_sectionRefs[item.Key]">
+                    <div class="spanel__heading"><span dir="auto">@item.Title</span></div>
+                    <div class="spanel__grid">
+                        @if (item.Stickers is { } stickers)
+                        {
+                            foreach (var sticker in stickers)
+                            {
+                                var s = sticker;
+                                <button type="button" class="spanel__cell" data-hold="@s.Id" title="@StickerUi.EmojiLine(s)" aria-label="@StickerUi.EmojiLine(s)"
+                                        @onclick="() => PickAsync(s)">
+                                    <StickerImage Media="s.Media" Alt="@StickerUi.EmojiLine(s)" />
+                                </button>
+                            }
+                        }
+                        else
+                        {
+                            for (var i = 0; i < Math.Min(10, Math.Max(1, item.ExpectedCount)); i++)
+                            {
+                                <span class="spanel__cell spanel__cell--wait" aria-hidden="true"><Skeleton Shape="SkeletonShape.Rect" Width="100%" Height="100%" /></span>
+                            }
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const string RecentKey = "recent";
+    private const string FavoritesKey = "favorites";
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+
+    private sealed record PanelSection(string Key, string Title, string? Icon, StickerDto? Cover, IReadOnlyList<StickerDto>? Stickers, int ExpectedCount);
+
+    private readonly Dictionary<string, ElementReference> _sectionRefs = [];
+    private readonly HashSet<Guid> _requested = [];
+    private ElementReference _strip;
+    private ElementReference _scroll;
+    private JsModule? _module;
+    private JsObject? _hold;
+    private JsObject? _wheel;
+    private JsHandle? _observer;
+    private DotNetObjectReference<StickerPanel>? _self;
+    private string? _active;
+    private List<PanelSection> _sections = [];
+    private readonly HashSet<string> _observed = [];
+    private bool _attached;
+
+    /// <summary>Tap on a sticker: send it.</summary>
+    [Parameter] public EventCallback<StickerDto> OnPick { get; set; }
+    /// <summary>The chat allows media (stickers are media in groups' permissions).</summary>
+    [Parameter] public bool CanSend { get; set; } = true;
+    /// <summary>The panel's own height (the strip and the scroll share it).</summary>
+    [Parameter] public string Height { get; set; } = "17rem";
+    /// <summary>The panel is going (a pack or the settings opened): the composer closes it.</summary>
+    [Parameter] public EventCallback OnLeave { get; set; }
+
+    private List<PanelSection> Sections => _sections;
+
+    protected override void OnInitialized()
+    {
+        Stickers.Changed += OnStickersChanged;
+        OnDispose(() => Stickers.Changed -= OnStickersChanged);
+        Build();
+    }
+
+    private void OnStickersChanged() => InvokeAsync(async () =>
+    {
+        if (IsDisposed) return;
+        Build();
+        // The scroll went away with the last pack: it is bound again when packs come back.
+        if (_sections.Count == 0 && _attached) await DetachAsync();
+        StateHasChanged();
+    });
+
+    /// <summary>Recent, favorites, then my packs in my order; packs whose stickers are not here yet are asked for.</summary>
+    private void Build()
+    {
+        var state = Stickers.State;
+        var sections = new List<PanelSection>();
+        if (state.Recent.Count > 0)
+            sections.Add(new PanelSection(RecentKey, L["stickers.panel.recent"], IconNames.Clock, null, state.Recent, state.Recent.Count));
+        if (state.Favorites.Count > 0)
+            sections.Add(new PanelSection(FavoritesKey, L["stickers.panel.favorites"], IconNames.Star, null, state.Favorites, state.Favorites.Count));
+        foreach (var installed in state.Installed)
+        {
+            var pack = Stickers.GetPack(installed.Id);
+            if (pack is null && _requested.Add(installed.Id)) _ = LoadPackAsync(installed.Id);
+            if (pack is { Stickers.Count: 0 } || (pack is null && installed.StickerCount == 0)) continue;
+            sections.Add(new PanelSection(installed.Id.ToString("N"), installed.Title, null, pack?.Stickers.FirstOrDefault() ?? installed.Cover,
+                pack?.Stickers, installed.StickerCount));
+        }
+        _sections = sections;
+        if (_active is null || sections.All(s => s.Key != _active)) _active = sections.FirstOrDefault()?.Key;
+    }
+
+    private async Task LoadPackAsync(Guid packId)
+    {
+        try
+        {
+            await Stickers.LoadPackAsync(packId);
+        }
+        catch (Exception ex) when (ex is ApiException or OperationCanceledException)
+        {
+            // Shown again from the store's own refresh; a deleted pack leaves the state.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!CanSend || _sections.Count == 0) return;
+        if (!_attached)
+        {
+            _attached = true;
+            _self ??= DotNetObjectReference.Create(this);
+            _module ??= new JsModule(JS, ModulePath);
+            _hold = await _module.AttachAsync("attachHold", _scroll, _self);
+            _wheel = await _module.AttachAsync("attachStripWheel", _strip);
+            _observer = await Js.CreateIntersectionObserverAsync(_scroll, _self, nameof(OnSectionsVisible), "0px 0px -70% 0px");
+        }
+        // Sections that appear later (a pack installed while the panel is open) are observed too.
+        if (_observer is null) return;
+        foreach (var section in _sections)
+        {
+            if (_observed.Contains(section.Key) || !_sectionRefs.TryGetValue(section.Key, out var element)) continue;
+            _observed.Add(section.Key);
+            await _observer.InvokeVoidAsync("observe", element, section.Key);
+        }
+    }
+
+    private async Task DetachAsync()
+    {
+        _attached = false;
+        _observed.Clear();
+        _sectionRefs.Clear();
+        if (_hold is not null) await _hold.DisposeAsync();
+        if (_wheel is not null) await _wheel.DisposeAsync();
+        if (_observer is not null) await _observer.DisposeAsync();
+        _hold = null;
+        _wheel = null;
+        _observer = null;
+    }
+
+    [JSInvokable]
+    public void OnSectionsVisible(VisibilityChange[] changes)
+    {
+        var visible = changes.Where(c => c.Visible).Select(c => c.Key).ToHashSet();
+        if (visible.Count == 0) return;
+        var top = _sections.FirstOrDefault(s => visible.Contains(s.Key))?.Key;
+        if (top is null || top == _active) return;
+        _active = top;
+        RequestRender();
+        _ = RevealActiveAsync();
+    }
+
+    private async Task RevealActiveAsync()
+    {
+        if (_module is null || _active is null) return;
+        await Task.Yield();
+        await _module.InvokeVoidAsync("revealInStrip", _strip, _active);
+    }
+
+    private async Task JumpAsync(string key)
+    {
+        _active = key;
+        if (_module is not null && _sectionRefs.TryGetValue(key, out var section)) await _module.InvokeVoidAsync("scrollToSection", _scroll, section);
+    }
+
+    private async Task PickAsync(StickerDto sticker)
+    {
+        Haptics.Tap();
+        await OnPick.InvokeAsync(sticker);
+    }
+
+    /// <summary>A cell was held (or right-clicked): the large preview.</summary>
+    [JSInvokable]
+    public Task OnHold(string key) => InvokeAsync(async () =>
+    {
+        if (!Guid.TryParse(key, out var id)) return;
+        var sticker = _sections.SelectMany(s => s.Stickers ?? []).FirstOrDefault(s => s.Id == id);
+        if (sticker is null) return;
+        Haptics.LongPress();
+        var answer = await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: true, showPack: true);
+        if (answer == "send") await PickAsync(sticker);
+        else if (answer == "pack")
+        {
+            await StickerPackSheet.ShowAsync(Dialogs, sticker.PackId);
+        }
+    });
+
+    private async Task CreateAsync()
+    {
+        await OnLeave.InvokeAsync();
+        await StickerFlows.CreatePackAsync(L, Dialogs, Stickers, Nav, Toasts);
+    }
+
+    private async Task Manage()
+    {
+        await OnLeave.InvokeAsync();
+        Nav.NavigateTo(StickerUi.SettingsPath);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DetachAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

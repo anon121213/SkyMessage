@@ -285,3 +285,16 @@ html[data-fx="lite"] .aeditor__bar {
         display: none;
     }
 }
+
+/* A sticker's crop: a plain square window (stickers keep their own shape and transparency). It opens from the
+   new-sticker dialog, so it stands above dialogs (900) and below menus (950). */
+.aeditor--sticker {
+    z-index: 905;
+}
+
+.aeditor--sticker .aeditor__mask {
+    -webkit-mask: linear-gradient(#000 0 0), linear-gradient(#000 0 0) center / var(--crop) var(--crop) no-repeat;
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) exclude, linear-gradient(#000 0 0) center / var(--crop) var(--crop) no-repeat;
+}
+

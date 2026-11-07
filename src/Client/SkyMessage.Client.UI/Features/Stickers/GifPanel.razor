@@ -1,0 +1,134 @@
+@* The GIF tab: «Мои GIF», the newest first, as their first frames (still pictures: calm, light on old phones). A tap sends
+   one again (nothing is uploaded); a hold (or right-click) offers to send it or to remove it from the list. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IStickerStore Stickers
+@inject IMediaUrlBuilder MediaUrls
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<div class="gpanel" style="--panel-h:@Height">
+    @if (!CanSend)
+    {
+        <div class="gpanel__notice">
+            <Icon Name="@IconNames.Lock" Size="22" />
+            <span>@L["stickers.panel.noMedia"]</span>
+        </div>
+    }
+    else if (Stickers.State.Gifs.Count == 0)
+    {
+        <div class="gpanel__empty">
+            <EmptyState Icon="@IconNames.Film" Title="@L["stickers.gifs.emptyTitle"]" Text="@L["stickers.gifs.emptyText"]" />
+        </div>
+    }
+    else
+    {
+        <div class="gpanel__scroll" @ref="_scroll">
+            <div class="gpanel__grid">
+                @foreach (var gif in Stickers.State.Gifs)
+                {
+                    var media = gif.Media;
+                    <button type="button" class="gpanel__cell" data-hold="@media.Id" aria-label="@L["stickers.gifs.send"]" @onclick="() => PickAsync(media)">
+                        @if (media.HasThumbnail)
+                        {
+                            <img src="@MediaUrls.ThumbnailUrl(media.Id)" alt="" loading="lazy" decoding="async" draggable="false" />
+                        }
+                        else
+                        {
+                            <span class="gpanel__placeholder"><Icon Name="@IconNames.Film" Size="24" /></span>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+
+    private ElementReference _scroll;
+    private JsModule? _module;
+    private JsObject? _hold;
+    private DotNetObjectReference<GifPanel>? _self;
+    private bool _attached;
+
+    [Parameter] public EventCallback<MediaDto> OnPick { get; set; }
+    [Parameter] public bool CanSend { get; set; } = true;
+    [Parameter] public string Height { get; set; } = "17rem";
+
+    protected override void OnInitialized()
+    {
+        Action changed = () => InvokeAsync(async () =>
+        {
+            if (IsDisposed) return;
+            if (Stickers.State.Gifs.Count == 0 && _attached) await DetachAsync();
+            StateHasChanged();
+        });
+        Stickers.Changed += changed;
+        OnDispose(() => Stickers.Changed -= changed);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_attached || !CanSend || Stickers.State.Gifs.Count == 0) return;
+        _attached = true;
+        _self ??= DotNetObjectReference.Create(this);
+        _module ??= new JsModule(JS, ModulePath);
+        _hold = await _module.AttachAsync("attachHold", _scroll, _self);
+    }
+
+    private async Task DetachAsync()
+    {
+        _attached = false;
+        if (_hold is not null) await _hold.DisposeAsync();
+        _hold = null;
+    }
+
+    private async Task PickAsync(MediaDto media)
+    {
+        Haptics.Tap();
+        await OnPick.InvokeAsync(media);
+    }
+
+    [JSInvokable]
+    public Task OnHold(string key) => InvokeAsync(async () =>
+    {
+        if (!Guid.TryParse(key, out var id)) return;
+        var gif = Stickers.State.Gifs.FirstOrDefault(g => g.Media.Id == id)?.Media;
+        if (gif is null) return;
+        Haptics.LongPress();
+        var choice = await Dialogs.ChooseAsync(L["stickers.gifs.title"],
+        [
+            new ChoiceOption<string>("send", L["stickers.gifs.send"]) { Icon = IconNames.ArrowUp },
+            new ChoiceOption<string>("remove", L["stickers.gifs.remove"]) { Icon = IconNames.Trash2, Danger = true },
+        ]);
+        if (choice?.Value == "send")
+        {
+            await PickAsync(gif);
+        }
+        else if (choice?.Value == "remove")
+        {
+            try
+            {
+                await Stickers.RemoveGifAsync(gif.Id);
+                Toasts.Success(L["stickers.gifs.removed"]);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        await DetachAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

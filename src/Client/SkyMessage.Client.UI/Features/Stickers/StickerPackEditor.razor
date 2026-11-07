@@ -1,0 +1,357 @@
+@* Settings › Стикеры и GIF › a pack of mine (/settings/stickerpack?id=): its title (rename in the header), its stickers
+   in order (moved by their handle; a tap changes a sticker's emoji or deletes it), «Добавить стикеры» from the gallery or
+   from files (each picture gets its emoji and, if wanted, a square crop; they upload one after another, each a row with
+   its progress), its link to share and, last, deleting the pack. Only the pack's creator gets here with edits. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IStickerStore Stickers
+@inject IAuthService Auth
+@inject IFilePickerService Picker
+@inject ILinkBuilder Links
+@inject ShareHelper Share
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<SettingsScaffold Title="@(_pack?.Title ?? L["stickers.edit.title"])" Subtitle="@(_pack is { } p ? L.Plural("stickers.count", p.Stickers.Count) : null)" Back="true">
+    <Actions>
+        @if (_pack is { } shown && Mine)
+        {
+            <IconButton Icon="@IconNames.Pencil" Label="@L["stickers.edit.rename"]" OnClick="() => StickerFlows.RenamePackAsync(L, Dialogs, Stickers, Toasts, shown)" />
+            <IconButton Icon="@IconNames.Share2" Label="@L["stickers.pack.share"]" OnClick="() => Share.ShareAsync(Links.StickerPackLink(shown.Slug), shown.Title)" />
+        }
+    </Actions>
+    <ChildContent>
+        @if (_pack is { } pack)
+        {
+            @if (!Mine)
+            {
+                <EmptyState Icon="@IconNames.Lock" Title="@L["stickers.edit.notMineTitle"]" Text="@L["stickers.edit.notMineText"]" />
+            }
+            else
+            {
+                <Section Title="@L["stickers.edit.stickers"]" Footer="@StickersFooter(pack)" DividerInset="74px">
+                    <div @ref="_list" class="sedit-list">
+                        @foreach (var sticker in pack.Stickers)
+                        {
+                            var item = sticker;
+                            <div @key="item.Id" class="sedit-list__row" data-reorder-key="@item.Id">
+                                <ListItem OnClick="() => StickerActionsAsync(item)">
+                                    <Leading><span class="sedit-face"><StickerImage Media="item.Media" /></span></Leading>
+                                    <ChildContent>
+                                        <div class="sm-list-item__title sm-emoji sedit-emoji" aria-label="@StickerUi.EmojiLine(item)">
+                                            @foreach (var emoji in item.Emoji)
+                                            {
+                                                <span>@emoji</span>
+                                            }
+                                        </div>
+                                    </ChildContent>
+                                    <Trailing>
+                                        <span class="sedit-list__handle" data-drag-handle="" title="@L["stickers.settings.drag"]" @onclick:stopPropagation="true">
+                                            <Icon Name="@IconNames.GripVertical" />
+                                        </span>
+                                    </Trailing>
+                                </ListItem>
+                            </div>
+                        }
+                    </div>
+                    @foreach (var pending in _queue)
+                    {
+                        <ListItem @key="pending.Id">
+                            <Leading><span class="sedit-face sedit-face--wait"><ProgressRing Value="pending.Progress" Size="36" Indeterminate="@(pending.Progress <= 0.01)" /></span></Leading>
+                            <ChildContent>
+                                <div class="sm-list-item__title sm-emoji sedit-emoji">
+                                    @foreach (var emoji in pending.Emoji)
+                                    {
+                                        <span>@emoji</span>
+                                    }
+                                </div>
+                                <div class="sm-list-item__subtitle">@L["stickers.edit.uploading"]</div>
+                            </ChildContent>
+                        </ListItem>
+                    }
+                    @if (pack.Stickers.Count + _queue.Count < Limits.MaxStickersPerPack)
+                    {
+                        <ListItem Icon="@IconNames.ImagePlus" IconColor="@SettingsTones.Mint" OnClick="AddAsync">
+                            <TitleContent><div class="sm-list-item__title stickers-add">@L["stickers.edit.add"]</div></TitleContent>
+                        </ListItem>
+                    }
+                </Section>
+
+                <Section>
+                    <ListItem Icon="@IconNames.Trash2" IconColor="@SettingsTones.Rose" Title="@L["stickers.edit.delete"]" Danger="true" OnClick="DeleteAsync" />
+                </Section>
+            }
+        }
+        else if (_gone)
+        {
+            <EmptyState Icon="@IconNames.Ghost" Title="@L["stickers.pack.goneTitle"]" Text="@L["stickers.edit.goneText"]">
+                <Actions><Button OnClick="() => Nav.NavigateTo(StickerUi.SettingsPath, replace: true)">@L["stickers.settings.title"]</Button></Actions>
+            </EmptyState>
+        }
+        else if (_error is not null)
+        {
+            <EmptyState Icon="@IconNames.CloudOff" Title="@L["stickers.pack.failed"]" Text="@_error">
+                <Actions><Button Icon="@IconNames.RefreshCw" OnClick="LoadAsync">@L["common.retry"]</Button></Actions>
+            </EmptyState>
+        }
+        else
+        {
+            <SkeletonList Rows="6" Avatar="true" TwoLines="false" />
+        }
+    </ChildContent>
+</SettingsScaffold>
+
+@code {
+    private sealed class PendingSticker
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public required PickedFile File { get; init; }
+        public required IReadOnlyList<string> Emoji { get; init; }
+        public double Progress { get; set; }
+    }
+
+    private readonly List<PendingSticker> _queue = [];
+    private ElementReference _list;
+    private DotNetObjectReference<StickerPackEditor>? _self;
+    private JsModule? _module;
+    private JsObject? _reorder;
+    private StickerPackDto? _pack;
+    private bool _gone;
+    private string? _error;
+    private Guid? _loadedFor;
+    private Task? _worker;
+    private readonly CancellationTokenSource _cts = new();
+
+    [SupplyParameterFromQuery(Name = "id")] public Guid? PackId { get; set; }
+
+    private bool Mine => _pack is { } pack && pack.CreatorId == Auth.UserId;
+
+    protected override void OnInitialized()
+    {
+        Action changed = () =>
+        {
+            // Edits from another of my devices show here too.
+            if (_pack is { } shown && Stickers.GetPack(shown.Id) is { } held && held.Version > shown.Version) _pack = held;
+            RequestRender();
+        };
+        Stickers.Changed += changed;
+        OnDispose(() => Stickers.Changed -= changed);
+        OnDispose(() => _cts.Cancel());
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (PackId == _loadedFor) return;
+        _loadedFor = PackId;
+        _pack = PackId is { } id ? Stickers.GetPack(id) : null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _gone = false;
+        if (PackId is not { } id)
+        {
+            _gone = true;
+            return;
+        }
+        try
+        {
+            _pack = await Stickers.LoadPackAsync(id, refresh: true);
+        }
+        catch (ApiException ex) when (ex.Code == ErrorCodes.StickerPackNotFound)
+        {
+            _pack = null;
+            _gone = true;
+        }
+        catch (Exception ex)
+        {
+            if (_pack is null) _error = L.Error(ex);
+        }
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_reorder is not null || _pack is null || !Mine) return;
+        _self ??= DotNetObjectReference.Create(this);
+        _module ??= new JsModule(JS, FolderJs.Path);
+        _reorder = await _module.AttachAsync("attachHandleReorder", _list, _self);
+        if (IsDisposed) await _reorder.DisposeAsync();
+    }
+
+    private string StickersFooter(StickerPackDto pack) =>
+        pack.Stickers.Count + _queue.Count >= Limits.MaxStickersPerPack ? L.Format("stickers.edit.full", Limits.MaxStickersPerPack)
+        : pack.Stickers.Count > 1 ? L["stickers.edit.dragHint"]
+        : L["stickers.edit.addHint"];
+
+    // ---- Adding ----
+
+    private async Task AddAsync()
+    {
+        if (_pack is null) return;
+        var source = await Dialogs.ChooseAsync(L["stickers.edit.add"],
+        [
+            new ChoiceOption<string>("gallery", L["stickers.edit.fromGallery"]) { Icon = IconNames.Images },
+            new ChoiceOption<string>("files", L["stickers.edit.fromFiles"]) { Icon = IconNames.File },
+        ]);
+        if (source is null) return;
+        IReadOnlyList<PickedFile> picked;
+        try
+        {
+            picked = source.Value == "gallery"
+                ? await Picker.PickMediaAsync(allowMultiple: true)
+                : await Picker.PickFilesAsync(allowMultiple: true);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+            return;
+        }
+        var images = picked.Where(f => f.IsImage).ToList();
+        if (images.Count < picked.Count) Toasts.Info(L["stickers.new.format"]);
+        var room = Limits.MaxStickersPerPack - _pack.Stickers.Count - _queue.Count;
+        if (images.Count > room) Toasts.Info(L.Format("stickers.edit.full", Limits.MaxStickersPerPack));
+        foreach (var image in images.Take(Math.Max(0, room)))
+        {
+            var result = await NewStickerDialog.ShowAsync(Dialogs, L, image);
+            if (IsDisposed) return;
+            if (result?.File is not { } file) continue;
+            _queue.Add(new PendingSticker { File = file, Emoji = result.Emoji });
+            StateHasChanged();
+            _worker ??= RunQueueAsync();
+        }
+    }
+
+    /// <summary>Uploads the queued stickers one after another (they keep the order they were chosen in).</summary>
+    private async Task RunQueueAsync()
+    {
+        try
+        {
+            while (_queue.Count > 0 && !IsDisposed && _pack is { } pack)
+            {
+                var next = _queue[0];
+                var progress = new Progress<double>(value =>
+                {
+                    next.Progress = value;
+                    RequestRender();
+                });
+                try
+                {
+                    _pack = await Stickers.AddStickerAsync(pack.Id, next.File, next.Emoji, progress, _cts.Token);
+                    Haptics.Selection();
+                }
+                catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Toasts.Error(ex);
+                }
+                _queue.Remove(next);
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _worker = null;
+        }
+    }
+
+    // ---- A sticker ----
+
+    private async Task StickerActionsAsync(StickerDto sticker)
+    {
+        if (_pack is not { } pack) return;
+        var choice = await Dialogs.ChooseAsync(StickerUi.EmojiLine(sticker),
+        [
+            new ChoiceOption<string>("emoji", L["stickers.edit.changeEmoji"]) { Icon = IconNames.Smile },
+            new ChoiceOption<string>("delete", L["stickers.edit.deleteSticker"]) { Icon = IconNames.Trash2, Danger = true },
+        ]);
+        if (choice?.Value == "emoji")
+        {
+            var result = await NewStickerDialog.EditAsync(Dialogs, L, sticker);
+            if (result is null || result.Emoji.SequenceEqual(sticker.Emoji)) return;
+            try
+            {
+                _pack = await Stickers.SetStickerEmojiAsync(pack.Id, sticker.Id, result.Emoji);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+        else if (choice?.Value == "delete")
+        {
+            var ok = await Dialogs.ConfirmAsync(L["stickers.edit.deleteStickerTitle"], L["stickers.edit.deleteStickerText"], L["common.delete"], danger: true);
+            if (!ok) return;
+            try
+            {
+                _pack = await Stickers.DeleteStickerAsync(pack.Id, sticker.Id);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public Task OnReorder(string[] keys) => InvokeAsync(async () =>
+    {
+        if (_pack is not { } pack) return;
+        var ids = new List<Guid>(keys.Length);
+        foreach (var key in keys)
+            if (Guid.TryParse(key, out var id)) ids.Add(id);
+        if (ids.Count < 2) return;
+        // Shown in the new order at once; the server's answer confirms it.
+        var byId = pack.Stickers.ToDictionary(s => s.Id);
+        var arranged = StickerRules.Arrange(pack.Stickers.Select(s => s.Id).ToList(), ids);
+        _pack = pack with { Stickers = arranged.Select(id => byId[id]).ToList() };
+        StateHasChanged();
+        try
+        {
+            _pack = await Stickers.ReorderStickersAsync(pack.Id, ids);
+        }
+        catch (Exception ex)
+        {
+            _pack = pack;
+            Toasts.Error(ex);
+        }
+    });
+
+    [JSInvokable]
+    public Task OnReorderLift() => InvokeAsync(Haptics.Tap);
+
+    // ---- The pack ----
+
+    private async Task DeleteAsync()
+    {
+        if (_pack is not { } pack) return;
+        var ok = await Dialogs.ConfirmAsync(L.Format("stickers.edit.deleteTitle", pack.Title), L["stickers.edit.deleteText"], L["common.delete"], danger: true);
+        if (!ok) return;
+        try
+        {
+            await Stickers.DeletePackAsync(pack.Id);
+            Toasts.Success(L["stickers.edit.deleted"]);
+            await Nav.GoBackAsync(StickerUi.SettingsPath);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_reorder is not null) await _reorder.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+    }
+}

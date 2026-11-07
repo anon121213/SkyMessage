@@ -1,0 +1,72 @@
+/* Settings › Stickers and GIF: one line of explanation, then the grouped cards; packs show their first sticker. */
+.stickers-intro {
+    max-width: 30rem;
+    margin: 2px auto 0;
+    padding: 0 16px;
+    color: var(--sm-text-2);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.stickers-face {
+    display: block;
+    width: 2.75rem;
+    height: 2.75rem;
+}
+
+.stickers-create {
+    color: var(--sm-accent);
+    font-family: var(--sm-font-display);
+    font-weight: 600;
+}
+
+/* Positioned: a dragged row travels over the others (js/folders.js attachHandleReorder). */
+.stickers-list {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.stickers-list__row {
+    position: relative;
+    border-radius: 20px;
+}
+
+.stickers-list__row[data-dragging] {
+    background: var(--sm-glass-strong);
+    box-shadow: var(--sm-edge), var(--sm-shadow-2);
+}
+
+html[data-fx="lite"] .stickers-list__row[data-dragging] {
+    background: var(--sm-card-solid);
+}
+
+.stickers-list[data-reordering] ::deep .sm-list-item {
+    background: transparent;
+}
+
+.stickers-list__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-right: -8px;
+    color: var(--sm-text-3);
+}
+
+.stickers-list__handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 12px;
+    color: var(--sm-text-3);
+    cursor: grab;
+    touch-action: none;
+}
+
+.stickers-list__row[data-dragging] .stickers-list__handle {
+    color: var(--sm-accent);
+    cursor: grabbing;
+}
