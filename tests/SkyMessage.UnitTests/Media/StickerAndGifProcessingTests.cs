@@ -99,6 +99,30 @@ public sealed class StickerAndGifProcessingTests : IDisposable
         Should.Throw<StickerImageException>(() => StickerImageProcessor.Process(png));
     }
 
+    [Theory]
+    [InlineData(4097, 100)]
+    [InlineData(100, 4097)]
+    [InlineData(20000, 20000)]
+    public void Images_with_a_side_over_4096_px_are_refused_before_decoding(int width, int height)
+    {
+        // A PNG header that claims the canvas (the pixels never come): the check reads only the header.
+        var png = PngHeader(width, height);
+        var started = Stopwatch.GetTimestamp();
+
+        Should.Throw<StickerImageException>(() => StickerImageProcessor.Process(png)).Message.ShouldContain("too large");
+        Stopwatch.GetElapsedTime(started).ShouldBeLessThan(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public void An_image_at_the_size_limit_becomes_a_512_px_sticker()
+    {
+        var png = Circle(Limits.StickerSourceMaxSide, 512, SKEncodedImageFormat.Png);
+
+        var sticker = StickerImageProcessor.Process(png);
+
+        (sticker.Width, sticker.Height).ShouldBe((Limits.StickerMaxSide, 64));
+    }
+
     [Fact]
     public void Gifs_and_unknown_bytes_are_refused()
     {
@@ -126,6 +150,51 @@ public sealed class StickerAndGifProcessingTests : IDisposable
         AnimationProcessor.IsAnimatedGif(animated).ShouldBeTrue();
         AnimationProcessor.IsAnimatedGif(still).ShouldBeFalse();
         AnimationProcessor.IsAnimatedGif(png).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_gif_is_measured_from_its_header_without_decoding_it()
+    {
+        var huge = Write("huge.gif", CraftedGif(12000, 12000, 50));
+        var started = Stopwatch.GetTimestamp();
+
+        var info = AnimationProcessor.Inspect(huge).ShouldNotBeNull();
+
+        (info.Width, info.Height, info.Frames).ShouldBe((12000, 12000, 50));
+        Stopwatch.GetElapsedTime(started).ShouldBeLessThan(TimeSpan.FromSeconds(2));
+        AnimationProcessor.IsWithinBudget(info).ShouldBeFalse();
+        AnimationProcessor.Inspect(Write("photo.png", Circle(80, 80, SKEncodedImageFormat.Png))).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(480, 270, 300, true)]
+    [InlineData(1920, 1080, 600, true)]
+    [InlineData(2048, 2048, 2, true)]
+    [InlineData(4096, 1024, 2, true)]
+    [InlineData(4097, 16, 2, false)]
+    [InlineData(16, 4097, 2, false)]
+    [InlineData(2100, 2100, 2, false)]
+    [InlineData(8000, 8000, 50, false)]
+    [InlineData(1024, 1024, 1500, false)]
+    [InlineData(2048, 2048, 400, false)]
+    // Frames past the duration cap are never decoded.
+    [InlineData(500, 500, 100000, true)]
+    public void Only_gifs_within_the_decoding_budget_become_loops(int width, int height, int frames, bool within) =>
+        AnimationProcessor.IsWithinBudget(new GifInfo(width, height, frames)).ShouldBe(within);
+
+    [Fact]
+    public async Task A_large_canvas_is_scaled_down_before_it_is_worked_on()
+    {
+        RequireFfmpeg();
+        var gif = Write("canvas.gif", CraftedGif(2048, 2048, 40));
+        AnimationProcessor.IsWithinBudget(AnimationProcessor.Inspect(gif)!).ShouldBeTrue();
+
+        var result = await Animations().ConvertGifAsync(gif, WorkDirectory(), Ct);
+
+        (result.Width, result.Height).ShouldBe((Limits.AnimationMaxSide, Limits.AnimationMaxSide));
+        var probe = await Runner().ProbeAsync(result.Path, "mov", Ct);
+        probe.Video.ShouldNotBeNull().PixelFormat.ShouldBe("yuv420p");
+        probe.Audio.ShouldBeNull();
     }
 
     [Fact]
@@ -201,6 +270,76 @@ public sealed class StickerAndGifProcessingTests : IDisposable
         }
         using var data = bitmap.Encode(format, 95) ?? throw new InvalidOperationException($"Skia cannot encode {format}.");
         return data.ToArray();
+    }
+
+    /// <summary>
+    /// A GIF of a few hundred bytes that describes a <paramref name="width"/> × <paramref name="height"/> canvas with
+    /// <paramref name="frames"/> frames of one pixel each.
+    /// </summary>
+    private static byte[] CraftedGif(int width, int height, int frames)
+    {
+        var gif = new List<byte>();
+        gif.AddRange("GIF89a"u8.ToArray());
+        gif.AddRange([(byte)width, (byte)(width >> 8), (byte)height, (byte)(height >> 8), 0xF1, 0, 0]);
+        gif.AddRange([255, 255, 255, 255, 0, 0, 0, 0, 255, 0, 0, 0]);
+        gif.AddRange([0x21, 0xFF, 0x0B, .. "NETSCAPE2.0"u8.ToArray(), 0x03, 0x01, 0x00, 0x00, 0x00]);
+        for (var i = 0; i < frames; i++)
+        {
+            var (x, y) = (i * 7 % width, i * 13 % height);
+            gif.AddRange([0x21, 0xF9, 0x04, 0x04, 4, 0, 0, 0]);
+            gif.AddRange([0x2C, (byte)x, (byte)(x >> 8), (byte)y, (byte)(y >> 8), 1, 0, 1, 0, 0]);
+            // LZW, 2-bit codes widened to 3: clear, one red or blue pixel, end.
+            gif.AddRange([0x02, 0x02, (byte)(i % 2 == 0 ? 0x4C : 0x54), 0x01, 0x00]);
+        }
+        gif.Add(0x3B);
+        return gif.ToArray();
+    }
+
+    /// <summary>
+    /// A PNG of a few dozen bytes claiming <paramref name="width"/> × <paramref name="height"/> RGBA pixels: its header and
+    /// an empty image stream (decoding it would fail, reading its size does not).
+    /// </summary>
+    private static byte[] PngHeader(int width, int height)
+    {
+        var ihdr = new byte[13];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(ihdr, width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(ihdr.AsSpan(4), height);
+        ihdr[8] = 8; // bit depth
+        ihdr[9] = 6; // RGBA
+        var png = new List<byte>([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        Chunk("IHDR", ihdr);
+        Chunk("IDAT", [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        Chunk("IEND", []);
+        return png.ToArray();
+
+        void Chunk(string type, byte[] data)
+        {
+            byte[] typed = [.. System.Text.Encoding.ASCII.GetBytes(type), .. data];
+            var length = new byte[4];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(length, data.Length);
+            var crc = new byte[4];
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(crc, Crc32(typed));
+            png.AddRange([.. length, .. typed, .. crc]);
+        }
+    }
+
+    /// <summary>PNG's CRC-32 (ISO 3309, reflected 0xEDB88320).</summary>
+    private static uint Crc32(ReadOnlySpan<byte> data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var bit = 0; bit < 8; bit++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+        }
+        return ~crc;
+    }
+
+    private string Write(string name, byte[] content)
+    {
+        var path = Path.Combine(_directory, name);
+        File.WriteAllBytes(path, content);
+        return path;
     }
 
     private static SKBitmap Decode(byte[] bytes, out SKEncodedImageFormat format)

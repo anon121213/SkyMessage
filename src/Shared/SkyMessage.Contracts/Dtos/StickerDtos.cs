@@ -99,7 +99,8 @@ public sealed record UpdateStickerPackRequest
 
 /// <summary>
 /// A new sticker made from an upload of mine (<see cref="MediaKind.File"/>: PNG, WebP or JPEG of at most
-/// <see cref="Limits.StickerSourceMaxBytes"/>, each side at least <see cref="Limits.StickerSourceMinSide"/> px). The
+/// <see cref="Limits.StickerSourceMaxBytes"/>, each side from <see cref="Limits.StickerSourceMinSide"/> to
+/// <see cref="Limits.StickerSourceMaxSide"/> px). The
 /// server turns it into a WebP of at most <see cref="Limits.StickerMaxSide"/> px (transparency kept) and drops the upload.
 /// The app picks the sticker's id, so a repeat is harmless.
 /// </summary>

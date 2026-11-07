@@ -11,9 +11,11 @@ internal sealed class StickerImageException(string message) : Exception(message)
 
 /// <summary>
 /// Makes stickers out of uploaded images (SkiaSharp): only PNG, WebP and JPEG (by their bytes, not by what the upload
-/// claims), each side at least <see cref="Limits.StickerSourceMinSide"/> px. EXIF orientation is applied; the result fits
-/// within <see cref="Limits.StickerMaxSide"/> px (never enlarged) and keeps its transparency: drawn on a transparent
-/// canvas and encoded as WebP (lossy with an alpha plane), which also drops every piece of metadata.
+/// claims), each side from <see cref="Limits.StickerSourceMinSide"/> to <see cref="Limits.StickerSourceMaxSide"/> px (it
+/// runs while the request waits: a few bytes of PNG can describe a huge canvas, and PNG cannot be decoded at a smaller
+/// scale). EXIF orientation is applied; the result fits within <see cref="Limits.StickerMaxSide"/> px (never enlarged) and
+/// keeps its transparency: drawn on a transparent canvas and encoded as WebP (lossy with an alpha plane), which also drops
+/// every piece of metadata.
 /// </summary>
 internal static class StickerImageProcessor
 {
@@ -31,9 +33,14 @@ internal static class StickerImageProcessor
         var (width, height) = ImageProcessor.OrientedSize(codec.Info.Width, codec.Info.Height, codec.EncodedOrigin);
         if (width < Limits.StickerSourceMinSide || height < Limits.StickerSourceMinSide)
             throw new StickerImageException($"The image is too small ({width}×{height}).");
+        if (width > Limits.StickerSourceMaxSide || height > Limits.StickerSourceMaxSide)
+            throw new StickerImageException($"The image is too large ({width}×{height}).");
 
         using var decoded = Decode(codec, Limits.StickerMaxSide);
+        // Drawn from its own pixels (no copy of a possibly large bitmap).
+        decoded.SetImmutable();
         using var sticker = Render(decoded, codec.EncodedOrigin, Limits.StickerMaxSide);
+        sticker.SetImmutable();
         using var thumbnail = Render(sticker, SKEncodedOrigin.TopLeft, ThumbnailMaxSide);
         return new StickerImage(
             EncodeWebp(sticker, Quality), sticker.Width, sticker.Height,

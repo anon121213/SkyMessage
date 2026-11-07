@@ -69,7 +69,7 @@ public static class ErrorCodes
     public const string StickerPackFull = "sticker_pack_full";
     /// <summary>Too many packs installed (<see cref="Limits.MaxInstalledStickerPacks"/>) or made (<see cref="Limits.MaxOwnStickerPacks"/>).</summary>
     public const string StickerPackLimit = "sticker_pack_limit";
-    /// <summary>The sticker's image is not a PNG, WebP or JPEG, is larger than 5 MB or smaller than 64 px.</summary>
+    /// <summary>The sticker's image is not a PNG, WebP or JPEG, is larger than 5 MB, or a side is under 64 or over 4096 px.</summary>
     public const string StickerImageInvalid = "sticker_image_invalid";
     /// <summary>Only the pack's creator may change it.</summary>
     public const string NotStickerPackCreator = "not_sticker_pack_creator";

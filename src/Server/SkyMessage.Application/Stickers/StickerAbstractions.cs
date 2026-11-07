@@ -62,10 +62,10 @@ public sealed record PreparedSticker(Guid SourceMediaId, byte[] Webp, int Width,
 public interface IStickerMediaFactory
 {
     /// <summary>
-    /// Reads and checks an upload of <paramref name="ownerId"/> (404 media_not_found when it is not theirs or not
-    /// processed; 400 sticker_image_invalid when it is not a PNG, WebP or JPEG, is larger than
-    /// <see cref="Limits.StickerSourceMaxBytes"/> or has a side under <see cref="Limits.StickerSourceMinSide"/> px) and
-    /// makes the sticker's WebP. No database writes.
+    /// Reads and checks an upload of <paramref name="ownerId"/> (404 media_not_found when it is not a file upload of theirs
+    /// or not processed; 400 sticker_image_invalid when it is not a PNG, WebP or JPEG, is larger than
+    /// <see cref="Limits.StickerSourceMaxBytes"/> or has a side under <see cref="Limits.StickerSourceMinSide"/> or over
+    /// <see cref="Limits.StickerSourceMaxSide"/> px) and makes the sticker's WebP. No database writes.
     /// </summary>
     Task<PreparedSticker> PrepareAsync(Guid ownerId, Guid sourceMediaId, CancellationToken cancellationToken);
 

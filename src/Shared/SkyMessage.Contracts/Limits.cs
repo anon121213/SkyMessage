@@ -41,6 +41,11 @@ public static class Limits
     public const long StickerSourceMaxBytes = 5L * 1024 * 1024;
     /// <summary>Each side of a sticker's source image at least this many pixels.</summary>
     public const int StickerSourceMinSide = 64;
+    /// <summary>
+    /// Each side of a sticker's source image at most this many pixels (it is decoded while the request waits; a larger
+    /// picture is cropped on the device first, which makes it 512 px).
+    /// </summary>
+    public const int StickerSourceMaxSide = 4096;
     /// <summary>Stickers are stored as WebP of at most this many pixels on the long side.</summary>
     public const int StickerMaxSide = 512;
     /// <summary>Emoji of one sticker.</summary>

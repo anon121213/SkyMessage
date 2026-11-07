@@ -15,9 +15,10 @@ using SkyMessage.Infrastructure.Persistence;
 namespace SkyMessage.Infrastructure.MediaFiles;
 
 /// <summary>
-/// Sticker images (<see cref="IStickerMediaFactory"/>): the creator's upload is read back from the chunk store, made into
-/// a WebP by <see cref="StickerImageProcessor"/> in memory (at most 5 MB in), then stored as a media of its own (encrypted
-/// at rest like every other) carrying the sticker's attributes, with a WebP preview as its thumbnail.
+/// Sticker images (<see cref="IStickerMediaFactory"/>): the creator's upload (a file: its original bytes) is read back from
+/// the chunk store, made into a WebP by <see cref="StickerImageProcessor"/> in memory (at most 5 MB and 4096 × 4096 px in;
+/// one picture at a time per server, so a burst of adds cannot pile decoded canvases up in memory), then stored as a media
+/// of its own (encrypted at rest like every other) carrying the sticker's attributes, with a WebP preview as its thumbnail.
 /// </summary>
 internal sealed class StickerMediaFactory(
     AppDbContext db,
@@ -27,29 +28,36 @@ internal sealed class StickerMediaFactory(
     IOptions<StorageOptions> storage,
     ILogger<StickerMediaFactory> logger) : IStickerMediaFactory
 {
+    /// <summary>Decoding runs while the request waits: one at a time (≤ 64 MB of pixels), the others wait their turn.</summary>
+    private static readonly SemaphoreSlim DecodeGate = new(1, 1);
+
     public async Task<PreparedSticker> PrepareAsync(Guid ownerId, Guid sourceMediaId, CancellationToken cancellationToken)
     {
         var source = await db.Media.AsNoTracking()
-            .Where(m => m.Id == sourceMediaId && m.OwnerId == ownerId && m.Status == MediaStatus.Ready)
+            .Where(m => m.Id == sourceMediaId && m.OwnerId == ownerId && m.Kind == MediaKind.File && m.Status == MediaStatus.Ready)
             .Select(m => new { m.Id, m.WrappedKey, m.SizeBytes, m.ChunkSize, m.ChunkCount })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException(ErrorCodes.MediaNotFound);
         if (source.SizeBytes is <= 0 or > Limits.StickerSourceMaxBytes)
             throw new BadRequestException(ErrorCodes.StickerImageInvalid, $"A sticker's image must be at most {Limits.StickerSourceMaxBytes / (1024 * 1024)} MB.");
 
-        var bytes = new byte[source.SizeBytes];
-        await using (var stream = chunks.OpenRead(new MediaStorageInfo(source.Id, source.WrappedKey, source.SizeBytes, source.ChunkSize, source.ChunkCount)))
-            await stream.ReadExactlyAsync(bytes, cancellationToken);
-
+        await DecodeGate.WaitAsync(cancellationToken);
         StickerImage image;
         try
         {
+            var bytes = new byte[source.SizeBytes];
+            await using (var stream = chunks.OpenRead(new MediaStorageInfo(source.Id, source.WrappedKey, source.SizeBytes, source.ChunkSize, source.ChunkCount)))
+                await stream.ReadExactlyAsync(bytes, cancellationToken);
             image = StickerImageProcessor.Process(bytes);
         }
         catch (StickerImageException ex)
         {
             logger.LogInformation("Upload {MediaId} cannot become a sticker: {Reason}", sourceMediaId, ex.Message);
             throw new BadRequestException(ErrorCodes.StickerImageInvalid, ex.Message);
+        }
+        finally
+        {
+            DecodeGate.Release();
         }
         return new PreparedSticker(sourceMediaId, image.Webp, image.Width, image.Height, image.Thumbnail, image.ThumbnailWidth, image.ThumbnailHeight);
     }
