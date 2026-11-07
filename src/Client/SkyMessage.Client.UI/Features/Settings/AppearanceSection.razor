@@ -131,6 +131,7 @@
                     <button @key="style.Value" type="button" role="radio" aria-checked="@(selected ? "true" : "false")"
                             class="look-style @(selected ? "is-selected" : null)" @onclick="() => PickOutgoingAsync(style.Value)">
                         <span class="look-style__tile" style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")">
+                            @ChatLayers(chatPaint, chatPhoto)
                             @if (paint is { } p)
                             {
                                 @* Two of my bubbles, a long one and a short one: wide enough for a gradient to show as one. *@
@@ -159,6 +160,7 @@
             @* Their bubbles as they will look: small bubbles with a sample of their ink, on a strip of the chats' background. *@
             <div class="look-tints" role="radiogroup" aria-label="@L["settings.appearance.incoming"]"
                  style="@($"background:{chatPaint.Css};background-color:{chatPaint.Base}")">
+                @ChatLayers(chatPaint, chatPhoto)
                 @foreach (var tint in Theme.Catalog.IncomingTints)
                 {
                     var selected = string.Equals(tint.Key, a.IncomingTint, StringComparison.OrdinalIgnoreCase);
@@ -292,6 +294,27 @@
     {
         OutgoingBubbleStyle.Custom => a.OutgoingColors.Count > 0 ? Theme.Catalog.CustomBubble(a.OutgoingColors, Theme.IsDark) : null,
         _ => Theme.Catalog.AccentBubble(Theme.AccentHex, style, Theme.IsDark),
+    };
+
+    /// <summary>
+    /// The chats' picture under the samples of message colors (the style tiles, the tints strip), as the preview at the
+    /// top shows it: the photo with its blur, under its veil, over the base they paint themselves. Nothing for a sky or
+    /// a gradient (their base is the whole picture).
+    /// </summary>
+    private RenderFragment ChatLayers(BackdropPaint paint, string? photo) => __builder =>
+    {
+        @if (photo is not null)
+        {
+            <span class="look-layer look-layer--photo" style="@($"background-image:url(\"{photo}\")")" aria-hidden="true"></span>
+        }
+        @if (paint.Photo is not null && paint.Veil is { } veil)
+        {
+            <span class="look-layer look-layer--veil" style="@($"background:{veil}")" aria-hidden="true"></span>
+        }
+        else if (paint.Photo is not null && paint.Dim > 0)
+        {
+            <span class="look-layer look-layer--veil" style="@($"opacity:{Num(paint.Dim)}")" aria-hidden="true"></span>
+        }
     };
 
     /// <summary>A mini background in a tile: its colors, its photo under the veil, star dots, two tiny bubbles.</summary>

@@ -396,7 +396,8 @@ html[data-fx="lite"] .look-preview__head {
     outline: none;
 }
 
-/* A bit of the chats' background with two of my bubbles on it, as in a chat (right-aligned, the long one first). */
+/* A bit of the chats' background with two of my bubbles on it, as in a chat (right-aligned, the long one first). Its
+   width is the grid's: the sample sizes itself to it (container units) so it fits whole at any text size. */
 .look-style__tile {
     position: relative;
     display: flex;
@@ -408,7 +409,28 @@ html[data-fx="lite"] .look-preview__head {
     padding: 0 9px;
     border-radius: 18px;
     box-shadow: inset 0 0 0 1px var(--sm-border), var(--sm-shadow-1);
+    container-type: inline-size;
     transition: transform 260ms var(--sm-spring);
+}
+
+/* The chats' picture under the samples (the style tiles, the tints strip): its photo and veil, as in the preview. Each
+   layer repeats the tile's rim, which the picture would cover. */
+.look-layer {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--sm-border);
+    pointer-events: none;
+}
+
+.look-layer--photo {
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.look-layer--veil {
+    background: var(--sm-bg);
 }
 
 .look-style:active .look-style__tile {
@@ -437,6 +459,7 @@ html[data-fx="lite"] .look-preview__head {
 }
 
 .look-style__bubble {
+    position: relative;
     display: block;
     box-sizing: border-box;
     width: 100%;
@@ -446,6 +469,9 @@ html[data-fx="lite"] .look-preview__head {
     border-radius: min(var(--sm-bubble-radius), 14px);
     font-family: var(--sm-font-display);
     font-size: 0.75rem;
+    /* No larger than the tile leaves room for: its content width (100cqi) less the bubble's padding, over the sample's
+       width in em ("Привет!" is about 4.2em in Montserrat 700; 12 px still fits a 360 px phone's tile). */
+    font-size: min(0.75rem, calc((100cqi - 20px) / 4.4));
     font-weight: 700;
     line-height: 1.75rem;
     text-align: left;
@@ -495,6 +521,7 @@ html[data-fx="lite"] .look-preview__head {
 
 /* Their bubbles in each tint on a strip of the chats' background: the tint and its ink read as in a chat. */
 .look-tints {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -561,6 +588,20 @@ html[data-theme="dark"] .look-tint__bubble {
     opacity: 1;
     transform: none;
     transition: opacity var(--sm-dur) var(--sm-ease-out), transform var(--sm-dur) var(--sm-spring);
+}
+
+/* The chosen tint's check sits on the bubble's outer corner, clear of its "Аа". */
+.look-tint .look-sky__check {
+    top: -8px;
+    right: -8px;
+    bottom: auto;
+    width: 20px;
+    height: 20px;
+}
+
+.look-tint .look-sky__check ::deep .sm-icon {
+    width: 11px;
+    height: 11px;
 }
 
 /* ---------- The sky: mini skies ---------- */
