@@ -372,12 +372,14 @@ export function attachList(scroller, content, ref, options) {
     cancelPress();
     const x = e.clientX;
     const y = e.clientY;
+    const id = e.pointerId;
     const now = performance.now();
     press = {
       x, y, row,
       timer: setTimeout(() => {
         if (!press) return;
         firedAt = Date.now();
+        liftId = id;
         const key = press.row.getAttribute('data-key');
         press = null;
         touch = null;
@@ -620,6 +622,29 @@ export function attachList(scroller, content, ref, options) {
     }
   };
 
+  // A long-press opens the menu under the finger while it is still down. Lifted before the browser's own long-press
+  // (about 500 ms), the press still counts as a tap, and its click lands on the menu item now under the finger (a
+  // "Pin" or "Delete" nobody chose). So the click right after the lift of the finger that opened the menu is dropped
+  // wherever it lands; a later, deliberate tap on the menu works as usual.
+  let liftId = null;
+  let swallowUntil = 0;
+  const onDocPointerUp = (e) => {
+    if (liftId === null || e.pointerId !== liftId) return;
+    liftId = null;
+    swallowUntil = Date.now() + 450;
+  };
+  const onDocClick = (e) => {
+    if (!swallowUntil) return;
+    const live = Date.now() < swallowUntil;
+    swallowUntil = 0;
+    if (!live) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener('pointerup', onDocPointerUp, true);
+  document.addEventListener('pointercancel', onDocPointerUp, true);
+  document.addEventListener('click', onDocClick, true);
+
   content.addEventListener('pointerdown', onPointerDown, { passive: true });
   content.addEventListener('pointermove', onPointerMove, { passive: true });
   content.addEventListener('pointerup', onPointerUp, { passive: true });
@@ -721,6 +746,9 @@ export function attachList(scroller, content, ref, options) {
       content.removeEventListener('pointercancel', onPointerUp);
       content.removeEventListener('contextmenu', onContextMenu);
       content.removeEventListener('click', onClickCapture, true);
+      document.removeEventListener('pointerup', onDocPointerUp, true);
+      document.removeEventListener('pointercancel', onDocPointerUp, true);
+      document.removeEventListener('click', onDocClick, true);
       content.removeEventListener('load', onLoad, true);
       content.removeEventListener('animationend', onAnimationEnd);
     }
