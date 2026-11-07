@@ -155,8 +155,16 @@ internal sealed class MediaProcessor(
 
     private async Task<ProcessedMedia> ProcessPhotoAsync(Media media, string source, MediaJobDirectory job, CancellationToken cancellationToken)
     {
-        if (AnimationProcessor.IsAnimatedGif(source) && await ConvertGifAsync(media, source, job, cancellationToken) is { } animation)
-            return animation;
+        // Only where the uploader asked for it (a chat attachment of an app that knows GIFs): avatars and covers need a
+        // photo, and apps before GIFs expect their GIF back as one.
+        if (media.ConvertAnimation && AnimationProcessor.Inspect(source) is { Frames: > 1 } gif)
+        {
+            if (!AnimationProcessor.IsWithinBudget(gif))
+                logger.LogInformation("GIF {MediaId} is too large to become a loop ({Width}×{Height}, {Frames} frames); kept as a GIF",
+                    media.Id, gif.Width, gif.Height, gif.Frames);
+            else if (await ConvertGifAsync(media, source, job, cancellationToken) is { } animation)
+                return animation;
+        }
 
         var photo = images.ProcessPhoto(source, job.Path);
         if (photo is null)
@@ -291,7 +299,7 @@ internal sealed class MediaProcessor(
             ThumbnailHeight = result.Thumbnail?.Height,
             MiniThumbnail = result.Thumbnail?.Mini,
             Kind = result.Kind ?? media.Kind,
-            IsAnimation = result.IsAnimation || media.IsAnimation,
+            IsAnimation = result.IsAnimation,
         };
 
         using var cipher = encryption.CreateCipher(media.Id, media.WrappedKey);

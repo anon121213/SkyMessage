@@ -447,6 +447,8 @@ internal sealed partial class MessageStore
                     Height = attachment.Height,
                     DurationMs = attachment.DurationMs,
                     Waveform = attachment.Waveform,
+                    // A GIF in a chat becomes a muted loop (the server converts animated GIF photos on request only).
+                    ConvertAnimation = attachment.Kind == MediaKind.Photo,
                 };
                 var progress = new SyncProgress(value =>
                 {

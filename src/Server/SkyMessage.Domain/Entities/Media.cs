@@ -44,6 +44,11 @@ public sealed class Media
     public string? StickerEmoji { get; set; }
     /// <summary>A GIF turned into a muted looping MP4 (Kind Video; Contracts.MediaDto.IsAnimation).</summary>
     public bool IsAnimation { get; set; }
+    /// <summary>
+    /// The uploader asked for an animated GIF photo to become a loop (Contracts.CreateUploadRequest.ConvertAnimation:
+    /// chat attachments of apps that know GIFs). Without it a GIF stays a photo, as avatars and covers need.
+    /// </summary>
+    public bool ConvertAnimation { get; set; }
 
     /// <summary>Per-media data key wrapped with the master key (nonce|ciphertext|tag); null = not encrypted.</summary>
     public byte[]? WrappedKey { get; set; }

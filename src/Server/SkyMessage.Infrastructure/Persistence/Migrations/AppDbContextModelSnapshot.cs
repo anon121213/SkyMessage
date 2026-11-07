@@ -621,6 +621,10 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("content_type");
 
+                    b.Property<bool>("ConvertAnimation")
+                        .HasColumnType("boolean")
+                        .HasColumnName("convert_animation");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

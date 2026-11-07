@@ -54,6 +54,7 @@ internal sealed class MediaUploader(ISkyApi api, IRealtimeService realtime, Time
                 Height = request.Height,
                 DurationMs = request.DurationMs,
                 Waveform = request.Waveform,
+                ConvertAnimation = request.ConvertAnimation,
             }, cancellationToken), cancellationToken).ConfigureAwait(false);
             if (onCreated is not null) await onCreated(session.MediaId).ConfigureAwait(false);
         }

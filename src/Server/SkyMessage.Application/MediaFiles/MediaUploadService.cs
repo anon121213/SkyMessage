@@ -69,6 +69,8 @@ internal sealed class MediaUploadService(
             Height = visual ? request.Height : null,
             DurationMs = timed ? request.DurationMs : null,
             Waveform = request.Kind == MediaKind.Voice && request.Waveform is { Length: Limits.WaveformSamples } waveform ? waveform : null,
+            // Opt-in: an animated GIF uploaded by an app before GIFs (or for an avatar or a cover) stays a photo.
+            ConvertAnimation = request.Kind == MediaKind.Photo && request.ConvertAnimation,
             WrappedKey = chunks.CreateWrappedKey(id),
             CreatedAt = now,
             UpdatedAt = now,

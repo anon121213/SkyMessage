@@ -702,6 +702,32 @@ public sealed class MessageStoreTests
     }
 
     [Fact]
+    public async Task Chat_photos_ask_for_a_gif_loop_and_other_attachments_do_not()
+    {
+        var h = new MessageStoreHarness();
+        var asked = new System.Collections.Concurrent.ConcurrentDictionary<MediaKind, bool>();
+        h.Api.CreateUploadAsync(Arg.Any<CreateUploadRequest>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var request = call.Arg<CreateUploadRequest>();
+            asked[request.Kind] = request.ConvertAnimation;
+            return new UploadSessionDto { MediaId = Guid.CreateVersion7(), ChunkSize = 1024, ChunkCount = 1, Status = MediaStatus.Uploading };
+        });
+        h.Api.UploadChunkAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        h.Api.CompleteUploadAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(call => Ready(call.ArgAt<Guid>(0), MediaKind.Photo));
+        h.Api.SendMessageAsync(h.ChatId, Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => Fakes.Message(h.ChatId, 9, h.Me, clientMessageId: call.ArgAt<SendMessageRequest>(1).ClientMessageId));
+        await h.SignInAsync();
+
+        await h.Store.SendAttachmentsAsync(h.ChatId, [Attachment(MediaKind.Photo)]);
+        await h.Store.SendAttachmentsAsync(h.ChatId, [Attachment(MediaKind.Voice)]);
+
+        await Wait.UntilAsync(() => asked.Count == 2, "both uploads started");
+        // An animated GIF attached in a chat becomes a loop; profile photos and covers (AvatarUploader) never ask.
+        asked[MediaKind.Photo].ShouldBeTrue();
+        asked[MediaKind.Voice].ShouldBeFalse();
+    }
+
+    [Fact]
     public void Long_text_is_split_without_breaking_entities_inside_a_part()
     {
         var text = string.Join(' ', Enumerable.Repeat("word", 30));

@@ -13,7 +13,7 @@ using SkyMessage.Infrastructure.Persistence;
 namespace SkyMessage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261107113358_Stickers")]
+    [Migration("20261107160035_Stickers")]
     partial class Stickers
     {
         /// <inheritdoc />
@@ -623,6 +623,10 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("content_type");
+
+                    b.Property<bool>("ConvertAnimation")
+                        .HasColumnType("boolean")
+                        .HasColumnName("convert_animation");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")

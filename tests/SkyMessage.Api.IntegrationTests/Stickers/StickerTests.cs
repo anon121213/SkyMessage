@@ -287,11 +287,10 @@ public sealed class StickerTests(ApiFactory factory)
 
     // ---- GIFs ----
 
-    private async Task<MediaDto> UploadGifAsync(TestUser user)
+    /// <summary>A GIF as the apps attach it in a chat (they ask for the loop).</summary>
+    private static async Task<MediaDto> UploadGifAsync(TestUser user)
     {
-        Ffmpeg.Require();
-        var gif = await Ffmpeg.GenerateAsync(".gif", "-f", "lavfi", "-i", "testsrc=size=200x150:rate=10", "-t", "1.5");
-        var media = await user.UploadAsync(MediaKind.Photo, gif, "image/gif", "funny.gif");
+        var media = await user.UploadAsync(MediaKind.Photo, await StickerKit.AnimatedGifAsync(), "image/gif", "funny.gif", convertAnimation: true);
         media.Status.ShouldBe(MediaStatus.Ready);
         return media;
     }
@@ -382,7 +381,7 @@ public sealed class StickerTests(ApiFactory factory)
     public async Task A_gif_with_one_frame_stays_a_photo()
     {
         var alice = await factory.NewUserAsync();
-        var still = await alice.UploadAsync(MediaKind.Photo, TestImages.Gif(), "image/gif", "dot.gif");
+        var still = await alice.UploadAsync(MediaKind.Photo, TestImages.Gif(), "image/gif", "dot.gif", convertAnimation: true);
         still.Kind.ShouldBe(MediaKind.Photo);
         still.IsAnimation.ShouldBeFalse();
         still.ContentType.ShouldBe("image/gif");

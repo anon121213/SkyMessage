@@ -13,6 +13,13 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<bool>(
+                name: "convert_animation",
+                table: "media",
+                type: "boolean",
+                nullable: false,
+                defaultValue: false);
+
+            migrationBuilder.AddColumn<bool>(
                 name: "is_animation",
                 table: "media",
                 type: "boolean",
@@ -274,6 +281,10 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "sticker_packs");
+
+            migrationBuilder.DropColumn(
+                name: "convert_animation",
+                table: "media");
 
             migrationBuilder.DropColumn(
                 name: "is_animation",

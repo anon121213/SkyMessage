@@ -4,6 +4,7 @@ using Shouldly;
 using SkyMessage.Api.IntegrationTests.Messaging;
 using SkyMessage.Contracts;
 using SkyMessage.Domain.Entities;
+using Ffmpeg = SkyMessage.Api.IntegrationTests.Media.Ffmpeg;
 
 namespace SkyMessage.Api.IntegrationTests.Stickers;
 
@@ -26,8 +27,40 @@ internal static class StickerKit
         return data.ToArray();
     }
 
+    /// <summary>A real animated GIF (ffmpeg's test pattern, 200 × 150, 1.5 s).</summary>
+    public static async Task<byte[]> AnimatedGifAsync()
+    {
+        Ffmpeg.Require();
+        return await Ffmpeg.GenerateAsync(".gif", "-f", "lavfi", "-i", "testsrc=size=200x150:rate=10", "-t", "1.5");
+    }
+
+    /// <summary>
+    /// A GIF of a few hundred bytes that describes a <paramref name="width"/> × <paramref name="height"/> canvas with
+    /// <paramref name="frames"/> frames of one pixel each (a decoder still paints the whole canvas for every frame).
+    /// </summary>
+    public static byte[] CraftedGif(int width, int height, int frames)
+    {
+        var gif = new List<byte>();
+        gif.AddRange("GIF89a"u8.ToArray());
+        gif.AddRange([(byte)width, (byte)(width >> 8), (byte)height, (byte)(height >> 8), 0xF1, 0, 0]);
+        gif.AddRange([255, 255, 255, 255, 0, 0, 0, 0, 255, 0, 0, 0]);
+        gif.AddRange([0x21, 0xFF, 0x0B, .. "NETSCAPE2.0"u8.ToArray(), 0x03, 0x01, 0x00, 0x00, 0x00]);
+        for (var i = 0; i < frames; i++)
+        {
+            var (x, y) = (i * 7 % width, i * 13 % height);
+            gif.AddRange([0x21, 0xF9, 0x04, 0x04, 4, 0, 0, 0]);
+            gif.AddRange([0x2C, (byte)x, (byte)(x >> 8), (byte)y, (byte)(y >> 8), 1, 0, 1, 0, 0]);
+            // LZW, 2-bit codes widened to 3: clear, one red or blue pixel, end.
+            gif.AddRange([0x02, 0x02, (byte)(i % 2 == 0 ? 0x4C : 0x54), 0x01, 0x00]);
+        }
+        gif.Add(0x3B);
+        return gif.ToArray();
+    }
+
     /// <summary>Create, every chunk, complete, then waits for processing (Ready or Failed).</summary>
-    public static async Task<MediaDto> UploadAsync(this TestUser user, MediaKind kind, byte[] content, string contentType, string fileName)
+    /// <param name="convertAnimation">As the apps upload chat attachments (an animated GIF becomes a loop).</param>
+    public static async Task<MediaDto> UploadAsync(this TestUser user, MediaKind kind, byte[] content, string contentType, string fileName,
+        bool convertAnimation = false)
     {
         var session = await (await user.PostRawAsync(ApiRoutes.Media.Uploads, new CreateUploadRequest
         {
@@ -35,6 +68,7 @@ internal static class StickerKit
             FileName = fileName,
             ContentType = contentType,
             SizeBytes = content.Length,
+            ConvertAnimation = convertAnimation,
         })).ReadAsync<UploadSessionDto>();
         for (var index = 0; index < session.ChunkCount; index++)
         {

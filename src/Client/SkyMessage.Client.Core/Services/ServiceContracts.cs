@@ -173,6 +173,11 @@ public sealed class MediaUploadRequest
     public int? Height { get; init; }
     public int? DurationMs { get; init; }
     public byte[]? Waveform { get; init; }
+    /// <summary>
+    /// An animated GIF photo becomes a muted looping MP4 (CreateUploadRequest.ConvertAnimation): chat attachments only —
+    /// profile and group photos and covers must stay photos.
+    /// </summary>
+    public bool ConvertAnimation { get; init; }
 }
 
 /// <summary>Chunked, resumable upload; waits until the server reports the media Ready. Used for avatars too.</summary>
