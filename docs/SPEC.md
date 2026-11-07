@@ -641,7 +641,9 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   holds is still taken when its saved GIFs differ (which ones I can still see, §6.6). `LoadPackAsync`/
   `LoadPackBySlugAsync` for a pack's sheet; `Suggest(emoji)` = the installed packs' stickers whose emoji match
   (`StickerRules.Matches`: variation selectors and skin tones ignored), in my order. `AddStickerAsync` uploads the
-  picture as a `MediaKind.File` (its original bytes) and adds it. `IMessageStore.SendStickerAsync` / `SendGifAsync` go
+  picture as a `MediaKind.File` (its original bytes) and adds it. An edit of a pack answered 404
+  `sticker_pack_not_found` (deleted on another device before this one heard) takes the pack out of my lists at once, as
+  deleting it does, and asks for my state again. `IMessageStore.SendStickerAsync` / `SendGifAsync` go
   through the outbox like text (nothing to upload; the pending bubble shows the media itself; a queued one survives a
   restart with its sticker / media id). Chat attachments upload with `ConvertAnimation` (`MediaUploadRequest`), so an
   animated GIF becomes a loop; profile photos, covers and group photos (`AvatarUploader`) never ask.
@@ -978,12 +980,14 @@ the realtime connection resyncs). With exactly one emoji in the field (`SuggestS
 the matching stickers over the composer (a group of buttons); a tap sends one in its place; on wide screens the strip
 stays away while the panel's popover is open (the panel offers the stickers itself). A sticker message has no bubble:
 the picture at about 160 px (180 on wide screens), sender / forward / reply as pills above it and the time on a chip
-below (like round notes); a tap opens `StickerPackSheet` (`StickerPackView`: title on up to two lines, count, every
-sticker, «Добавить N стикеров» or «Удалить набор»; its creator gets «Изменить» and «Убрать из панели» — deleting the
-pack for everyone is the editor's; share the link; on wide screens the close button sits beside «share», no header
-band; a deleted pack says so). Opened from a chat with content protection the sheet's preview offers no «В
-избранное». The message menu adds favorite (not in protected chats) and «Набор стикеров»; stickers are not editable and
-stay out of the media viewer's sequence. A GIF tile loops muted while on screen (`MediaTile`, player.js autoplay) with a
+below (like round notes); a tap opens `StickerPackSheet` (`StickerPackView`: the whole title, never cut (one past 32
+characters a step smaller, so a 64-character one usually takes three lines on a 360 px phone), count, every sticker,
+«Добавить N стикеров» or «Удалить набор»; its creator gets «Изменить» and «Убрать из панели» — deleting the pack for
+everyone is the editor's; share the link; on wide screens the close button sits beside «share», no header band, with
+as much room above that row as at the card's sides; a deleted pack says so). Opened from a chat with content
+protection the sheet's preview offers no «В избранное». The message menu adds favorite (not in protected chats) and
+«Набор стикеров»; stickers are not editable and stay out of the media viewer's sequence. A GIF tile loops muted while
+on screen (`MediaTile`, player.js autoplay) with a
 «GIF» mark, alone or in an album (`AlbumGrid AutoplayGifs`); with `AutoplayGifs` off, in lite mode or with reduced
 motion its first frame waits for a tap, the next tap opens the viewer, which loops it muted too (viewer.js mutes it:
 the attribute alone does not on an element made by script) with only a pause button — no scrubber or times. The menu
@@ -1001,8 +1005,10 @@ problems named: not PNG/WebP/JPG, under 64 px, over 4096 px, over 5 MB; «Обр
 editor's sticker mode, `AvatarOverlays.EditStickerAsync`: a square window and a transparent 512 px PNG; its emoji, at
 least one; «Отменить остальные» while more pictures of the batch wait) — uploaded one after another with their
 progress by `StickerUploads` (outside the editor: leaving it does not stop them, a failure is told in a toast, signing
-out drops the rest), then «Удалить набор». The chrome stays calm: no frames, glows or sparkles around stickers; they are
-the content.
+out drops the rest; a pack that goes takes its pictures along quietly and stops the one on its way — deleted in its
+editor, which stops them before it deletes, on another device, once my state no longer lists it among mine, or found
+gone by the server), then «Удалить набор»; a pack deleted on another device while its editor is open turns the editor
+into «Набор удалён». The chrome stays calm: no frames, glows or sparkles around stickers; they are the content.
 
 GIFs a keyboard inserts (Gboard and others, Android): the composer takes what the web view delivers as a paste (an
 image file in the clipboard data goes to the tray like any pasted picture, and a GIF becomes a loop). Whether Android's

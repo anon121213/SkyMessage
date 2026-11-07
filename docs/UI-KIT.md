@@ -847,7 +847,8 @@ button or tile around it carries the name; use it everywhere a sticker shows),
 `StickerPackSheet.ShowAsync(dialogs, packId, protectedChat)` / `ShowBySlugAsync(dialogs, slug)` (the pack's sheet:
 «Добавить N стикеров» / «Удалить набор», for its creator «Изменить» / «Убрать из панели»; share, and on wide screens
 the close button beside it (`ShowClose = false`); `protectedChat`: no favorites from its preview; a pack link tapped in
-the app opens it by slug, `LinkService`), the same `StickerPackView PackId|Slug Protected OnDone OnClose` the
+the app opens it by slug, `LinkService`), the same `StickerPackView PackId|Slug Protected OnDone OnClose Card` (`Card`:
+shown as a card with no header band, room above the title row as at its sides; the title is never cut) the
 `/addstickers/{Slug}` page shows, `StickerPreviewDialog.ShowAsync(dialogs, sticker, canSend, canFavorite, showPack)` →
 "send" / "pack" / null (the sticker large; the favorite toggle inside), `<ExpressionPanel OnEmoji OnSticker OnGif OnLeave
 CanSendMedia Editing Height />` (the composer's «Эмодзи · Стикеры · GIF»; `Editing`: emoji only, no switch; `StickerPanel`
@@ -855,7 +856,9 @@ and `GifPanel` are its tabs, their empty states the compact `.xempty` block), `<
 (absolutely placed over the composer, like the mention list; holds open the preview), `NewStickerDialog.ShowAsync(dialogs,
 l, file, waiting)` / `EditAsync(dialogs, l, sticker)` → `NewStickerResult(File, Emoji, StopAll)` (`waiting` > 0 offers
 «Отменить остальные»), `StickerUploads` (scoped: `Add(packId, file, emoji)`, `For(packId)` with each one's `Progress`,
-`Changed`; the editor's queue, kept while the app runs), `StickerFlows.CreatePackAsync(...)` / `RenamePackAsync(...)`
+`Cancel(packId)` before deleting a pack, `Changed`; the editor's queue, kept while the app runs; a pack that leaves my
+packs or that the server no longer has takes its pictures along by itself), `StickerFlows.CreatePackAsync(...)` /
+`RenamePackAsync(...)`
 (title prompt, then the editor) / `RemoveFromPanelAsync(l, stickers, toasts, packId, title, held)` (out of the panel with
 an Undo that restores its place), and `StickerUi` (`StickerOf(message)`, `IsSticker`, `GifOf`, `AsSticker(media)`,
 `EmojiLine`, `IsStickerImage`, `IsHeif`, `EditorPath(packId)`, `SettingsPath`). In the chat: `MessageBubble` draws
