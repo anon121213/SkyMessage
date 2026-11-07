@@ -58,15 +58,17 @@ for a beat — sky and dawn meeting, no cut — then the cut opens from the midd
 rests exactly as drawn. Delay 280 ms (the screen's own entrance comes first), `--sm-dur-xslow` (480 ms),
 `cubic-bezier(0.3, 0, 0.2, 1)`: a soft start, a long settle.
 
-Where: only where the logo is introduced — the signed-out intro (the first signed-out screen of an app run, `AuthIntro`:
-welcome, or sign in / new account when the run starts there) and About when it opens. Everywhere else the logo is simply
-there, finished:
+Where: **only About**, when it opens — the one screen that presents the brand, opened on purpose. Everywhere else the
+logo is simply there, finished, its cut open:
 - **Never on the boot splash.** It often lasts a fraction of a second (100–300 ms on a normal start), so the opening
   would be cut off and only its first frames — the bubble without its cut — would show. The boot splash continues the
   Android splash, which already shows the finished mark; its lockup only rises in.
-- **Never on later signed-out screens** of the same run (welcome ↔ sign in ↔ new account): they rise in with the
-  logo finished, so the opening is not replayed on every screen change.
-- Not on screens that come back often (a lock screen): the motion is a greeting, not a loading indicator.
+- **Never on the signed-out screens.** They follow that finished mark (the Android splash, the boot splash), so a
+  bubble shown whole before it opens would read as the mark closing between two screens. The first signed-out screen
+  of an app run (`AuthIntro`: welcome, or sign in / new account when the run starts there) lets the finished logo
+  settle in once (`auth-logo-in`, 520 ms: it fades in, rising 10 px and growing from 0.92); later ones (welcome ↔ sign
+  in ↔ new account) show it in place.
+- Not on screens that come back often (the lock screen): the motion is a greeting, not a loading indicator.
 
 - How: two seam strips in the bubble's silhouette (a clip path) fill the cut; `sm-logo-horizon-up/down` slide them
   apart (transform only) until their edges meet the sky's bottom and the dawn band's top; at rest they lie outside the

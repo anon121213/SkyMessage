@@ -92,9 +92,9 @@ the mark stays recognisable by its Night-indigo sky (at least 9.9:1 on every lig
   `maskable-192/512.png` (full bleed, the mark inside the 80 % circle), `badge-96.png` (notification badge,
   "monochrome"); `manifest.webmanifest` uses `#2A1F86` as its background and theme colour.
 - **In the app** (`Kit/Logo.razor`): the tile (rail, chat-list placeholder, sign-in, QR codes), the mark, and the lockup
-  (`Wordmark`: boot splash, welcome screen, About, the Settings footer). `Animated` opens the horizon once, only where
-  the logo is introduced: the first signed-out screen of an app run and About (docs/MOTION.md); the boot splash and
-  every later screen show it finished. Static copies for anything outside the app:
+  (`Wordmark`: boot splash, welcome screen, About, the Settings footer). `Animated` opens the horizon once, only in
+  About (docs/MOTION.md); the boot splash, the signed-out screens and the lock screen show it finished, the cut open.
+  Static copies for anything outside the app:
   `SkyMessage.Client.UI/wwwroot/img/logo.svg`, `logo-mark.svg`.
 
 ## Regenerating the PNGs

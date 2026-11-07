@@ -143,9 +143,9 @@ construction, the palette and the export script: `docs/brand/README.md`.
   new account, QR codes); **`Mark`** — the symbol alone in the theme's colours; **`Wordmark`** — the lockup: the mark and
   "SkyMessage" (Montserrat 700 outlines) in one solid colour (Night indigo on light, white on dark), the letters standing
   on the horizon. Wherever the name stands next to the logo it is this lockup (boot splash, welcome, About, the Settings
-  footer) — never the name typed beside a tile. **`Animated`**: the horizon opens once, only where the logo is
-  introduced — the first signed-out screen of an app run and About; the boot splash and every other screen show it
-  finished (MOTION.md, "The logo").
+  footer) — never the name typed beside a tile. **`Animated`**: the horizon opens once, only in About, where the
+  brand is presented; the boot splash, the signed-out screens, the lock screen and every other screen show it finished,
+  its cut open (MOTION.md, "The logo").
 - **Flat, always**: no glow, shadow, gloss, outline, second gradient, sparkles or gradient text — on the logo or around
   it. Don't recolour it with the accent or the user's theme, don't redraw it at small sizes (the hinted files exist).
 
@@ -188,8 +188,9 @@ construction, the palette and the export script: `docs/brand/README.md`.
 - **Auth** (welcome/login/register): the sky (soft lights; flat capsule clouds by day, a crescent moon and stars at
   night; no sun). The decoration never sits behind the header: on phones it keeps to the lower half and the moon steps
   aside for the welcome lockup; on wide screens it stays beside the column. Welcome shows the lockup (mark + wordmark in
-  a solid colour) as its title, sign in / new account the app-icon tile; the first signed-out screen of an app run
-  opens the logo's horizon (the intro), later ones show it finished; forms on a glass card, staggered entrance.
+  a solid colour) as its title, sign in / new account the app-icon tile, always finished (the cut open, as on the
+  splash just before); on the first signed-out screen of an app run it settles in (the intro); forms on a glass card,
+  staggered entrance.
 - **Lock screen** (app passcode): the theme's calm sky (no comet) over everything, the logo mark (35px, 26px on short
   phones; shown finished, no motion), the title in the display font, one hint line (rose for mistakes and the pause
   countdown), dots that fill with the accent gradient, and a keypad of round translucent glass keys (card color + glass
@@ -206,9 +207,8 @@ construction, the palette and the export script: `docs/brand/README.md`.
 
 Springs for things arriving (`--sm-spring`, `--sm-spring-soft`), decelerate for movement, accelerate for exits.
 Page content may rise in once on first render (`.sm-stagger`). Ambient motion (sky, rings) is slow
-and subtle; it stops with reduced motion and in `data-fx="lite"`. The logo moves only where it is introduced (the
-first signed-out screen of an app run, About): its horizon opens once, and it never loops; the boot splash shows it
-finished.
+and subtle; it stops with reduced motion and in `data-fx="lite"`. The logo's horizon opens only in About, once, and
+never loops; everywhere else (the boot splash, the signed-out screens, the lock screen) it is shown finished.
 
 ## 9. Performance rules
 
