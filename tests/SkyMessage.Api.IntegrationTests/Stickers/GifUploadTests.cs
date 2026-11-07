@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Hosting;
 using Shouldly;
+using SkyMessage.Api.IntegrationTests.Media;
 using SkyMessage.Api.IntegrationTests.Messaging;
 using SkyMessage.Contracts;
 using Xunit;
@@ -44,6 +46,25 @@ public sealed class GifUploadTests(ApiFactory factory)
         var loop = await alice.UploadAsync(MediaKind.Photo, gif, "image/gif", "dance.gif", convertAnimation: true);
         loop.Kind.ShouldBe(MediaKind.Video);
         loop.IsAnimation.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_gif_that_cannot_be_converted_stays_the_gif_it_is()
+    {
+        // A server without ffmpeg cannot convert anything: the GIF is kept, as before animations existed.
+        await using var noTools = factory.WithWebHostBuilder(b => b
+            .UseSetting("MediaProcessing:FfmpegPath", "/nonexistent/skymessage/ffmpeg")
+            .UseSetting("MediaProcessing:FfprobePath", "/nonexistent/skymessage/ffprobe"));
+        var owner = (await factory.RegisterUserAsync()).On(noTools);
+
+        var media = await owner.UploadReadyAsync(MediaKind.Photo, StickerKit.CraftedGif(64, 48, 3), "image/gif", "loop.gif",
+            r => r with { ConvertAnimation = true });
+
+        media.Kind.ShouldBe(MediaKind.Photo);
+        media.IsAnimation.ShouldBeFalse();
+        media.ContentType.ShouldBe("image/gif");
+        (media.Width, media.Height).ShouldBe((64, 48));
+        media.HasThumbnail.ShouldBeTrue();
     }
 
     [Theory]
