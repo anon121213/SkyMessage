@@ -313,14 +313,24 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
+        var size = image.Size;
+        var open = image.OpenReadAsync;
+        if (size <= 0)
+        {
+            // Some pickers do not know the size: read it (a sticker's source is at most 5 MB, a little more is refused).
+            var bytes = await ReadAtMostAsync(image, Limits.StickerSourceMaxBytes + 1, cancellationToken).ConfigureAwait(false);
+            size = bytes.Length;
+            open = _ => Task.FromResult<Stream>(new MemoryStream(bytes, writable: false));
+        }
+        if (size > Limits.StickerSourceMaxBytes) throw new ApiException(400, ErrorCodes.StickerImageInvalid, "The picture is larger than 5 MB.");
         // The original bytes (a file): the server makes the WebP itself and keeps the transparency.
         var source = await _uploader.UploadAsync(new MediaUploadRequest
         {
             Kind = MediaKind.File,
             FileName = string.IsNullOrWhiteSpace(image.FileName) ? "sticker.png" : image.FileName,
             ContentType = string.IsNullOrWhiteSpace(image.ContentType) ? "image/png" : image.ContentType,
-            Size = image.Size,
-            OpenReadAsync = image.OpenReadAsync,
+            Size = size,
+            OpenReadAsync = open,
         }, progress, cancellationToken).ConfigureAwait(false);
         return await EditPackAsync(() => _api.AddStickerAsync(packId, new AddStickerRequest
         {
@@ -353,6 +363,20 @@ internal sealed class StickerStore : IStickerStore, IAccountScoped
         }
         RaiseChanged();
         LoadAsync(force: true).Forget(_logger);
+    }
+
+    private static async Task<byte[]> ReadAtMostAsync(PickedFile file, long limit, CancellationToken ct)
+    {
+        await using var stream = await file.OpenReadAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+            if (buffer.Length >= limit) break;
+        }
+        return buffer.ToArray();
     }
 
     private async Task<StickerPackDto> EditPackAsync(Func<Task<StickerPackDto>> edit)

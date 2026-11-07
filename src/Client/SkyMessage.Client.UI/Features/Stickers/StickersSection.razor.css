@@ -16,7 +16,7 @@
 }
 
 .stickers-create {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-weight: 600;
 }
@@ -67,6 +67,6 @@ html[data-fx="lite"] .stickers-list__row[data-dragging] {
 }
 
 .stickers-list__row[data-dragging] .stickers-list__handle {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     cursor: grabbing;
 }

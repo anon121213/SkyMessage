@@ -15,7 +15,7 @@
 }
 
 .stickers-add {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     font-family: var(--sm-font-display);
     font-weight: 600;
 }
@@ -59,6 +59,6 @@ html[data-fx="lite"] .sedit-list__row[data-dragging] {
 }
 
 .sedit-list__row[data-dragging] .sedit-list__handle {
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
     cursor: grabbing;
 }

@@ -43,7 +43,7 @@
     padding: 0 8px;
     border-radius: 999px;
     background: var(--sm-accent-soft);
-    color: var(--sm-accent-text, var(--sm-accent));
+    color: var(--sm-accent-text);
     font-size: 0.75rem;
     font-weight: 600;
     line-height: 1.375rem;

@@ -35,7 +35,7 @@
 
 .spanel__tab--active {
     background: var(--sm-accent-soft);
-    color: var(--sm-accent);
+    color: var(--sm-accent-text);
 }
 
 .spanel__tab--add {

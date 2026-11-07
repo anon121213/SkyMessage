@@ -2,6 +2,7 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
 using SkyMessage.Client.Core.Infrastructure;
+using SkyMessage.Client.Core.Platform;
 using SkyMessage.Client.Core.Services;
 using SkyMessage.Client.Core.Stores;
 using SkyMessage.Contracts;
@@ -201,6 +202,36 @@ public sealed class StickerStoreTests
     }
 
     [Fact]
+    public async Task A_picture_of_unknown_size_is_measured_before_upload_and_one_over_5_mb_is_refused()
+    {
+        var h = new Harness();
+        var pack = Pack("Котики", 1);
+        await h.LoadAsync(State(1, pack));
+        MediaUploadRequest? upload = null;
+        h.Uploader.UploadAsync(Arg.Do<MediaUploadRequest>(r => upload = r), Arg.Any<IProgress<double>?>(), Arg.Any<CancellationToken>())
+            .Returns(new MediaDto { Id = Guid.CreateVersion7(), Kind = MediaKind.File, Status = MediaStatus.Ready });
+        h.Api.AddStickerAsync(pack.Id, Arg.Any<AddStickerRequest>(), Arg.Any<CancellationToken>()).Returns(pack);
+        static PickedFile Picture(int length) => new()
+        {
+            FileName = "", ContentType = "",
+            OpenReadAsync = _ => Task.FromResult<Stream>(new MemoryStream(new byte[length])),
+        };
+
+        await h.Store.AddStickerAsync(pack.Id, Picture(70_000), ["😺"]);
+
+        upload.ShouldNotBeNull();
+        upload.Size.ShouldBe(70_000);
+        upload.FileName.ShouldBe("sticker.png");
+        await using (var stream = await upload.OpenReadAsync(CancellationToken.None))
+            stream.Length.ShouldBe(70_000);
+
+        upload = null;
+        var refused = await Should.ThrowAsync<ApiException>(() => h.Store.AddStickerAsync(pack.Id, Picture((int)Limits.StickerSourceMaxBytes + 10), ["😺"]));
+        refused.Code.ShouldBe(ErrorCodes.StickerImageInvalid);
+        upload.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task A_sticker_goes_out_as_a_sticker_without_uploading_and_shows_itself_while_pending()
     {
         var h = new MessageStoreHarness();
@@ -245,14 +276,22 @@ public sealed class StickerStoreTests
 
         var restarted = h.Restart();
         SendMessageRequest? sent = null;
+        // The server answers only once the restored bubble has been checked (otherwise the answer can replace it first).
+        var response = new TaskCompletionSource<MessageDto>(TaskCreationOptions.RunContinuationsAsynchronously);
         restarted.ReturnsPage(Fakes.Page([Fakes.Message(h.ChatId, 1, Guid.CreateVersion7())]));
         restarted.Api.SendMessageAsync(h.ChatId, Arg.Do<SendMessageRequest>(r => sent = r), Arg.Any<CancellationToken>())
-            .Returns(c => Fakes.Message(h.ChatId, 2, h.Me, clientMessageId: c.Arg<SendMessageRequest>().ClientMessageId) with { Type = MessageType.Video });
+            .Returns(response.Task);
         await restarted.SignInAsync();
         await restarted.Store.OpenAsync(h.ChatId);
-        restarted.State.Items[^1].Message.Attachments.ShouldHaveSingleItem().IsAnimation.ShouldBeTrue();
+        var restored = restarted.State.Items[^1];
+        restored.IsPending.ShouldBeTrue();
+        restored.Message.Attachments.ShouldHaveSingleItem().IsAnimation.ShouldBeTrue();
         await Wait.UntilAsync(() => sent is not null, "resent after the restart", 20000);
         sent!.GifMediaId.ShouldBe(gif.Id);
         sent.StickerId.ShouldBeNull();
+
+        response.SetResult(Fakes.Message(h.ChatId, 2, h.Me, clientMessageId: sent.ClientMessageId) with { Type = MessageType.Video, Attachments = [gif] });
+        await Wait.UntilAsync(() => restarted.State.Items.All(i => !i.IsPending), "confirmed");
+        restarted.State.Items[^1].Message.Attachments.ShouldHaveSingleItem().Id.ShouldBe(gif.Id);
     }
 }
