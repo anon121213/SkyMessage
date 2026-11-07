@@ -8,7 +8,8 @@
 //    {"type": "hello"}, {"key": "Enter"}, {"waitFor": ".msg"}]
 // "swipe" drives real touch events (pointer type "touch") from the element's center (or "x"/"y"), "hold" keeps the
 // finger down (ms) before moving, "tap" accepts "x"/"y" instead of a selector. {"file": "/abs/path.jpg"} (or a list)
-// answers the next file chooser the page opens with those files (give it before the tap that opens the picker). Logs in
+// answers the next file chooser the page opens with those files (give it before the tap that opens the picker).
+// {"offline": true} cuts the page off the network (false brings it back: the page sees "online"). Logs in
 // through the UI with the dev account from tools/e2e/dev-accounts.json unless --user none. Screenshots:
 // <out>/<n>-<name>.png.
 import { spawn } from 'node:child_process';
@@ -103,6 +104,10 @@ for (const step of steps) {
     else if (step.waitFor) await waitFor(step.waitFor, step.ms);
     else if (step.eval) console.log('  eval:', JSON.stringify(await evaluate(step.eval))?.slice(0, 500));
     else if (step.type) await send('Input.insertText', { text: step.type });
+    else if (step.offline !== undefined) {
+      await send('Network.enable');
+      await send('Network.emulateNetworkConditions', { offline: !!step.offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    }
     else if (step.file) {
       chooserFiles = (Array.isArray(step.file) ? step.file : [step.file]).map((f) => resolve(f));
       await send('Page.setInterceptFileChooserDialog', { enabled: true });
