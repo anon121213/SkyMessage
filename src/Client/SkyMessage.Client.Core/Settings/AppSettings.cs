@@ -82,6 +82,10 @@ public sealed class ChatBehaviorSettings
     public string QuickReaction { get; set; } = "👍";
     public bool AutoplayVideos { get; set; } = true;
     public bool AutoplayVideoNotes { get; set; } = true;
+    /// <summary>GIFs loop by themselves while on screen (lite mode and reduced motion show the poster: tap to play).</summary>
+    public bool AutoplayGifs { get; set; } = true;
+    /// <summary>A single emoji in the composer offers matching stickers of my installed packs.</summary>
+    public bool SuggestStickers { get; set; } = true;
     public double VoicePlaybackRate { get; set; } = 1.0;
     /// <summary>What a sideways swipe on a chat in the list does (docs/MOTION.md): switch folders or reveal the chat's actions.</summary>
     public ChatSwipeMode ChatSwipe { get; set; } = ChatSwipeMode.Auto;

@@ -91,6 +91,36 @@ internal sealed partial class MessageStore
         EnsureLatestAsync(chatId).Forget(_logger);
     }
 
+    public Task SendStickerAsync(Guid chatId, StickerDto sticker, Guid? replyToMessageId = null)
+    {
+        ArgumentNullException.ThrowIfNull(sticker);
+        return SendSharedAsync(chatId, MessageType.Photo, sticker.Media, replyToMessageId, record => record with { StickerId = sticker.Id });
+    }
+
+    public Task SendGifAsync(Guid chatId, MediaDto gif, Guid? replyToMessageId = null)
+    {
+        ArgumentNullException.ThrowIfNull(gif);
+        return SendSharedAsync(chatId, MessageType.Video, gif, replyToMessageId, record => record with { GifMediaId = gif.Id });
+    }
+
+    /// <summary>Media that already exists on the server (a sticker, a saved GIF): no preparation, it goes out like text.</summary>
+    private async Task SendSharedAsync(Guid chatId, MessageType type, MediaDto media, Guid? replyToMessageId, Func<OutboxRecord, OutboxRecord> mark)
+    {
+        if (Me is null) return;
+        var offline = !_network.IsConnected;
+        await MutateAsync(changes =>
+        {
+            var reply = replyToMessageId is { } replyId ? FindHeld(chatId, replyId) : null;
+            var entry = NewEntry(chatId, OutboxKind.Message, type, null, null, replyToMessageId,
+                reply is not null ? MessageRules.ReplyPreview(reply) : null, []);
+            entry.Record = mark(entry.Record with { SharedMedia = media });
+            entry.State = offline ? MessageSendState.Queued : MessageSendState.Sending;
+            AddEntry(entry, changes);
+        }).ConfigureAwait(false);
+        await _persistOutbox.FlushAsync().ConfigureAwait(false);
+        SendWhenLatestAsync(chatId).Forget(_logger);
+    }
+
     public async Task ForwardAsync(Guid fromChatId, IReadOnlyList<Guid> messageIds, Guid toChatId)
     {
         if (Me is null || messageIds.Count == 0) return;
@@ -277,6 +307,8 @@ internal sealed partial class MessageStore
                     Entities = record.Entities,
                     ReplyToMessageId = record.ReplyToMessageId,
                     MediaIds = entry.Attachments.Select(a => a.Media!.Id).ToList(),
+                    StickerId = record.StickerId,
+                    GifMediaId = record.GifMediaId,
                 }, ct).ConfigureAwait(false);
             }
             if (generation != _generation) return false;

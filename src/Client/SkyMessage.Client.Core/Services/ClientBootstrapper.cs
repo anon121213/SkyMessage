@@ -23,6 +23,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
     private readonly AccountLifecycle _lifecycle;
     private readonly IChatListStore _chatList;
     private readonly IChatFolderStore _folders;
+    private readonly IStickerStore _stickers;
     private readonly IContactStore _contacts;
     private readonly ILocalNotificationService _notifications;
     private readonly IBackgroundConnectionService _background;
@@ -41,6 +42,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         AccountLifecycle lifecycle,
         IChatListStore chatList,
         IChatFolderStore folders,
+        IStickerStore stickers,
         IMessageStore messages,
         IUserStore users,
         IContactStore contacts,
@@ -69,6 +71,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         _lifecycle = lifecycle;
         _chatList = chatList;
         _folders = folders;
+        _stickers = stickers;
         _contacts = contacts;
         _notifications = notifications;
         _background = background;
@@ -129,6 +132,7 @@ internal sealed class ClientBootstrapper : IClientBootstrapper
         _endpoints.RefreshInfoAsync().Forget(_logger);
         _chatList.LoadAsync().Forget(_logger);
         _folders.LoadAsync().Forget(_logger);
+        _stickers.LoadAsync().Forget(_logger);
         _contacts.LoadAsync().Forget(_logger);
         ApplyBackgroundConnectionAsync().Forget(_logger);
         return Task.CompletedTask;

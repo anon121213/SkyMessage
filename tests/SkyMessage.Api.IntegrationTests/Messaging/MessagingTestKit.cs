@@ -405,6 +405,7 @@ internal static class Ev
     public const string ChatSettingsChanged = nameof(IRealtimeClient.ChatSettingsChanged);
     public const string PinnedChatsReordered = nameof(IRealtimeClient.PinnedChatsReordered);
     public const string ChatFoldersChanged = nameof(IRealtimeClient.ChatFoldersChanged);
+    public const string StickersChanged = nameof(IRealtimeClient.StickersChanged);
     public const string HistoryCleared = nameof(IRealtimeClient.HistoryCleared);
     public const string PinnedMessagesChanged = nameof(IRealtimeClient.PinnedMessagesChanged);
     public const string PresenceChanged = nameof(IRealtimeClient.PresenceChanged);
@@ -470,6 +471,7 @@ public sealed class RealtimeProbe : IAsyncDisposable
         Listen<ChatSettingsChangedEvent>(Ev.ChatSettingsChanged);
         Listen<PinnedChatsOrderDto>(Ev.PinnedChatsReordered);
         Listen<ChatFoldersDto>(Ev.ChatFoldersChanged);
+        Listen<StickerStateDto>(Ev.StickersChanged);
         Listen<HistoryClearedEvent>(Ev.HistoryCleared);
         Listen<ChatRefEvent>(Ev.PinnedMessagesChanged);
         Listen<PresenceChangedEvent>(Ev.PresenceChanged);

@@ -281,6 +281,8 @@ public interface IRealtimeService
     event Action<PinnedChatsOrderDto>? PinnedChatsReordered;
     /// <summary>My folders or chat list settings changed (on any device, this one included): the whole new state.</summary>
     event Action<ChatFoldersDto>? ChatFoldersChanged;
+    /// <summary>My stickers and GIFs changed (on any device, or a pack I use was edited): the whole new state.</summary>
+    event Action<StickerStateDto>? StickersChanged;
     event Action<HistoryClearedEvent>? HistoryCleared;
     event Action<ChatRefEvent>? PinnedMessagesChanged;
     event Action<PresenceChangedEvent>? PresenceChanged;

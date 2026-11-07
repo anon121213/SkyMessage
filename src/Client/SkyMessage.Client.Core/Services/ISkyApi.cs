@@ -111,6 +111,27 @@ public interface ISkyApi
     /// <summary>Marks every chat of the folder read; null = "All chats" (everything outside the archive).</summary>
     Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default);
 
+    // Stickers and GIFs (state changes answer with my whole new state, see ApiRoutes.Stickers)
+    Task<StickerStateDto> GetStickerStateAsync(CancellationToken ct = default);
+    Task<StickerStateDto> InstallStickerPackAsync(Guid packId, CancellationToken ct = default);
+    Task<StickerStateDto> UninstallStickerPackAsync(Guid packId, CancellationToken ct = default);
+    Task<StickerStateDto> ReorderStickerPacksAsync(IReadOnlyList<Guid> packIds, CancellationToken ct = default);
+    Task<StickerStateDto> SetFavoriteStickerAsync(Guid stickerId, bool favorite, CancellationToken ct = default);
+    /// <summary>"Сохранить в GIF": the animation of a message (403 forward_restricted in a protected chat).</summary>
+    Task<StickerStateDto> SaveGifAsync(Guid chatId, Guid messageId, CancellationToken ct = default);
+    Task<StickerStateDto> RemoveGifAsync(Guid mediaId, CancellationToken ct = default);
+    Task<StickerPackDto> GetStickerPackAsync(Guid packId, CancellationToken ct = default);
+    Task<StickerPackDto> GetStickerPackBySlugAsync(string slug, CancellationToken ct = default);
+    /// <summary>A new pack of mine (the id is the app's own, so a repeat is harmless).</summary>
+    Task<StickerPackDto> CreateStickerPackAsync(CreateStickerPackRequest request, CancellationToken ct = default);
+    Task<StickerPackDto> RenameStickerPackAsync(Guid packId, string title, CancellationToken ct = default);
+    Task DeleteStickerPackAsync(Guid packId, CancellationToken ct = default);
+    /// <summary>A new sticker made from an upload of mine (MediaKind.File; the id is the app's own).</summary>
+    Task<StickerPackDto> AddStickerAsync(Guid packId, AddStickerRequest request, CancellationToken ct = default);
+    Task<StickerPackDto> UpdateStickerAsync(Guid packId, Guid stickerId, IReadOnlyList<string> emoji, CancellationToken ct = default);
+    Task<StickerPackDto> DeleteStickerAsync(Guid packId, Guid stickerId, CancellationToken ct = default);
+    Task<StickerPackDto> ReorderStickersAsync(Guid packId, IReadOnlyList<Guid> stickerIds, CancellationToken ct = default);
+
     // Messages
     Task<MessagesPageDto> GetMessagesAsync(Guid chatId, long? beforeSeq = null, long? afterSeq = null, long? aroundSeq = null, int limit = Limits.MessagesPageDefault, CancellationToken ct = default);
     Task<MessageChangesDto> GetMessageChangesAsync(Guid chatId, string cursor, CancellationToken ct = default);

@@ -295,6 +295,57 @@ internal sealed class SkyApi(ApiTransport transport, AuthorizedSender sender, IE
     public Task MarkFolderReadAsync(Guid? folderId, CancellationToken ct = default) =>
         NoContent(ApiRequest.Empty(HttpMethod.Post, folderId is { } id ? ApiRoutes.Folders.ReadPath(id) : ApiRoutes.Folders.ReadAll, idempotent: true), ct);
 
+    // Stickers and GIFs: state changes are states (repeating one is harmless); new packs and stickers carry the app's ids.
+
+    public Task<StickerStateDto> GetStickerStateAsync(CancellationToken ct = default) =>
+        Get<StickerStateDto>(ApiRoutes.Stickers.Root, ct);
+
+    public Task<StickerStateDto> InstallStickerPackAsync(Guid packId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<StickerStateDto>(ApiRequest.Empty(HttpMethod.Put, ApiRoutes.Stickers.InstalledPath(packId), idempotent: true), ct);
+
+    public Task<StickerStateDto> UninstallStickerPackAsync(Guid packId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<StickerStateDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Stickers.InstalledPath(packId), idempotent: true), ct);
+
+    public Task<StickerStateDto> ReorderStickerPacksAsync(IReadOnlyList<Guid> packIds, CancellationToken ct = default) =>
+        Json<StickerStateDto>(HttpMethod.Put, ApiRoutes.Stickers.InstalledOrder, new ReorderStickerPacksRequest { PackIds = packIds }, idempotent: true, ct);
+
+    public Task<StickerStateDto> SetFavoriteStickerAsync(Guid stickerId, bool favorite, CancellationToken ct = default) =>
+        sender.SendJsonAsync<StickerStateDto>(ApiRequest.Empty(favorite ? HttpMethod.Put : HttpMethod.Delete, ApiRoutes.Stickers.FavoritePath(stickerId),
+            idempotent: true), ct);
+
+    public Task<StickerStateDto> SaveGifAsync(Guid chatId, Guid messageId, CancellationToken ct = default) =>
+        Json<StickerStateDto>(HttpMethod.Post, ApiRoutes.Stickers.Gifs, new SaveGifRequest { ChatId = chatId, MessageId = messageId }, idempotent: true, ct);
+
+    public Task<StickerStateDto> RemoveGifAsync(Guid mediaId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<StickerStateDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Stickers.GifPath(mediaId), idempotent: true), ct);
+
+    public Task<StickerPackDto> GetStickerPackAsync(Guid packId, CancellationToken ct = default) =>
+        Get<StickerPackDto>(ApiRoutes.Stickers.PackPath(packId), ct);
+
+    public Task<StickerPackDto> GetStickerPackBySlugAsync(string slug, CancellationToken ct = default) =>
+        Get<StickerPackDto>(ApiRoutes.Stickers.PackBySlugPath(slug), ct);
+
+    public Task<StickerPackDto> CreateStickerPackAsync(CreateStickerPackRequest request, CancellationToken ct = default) =>
+        Json<StickerPackDto>(HttpMethod.Post, ApiRoutes.Stickers.Packs, request, idempotent: true, ct);
+
+    public Task<StickerPackDto> RenameStickerPackAsync(Guid packId, string title, CancellationToken ct = default) =>
+        Json<StickerPackDto>(Patch, ApiRoutes.Stickers.PackPath(packId), new UpdateStickerPackRequest { Title = title }, idempotent: true, ct);
+
+    public Task DeleteStickerPackAsync(Guid packId, CancellationToken ct = default) =>
+        NoContent(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Stickers.PackPath(packId), idempotent: true), ct);
+
+    public Task<StickerPackDto> AddStickerAsync(Guid packId, AddStickerRequest request, CancellationToken ct = default) =>
+        Json<StickerPackDto>(HttpMethod.Post, ApiRoutes.Stickers.PackStickersPath(packId), request, idempotent: true, ct);
+
+    public Task<StickerPackDto> UpdateStickerAsync(Guid packId, Guid stickerId, IReadOnlyList<string> emoji, CancellationToken ct = default) =>
+        Json<StickerPackDto>(Patch, ApiRoutes.Stickers.PackStickerPath(packId, stickerId), new UpdateStickerRequest { Emoji = emoji }, idempotent: true, ct);
+
+    public Task<StickerPackDto> DeleteStickerAsync(Guid packId, Guid stickerId, CancellationToken ct = default) =>
+        sender.SendJsonAsync<StickerPackDto>(ApiRequest.Empty(HttpMethod.Delete, ApiRoutes.Stickers.PackStickerPath(packId, stickerId), idempotent: true), ct);
+
+    public Task<StickerPackDto> ReorderStickersAsync(Guid packId, IReadOnlyList<Guid> stickerIds, CancellationToken ct = default) =>
+        Json<StickerPackDto>(HttpMethod.Put, ApiRoutes.Stickers.PackOrderPath(packId), new ReorderStickersRequest { StickerIds = stickerIds }, idempotent: true, ct);
+
     // Messages
 
     public Task<MessagesPageDto> GetMessagesAsync(Guid chatId, long? beforeSeq = null, long? afterSeq = null, long? aroundSeq = null,
