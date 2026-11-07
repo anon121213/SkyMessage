@@ -82,7 +82,8 @@ accent bubbles keep white ink too, their stops deepened toward black by at most 
 the user's own light colors (or a very light accent) turn dark: there the ink is white or #1C1634, whichever reads
 better, and a fill that still falls under 4.5:1 is nudged until it does (`ThemeCatalog.Readable`). The time, the ticks
 and a failed status on my bubble are solid colors that keep 3:1 on every part of it. Text that sits straight on a
-background of one's own (root screens) gets a readability floor: titles 7:1, secondary text 4.5:1 (see §5).
+background of one's own (root screens) gets a readability floor: titles 7:1, secondary text 4.5:1, and at night the
+times and overlines (`--sm-text-3`) 3:1 (see §5).
 
 ## 3. Type
 
@@ -116,12 +117,13 @@ background of one's own (root screens) gets a readability floor: titles 7:1, sec
   `html[data-sky-own]`). A photo is still (drawn once, its blur baked in by boot.js; nothing is filtered while screens
   scroll) under a veil of the theme's own background color (the dim); a new one starts soft and veiled behind the
   app's screens, sharp with a light veil in a chat. **Readability floor**: behind the root screens the veil is never
-  less than their text needs (titles 7:1, previews and times 4.5:1, everywhere on the background) — a gradient that
-  does not suit the theme (a night gradient by day) is veiled as a whole, a photo row by row on the part the window
-  shows, so a light sky keeps its color over dark hills. Chats that follow the app look the same; a chat's own
-  background has none (its text sits on bubbles and glass). Ready-made gradients are soft by day, deep at night — no
-  neon; the editor lists the ones that suit the edited theme first, says when the floor dims a theme, and shows both
-  themes side by side, as the screens will show them.
+  less than their text needs, everywhere on the background (titles 7:1, previews 4.5:1, and at night the times and
+  overlines — `--sm-text-3` — 3:1, as on the night's own sky; by day that pale grey stays under 3:1 even on the plain
+  background) — a gradient that does not suit the theme (a night gradient by day) is veiled as a whole, a photo row by
+  row on the part the window shows, so a light sky keeps its color over dark hills. Chats that follow the app look the
+  same; a chat's own background has none (its text sits on bubbles and glass). Ready-made gradients are soft by day,
+  deep at night — no neon; the editor lists the ones that suit the edited theme first, says when the floor dims a
+  theme, and shows both themes side by side, as the screens will show them.
 - Illustrations: draw our own simple flat SVG in the palette: **capsule clouds** (a short capsule resting on a long
   one — the kit's capsule shape; `Shell/SkyArt`, the empty chat, the signed-out sky, the Appearance scenes), the moon,
   a horizon line, round stars. **No sun**: the dawn belongs to the logo, and a sun with a cloud is the rejected first

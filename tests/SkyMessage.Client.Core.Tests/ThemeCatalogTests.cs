@@ -21,16 +21,22 @@ public sealed partial class ThemeCatalogTests
     private static readonly Color LightText2 = Color.Parse("#615A7C");
     private static readonly Color DarkText = Color.Parse("#F3F0FF");
     private static readonly Color DarkText2 = Color.Parse("#B4ACD5");
+    private static readonly Color DarkText3 = Color.Parse("#7D76A2");
 
-    /// <summary>Root-screen text reads on every part of a background in a theme: titles 7:1, secondary text 4.5:1.</summary>
+    /// <summary>
+    /// Root-screen text reads on every part of a background in a theme: titles 7:1, secondary text 4.5:1, and at night
+    /// the times and overlines (text-3) 3:1.
+    /// </summary>
     private static void ShouldReadOnScreen(IReadOnlyList<Color> stops, bool dark, string because)
     {
-        foreach (var sample in ThemeCatalog.Samples(stops))
-        {
-            ThemeCatalog.Contrast(dark ? DarkText : LightText, sample).ShouldBeGreaterThanOrEqualTo(7, because);
-            ThemeCatalog.Contrast(dark ? DarkText2 : LightText2, sample).ShouldBeGreaterThanOrEqualTo(4.5, because);
-        }
+        foreach (var sample in ThemeCatalog.Samples(stops)) Reads(sample, dark).ShouldBeTrue(because);
     }
+
+    /// <summary>The floor's inks, written out: titles 7:1, secondary text 4.5:1, at night text-3 3:1.</summary>
+    private static bool Reads(Color background, bool dark) =>
+        ThemeCatalog.Contrast(dark ? DarkText : LightText, background) >= 7
+        && ThemeCatalog.Contrast(dark ? DarkText2 : LightText2, background) >= 4.5
+        && (!dark || ThemeCatalog.Contrast(DarkText3, background) >= 3);
 
     private static string Block(ThemeState state, bool dark)
     {
@@ -264,7 +270,9 @@ public sealed partial class ThemeCatalogTests
         (image.Slot, image.Theme, image.Src, image.Blur).ShouldBe(("sky", "dark", "/_sm/backdrops/0a1b2c3d4e5f.jpg", 30));
         var floor = image.Floor.ShouldNotBeNull("boot.js veils the app's picture until the root screens' text reads on it");
         floor.Veil.ShouldBe("#0D0B1E");
-        floor.Inks.ShouldBe([new ScreenInk("#F3F0FF", 7), new ScreenInk("#B4ACD5", 4.5)]);
+        floor.Inks.ShouldBe([new ScreenInk("#F3F0FF", 7), new ScreenInk("#B4ACD5", 4.5), new ScreenInk("#7D76A2", 3)],
+            "titles, previews, and at night the times and overlines");
+
 
         Catalog.BuildState(a).Images.ShouldBeEmpty("without a place for pictures there are none to show");
     }
@@ -468,8 +476,7 @@ public sealed partial class ThemeCatalogTests
                 var bg = Color.Parse(dark ? "#0D0B1E" : "#F6F3FF");
                 var lessVeil = (Math.Round(veil * 100) - 1) / 100.0;
                 var less = ThemeCatalog.Samples(stops).Select(c => Color.Parse(Color.Mix(Color.Parse(c.Hex), bg, lessVeil).Hex)).ToList();
-                var reads = less.All(c => ThemeCatalog.Contrast(dark ? DarkText : LightText, c) >= 7 && ThemeCatalog.Contrast(dark ? DarkText2 : LightText2, c) >= 4.5);
-                reads.ShouldBeFalse($"{preset.Key} dark={dark}: {veil} is the least veil");
+                less.All(c => Reads(c, dark)).ShouldBeFalse($"{preset.Key} dark={dark}: {veil} is the least veil");
             }
         }
 
@@ -495,6 +502,29 @@ public sealed partial class ThemeCatalogTests
         ThemeCatalog.ScreenVeil([Color.Parse("#DDE8F5"), Color.Parse("#3B4A2E")], dark: false).ShouldBeGreaterThan(0.5);
         ThemeCatalog.ScreenVeil([Color.Parse("#F1F4FA")], dark: false).ShouldBe(0);
         ThemeCatalog.ScreenVeil([Color.Black], dark: false).ShouldBeLessThanOrEqualTo(ThemeCatalog.MaxScreenVeil);
+    }
+
+    [Theory]
+    [InlineData("#FFFFFF")]
+    [InlineData("#E8E4DA")]
+    [InlineData("#C9D6E8")]
+    [InlineData("#9DB0C8")]
+    [InlineData("#F7C9A8")]
+    public void A_light_photo_at_night_keeps_the_times_at_3_to_1(string cell)
+    {
+        // The chat rows' times and the section overlines are text-3: on a light picture shared with the night they read
+        // at 3:1 or better wherever the floor veiled it, as on the night's own sky (about 4:1), not only the previews.
+        var cells = Enumerable.Repeat(Color.Parse(cell), 64).ToList();
+        var veil = ThemeCatalog.ScreenVeil(cells, dark: true);
+        var veiled = Color.Parse(Color.Mix(Color.Parse(cell), Color.Parse("#0D0B1E"), veil).Hex);
+        ThemeCatalog.Contrast(DarkText3, veiled).ShouldBeGreaterThanOrEqualTo(3, $"{cell} under {veil}");
+        ThemeCatalog.Contrast(DarkText2, veiled).ShouldBeGreaterThanOrEqualTo(4.5);
+        ThemeCatalog.ScreenFloorOf(dark: true).Inks.ShouldContain(i => i.Color == "#7D76A2" && i.Min == ThemeCatalog.MinMetaContrast,
+            "boot.js veils pictures by the same inks");
+
+        // Row by row too, as boot.js measures a picture: every row of a light one gets enough for its times.
+        var rows = ThemeCatalog.ScreenVeilRows(cells, dark: true);
+        rows.ShouldAllBe(r => ThemeCatalog.Contrast(DarkText3, Color.Parse(Color.Mix(Color.Parse(cell), Color.Parse("#0D0B1E"), r).Hex)) >= 3);
     }
 
     [Fact]

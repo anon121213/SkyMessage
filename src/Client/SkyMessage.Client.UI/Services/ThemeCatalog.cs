@@ -128,6 +128,7 @@ public sealed class ThemeCatalog
     private const string DarkBg = "#0D0B1E";
     private const string DarkText = "#F3F0FF";
     private const string DarkText2 = "#B4ACD5";
+    private const string DarkText3 = "#7D76A2";
     private const string None = "rgba(0,0,0,0)";
     /// <summary>A failed status on a deep bubble (white ink), as released.</summary>
     private const string FailedOnDeep = "#FFD3DC";
@@ -496,10 +497,14 @@ public sealed class ThemeCatalog
 
     /// <summary>
     /// The text root screens put straight on the app's background in a theme and what it needs there: titles and names
-    /// (--sm-text) 7:1, previews, times and footers (--sm-text-2) 4.5:1. The section overlines (--sm-text-3) follow.
+    /// (--sm-text) 7:1, previews and footers (--sm-text-2) 4.5:1, and at night the chat rows' times and the section
+    /// overlines (--sm-text-3) 3:1, as on the theme's own sky (about 4:1 there). By day --sm-text-3 is a pale grey that
+    /// stays under 3:1 even on the plain background (2.7:1), so no veil could hold it there: it gets what the first two
+    /// leave (2:1 or more; about 2.5:1 on the day's sky). boot.js reads the same inks with every picture.
     /// </summary>
     public static ScreenFloor ScreenFloorOf(bool dark) => dark
-        ? new ScreenFloor(DarkBg, [new ScreenInk(DarkText, ScreenTextContrast), new ScreenInk(DarkText2, MinTextContrast)])
+        ? new ScreenFloor(DarkBg,
+            [new ScreenInk(DarkText, ScreenTextContrast), new ScreenInk(DarkText2, MinTextContrast), new ScreenInk(DarkText3, MinMetaContrast)])
         : new ScreenFloor(LightBg, [new ScreenInk(LightText, ScreenTextContrast), new ScreenInk(LightText2, MinTextContrast)]);
 
     /// <summary>

@@ -664,9 +664,11 @@ derived from the id. Respect `prefers-reduced-motion` and the Animations setting
   screen that shows the app's sky (root screens, pushed pages, the wide layout, auth, boot splash).
 - **Readability floor**: root screens put text straight on the app's background, so one's own background is veiled
   toward the theme's background (`--sm-bg`) as much as that text needs — titles and names (`--sm-text`) 7:1,
-  previews, times and footers (`--sm-text-2`) 4.5:1, checked everywhere on it (`ThemeCatalog.ScreenVeil`). A
-  gradient is veiled as a whole in the theme CSS (`ScreenGradient`; colors that suit the theme stay as they are); a
-  photo is measured by boot.js on the part the window shows (8×8 cells) and veiled row by row
+  previews and footers (`--sm-text-2`) 4.5:1 and, at night, the chat rows' times and the section overlines
+  (`--sm-text-3`) 3:1 (about 4:1 on the night's own sky; by day `--sm-text-3` stays under 3:1 even on the plain
+  background, so it gets what the other two leave) — checked everywhere on it (`ThemeCatalog.ScreenFloorOf`,
+  `ScreenVeil`). A gradient is veiled as a whole in the theme CSS (`ScreenGradient`; colors that suit the theme stay
+  as they are); a photo is measured by boot.js on the part the window shows (8×8 cells) and veiled row by row
   (`--sm-sky-veil`, never less than the user's dim; `ScreenVeilRows`), so a light sky over dark hills keeps its sky.
   Chats that follow the app look the same; a chat's own background has no floor (its text sits on bubbles and glass).
   The editor says when the floor dims a theme ("Приглушить" puts a gradient's veiled colors into it) and lists the
