@@ -983,6 +983,8 @@
         foreach (var held in Messages.GetState(ChatId).Items)
         {
             if (held.IsPending || held.Message.Seq <= 0 || held.Message.Type is not (MessageType.Photo or MessageType.Video or MessageType.Album)) continue;
+            // Stickers open their pack, not the viewer.
+            if (StickerUi.IsSticker(held.Message)) continue;
             for (var i = 0; i < held.Message.Attachments.Count; i++)
             {
                 var media = held.Message.Attachments[i];

@@ -30,14 +30,23 @@
                 @foreach (var gif in Stickers.State.Gifs)
                 {
                     var media = gif.Media;
-                    <button type="button" class="gpanel__cell" data-hold="@media.Id" aria-label="@L["stickers.gifs.send"]" @onclick="() => PickAsync(media)">
-                        @if (media.HasThumbnail)
+                    var gone = _gone.Contains(media.Id);
+                    <button type="button" class="gpanel__cell @(gone ? "gpanel__cell--gone" : null)" data-hold="@media.Id"
+                            aria-label="@(gone ? L["stickers.gifs.gone"] : L["stickers.gifs.send"])" @onclick="() => PickAsync(media)">
+                        @if (media.HasThumbnail && !gone)
                         {
-                            <img src="@MediaUrls.ThumbnailUrl(media.Id)" alt="" loading="lazy" decoding="async" draggable="false" />
+                            @* A GIF whose message was deleted can no longer be seen: its first frame fails to load. *@
+                            <img src="@MediaUrls.ThumbnailUrl(media.Id)" alt="" loading="lazy" decoding="async" draggable="false" @onerror="() => MarkGone(media.Id)" />
                         }
                         else
                         {
-                            <span class="gpanel__placeholder"><Icon Name="@IconNames.Film" Size="24" /></span>
+                            <span class="gpanel__placeholder">
+                                <Icon Name="@(gone ? IconNames.CircleAlert : IconNames.Film)" Size="24" />
+                                @if (gone)
+                                {
+                                    <span class="gpanel__gone">@L["stickers.gifs.gone"]</span>
+                                }
+                            </span>
                         }
                     </button>
                 }
@@ -88,10 +97,43 @@
         _hold = null;
     }
 
+    private readonly HashSet<Guid> _gone = [];
+
+    private void MarkGone(Guid mediaId)
+    {
+        if (_gone.Add(mediaId)) StateHasChanged();
+    }
+
     private async Task PickAsync(MediaDto media)
     {
+        if (_gone.Contains(media.Id))
+        {
+            await OfferRemovalAsync(media);
+            return;
+        }
         Haptics.Tap();
         await OnPick.InvokeAsync(media);
+    }
+
+    /// <summary>A GIF I can no longer see (its message was deleted): it cannot go out again, only leave the list.</summary>
+    private async Task OfferRemovalAsync(MediaDto media)
+    {
+        var ok = await Dialogs.ConfirmAsync(L["stickers.gifs.goneTitle"], L["stickers.gifs.goneText"], L["stickers.gifs.removeShort"]);
+        if (!ok) return;
+        await RemoveAsync(media);
+    }
+
+    private async Task RemoveAsync(MediaDto media)
+    {
+        try
+        {
+            await Stickers.RemoveGifAsync(media.Id);
+            Toasts.Success(L["stickers.gifs.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
     }
 
     [JSInvokable]
@@ -112,15 +154,7 @@
         }
         else if (choice?.Value == "remove")
         {
-            try
-            {
-                await Stickers.RemoveGifAsync(gif.Id);
-                Toasts.Success(L["stickers.gifs.removed"]);
-            }
-            catch (Exception ex)
-            {
-                Toasts.Error(ex);
-            }
+            await RemoveAsync(gif);
         }
     });
 

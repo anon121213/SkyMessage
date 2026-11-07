@@ -47,7 +47,9 @@ internal sealed class MessageSearchService(
         var items = db.VisibleMessages(member).AsNoTracking().Where(m => m.DeletedAt == null);
         items = filter switch
         {
-            SharedMediaFilter.Media => items.Where(m => m.Type == MessageType.Photo || m.Type == MessageType.Video || m.Type == MessageType.Album),
+            // Stickers are photos underneath but no part of a chat's gallery.
+            SharedMediaFilter.Media => items.Where(m => (m.Type == MessageType.Photo || m.Type == MessageType.Video || m.Type == MessageType.Album)
+                                                        && !db.MessageAttachments.Any(a => a.MessageId == m.Id && a.Media!.StickerId != null)),
             SharedMediaFilter.Files => items.Where(m => m.Type == MessageType.File || m.Type == MessageType.Audio),
             SharedMediaFilter.Voice => items.Where(m => m.Type == MessageType.Voice),
             SharedMediaFilter.VideoNotes => items.Where(m => m.Type == MessageType.VideoNote),

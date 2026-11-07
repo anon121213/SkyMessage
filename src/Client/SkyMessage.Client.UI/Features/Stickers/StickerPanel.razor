@@ -107,6 +107,7 @@
     private string? _active;
     private List<PanelSection> _sections = [];
     private readonly HashSet<string> _observed = [];
+    private IReadOnlyList<StickerDto>? _recent;
     private bool _attached;
 
     /// <summary>Tap on a sticker: send it.</summary>
@@ -141,8 +142,12 @@
     {
         var state = Stickers.State;
         var sections = new List<PanelSection>();
-        if (state.Recent.Count > 0)
-            sections.Add(new PanelSection(RecentKey, L["stickers.panel.recent"], IconNames.Clock, null, state.Recent, state.Recent.Count));
+        // Recent stickers keep the order they had when the panel opened: sending one must not reshuffle the row under the
+        // finger (the next opening shows the new order).
+        if (_recent is null || _recent.Count == 0) _recent = state.Recent;
+        var recent = _recent.Where(s => state.Recent.Any(r => r.Id == s.Id)).ToList();
+        if (recent.Count > 0)
+            sections.Add(new PanelSection(RecentKey, L["stickers.panel.recent"], IconNames.Clock, null, recent, recent.Count));
         if (state.Favorites.Count > 0)
             sections.Add(new PanelSection(FavoritesKey, L["stickers.panel.favorites"], IconNames.Star, null, state.Favorites, state.Favorites.Count));
         foreach (var installed in state.Installed)

@@ -597,6 +597,8 @@
             if (staged.Probing) _ = ProbeAsync(staged);
         }
         if (compress is { } value) _compress = value;
+        // The field's emoji is a caption now: no sticker strip.
+        UpdateStickerSuggestions();
         StateHasChanged();
         // Phones: keep the keyboard closed so the tray stays visible.
         return Layout.IsTouch ? Task.CompletedTask : FocusAsync();
@@ -792,7 +794,6 @@
         _staged.Clear();
         _compress = true;
         CloseSuggestions();
-        _stickerSuggestions = [];
         CancelDraftTimer();
         _draftDirty = false;
         Drafts.Set(ChatId, null);
@@ -1101,6 +1102,8 @@
         _mention = null;
         _suggestions = [];
         _suggestIndex = 0;
+        // Input recomputes the sticker strip right after (UpdateStickerSuggestions); edit mode and sends just close it.
+        _stickerSuggestions = [];
     }
 
     // ---- Emoji ----

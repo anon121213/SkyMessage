@@ -236,6 +236,10 @@ public sealed class StickerTests(ApiFactory factory)
             .ShouldFailAsync(HttpStatusCode.NotFound, ErrorCodes.StickerNotFound);
         await (await alice.TryEditAsync(chat.Id, sent.Id, "подпись")).ShouldFailAsync(HttpStatusCode.Forbidden, ErrorCodes.MessageNotEditable);
 
+        // Stickers stay out of the chat's media gallery (photos underneath).
+        var gallery = await bob.GetAsync<MessagesPageDto>(ApiRoutes.Messages.SharedMediaPath(chat.Id, SharedMediaFilter.Media));
+        gallery.Messages.ShouldNotContain(m => m.Id == sent.Id);
+
         // Forwarded, it stays a sticker.
         var forwarded = await bob.ForwardAsync(bob.SavedChatId, new ForwardMessagesRequest
         {
