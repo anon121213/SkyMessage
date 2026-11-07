@@ -72,9 +72,13 @@ internal sealed class StickerPackService(
                     CreatedAt = now,
                     UpdatedAt = now,
                 });
-                // My own pack is in my panel straight away (first).
-                var top = await db.InstalledStickerPacks.Where(i => i.UserId == me).Select(i => (int?)i.Position).MinAsync(cancellationToken);
-                db.InstalledStickerPacks.Add(new InstalledStickerPack { UserId = me, PackId = request.Id, Position = (top ?? 1) - 1, InstalledAt = now });
+                // My own pack is in my panel straight away (first), while the panel has room for it.
+                var mine = db.InstalledStickerPacks.Where(i => i.UserId == me);
+                if (await mine.CountAsync(cancellationToken) < Limits.MaxInstalledStickerPacks)
+                {
+                    var top = await mine.Select(i => (int?)i.Position).MinAsync(cancellationToken);
+                    db.InstalledStickerPacks.Add(new InstalledStickerPack { UserId = me, PackId = request.Id, Position = (top ?? 1) - 1, InstalledAt = now });
+                }
                 prefs.Revision++;
                 prefs.UpdatedAt = now;
                 await db.SaveChangesAsync(cancellationToken);
@@ -155,7 +159,8 @@ internal sealed class StickerPackService(
             // Sent copies show the new main emoji in their previews too.
             var main = StickerRules.MainEmoji(emoji);
             await db.Media.Where(m => m.Id == sticker.MediaId).ExecuteUpdateAsync(s => s.SetProperty(m => m.StickerEmoji, main), ct);
-            return PackEdit.Done;
+            // Who keeps it among favorites or recent ones without the pack sees the new emoji there too.
+            return new PackEdit(true, await StickerHoldersAsync([stickerId], ct));
         }, cancellationToken);
     }
 

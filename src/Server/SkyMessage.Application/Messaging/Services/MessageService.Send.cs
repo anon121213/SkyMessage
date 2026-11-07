@@ -341,16 +341,17 @@ internal sealed partial class MessageService
         return await loader.LoadOneAsync(existing.Id, ct) ?? throw new NotFoundException(ErrorCodes.MessageNotFound);
     }
 
-    private sealed record MediaRow(Guid Id, Guid OwnerId, MediaKind Kind, MediaStatus Status);
+    /// <param name="IsSticker">A sticker's WebP: it goes only as that sticker (<see cref="SendMessageRequest.StickerId"/>).</param>
+    private sealed record MediaRow(Guid Id, Guid OwnerId, MediaKind Kind, MediaStatus Status, bool IsSticker = false);
 
-    /// <summary>Attachments must be the sender's own, processed media; returned in the requested order.</summary>
+    /// <summary>Attachments must be the sender's own, processed media and no sticker's; returned in the requested order.</summary>
     private async Task<List<MediaRow>> LoadOwnReadyMediaAsync(Guid ownerId, IReadOnlyList<Guid> mediaIds, CancellationToken ct)
     {
         if (mediaIds.Count == 0) return [];
         var ids = mediaIds.ToList();
         var rows = await db.Media.AsNoTracking()
             .Where(m => ids.Contains(m.Id))
-            .Select(m => new MediaRow(m.Id, m.OwnerId, m.Kind, m.Status))
+            .Select(m => new MediaRow(m.Id, m.OwnerId, m.Kind, m.Status, m.StickerId != null))
             .ToDictionaryAsync(m => m.Id, ct);
 
         var result = new List<MediaRow>(ids.Count);
@@ -360,6 +361,10 @@ internal sealed partial class MessageService
                 throw new NotFoundException(ErrorCodes.MediaNotFound);
             if (row.Status == MediaStatus.Failed) throw new BadRequestException(ErrorCodes.MediaUnsupported);
             if (row.Status != MediaStatus.Ready) throw new BadRequestException(ErrorCodes.MediaNotReady);
+            // A pack's creator owns its stickers' media: as an attachment it would be a sticker with a caption nobody
+            // sees, or a sticker inside an album.
+            if (row.IsSticker)
+                throw MessagingErrors.Validation("mediaIds", "A sticker goes alone, by its sticker id.");
             result.Add(row);
         }
         return result;
