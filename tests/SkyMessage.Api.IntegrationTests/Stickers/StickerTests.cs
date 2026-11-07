@@ -370,6 +370,11 @@ public sealed class StickerTests(ApiFactory factory)
 
         await (await member.PostRawAsync(ApiRoutes.Stickers.Gifs, new SaveGifRequest { ChatId = groupId, MessageId = sent.Id }))
             .ShouldFailAsync(HttpStatusCode.Forbidden, ErrorCodes.ForwardRestricted);
+        // Nor can the GIF be sent on by its id without saving it; its owner still can.
+        await (await member.TrySendAsync(member.SavedChatId, new SendMessageRequest { ClientMessageId = Guid.NewGuid(), GifMediaId = gif.Id }))
+            .ShouldFailAsync(HttpStatusCode.NotFound, ErrorCodes.MediaNotFound);
+        (await owner.SendAsync(owner.SavedChatId, new SendMessageRequest { ClientMessageId = Guid.NewGuid(), GifMediaId = gif.Id }))
+            .Attachments.Single().Id.ShouldBe(gif.Id);
         (await member.InstallAsync(pack.Id)).Installed.Single().Id.ShouldBe(pack.Id);
     }
 

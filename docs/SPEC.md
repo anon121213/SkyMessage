@@ -371,10 +371,11 @@ Messages:
   resolved to members; reply to another member's message), `Chat.LastMessageId`, unhide hidden members
   (they get `ChatAdded`), sender `LastReadSeq = seq`, commit → `MessageCreated`, push.
   A sticker (`StickerId`, of a pack that still exists, else 404 `sticker_not_found`) or one of my saved GIFs again
-  (`GifMediaId`: an animation I can still see, `IMediaAccessService`, else 404 `media_not_found`) goes alone (no text,
-  no `MediaIds`, a reply is fine; else 400 `validation_failed`), nothing is uploaded: the existing media is attached
-  (Photo / Video message; groups need the SendMedia permission). A sent sticker then goes first among my recent
-  stickers (§6.6).
+  (`GifMediaId`: an animation in my saved GIFs or of my own upload that I can still see, `IMediaAccessService`, else
+  404 `media_not_found`; saving is where content protection is checked, so a GIF seen only in a protected chat cannot
+  be sent on by its id) goes alone (no text, no `MediaIds`, a reply is fine; else 400 `validation_failed`), nothing is
+  uploaded: the existing media is attached (Photo / Video message; groups need the SendMedia permission). A sent
+  sticker then goes first among my recent stickers (§6.6).
 - Forward `POST .../messages/forward` (target chat in route; `ClientMessageIds` parallel to `MessageIds` for
   idempotency): copy text/entities/attachments with `ForwardInfo` (keep the original forward info); skip
   system/call messages.
@@ -502,11 +503,13 @@ the users themselves, and there is no built-in pack.
   connect). Lock order: the pack row first (an edit `FOR UPDATE`, a user's change that adds rows pointing into packs
   `FOR SHARE`), then the users' rows in id order — so a pack edit never deadlocks with its users' own changes.
 - **Access**: anyone signed in sees and installs any existing pack and its images; sending a sticker needs a sticker of
-  an existing pack; re-sending a saved GIF needs its media still visible to me (a message I can see — when its message
-  is deleted for everyone and I have no other copy, it can no longer go out, and the app offers to remove it).
-  Content protection blocks «Сохранить в GIF» and adding a protected chat's sticker to favorites (the apps hide them),
-  like forwarding; opening and adding the pack stays allowed. Deleting an account removes its installations,
-  favorites, recent stickers and saved GIFs; the packs it made stay for whoever installed them.
+  an existing pack; a GIF goes out by its id only from my saved GIFs (or my own upload) and while its media is still
+  visible to me (a message I can see — when its message is deleted for everyone and I have no other copy, it can no
+  longer go out, and the app offers to remove it). Content protection blocks «Сохранить в GIF» (403
+  `forward_restricted`, so a protected chat's GIF cannot be sent on by its id either) and adding a protected chat's
+  sticker to favorites (the apps hide them), like forwarding; opening and adding the pack stays allowed. Deleting an
+  account removes its installations, favorites, recent stickers and saved GIFs; the packs it made stay for whoever
+  installed them.
 
 ## 7. Realtime event matrix
 

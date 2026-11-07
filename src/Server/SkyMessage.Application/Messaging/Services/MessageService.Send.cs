@@ -379,11 +379,14 @@ internal sealed partial class MessageService
         return row;
     }
 
-    /// <summary>An animation (a GIF made into an MP4 loop) the sender may still see: theirs, or in a message they can see.</summary>
+    /// <summary>An animation (a GIF made into an MP4 loop) of the sender's own or in their saved GIFs, which they can still see.</summary>
     private async Task<MediaRow> LoadSavedGifMediaAsync(Guid me, Guid mediaId, CancellationToken ct)
     {
+        // Only a GIF of my own or one in my saved GIFs: saving is where content protection is checked, so a GIF seen
+        // only in a protected chat cannot be sent on by its id.
         var row = await db.Media.AsNoTracking()
             .Where(m => m.Id == mediaId && m.IsAnimation && m.Kind == MediaKind.Video && m.Status == MediaStatus.Ready)
+            .Where(m => m.OwnerId == me || db.SavedGifs.Any(s => s.UserId == me && s.MediaId == m.Id))
             .Select(m => new MediaRow(m.Id, m.OwnerId, m.Kind, m.Status))
             .FirstOrDefaultAsync(ct);
         if (row is null || !await mediaAccess.CanViewAsync(me, row.Id, row.OwnerId, ct))
