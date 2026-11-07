@@ -1,27 +1,26 @@
 @* A sticker's picture: its WebP preview (≤ 256 px) in panels and grids, the full WebP (≤ 512 px) where it is large (a
-   message, the preview). Transparent, so it sits straight on whatever is behind it; no frame, no shadow. *@
+   message, the preview). Transparent, so it sits straight on whatever is behind it; no frame, no shadow. Until it is
+   there — and while a bad connection keeps it away — a calm squircle holds its place, never the browser's broken-image
+   glyph (the alt is empty: the button or tile around it carries the name). A picture that failed tries again by itself
+   (img[data-retry], app.js: with a growing pause, at once when the device is back online or the realtime connection
+   is back), and fades in when it comes. *@
 @inherits UiComponentBase
 @inject IMediaUrlBuilder MediaUrls
 
-@if (Url is { } url)
-{
-    <img class="sticker-img @Class" src="@url" alt="@Alt" title="@Title" loading="@(Eager ? "eager" : "lazy")" decoding="async" draggable="false"
-         data-fade="@(Fade ? "" : null)" />
-}
-else
-{
-    <span class="sticker-img sticker-img--empty @Class" aria-hidden="true"></span>
-}
+<span class="sticker-img @Class" title="@Title">
+    @if (Url is { } url)
+    {
+        <img class="sticker-img__pic" src="@url" alt="" loading="@(Eager ? "eager" : "lazy")" decoding="async" draggable="false" data-retry />
+    }
+    <span class="sticker-img__wait" aria-hidden="true"></span>
+</span>
 
 @code {
     [Parameter, EditorRequired] public MediaDto? Media { get; set; }
     /// <summary>The full WebP instead of the preview.</summary>
     [Parameter] public bool Full { get; set; }
-    [Parameter] public string? Alt { get; set; }
     [Parameter] public string? Title { get; set; }
     [Parameter] public bool Eager { get; set; }
-    /// <summary>Fades in once loaded (inside the message list, which marks loaded images).</summary>
-    [Parameter] public bool Fade { get; set; }
     [Parameter] public string? Class { get; set; }
 
     private string? Url => Media is not { Status: MediaStatus.Ready } media

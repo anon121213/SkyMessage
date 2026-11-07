@@ -487,7 +487,7 @@ else
             <button type="button" class="msg__sticker-art" data-no-dbltap style="--ar:@aspect.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)"
                     aria-label="@(sticker is null ? L["stickers.preview.sticker"] : L.Format("stickers.message.label", StickerUi.EmojiLine(sticker)))"
                     @onclick="OpenStickerAsync" @onclick:stopPropagation="@Interactive">
-                <StickerImage Media="media" Full="true" Fade="true" Alt="@(sticker is null ? null : StickerUi.EmojiLine(sticker))" />
+                <StickerImage Media="media" Full="true" />
             </button>
             <div class="msg__note-foot">
                 @if (HasReactions)

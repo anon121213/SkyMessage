@@ -1,16 +1,44 @@
-/* The picture keeps its own shape: contained in its square, never cropped or stretched. */
+/* The picture keeps its own shape: contained in its square, never cropped or stretched. Behind it a soft squircle waits
+   while it loads (or cannot); the picture fades in over it and the squircle goes (app.js marks [data-loaded]). */
 .sticker-img {
+    position: relative;
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: contain;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
     pointer-events: none;
 }
 
-.sticker-img--empty {
-    border-radius: 22%;
-    background: color-mix(in srgb, var(--sm-text) 6%, transparent);
+.sticker-img__pic {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 220ms var(--sm-ease-out);
+}
+
+.sticker-img__pic[data-loaded] {
+    opacity: 1;
+}
+
+.sticker-img__wait {
+    position: absolute;
+    inset: 8%;
+    border-radius: 28%;
+    background: color-mix(in srgb, var(--sm-text) 7%, transparent);
+    transition: opacity 220ms var(--sm-ease-out);
+}
+
+.sticker-img__pic[data-loaded] + .sticker-img__wait {
+    opacity: 0;
+}
+
+html[data-reduce-motion="true"] .sticker-img__pic,
+html[data-reduce-motion="true"] .sticker-img__wait {
+    transition: none;
 }

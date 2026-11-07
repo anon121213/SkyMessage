@@ -60,6 +60,86 @@ export function init() {
 
   // iOS: block pinch-zoom of the whole app shell (images have their own viewer).
   document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+
+  watchRetryImages();
+}
+
+// ---- Pictures that try again ---------------------------------------------------------------------------
+
+/**
+ * Pictures that a bad connection may fail (stickers, saved GIFs: img[data-retry]) get [data-loaded] once they are there
+ * (their CSS shows a calm placeholder until then, never the browser's broken-image glyph: their alt is empty) and
+ * [data-failed] when they fail, and then try again by themselves: after 2 s, 4 s, 8 s ... at most a minute apart, and
+ * at once when the device comes back online or the app comes back to the front. A retry only changes the URL's
+ * fragment (never sent anywhere), so signed URLs and the app's media proxy see the same request. Load and error do not
+ * bubble: one capture listener on the document sees every picture, from the start.
+ */
+function watchRetryImages() {
+  const failed = new Map(); // img -> { tries, due }
+  let timer = 0;
+  const isRetry = (el) => el && el.tagName === 'IMG' && el.hasAttribute('data-retry');
+
+  document.addEventListener('load', (e) => {
+    const img = e.target;
+    if (!isRetry(img)) return;
+    img.setAttribute('data-loaded', '');
+    img.removeAttribute('data-failed');
+    failed.delete(img);
+  }, true);
+
+  document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (!isRetry(img) || !img.getAttribute('src')) return;
+    img.removeAttribute('data-loaded');
+    img.setAttribute('data-failed', '');
+    const entry = failed.get(img) || { tries: 0, due: 0 };
+    entry.due = performance.now() + Math.min(60000, 2000 * 2 ** entry.tries);
+    entry.tries++;
+    failed.set(img, entry);
+    schedule();
+  }, true);
+
+  function retry(all) {
+    const now = performance.now();
+    for (const [img, entry] of failed) {
+      if (!img.isConnected) {
+        failed.delete(img);
+        continue;
+      }
+      if (!all && entry.due > now) continue;
+      const src = img.getAttribute('src');
+      if (!src) continue;
+      // Waits for its next load or error.
+      entry.due = Infinity;
+      img.src = src.split('#')[0] + '#retry' + entry.tries;
+    }
+    schedule();
+  }
+
+  function schedule() {
+    if (timer) clearTimeout(timer);
+    timer = 0;
+    let next = Infinity;
+    for (const entry of failed.values()) next = Math.min(next, entry.due);
+    if (next === Infinity) return;
+    timer = setTimeout(() => {
+      timer = 0;
+      // Offline or in the background: "online" / "visibilitychange" bring it back.
+      if (document.visibilityState === 'hidden' || navigator.onLine === false) return;
+      retry(false);
+    }, Math.max(250, next - performance.now()));
+  }
+
+  window.addEventListener('online', () => retry(true));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && failed.size) retry(true); });
+  retryAllImages = () => { if (failed.size) retry(true); };
+}
+
+let retryAllImages = noop;
+
+/** Tries every failed picture again now (the app's realtime connection is back after a break). */
+export function retryImages() {
+  retryAllImages();
 }
 
 // ---- Overlay history (implemented in boot.js, which must load before Blazor) -------------------------

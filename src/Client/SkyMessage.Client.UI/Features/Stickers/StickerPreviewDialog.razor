@@ -7,8 +7,8 @@
 @inject HapticFeedback Haptics
 
 <div class="sticker-preview">
-    <div class="sticker-preview__art">
-        <StickerImage Media="Sticker.Media" Full="true" Eager="true" Alt="@StickerUi.EmojiLine(Sticker)" Class="sticker-preview__img" />
+    <div class="sticker-preview__art" role="img" aria-label="@L.Format("stickers.message.label", StickerUi.EmojiLine(Sticker))">
+        <StickerImage Media="Sticker.Media" Full="true" Eager="true" />
     </div>
     @if (Sticker.Emoji.Count > 0)
     {
