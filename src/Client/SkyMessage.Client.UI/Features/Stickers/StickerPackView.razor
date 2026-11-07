@@ -209,12 +209,19 @@
         await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: false, canFavorite: !Protected || Stickers.IsFavorite(sticker.Id));
     });
 
+    // «Удалить набор» takes the place of «Добавить» at once (the install is optimistic): the second tap of a double
+    // tap, common with older users, must not remove the pack it just added.
+    private long? _addedAt;
+
     private async Task AddAsync(StickerPackDto pack)
     {
         _busy = true;
+        var added = false;
         try
         {
             await Stickers.InstallAsync(pack);
+            added = true;
+            _addedAt = Environment.TickCount64;
             Haptics.Success();
             Toasts.Success(L.Format("stickers.pack.added", pack.Title));
         }
@@ -226,10 +233,13 @@
         {
             _busy = false;
         }
+        // In a sheet the job is done once the pack is added: close it (the toast says what happened).
+        if (added && OnClose.HasDelegate) await OnClose.InvokeAsync();
     }
 
     private async Task RemoveAsync(StickerPackDto pack)
     {
+        if (_addedAt is { } at && Environment.TickCount64 - at < 1000) return;
         _busy = true;
         try
         {
