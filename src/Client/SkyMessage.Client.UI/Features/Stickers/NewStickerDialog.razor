@@ -1,15 +1,24 @@
 @* One sticker before it is added (or a sticker's emoji being changed): the picture as it is (transparent parts show the
    dialog through), an optional square crop (the avatar's crop editor in its sticker mode: a transparent PNG), and its
-   emoji — at least one, up to eight, the first is the main one. DialogService content; closes with a
-   NewStickerResult or null. *@
+   emoji — at least one, up to eight, the first is the main one. A photo the web view cannot show (HEIC from an Android
+   gallery) is first made a JPEG on the device, as for profile photos. With more pictures of the same batch waiting,
+   «Отменить остальные» ends the batch. DialogService content; closes with a NewStickerResult or null. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @using SkyMessage.Client.UI.Features.Profile
 @inject AvatarOverlays Avatars
+@inject AvatarUploader Photos
 @inject IJSRuntime JS
 @inject ILogger<NewStickerDialog> Logger
 
 <div class="nsticker">
+    @if (Waiting > 0)
+    {
+        <div class="nsticker__batch">
+            <span>@L.Plural("stickers.new.waiting", Waiting)</span>
+            <button type="button" class="nsticker__stop" @onclick="StopAll">@L["stickers.new.stopAll"]</button>
+        </div>
+    }
     <div class="nsticker__art">
         @if (Existing is { } media)
         {
@@ -80,9 +89,12 @@
     /// <summary>An existing sticker whose emoji are changed (no picture to choose).</summary>
     [Parameter] public MediaDto? Existing { get; set; }
     [Parameter] public IReadOnlyList<string>? Emoji { get; set; }
+    /// <summary>More pictures of the same batch after this one.</summary>
+    [Parameter] public int Waiting { get; set; }
 
     private bool TooLarge => _file is { Size: > Limits.StickerSourceMaxBytes };
     private bool TooSmall => _preview is { Width: > 0, Height: > 0 } p && (p.Width < Limits.StickerSourceMinSide || p.Height < Limits.StickerSourceMinSide);
+    private bool TooBig => _preview is { } p && (p.Width > Limits.StickerSourceMaxSide || p.Height > Limits.StickerSourceMaxSide);
     private bool Unreadable => !_reading && _preview is null or { Width: 0 };
     private bool Unsupported => _file is not null && !StickerUi.IsStickerImage(_file.ContentType);
 
@@ -90,6 +102,7 @@
     private string? Problem =>
         Unreadable ? L["stickers.new.unreadable"]
         : TooSmall ? L.Format("stickers.new.tooSmall", Limits.StickerSourceMinSide)
+        : TooBig ? L.Format("stickers.new.tooBig", Limits.StickerSourceMaxSide)
         : TooLarge ? L["stickers.new.tooLarge"]
         : Unsupported ? L["stickers.new.format"]
         : null;
@@ -107,7 +120,19 @@
     {
         if (!firstRender || _file is null) return;
         _module = new JsModule(JS, ModulePath);
+        // The web view cannot show HEIC (Android galleries): the device makes it a JPEG first (photos have no
+        // transparency to lose). Anything else the web view cannot read gets the same chance.
+        if (StickerUi.IsHeif(_file.ContentType)) _file = await Photos.PrepareForEditingAsync(_file);
         await ReadAsync(_file);
+        if (Unreadable && !StickerUi.IsStickerImage(_file.ContentType))
+        {
+            var prepared = await Photos.PrepareForEditingAsync(_file);
+            if (!ReferenceEquals(prepared, _file))
+            {
+                _file = prepared;
+                await ReadAsync(_file);
+            }
+        }
     }
 
     private async Task ReadAsync(PickedFile file)
@@ -163,6 +188,9 @@
         Dialog.Close(new NewStickerResult(Existing is null ? _file : null, _emoji.ToList()));
     }
 
+    /// <summary>This picture and the ones still waiting are skipped.</summary>
+    private void StopAll() => Dialog.Close(new NewStickerResult(null, [], StopAll: true));
+
     public async ValueTask DisposeAsync()
     {
         if (_module is not null)
@@ -173,10 +201,14 @@
         Dispose();
     }
 
-    /// <summary>The new-sticker dialog; null when skipped.</summary>
-    public static async Task<NewStickerResult?> ShowAsync(DialogService dialogs, ILocalizer l, PickedFile file) =>
-        await dialogs.ShowAsync<NewStickerDialog>(l["stickers.new.title"], new Dictionary<string, object?> { [nameof(File)] = file },
-            new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as NewStickerResult;
+    /// <summary>The new-sticker dialog; null when skipped, <see cref="NewStickerResult.StopAll"/> when the batch ends here.</summary>
+    /// <param name="waiting">More pictures of the batch after this one (offers «Отменить остальные»).</param>
+    public static async Task<NewStickerResult?> ShowAsync(DialogService dialogs, ILocalizer l, PickedFile file, int waiting = 0) =>
+        await dialogs.ShowAsync<NewStickerDialog>(l["stickers.new.title"], new Dictionary<string, object?>
+        {
+            [nameof(File)] = file,
+            [nameof(Waiting)] = waiting,
+        }, new DialogOptions { Size = DialogSize.Medium, Presentation = OverlayPresentation.Auto }) as NewStickerResult;
 
     /// <summary>The emoji of an existing sticker; null when cancelled.</summary>
     public static async Task<NewStickerResult?> EditAsync(DialogService dialogs, ILocalizer l, StickerDto sticker) =>

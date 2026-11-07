@@ -32,8 +32,15 @@ public static class StickerUi
     /// <summary>A file the sticker editor accepts (by type; the server checks the bytes).</summary>
     public static bool IsStickerImage(string? contentType) =>
         contentType is not null && contentType.ToLowerInvariant() is "image/png" or "image/webp" or "image/jpeg" or "image/jpg";
+
+    /// <summary>HEIC / HEIF (phone cameras): the web view cannot show it, the device can make it a JPEG.</summary>
+    public static bool IsHeif(string? contentType) =>
+        contentType is not null && contentType.ToLowerInvariant() is "image/heic" or "image/heif" or "image/heic-sequence" or "image/heif-sequence";
 }
 
-/// <summary>What the new-sticker dialog hands back: the picture (null when only the emoji were edited) and the emoji.</summary>
-public sealed record NewStickerResult(SkyMessage.Client.Core.Platform.PickedFile? File, IReadOnlyList<string> Emoji);
+/// <summary>
+/// What the new-sticker dialog hands back: the picture (null when only the emoji were edited) and the emoji; or
+/// <paramref name="StopAll"/>: the rest of the batch is skipped.
+/// </summary>
+public sealed record NewStickerResult(SkyMessage.Client.Core.Platform.PickedFile? File, IReadOnlyList<string> Emoji, bool StopAll = false);
 

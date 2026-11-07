@@ -1,7 +1,8 @@
 @* Settings › Стикеры и GIF › a pack of mine (/settings/stickerpack?id=): its title (rename in the header), its stickers
    in order (moved by their handle; a tap changes a sticker's emoji or deletes it), «Добавить стикеры» from the gallery or
    from files (each picture gets its emoji and, if wanted, a square crop; they upload one after another, each a row with
-   its progress), its link to share and, last, deleting the pack. Only the pack's creator gets here with edits. *@
+   its progress — in StickerUploads, so leaving the editor does not stop them), its link to share and, last, deleting the
+   pack. Only the pack's creator gets here with edits. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IStickerStore Stickers
@@ -13,6 +14,7 @@
 @inject DialogService Dialogs
 @inject ToastService Toasts
 @inject HapticFeedback Haptics
+@inject StickerUploads Uploads
 @inject IJSRuntime JS
 
 <SettingsScaffold Title="@(_pack?.Title ?? L["stickers.edit.title"])" Subtitle="@(_pack is { } p ? L.Plural("stickers.count", p.Stickers.Count) : null)" Back="true">
@@ -57,7 +59,7 @@
                             </div>
                         }
                     </div>
-                    @foreach (var pending in _queue)
+                    @foreach (var pending in Uploads.For(pack.Id))
                     {
                         <ListItem @key="pending.Id">
                             <Leading><span class="sedit-face sedit-face--wait"><ProgressRing Value="pending.Progress" Size="36" Indeterminate="@(pending.Progress <= 0.01)" /></span></Leading>
@@ -72,7 +74,7 @@
                             </ChildContent>
                         </ListItem>
                     }
-                    @if (pack.Stickers.Count + _queue.Count < Limits.MaxStickersPerPack)
+                    @if (pack.Stickers.Count + Uploads.For(pack.Id).Count < Limits.MaxStickersPerPack)
                     {
                         <ListItem Icon="@IconNames.ImagePlus" IconColor="@SettingsTones.Mint" OnClick="AddAsync">
                             <TitleContent><div class="sm-list-item__title stickers-add">@L["stickers.edit.add"]</div></TitleContent>
@@ -105,15 +107,6 @@
 </SettingsScaffold>
 
 @code {
-    private sealed class PendingSticker
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public required PickedFile File { get; init; }
-        public required IReadOnlyList<string> Emoji { get; init; }
-        public double Progress { get; set; }
-    }
-
-    private readonly List<PendingSticker> _queue = [];
     private ElementReference _list;
     private DotNetObjectReference<StickerPackEditor>? _self;
     private JsModule? _module;
@@ -122,8 +115,6 @@
     private bool _gone;
     private string? _error;
     private Guid? _loadedFor;
-    private Task? _worker;
-    private readonly CancellationTokenSource _cts = new();
 
     [SupplyParameterFromQuery(Name = "id")] public Guid? PackId { get; set; }
 
@@ -139,7 +130,7 @@
         };
         Stickers.Changed += changed;
         OnDispose(() => Stickers.Changed -= changed);
-        OnDispose(() => _cts.Cancel());
+        RenderOn(h => Uploads.Changed += h, h => Uploads.Changed -= h);
     }
 
     protected override async Task OnParametersSetAsync()
@@ -185,7 +176,7 @@
     }
 
     private string StickersFooter(StickerPackDto pack) =>
-        pack.Stickers.Count + _queue.Count >= Limits.MaxStickersPerPack ? L.Format("stickers.edit.full", Limits.MaxStickersPerPack)
+        pack.Stickers.Count + Uploads.For(pack.Id).Count >= Limits.MaxStickersPerPack ? L.Format("stickers.edit.full", Limits.MaxStickersPerPack)
         : pack.Stickers.Count > 1 ? L["stickers.edit.dragHint"]
         : L["stickers.edit.addHint"];
 
@@ -214,52 +205,18 @@
         }
         var images = picked.Where(f => f.IsImage).ToList();
         if (images.Count < picked.Count) Toasts.Info(L["stickers.new.format"]);
-        var room = Limits.MaxStickersPerPack - _pack.Stickers.Count - _queue.Count;
+        var packId = _pack.Id;
+        var room = Limits.MaxStickersPerPack - _pack.Stickers.Count - Uploads.For(packId).Count;
         if (images.Count > room) Toasts.Info(L.Format("stickers.edit.full", Limits.MaxStickersPerPack));
-        foreach (var image in images.Take(Math.Max(0, room)))
+        var chosen = images.Take(Math.Max(0, room)).ToList();
+        for (var i = 0; i < chosen.Count; i++)
         {
-            var result = await NewStickerDialog.ShowAsync(Dialogs, L, image);
-            if (IsDisposed) return;
+            // Each picture its emoji (and a crop when wanted); «Отменить остальные» ends the batch.
+            var result = await NewStickerDialog.ShowAsync(Dialogs, L, chosen[i], waiting: chosen.Count - i - 1);
+            if (result?.StopAll == true) break;
             if (result?.File is not { } file) continue;
-            _queue.Add(new PendingSticker { File = file, Emoji = result.Emoji });
-            StateHasChanged();
-            _worker ??= RunQueueAsync();
-        }
-    }
-
-    /// <summary>Uploads the queued stickers one after another (they keep the order they were chosen in).</summary>
-    private async Task RunQueueAsync()
-    {
-        try
-        {
-            while (_queue.Count > 0 && !IsDisposed && _pack is { } pack)
-            {
-                var next = _queue[0];
-                var progress = new Progress<double>(value =>
-                {
-                    next.Progress = value;
-                    RequestRender();
-                });
-                try
-                {
-                    _pack = await Stickers.AddStickerAsync(pack.Id, next.File, next.Emoji, progress, _cts.Token);
-                    Haptics.Selection();
-                }
-                catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Toasts.Error(ex);
-                }
-                _queue.Remove(next);
-                StateHasChanged();
-            }
-        }
-        finally
-        {
-            _worker = null;
+            // Uploaded one after another in StickerUploads: leaving this screen does not stop them.
+            Uploads.Add(packId, file, result.Emoji);
         }
     }
 
