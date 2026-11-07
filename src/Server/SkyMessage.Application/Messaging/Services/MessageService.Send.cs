@@ -28,10 +28,17 @@ internal sealed partial class MessageService
         var mediaIds = request.MediaIds ?? [];
         ValidateContent(request.Text, request.Entities, mediaIds);
         var hasText = !MessageContentRules.IsBlank(request.Text);
-        if (!hasText && mediaIds.Count == 0) throw new BadRequestException(ErrorCodes.MessageEmpty);
+        var shared = request.StickerId is not null || request.GifMediaId is not null;
+        if (shared && (hasText || mediaIds.Count > 0 || (request.StickerId is not null && request.GifMediaId is not null)))
+            throw MessagingErrors.Validation("stickerId", "A sticker or a saved GIF goes alone (no text, no other media).");
+        if (!hasText && mediaIds.Count == 0 && !shared) throw new BadRequestException(ErrorCodes.MessageEmpty);
 
-        await MessagingChecks.EnsureCanSendAsync(db, privacy, member, mediaIds.Count > 0, cancellationToken);
-        var media = await LoadOwnReadyMediaAsync(me, mediaIds, cancellationToken);
+        await MessagingChecks.EnsureCanSendAsync(db, privacy, member, mediaIds.Count > 0 || shared, cancellationToken);
+        // A sticker or a saved GIF is media someone already made (no upload): who may send it is checked here instead of
+        // ownership.
+        var media = request.StickerId is { } stickerId ? [await LoadStickerMediaAsync(stickerId, cancellationToken)]
+            : request.GifMediaId is { } gifId ? [await LoadSavedGifMediaAsync(me, gifId, cancellationToken)]
+            : await LoadOwnReadyMediaAsync(me, mediaIds, cancellationToken);
         var type = MessageTypeRules.Infer(media.Select(m => m.Kind).ToList())
                    ?? throw MessagingErrors.Validation("mediaIds", MessageTypeRules.CombinationHint);
 
@@ -110,6 +117,7 @@ internal sealed partial class MessageService
                   ?? throw new InvalidOperationException($"Message {message.Id} vanished after commit.");
         await PublishCreatedAsync(dto, outcome.Unhidden, mentioned);
         await ChatPlacement.PublishSettingsAsync(db, events, chatId, outcome.Unarchived);
+        if (request.StickerId is { } sent) await stickerRecents.TouchAsync(me, sent);
         return dto;
     }
 
@@ -355,6 +363,32 @@ internal sealed partial class MessageService
             result.Add(row);
         }
         return result;
+    }
+
+    /// <summary>The WebP of a sticker of a pack that still exists (deleting a pack deletes its stickers).</summary>
+    private async Task<MediaRow> LoadStickerMediaAsync(Guid stickerId, CancellationToken ct)
+    {
+        var row = await (
+                from s in db.Stickers.AsNoTracking()
+                join m in db.Media on s.MediaId equals m.Id
+                where s.Id == stickerId
+                select new MediaRow(m.Id, m.OwnerId, m.Kind, m.Status))
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException(ErrorCodes.StickerNotFound);
+        if (row.Status != MediaStatus.Ready) throw new BadRequestException(ErrorCodes.MediaNotReady);
+        return row;
+    }
+
+    /// <summary>An animation (a GIF made into an MP4 loop) the sender may still see: theirs, or in a message they can see.</summary>
+    private async Task<MediaRow> LoadSavedGifMediaAsync(Guid me, Guid mediaId, CancellationToken ct)
+    {
+        var row = await db.Media.AsNoTracking()
+            .Where(m => m.Id == mediaId && m.IsAnimation && m.Kind == MediaKind.Video && m.Status == MediaStatus.Ready)
+            .Select(m => new MediaRow(m.Id, m.OwnerId, m.Kind, m.Status))
+            .FirstOrDefaultAsync(ct);
+        if (row is null || !await mediaAccess.CanViewAsync(me, row.Id, row.OwnerId, ct))
+            throw new NotFoundException(ErrorCodes.MediaNotFound);
+        return row;
     }
 
     /// <summary>Static content rules (also enforced by the request validators; repeated here for non-HTTP callers).</summary>

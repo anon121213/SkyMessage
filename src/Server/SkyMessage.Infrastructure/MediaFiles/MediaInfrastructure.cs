@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SkyMessage.Application.Common.Options;
 using SkyMessage.Application.MediaFiles;
+using SkyMessage.Application.Stickers;
 using SkyMessage.Infrastructure.MediaFiles.Processing;
 using SkyMessage.Infrastructure.MediaFiles.Storage;
 
@@ -38,7 +39,9 @@ public static class MediaInfrastructure
         services.AddSingleton<HeifConverter>();
         services.AddSingleton<VideoProcessor>();
         services.AddSingleton<AudioProcessor>();
+        services.AddSingleton<AnimationProcessor>();
         services.AddScoped<MediaProcessor>();
+        services.AddScoped<IStickerMediaFactory, StickerMediaFactory>();
 
         services.AddSingleton<MediaProcessingQueue>();
         services.AddSingleton<IMediaProcessingQueue>(sp => sp.GetRequiredService<MediaProcessingQueue>());

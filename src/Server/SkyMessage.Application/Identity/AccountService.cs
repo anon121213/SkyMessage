@@ -103,6 +103,12 @@ public sealed class AccountService(
             // The user row stays (a tombstone), so its cascades never fire: folder names and chat lists go explicitly.
             await db.ChatFolders.Where(f => f.UserId == userId).ExecuteDeleteAsync(ct);
             await db.ChatListPreferences.Where(p => p.UserId == userId).ExecuteDeleteAsync(ct);
+            // Stickers and GIFs kept for the person go too; packs they made stay for whoever installed them.
+            await db.InstalledStickerPacks.Where(i => i.UserId == userId).ExecuteDeleteAsync(ct);
+            await db.FavoriteStickers.Where(f => f.UserId == userId).ExecuteDeleteAsync(ct);
+            await db.RecentStickers.Where(r => r.UserId == userId).ExecuteDeleteAsync(ct);
+            await db.SavedGifs.Where(g => g.UserId == userId).ExecuteDeleteAsync(ct);
+            await db.StickerPreferences.Where(p => p.UserId == userId).ExecuteDeleteAsync(ct);
             revokedSessions = await revoker.MarkRevokedAsync(s => s.UserId == userId, ct);
 
             Tombstone(user, unusableHash, now);

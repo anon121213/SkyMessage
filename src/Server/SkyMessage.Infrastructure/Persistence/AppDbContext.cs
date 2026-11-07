@@ -28,6 +28,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<MediaThumbnail> MediaThumbnails => Set<MediaThumbnail>();
     public DbSet<MediaChunk> MediaChunks => Set<MediaChunk>();
 
+    public DbSet<StickerPack> StickerPacks => Set<StickerPack>();
+    public DbSet<Sticker> Stickers => Set<Sticker>();
+    public DbSet<InstalledStickerPack> InstalledStickerPacks => Set<InstalledStickerPack>();
+    public DbSet<FavoriteSticker> FavoriteStickers => Set<FavoriteSticker>();
+    public DbSet<RecentSticker> RecentStickers => Set<RecentSticker>();
+    public DbSet<SavedGif> SavedGifs => Set<SavedGif>();
+    public DbSet<StickerPreferences> StickerPreferences => Set<StickerPreferences>();
+
     public DbSet<Call> Calls => Set<Call>();
     public DbSet<CallParticipant> CallParticipants => Set<CallParticipant>();
 

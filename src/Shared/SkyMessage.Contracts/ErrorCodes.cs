@@ -60,6 +60,20 @@ public static class ErrorCodes
     public const string ChunkInvalid = "chunk_invalid";
     public const string UploadIncomplete = "upload_incomplete";
 
+    // Stickers and GIFs
+    /// <summary>No such pack, or it was deleted.</summary>
+    public const string StickerPackNotFound = "sticker_pack_not_found";
+    /// <summary>No such sticker (deleted, or its pack was).</summary>
+    public const string StickerNotFound = "sticker_not_found";
+    /// <summary>The pack already has <see cref="Limits.MaxStickersPerPack"/> stickers.</summary>
+    public const string StickerPackFull = "sticker_pack_full";
+    /// <summary>Too many packs installed (<see cref="Limits.MaxInstalledStickerPacks"/>) or made (<see cref="Limits.MaxOwnStickerPacks"/>).</summary>
+    public const string StickerPackLimit = "sticker_pack_limit";
+    /// <summary>The sticker's image is not a PNG, WebP or JPEG, is larger than 5 MB or smaller than 64 px.</summary>
+    public const string StickerImageInvalid = "sticker_image_invalid";
+    /// <summary>Only the pack's creator may change it.</summary>
+    public const string NotStickerPackCreator = "not_sticker_pack_creator";
+
     // Calls
     public const string CallNotFound = "call_not_found";
     public const string CallBusy = "call_busy";

@@ -546,6 +546,56 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                     b.ToTable("contacts", (string)null);
                 });
 
+            modelBuilder.Entity("SkyMessage.Domain.Entities.FavoriteSticker", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("StickerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sticker_id");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("added_at");
+
+                    b.HasKey("UserId", "StickerId")
+                        .HasName("pk_favorite_stickers");
+
+                    b.HasIndex("StickerId")
+                        .HasDatabaseName("ix_favorite_stickers_sticker_id");
+
+                    b.ToTable("favorite_stickers", (string)null);
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.InstalledStickerPack", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<DateTimeOffset>("InstalledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("installed_at");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.HasKey("UserId", "PackId")
+                        .HasName("pk_installed_sticker_packs");
+
+                    b.HasIndex("PackId")
+                        .HasDatabaseName("ix_installed_sticker_packs_pack_id");
+
+                    b.ToTable("installed_sticker_packs", (string)null);
+                });
+
             modelBuilder.Entity("SkyMessage.Domain.Entities.Media", b =>
                 {
                     b.Property<Guid>("Id")
@@ -597,6 +647,10 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("height");
 
+                    b.Property<bool>("IsAnimation")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_animation");
+
                     b.Property<int>("Kind")
                         .HasColumnType("integer")
                         .HasColumnName("kind");
@@ -626,6 +680,19 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
+
+                    b.Property<string>("StickerEmoji")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("sticker_emoji");
+
+                    b.Property<Guid?>("StickerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sticker_id");
+
+                    b.Property<Guid?>("StickerPackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sticker_pack_id");
 
                     b.Property<int?>("ThumbnailHeight")
                         .HasColumnType("integer")
@@ -947,6 +1014,52 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                     b.ToTable("pinned_messages", (string)null);
                 });
 
+            modelBuilder.Entity("SkyMessage.Domain.Entities.RecentSticker", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("StickerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sticker_id");
+
+                    b.Property<DateTimeOffset>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("UserId", "StickerId")
+                        .HasName("pk_recent_stickers");
+
+                    b.HasIndex("StickerId")
+                        .HasDatabaseName("ix_recent_stickers_sticker_id");
+
+                    b.ToTable("recent_stickers", (string)null);
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.SavedGif", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("saved_at");
+
+                    b.HasKey("UserId", "MediaId")
+                        .HasName("pk_saved_gifs");
+
+                    b.HasIndex("MediaId")
+                        .HasDatabaseName("ix_saved_gifs_media_id");
+
+                    b.ToTable("saved_gifs", (string)null);
+                });
+
             modelBuilder.Entity("SkyMessage.Domain.Entities.ServerProperty", b =>
                 {
                     b.Property<string>("Key")
@@ -1070,6 +1183,114 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_sessions_user_id");
 
                     b.ToTable("sessions", (string)null);
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.Sticker", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.PrimitiveCollection<List<string>>("Emoji")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasColumnName("emoji")
+                        .HasDefaultValueSql("'{}'::text[]");
+
+                    b.Property<Guid>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.HasKey("Id")
+                        .HasName("pk_stickers");
+
+                    b.HasIndex("MediaId")
+                        .HasDatabaseName("ix_stickers_media_id");
+
+                    b.HasIndex("PackId", "Position")
+                        .HasDatabaseName("ix_stickers_pack_id_position");
+
+                    b.ToTable("stickers", (string)null);
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.StickerPack", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creator_id");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("slug");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sticker_packs");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sticker_packs_slug");
+
+                    b.HasIndex("CreatorId", "CreatedAt")
+                        .HasDatabaseName("ix_sticker_packs_creator_id_created_at");
+
+                    b.ToTable("sticker_packs", (string)null);
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.StickerPreferences", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_sticker_preferences");
+
+                    b.ToTable("sticker_preferences", (string)null);
                 });
 
             modelBuilder.Entity("SkyMessage.Domain.Entities.User", b =>
@@ -1395,6 +1616,40 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                     b.Navigation("Owner");
                 });
 
+            modelBuilder.Entity("SkyMessage.Domain.Entities.FavoriteSticker", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.Sticker", null)
+                        .WithMany()
+                        .HasForeignKey("StickerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_favorite_stickers_stickers_sticker_id");
+
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_favorite_stickers_users_user_id");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.InstalledStickerPack", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_installed_sticker_packs_sticker_packs_pack_id");
+
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_installed_sticker_packs_users_user_id");
+                });
+
             modelBuilder.Entity("SkyMessage.Domain.Entities.Media", b =>
                 {
                     b.HasOne("SkyMessage.Domain.Entities.User", null)
@@ -1641,6 +1896,40 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                     b.Navigation("Message");
                 });
 
+            modelBuilder.Entity("SkyMessage.Domain.Entities.RecentSticker", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.Sticker", null)
+                        .WithMany()
+                        .HasForeignKey("StickerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_recent_stickers_stickers_sticker_id");
+
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_recent_stickers_users_user_id");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.SavedGif", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.Media", null)
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_saved_gifs_media_media_id");
+
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_saved_gifs_users_user_id");
+                });
+
             modelBuilder.Entity("SkyMessage.Domain.Entities.Session", b =>
                 {
                     b.HasOne("SkyMessage.Domain.Entities.User", "User")
@@ -1651,6 +1940,43 @@ namespace SkyMessage.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_sessions_users_user_id");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.Sticker", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.Media", null)
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_stickers_media_media_id");
+
+                    b.HasOne("SkyMessage.Domain.Entities.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_stickers_sticker_packs_pack_id");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.StickerPack", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_packs_users_creator_id");
+                });
+
+            modelBuilder.Entity("SkyMessage.Domain.Entities.StickerPreferences", b =>
+                {
+                    b.HasOne("SkyMessage.Domain.Entities.User", null)
+                        .WithOne()
+                        .HasForeignKey("SkyMessage.Domain.Entities.StickerPreferences", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_preferences_users_user_id");
                 });
 
             modelBuilder.Entity("SkyMessage.Domain.Entities.User", b =>

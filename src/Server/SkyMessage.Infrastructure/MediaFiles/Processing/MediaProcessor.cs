@@ -28,6 +28,10 @@ internal sealed record ProcessedMedia
     public int? DurationMs { get; init; }
     public byte[]? Waveform { get; init; }
     public ThumbnailSet? Thumbnail { get; init; }
+    /// <summary>A new kind (an animated GIF uploaded as a photo becomes a video).</summary>
+    public MediaKind? Kind { get; init; }
+    /// <summary>A GIF made into a muted looping MP4.</summary>
+    public bool IsAnimation { get; init; }
 }
 
 /// <summary>
@@ -47,6 +51,7 @@ internal sealed class MediaProcessor(
     HeifConverter heif,
     VideoProcessor videos,
     AudioProcessor audio,
+    AnimationProcessor animations,
     ILogger<MediaProcessor> logger)
 {
     private const int MaxErrorLength = 1000;
@@ -150,6 +155,9 @@ internal sealed class MediaProcessor(
 
     private async Task<ProcessedMedia> ProcessPhotoAsync(Media media, string source, MediaJobDirectory job, CancellationToken cancellationToken)
     {
+        if (AnimationProcessor.IsAnimatedGif(source) && await ConvertGifAsync(media, source, job, cancellationToken) is { } animation)
+            return animation;
+
         var photo = images.ProcessPhoto(source, job.Path);
         if (photo is null)
         {
@@ -173,6 +181,29 @@ internal sealed class MediaProcessor(
             Height = photo.Height,
             Thumbnail = photo.Thumbnails,
         };
+    }
+
+    /// <summary>
+    /// An animated GIF becomes a muted looping MP4 (a video with the animation flag). When that fails (or ffmpeg is
+    /// missing) it stays the GIF it was, as before animations existed (null).
+    /// </summary>
+    private async Task<ProcessedMedia?> ConvertGifAsync(Media media, string source, MediaJobDirectory job, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var video = await animations.ConvertGifAsync(source, job.Path, cancellationToken);
+            return FromVideo(media, video) with { Kind = MediaKind.Video, IsAnimation = true };
+        }
+        catch (MediaProcessingException ex)
+        {
+            logger.LogWarning("GIF {MediaId} could not be made into a video, kept as a GIF: {Error}", media.Id, ex.Message);
+            return null;
+        }
+        catch (MediaToolMissingException ex)
+        {
+            logger.LogWarning("{Tool} is not available ({Message}); GIF {MediaId} is kept as a GIF", ex.Tool, ex.Message, media.Id);
+            return null;
+        }
     }
 
     private static ProcessedMedia FromVideo(Media media, VideoOutput video) => new()
@@ -259,6 +290,8 @@ internal sealed class MediaProcessor(
             ThumbnailWidth = result.Thumbnail?.Width,
             ThumbnailHeight = result.Thumbnail?.Height,
             MiniThumbnail = result.Thumbnail?.Mini,
+            Kind = result.Kind ?? media.Kind,
+            IsAnimation = result.IsAnimation || media.IsAnimation,
         };
 
         using var cipher = encryption.CreateCipher(media.Id, media.WrappedKey);
@@ -306,7 +339,9 @@ internal sealed class MediaProcessor(
                     .SetProperty(m => m.HasThumbnail, final.HasThumbnail)
                     .SetProperty(m => m.ThumbnailWidth, final.ThumbnailWidth)
                     .SetProperty(m => m.ThumbnailHeight, final.ThumbnailHeight)
-                    .SetProperty(m => m.MiniThumbnail, final.MiniThumbnail), cancellationToken);
+                    .SetProperty(m => m.MiniThumbnail, final.MiniThumbnail)
+                    .SetProperty(m => m.Kind, final.Kind)
+                    .SetProperty(m => m.IsAnimation, final.IsAnimation), cancellationToken);
             if (updated == 0)
             {
                 await transaction.RollbackAsync(cancellationToken);
@@ -333,6 +368,8 @@ internal sealed class MediaProcessor(
         media.ThumbnailWidth = final.ThumbnailWidth;
         media.ThumbnailHeight = final.ThumbnailHeight;
         media.MiniThumbnail = final.MiniThumbnail;
+        media.Kind = final.Kind;
+        media.IsAnimation = final.IsAnimation;
         return true;
     }
 

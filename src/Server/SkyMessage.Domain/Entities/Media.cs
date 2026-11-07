@@ -35,6 +35,16 @@ public sealed class Media
     /// <summary>≈24px JPEG for blurred placeholders, sent inside DTOs (well under 1 KB).</summary>
     public byte[]? MiniThumbnail { get; set; }
 
+    /// <summary>
+    /// Set on a sticker's WebP (Contracts.MediaDto.Sticker): the pack and sticker it was made for and the sticker's main
+    /// emoji. Plain columns, not keys: they stay when the pack or the sticker is deleted, so sent stickers keep showing.
+    /// </summary>
+    public Guid? StickerPackId { get; set; }
+    public Guid? StickerId { get; set; }
+    public string? StickerEmoji { get; set; }
+    /// <summary>A GIF turned into a muted looping MP4 (Kind Video; Contracts.MediaDto.IsAnimation).</summary>
+    public bool IsAnimation { get; set; }
+
     /// <summary>Per-media data key wrapped with the master key (nonce|ciphertext|tag); null = not encrypted.</summary>
     public byte[]? WrappedKey { get; set; }
     public string? ProcessingError { get; set; }

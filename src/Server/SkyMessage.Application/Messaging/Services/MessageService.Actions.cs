@@ -30,6 +30,9 @@ internal sealed partial class MessageService
             if (message is null || message.DeletedAt is not null) throw new NotFoundException(ErrorCodes.MessageNotFound);
             if (message.SenderId != me || !MessageTypeRules.IsUserContent(message.Type) || message.ForwardOriginalDate is not null)
                 throw new ForbiddenException(ErrorCodes.MessageNotEditable);
+            // A sticker has no caption to edit (apps before stickers see a photo and may offer it).
+            if (await db.MessageAttachments.AnyAsync(a => a.MessageId == messageId && a.Media!.StickerId != null, cancellationToken))
+                throw new ForbiddenException(ErrorCodes.MessageNotEditable);
             if (now - message.CreatedAt > TimeSpan.FromHours(Limits.EditWindowHours))
                 throw new ForbiddenException(ErrorCodes.MessageEditExpired);
             if (!hasText && !await db.MessageAttachments.AnyAsync(a => a.MessageId == messageId, cancellationToken))

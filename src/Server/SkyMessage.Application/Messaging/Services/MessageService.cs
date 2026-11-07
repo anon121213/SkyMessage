@@ -3,7 +3,9 @@ using Microsoft.Extensions.Logging;
 using SkyMessage.Application.Common.Exceptions;
 using SkyMessage.Application.Common.Interfaces;
 using SkyMessage.Application.Common.Persistence;
+using SkyMessage.Application.MediaFiles;
 using SkyMessage.Application.Messaging.Rules;
+using SkyMessage.Application.Stickers;
 using SkyMessage.Contracts;
 
 namespace SkyMessage.Application.Messaging.Services;
@@ -19,6 +21,8 @@ internal sealed partial class MessageService(
     MessagePageBuilder pages,
     MentionResolver mentions,
     MessagingEvents events,
+    IMediaAccessService mediaAccess,
+    IStickerRecents stickerRecents,
     ILogger<MessageService> logger) : IMessageService
 {
     private const int MaxUnreadMentions = 1000;

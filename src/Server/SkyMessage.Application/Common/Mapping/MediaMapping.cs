@@ -22,6 +22,10 @@ public static class MediaMapping
         MiniThumbnail = m.MiniThumbnail,
         HasThumbnail = m.HasThumbnail,
         CreatedAt = m.CreatedAt,
+        Sticker = m.StickerPackId != null && m.StickerId != null
+            ? new StickerInfoDto { PackId = m.StickerPackId.Value, StickerId = m.StickerId.Value, Emoji = m.StickerEmoji ?? "" }
+            : null,
+        IsAnimation = m.IsAnimation,
     };
 
     private static readonly Func<Media, MediaDto> Compiled = Projection.Compile();
