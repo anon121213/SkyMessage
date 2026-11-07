@@ -33,8 +33,9 @@ Each feature runs in its own git worktree and is isolated at runtime too:
   python3 tools/dev/seed-dev.py --base http://127.0.0.1:<port>      # dev accounts + a short chat
   ```
 - **Look at the UI**: `node tools/ui-shot/shot.mjs --base http://127.0.0.1:<port> --out <dir> --steps steps.json --theme light|dark`
-  (header of the script documents the steps; it logs in as artur_dev). `python3 tools/ui-shot/as-mama.py "text" --base ...`
-  sends an incoming message. Read the PNGs; check light and dark, phone and `--width 1280 --height 800`.
+  (header of the script documents the steps; it logs in as artur_dev; `--pointer mouse` for a computer instead of a
+  phone). `python3 tools/ui-shot/as-mama.py "text" --base ...` sends an incoming message. Read the PNGs; check light
+  and dark, phone and `--width 1280 --height 800`.
 - Stop your server when done. Never touch the Android emulator, adb or any real server unless your brief says so.
 
 ## Server changes
@@ -75,7 +76,10 @@ the run reports "Zero tests ran". Build with your options first, then `dotnet te
 `ArtifactsPath` property tells it where that build is). `dotnet run --project tests/<X>` also runs a suite.
 
 Logic in the web client's JS that can be judged without a browser has a Node check in `tools/ui-check/` (CI runs every
-`*.mjs` there): `node tools/ui-check/folder-tab-slots.mjs`.
+`*.mjs` there): `node tools/ui-check/folder-tab-slots.mjs`. What only a browser can judge (what is drawn on top where,
+what takes a tap) has a ui-shot steps file with `expect` steps in `tools/ui-check/browser/`, run against your seeded
+local server (not in CI; exit code 1 when a check fails):
+`node tools/ui-shot/shot.mjs --base http://127.0.0.1:<port> --pointer mouse --width 1280 --height 800 --steps tools/ui-check/browser/list-menu-over-content.json --out <dir>`.
 
 Every feature adds tests for its server rules and client stores. A feature is done when it builds with 0 errors and
 0 warnings, all three test projects pass, the UI has been looked at in both themes, and the branch is committed.

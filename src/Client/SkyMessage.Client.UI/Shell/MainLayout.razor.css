@@ -175,7 +175,8 @@ html[data-theme="dark"] .shell__layer {
 
 /* The panels' frosted glass (as .sm-glass) on a layer of their own: a backdrop filter on a panel itself would make it
    the containing block of every fixed popover inside it — the chat list's menus and choosers, the info column's — which
-   would then be placed from the panel's corner and clipped by its edge instead of opening where they were asked for. */
+   would then be placed from the panel's corner and clipped by its edge instead of opening where they were asked for
+   (their stacking: below). */
 .shell__sidebar::before,
 .shell__info::before {
     content: "";
@@ -195,6 +196,15 @@ html[data-fx="lite"] .shell__info::before {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--sm-glass-solid);
+}
+
+/* A panel holding an open popover (a row's or a tab's menu, the birthday chooser: .sm-menu-layer, a full-window layer)
+   rises above the content and the resizer while it does: each panel is a stacking context of its own (z-index 1), in
+   which the popover's own z-index counts, so the content painted later would cover the part of the menu over it and
+   take its taps, and the resizer would take the ones on its strip. */
+.shell__sidebar:has(.sm-menu-layer),
+.shell__info:has(.sm-menu-layer) {
+    z-index: 3;
 }
 
 /* The gap between the list panel and the content is the handle; a thin accent thread shows where to grab. */

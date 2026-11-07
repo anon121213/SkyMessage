@@ -1,16 +1,20 @@
 // Screenshots of the web client in headless Chrome, emulating a phone (touch, DPR 2), for checking UI work without
 // a device. Usage:
 //   node tools/ui-shot/shot.mjs --base http://127.0.0.1:8080 --out <dir> --steps <steps.json>
-//        [--user artur_dev] [--width 390] [--height 844] [--theme light|dark] [--port 9301]
+//        [--user artur_dev] [--width 390] [--height 844] [--theme light|dark] [--port 9301] [--pointer touch|mouse]
 // steps.json: an array run in order, for example
 //   [{"go": "/chat/<id>"}, {"wait": 1500}, {"tap": ".composer__record"}, {"shot": "after-tap"},
 //    {"swipe": {"selector": ".chat", "dx": 220, "dy": 0, "ms": 260}}, {"eval": "document.title"},
 //    {"type": "hello"}, {"key": "Enter"}, {"waitFor": ".msg"}]
 // "swipe" drives real touch events (pointer type "touch") from the element's center (or "x"/"y"), "hold" keeps the
-// finger down (ms) before moving, "tap" accepts "x"/"y" instead of a selector. {"file": "/abs/path.jpg"} (or a list)
-// answers the next file chooser the page opens with those files (give it before the tap that opens the picker). Logs in
-// through the UI with the dev account from tools/e2e/dev-accounts.json unless --user none. Screenshots:
-// <out>/<n>-<name>.png.
+// finger down (ms) before moving, "tap" accepts "x"/"y" instead of a selector. {"click": ".row", "button": "right",
+// "at": [0.9, 0.5]} clicks with the mouse (left by default) at that fraction of the element's box (its center by
+// default; or {"x", "y"}); --pointer mouse emulates a computer instead of a phone (no touch, DPR 1).
+// {"expect": "<expression>", "name": "..."} is a check: it passes when the expression is true, and prints ok or FAIL
+// with what it returned instead; the run exits with code 1 when one failed (tools/ui-check/browser holds such steps).
+// {"file": "/abs/path.jpg"} (or a list) answers the next file chooser the page opens with those files (give it before
+// the tap that opens the picker). Logs in through the UI with the dev account from tools/e2e/dev-accounts.json unless
+// --user none. Screenshots: <out>/<n>-<name>.png.
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -73,11 +77,22 @@ const waitFor = async (selector, ms = 15000) => {
   throw new Error(`timed out waiting for ${selector}`);
 };
 const touch = (type, x, y) => send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+// A point in an element's box: [fx, fy] fractions of its width and height (its center by default).
+const pointIn = (selector, at = [0.5, 0.5]) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null;
+  const b = el.getBoundingClientRect(); return { x: b.x + b.width * ${Number(at[0])}, y: b.y + b.height * ${Number(at[1])} }; })()`);
+const mouse = async (x, y, button = 'left') => {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+  for (const type of ['mousePressed', 'mouseReleased']) {
+    await send('Input.dispatchMouseEvent', { type, x, y, button, buttons: type === 'mousePressed' ? (button === 'right' ? 2 : 1) : 0, clickCount: 1 });
+  }
+};
+const desktop = args.pointer === 'mouse';
+let failed = 0;
 
 await send('Page.enable');
 await send('Runtime.enable');
-await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: true });
-await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: desktop ? 1 : 2, mobile: !desktop });
+if (!desktop) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 if (args.theme) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: args.theme }] });
 const go = async (path) => { await send('Page.navigate', { url: base + path }); await sleep(600); };
 
@@ -102,6 +117,18 @@ for (const step of steps) {
     else if (step.wait) await sleep(step.wait);
     else if (step.waitFor) await waitFor(step.waitFor, step.ms);
     else if (step.eval) console.log('  eval:', JSON.stringify(await evaluate(step.eval))?.slice(0, 500));
+    else if (step.expect) {
+      let value;
+      try { value = await evaluate(step.expect); } catch (err) { value = `threw: ${err.message.split('\n')[0]}`; }
+      const ok = value === true;
+      if (!ok) failed++;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${step.name || step.expect.slice(0, 80)}${ok ? '' : `: ${JSON.stringify(value)?.slice(0, 300)}`}`);
+    }
+    else if (step.click) {
+      const p = typeof step.click === 'string' ? await pointIn(step.click, step.at) : step.click;
+      if (!p) throw new Error(`no element ${step.click}`);
+      await mouse(p.x, p.y, step.button || 'left');
+    }
     else if (step.type) await send('Input.insertText', { text: step.type });
     else if (step.file) {
       chooserFiles = (Array.isArray(step.file) ? step.file : [step.file]).map((f) => resolve(f));
@@ -140,4 +167,4 @@ for (const step of steps) {
 }
 ws.close();
 cleanup();
-process.exit(0);
+process.exit(failed ? 1 : 0);

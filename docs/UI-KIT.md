@@ -648,7 +648,10 @@ Right-click and touch long-press (450 ms, movement-tolerant, swallows the traili
 `ContextMenuArea` or `ListItem.OnContextMenu`. Menus are popovers on wide screens and bottom sheets on phones
 (`PreferSheet="false"` keeps the popover). Dialogs, sheets and menus play a short exit when they close (the markup
 stays ~230 ms, inert to taps: `.sm-overlay--leaving` / `.sm-menu-layer--leaving`); sheets arrive with a slight
-spring and leave from wherever a drag left them.
+spring and leave from wherever a drag left them. A popover stays inside the stacking context of the panel that renders
+it: in the wide layout the list panel and the info column rise above the content and the resizer while they hold an
+open menu (`MainLayout.razor.css`, `:has(.sm-menu-layer)`), so a menu opened near a panel's edge is drawn and takes
+taps over the content too (`tools/ui-check/browser/list-menu-over-content.json`).
 
 ### Tabs, segmented control
 
