@@ -1,0 +1,7 @@
+/* The pack on one frosted card, like the invite page. */
+.spack-page {
+    margin: 8px auto 0;
+    max-width: 34rem;
+    padding: 12px 0 4px;
+    border-radius: var(--sm-radius-xl);
+}

@@ -26,6 +26,12 @@ internal sealed record OutboxRecord
     public Guid? ForwardMessageId { get; init; }
     /// <summary>Copy of the forwarded message for the pending bubble.</summary>
     public MessageDto? ForwardSource { get; init; }
+    /// <summary>A sticker of a pack sent as it is (nothing to upload).</summary>
+    public Guid? StickerId { get; init; }
+    /// <summary>One of my saved GIFs sent again (nothing to upload).</summary>
+    public Guid? GifMediaId { get; init; }
+    /// <summary>The sticker's or the GIF's media, shown by the pending bubble.</summary>
+    public MediaDto? SharedMedia { get; init; }
     /// <summary>Sent only once the item with this key left the outbox (the rest of a long caption follows its album).</summary>
     public Guid? SendAfterKey { get; init; }
     public bool Failed { get; init; }

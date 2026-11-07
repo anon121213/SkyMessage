@@ -1,0 +1,153 @@
+@* Settings › Стикеры и GIF: the two switches (suggestions by emoji, GIF autoplay), the packs I made (a tap opens the
+   editor, «Создать набор» makes one), my installed packs in the panel's order (moved by their handle, a tap shows the
+   pack, the bin takes it out of the panel) and how many GIFs I keep. All of it syncs to my other devices
+   (IStickerStore); the switches belong to this device. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IStickerStore Stickers
+@inject ISettingsService Settings
+@inject NavigationService Nav
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<SettingsScaffold Title="@L["stickers.settings.title"]">
+    <p class="stickers-intro">@L["stickers.settings.intro"]</p>
+
+    <Section DividerInset="64px">
+        <SwitchItem Icon="@IconNames.Smile" IconColor="@SettingsTones.Gold" Title="@L["stickers.settings.suggest"]" Subtitle="@L["stickers.settings.suggestHint"]"
+                    Checked="Settings.Current.Chats.SuggestStickers" CheckedChanged="v => Settings.UpdateAsync(s => s.Chats.SuggestStickers = v)" />
+        <SwitchItem Icon="@IconNames.Film" IconColor="@SettingsTones.Rose" Title="@L["stickers.settings.autoplay"]" Subtitle="@L["stickers.settings.autoplayHint"]"
+                    Checked="Settings.Current.Chats.AutoplayGifs" CheckedChanged="v => Settings.UpdateAsync(s => s.Chats.AutoplayGifs = v)" />
+    </Section>
+
+    <Section Title="@L["stickers.settings.mine"]" Footer="@(Stickers.State.Mine.Count == 0 ? L["stickers.settings.mineEmpty"] : null)" DividerInset="74px">
+        @foreach (var pack in Stickers.State.Mine)
+        {
+            var item = pack;
+            <ListItem @key="item.Id" OnClick="() => Nav.NavigateTo(StickerUi.EditorPath(item.Id))" Chevron="true">
+                <Leading><span class="stickers-face"><StickerImage Media="item.Cover?.Media" /></span></Leading>
+                <ChildContent>
+                    <div class="sm-list-item__title" dir="auto">@item.Title</div>
+                    <div class="sm-list-item__subtitle">@L.Plural("stickers.count", item.StickerCount)</div>
+                </ChildContent>
+            </ListItem>
+        }
+        @if (Stickers.State.Mine.Count < Limits.MaxOwnStickerPacks)
+        {
+            <ListItem Icon="@IconNames.Plus" IconColor="@SettingsTones.Mint" OnClick="CreateAsync">
+                <TitleContent><div class="sm-list-item__title stickers-create">@L["stickers.settings.create"]</div></TitleContent>
+            </ListItem>
+        }
+    </Section>
+
+    @* With nothing installed only the hint stays (no empty card); the list and its drag handles come with the first pack. *@
+    <Section Title="@L["stickers.settings.installed"]" Footer="@InstalledFooter" DividerInset="74px" Flat="@(Stickers.State.Installed.Count == 0)">
+        @if (Stickers.State.Installed.Count > 0)
+        {
+            <div @ref="_list" class="stickers-list">
+                @foreach (var pack in Stickers.State.Installed)
+                {
+                    var item = pack;
+                    <div @key="item.Id" class="stickers-list__row" data-reorder-key="@item.Id">
+                        <ListItem OnClick="() => StickerPackSheet.ShowAsync(Dialogs, item.Id)">
+                            <Leading><span class="stickers-face"><StickerImage Media="item.Cover?.Media" /></span></Leading>
+                            <ChildContent>
+                                <div class="sm-list-item__title" dir="auto">@item.Title</div>
+                                <div class="sm-list-item__subtitle">@L.Plural("stickers.count", item.StickerCount)</div>
+                            </ChildContent>
+                            <Trailing>
+                                <span class="stickers-list__actions" @onclick:stopPropagation="true">
+                                    <IconButton Icon="@IconNames.Trash2" Label="@L["stickers.pack.removeFromPanel"]" Size="38" OnClick="() => RemoveAsync(item)" />
+                                    <span class="stickers-list__handle" data-drag-handle="" title="@L["stickers.settings.drag"]">
+                                        <Icon Name="@IconNames.GripVertical" />
+                                    </span>
+                                </span>
+                            </Trailing>
+                        </ListItem>
+                    </div>
+                }
+            </div>
+        }
+    </Section>
+
+    <Section Title="@L["stickers.settings.gifs"]" Footer="@L["stickers.settings.gifsHint"]" DividerInset="64px">
+        <ListItem Icon="@IconNames.Film" IconColor="@SettingsTones.Lagoon" Title="@L["stickers.gifs.title"]"
+                  Meta="@Stickers.State.Gifs.Count.ToString(System.Globalization.CultureInfo.CurrentCulture)" />
+    </Section>
+</SettingsScaffold>
+
+@code {
+    private ElementReference _list;
+    private DotNetObjectReference<StickersSection>? _self;
+    private JsModule? _module;
+    private JsObject? _reorder;
+
+    private string InstalledFooter => Stickers.State.Installed.Count switch
+    {
+        0 => L["stickers.settings.installedEmpty"],
+        1 => L["stickers.settings.installedHint"],
+        _ => L["stickers.settings.dragHint"],
+    };
+
+    protected override void OnInitialized()
+    {
+        RenderOn(h => Stickers.Changed += h, h => Stickers.Changed -= h);
+        RenderOn(h => Settings.Changed += h, h => Settings.Changed -= h);
+        // Opening the screen asks the server again when the state never came (a first load that failed).
+        Stickers.LoadAsync().Forget();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var listed = Stickers.State.Installed.Count > 0;
+        if (!listed && _reorder is not null)
+        {
+            // The list went with the last pack: bound again when one comes back.
+            await _reorder.DisposeAsync();
+            _reorder = null;
+            return;
+        }
+        if (!listed || _reorder is not null) return;
+        _self ??= DotNetObjectReference.Create(this);
+        _module ??= new JsModule(JS, FolderJs.Path);
+        _reorder = await _module.AttachAsync("attachHandleReorder", _list, _self);
+        if (IsDisposed) await _reorder.DisposeAsync();
+    }
+
+    private Task CreateAsync() => StickerFlows.CreatePackAsync(L, Dialogs, Stickers, Nav, Toasts);
+
+    /// <summary>Out of the panel, with an Undo that puts it back in its place.</summary>
+    private Task RemoveAsync(StickerPackRefDto pack) =>
+        StickerFlows.RemoveFromPanelAsync(L, Stickers, Toasts, pack.Id, pack.Title, Stickers.GetPack(pack.Id));
+
+    /// <summary>A row was dropped by its handle: my installed packs in the new order (the panel follows).</summary>
+    [JSInvokable]
+    public Task OnReorder(string[] keys) => InvokeAsync(async () =>
+    {
+        var ids = new List<Guid>(keys.Length);
+        foreach (var key in keys)
+            if (Guid.TryParse(key, out var id)) ids.Add(id);
+        if (ids.Count < 2) return;
+        try
+        {
+            await Stickers.ReorderAsync(ids);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    });
+
+    [JSInvokable]
+    public Task OnReorderLift() => InvokeAsync(Haptics.Tap);
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_reorder is not null) await _reorder.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+    }
+}

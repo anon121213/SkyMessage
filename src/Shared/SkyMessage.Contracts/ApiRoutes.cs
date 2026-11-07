@@ -190,6 +190,48 @@ public static class ApiRoutes
         public static string ReadPath(Guid folderId) => $"api/folders/{folderId}/read";
     }
 
+    /// <summary>
+    /// Sticker packs (anyone signed in sees and installs them, only the creator edits one) and my stickers and GIFs
+    /// (<see cref="StickerStateDto"/>: every change of mine answers with the whole new state and sends it to all my
+    /// devices as <see cref="IRealtimeClient.StickersChanged"/>).
+    /// </summary>
+    public static class Stickers
+    {
+        /// <summary>GET → <see cref="StickerStateDto"/>.</summary>
+        public const string Root = "api/stickers";
+        /// <summary>POST <see cref="CreateStickerPackRequest"/> → <see cref="StickerPackDto"/> (a pack of mine, installed for me).</summary>
+        public const string Packs = "api/stickers/packs";
+        /// <summary>GET → <see cref="StickerPackDto"/>; PATCH <see cref="UpdateStickerPackRequest"/> → <see cref="StickerPackDto"/>; DELETE (204).</summary>
+        public const string Pack = "api/stickers/packs/{packId:guid}";
+        /// <summary>GET → <see cref="StickerPackDto"/> by the slug of its link.</summary>
+        public const string PackBySlug = "api/stickers/packs/by-slug/{slug}";
+        /// <summary>POST <see cref="AddStickerRequest"/> → <see cref="StickerPackDto"/>.</summary>
+        public const string PackStickers = "api/stickers/packs/{packId:guid}/stickers";
+        /// <summary>PATCH <see cref="UpdateStickerRequest"/> / DELETE → <see cref="StickerPackDto"/>.</summary>
+        public const string PackSticker = "api/stickers/packs/{packId:guid}/stickers/{stickerId:guid}";
+        /// <summary>PUT <see cref="ReorderStickersRequest"/> → <see cref="StickerPackDto"/>.</summary>
+        public const string PackOrder = "api/stickers/packs/{packId:guid}/order";
+        /// <summary>PUT installs the pack (first among mine) / DELETE removes it → <see cref="StickerStateDto"/>.</summary>
+        public const string Installed = "api/stickers/installed/{packId:guid}";
+        /// <summary>PUT <see cref="ReorderStickerPacksRequest"/> → <see cref="StickerStateDto"/>.</summary>
+        public const string InstalledOrder = "api/stickers/installed/order";
+        /// <summary>PUT adds the sticker to my favorites (first) / DELETE takes it out → <see cref="StickerStateDto"/>.</summary>
+        public const string Favorite = "api/stickers/favorites/{stickerId:guid}";
+        /// <summary>POST <see cref="SaveGifRequest"/> → <see cref="StickerStateDto"/>.</summary>
+        public const string Gifs = "api/stickers/gifs";
+        /// <summary>DELETE → <see cref="StickerStateDto"/>.</summary>
+        public const string Gif = "api/stickers/gifs/{mediaId:guid}";
+
+        public static string PackPath(Guid packId) => $"api/stickers/packs/{packId}";
+        public static string PackBySlugPath(string slug) => $"api/stickers/packs/by-slug/{Uri.EscapeDataString(slug)}";
+        public static string PackStickersPath(Guid packId) => $"api/stickers/packs/{packId}/stickers";
+        public static string PackStickerPath(Guid packId, Guid stickerId) => $"api/stickers/packs/{packId}/stickers/{stickerId}";
+        public static string PackOrderPath(Guid packId) => $"api/stickers/packs/{packId}/order";
+        public static string InstalledPath(Guid packId) => $"api/stickers/installed/{packId}";
+        public static string FavoritePath(Guid stickerId) => $"api/stickers/favorites/{stickerId}";
+        public static string GifPath(Guid mediaId) => $"api/stickers/gifs/{mediaId}";
+    }
+
     public static class Messages
     {
         /// <summary>GET ?beforeSeq=&amp;afterSeq=&amp;aroundSeq=&amp;limit= ; POST sends a message.</summary>
@@ -338,14 +380,17 @@ public enum DeepLinkKind
     Join = 2,
     /// <summary>Value = chat id (used by notification taps).</summary>
     Chat = 3,
+    /// <summary>Value = the slug of a sticker pack's link.</summary>
+    StickerPack = 4,
 }
 
 public sealed record DeepLinkTarget(DeepLinkKind Kind, string Value);
 
 /// <summary>
 /// Links understood by the web client and the apps, in both forms:
-/// <c>skymessage://u/{username}</c>, <c>skymessage://join/{token}</c>, <c>skymessage://chat/{id}</c> and
-/// <c>https://{server}/u/{username}</c>, <c>/join/{token}</c>, <c>/chat/{id}</c>.
+/// <c>skymessage://u/{username}</c>, <c>skymessage://join/{token}</c>, <c>skymessage://chat/{id}</c>,
+/// <c>skymessage://addstickers/{slug}</c> and <c>https://{server}/u/{username}</c>, <c>/join/{token}</c>, <c>/chat/{id}</c>,
+/// <c>/addstickers/{slug}</c>. Apps before stickers do not know the last kind and leave such links alone.
 /// </summary>
 public static class DeepLinks
 {
@@ -354,6 +399,7 @@ public static class DeepLinks
     public static string UserProfilePath(string username) => $"/u/{username}";
     public static string JoinChatPath(string token) => $"/join/{token}";
     public static string ChatPath(Guid chatId) => $"/chat/{chatId}";
+    public static string StickerPackPath(string slug) => $"/addstickers/{slug}";
     public static Uri AppChatUri(Guid chatId) => new($"{AppScheme}://chat/{chatId}");
 
     public static bool TryParse(Uri uri, out DeepLinkTarget? target)
@@ -378,6 +424,9 @@ public static class DeepLinks
                 return true;
             case "chat" when Guid.TryParse(parts[1], out var chatId):
                 target = new DeepLinkTarget(DeepLinkKind.Chat, chatId.ToString());
+                return true;
+            case "addstickers" when StickerRules.IsValidSlug(parts[1]):
+                target = new DeepLinkTarget(DeepLinkKind.StickerPack, parts[1]);
                 return true;
             default:
                 return false;

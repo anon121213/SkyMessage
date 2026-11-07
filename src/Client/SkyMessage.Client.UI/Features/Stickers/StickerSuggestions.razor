@@ -1,0 +1,57 @@
+@* Stickers for the one emoji in the composer's field: a glass strip over the field with my installed packs' matches.
+   A tap sends the sticker in place of the emoji; a hold (or right-click) shows it large, with favorites, as in the
+   panel. It rises in when it appears (the composer renders it only then). *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject DialogService Dialogs
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<div class="ssuggest" role="group" aria-label="@L["stickers.suggest.label"]" data-no-swipe-back @ref="_strip">
+    @foreach (var sticker in Items)
+    {
+        var item = sticker;
+        <button type="button" class="ssuggest__item" data-hold="@item.Id" title="@StickerUi.EmojiLine(item)" aria-label="@StickerUi.EmojiLine(item)"
+                @key="item.Id" @onmousedown:preventDefault="true" @onclick="() => OnPick.InvokeAsync(item)">
+            <StickerImage Media="item.Media" Eager="true" />
+        </button>
+    }
+</div>
+
+@code {
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+
+    private ElementReference _strip;
+    private JsModule? _module;
+    private JsObject? _hold;
+    private DotNetObjectReference<StickerSuggestions>? _self;
+
+    [Parameter, EditorRequired] public IReadOnlyList<StickerDto> Items { get; set; } = [];
+    [Parameter] public EventCallback<StickerDto> OnPick { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        _module = new JsModule(JS, ModulePath);
+        _hold = await _module.AttachAsync("attachHold", _strip, _self);
+        if (IsDisposed) await _hold.DisposeAsync();
+    }
+
+    /// <summary>A suggestion was held: the large preview; «Отправить» sends it in place of the emoji.</summary>
+    [JSInvokable]
+    public Task OnHold(string key) => InvokeAsync(async () =>
+    {
+        if (!Guid.TryParse(key, out var id) || Items.FirstOrDefault(s => s.Id == id) is not { } sticker) return;
+        Haptics.LongPress();
+        if (await StickerPreviewDialog.ShowAsync(Dialogs, sticker, canSend: true) == "send") await OnPick.InvokeAsync(sticker);
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_hold is not null) await _hold.DisposeAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+    }
+}

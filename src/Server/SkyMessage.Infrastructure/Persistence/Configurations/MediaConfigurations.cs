@@ -18,6 +18,7 @@ internal sealed class MediaConfiguration : IEntityTypeConfiguration<Media>
         b.Property(x => x.ContentType).HasMaxLength(128).IsRequired();
         b.Property(x => x.Sha256).HasMaxLength(64);
         b.Property(x => x.ProcessingError).HasMaxLength(1000);
+        b.Property(x => x.StickerEmoji).HasMaxLength(Limits.ChatFolderIconMaxLength);
     }
 }
 

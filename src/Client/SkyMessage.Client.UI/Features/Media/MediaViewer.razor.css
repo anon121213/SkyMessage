@@ -151,6 +151,13 @@ html[data-fx="lite"] .viewer__play {
     box-shadow: var(--sm-viewer-edge), var(--sm-viewer-lift);
 }
 
+/* A GIF's bar is its pause button alone: a round glass button, not a stretched capsule. */
+.viewer__vbar--loop {
+    width: auto;
+    padding: 0 7px;
+    align-self: center;
+}
+
 html[data-fx="lite"] .viewer__caption,
 html[data-fx="lite"] .viewer__vbar {
     background: var(--sm-viewer-glass-solid);

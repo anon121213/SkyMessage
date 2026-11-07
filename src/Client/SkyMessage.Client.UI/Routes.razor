@@ -13,6 +13,7 @@
 @inject UiDispatcher Dispatcher
 @inject IAppUpdateService Updates
 @inject IAppLockService AppLock
+@inject IRealtimeService Realtime
 @inject ILogger<Routes> Logger
 
 <ErrorBoundary @ref="_boundary">
@@ -81,7 +82,11 @@
         L.Changed += OnLanguageChanged;
         Nav.Changed += OnNavigated;
         Updates.ReloadRequested += OnReloadRequested;
+        Realtime.Resynced += OnResynced;
     }
+
+    /// <summary>Back after a break: pictures that failed meanwhile (stickers, saved GIFs) try again at once.</summary>
+    private void OnResynced() => _ = InvokeAsync(async () => await Js.RetryImagesAsync());
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -195,6 +200,7 @@
         L.Changed -= OnLanguageChanged;
         Nav.Changed -= OnNavigated;
         Updates.ReloadRequested -= OnReloadRequested;
+        Realtime.Resynced -= OnResynced;
         return ValueTask.CompletedTask;
     }
 }

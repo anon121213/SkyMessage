@@ -604,6 +604,8 @@ export function attach(stage, ref, options) {
   const onMedia = (e) => {
     const v = e.target;
     if (!v || v.tagName !== 'VIDEO' || !stage.contains(v)) return;
+    // A GIF loop is muted: its muted attribute alone does not mute an element made by script (it only sets defaultMuted).
+    if (v.hasAttribute('data-animation') && !v.muted) v.muted = true;
     if (e.type === 'canplay' || e.type === 'loadeddata') {
       // An autoplay the browser refused never says so: show the play orb once it should have started.
       clearTimeout(vReady);

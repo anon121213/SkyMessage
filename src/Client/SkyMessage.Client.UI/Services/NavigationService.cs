@@ -390,6 +390,7 @@ public sealed class NavigationService : IAsyncDisposable
             DeepLinkKind.User => DeepLinks.UserProfilePath(Uri.EscapeDataString(target.Value)),
             DeepLinkKind.Join => DeepLinks.JoinChatPath(Uri.EscapeDataString(target.Value)),
             DeepLinkKind.Chat when Guid.TryParse(target.Value, out var chatId) => DeepLinks.ChatPath(chatId),
+            DeepLinkKind.StickerPack => DeepLinks.StickerPackPath(Uri.EscapeDataString(target.Value)),
             _ => null,
         };
         if (path is null) return false;
@@ -406,13 +407,14 @@ public sealed class NavigationService : IAsyncDisposable
     /// <summary>True for links the app understands (profile, invite, chat), whatever the host.</summary>
     public static bool IsAppLink(Uri uri) => DeepLinks.TryParse(uri, out var target) && target is not null;
 
-    /// <summary>Remembers a protected link opened while signed out (only profile, invite and chat links).</summary>
+    /// <summary>Remembers a protected link opened while signed out (only profile, invite, chat and sticker pack links).</summary>
     public void RememberDeepLink(string url)
     {
         var path = PathOf(Normalize(url));
         if (path.StartsWith("/u/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/join/", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/chat/", StringComparison.OrdinalIgnoreCase))
+            || path.StartsWith("/chat/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/addstickers/", StringComparison.OrdinalIgnoreCase))
             _pendingDeepLink = Normalize(url);
     }
 

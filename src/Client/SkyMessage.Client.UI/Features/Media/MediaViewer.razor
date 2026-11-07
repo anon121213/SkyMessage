@@ -29,8 +29,11 @@
                 @if (isVideo)
                 {
                     <div @key="item.Media.Id" class="viewer__frame viewer__frame--video" data-frame style="--ar:@AspectText(item.Media)">
+                        @* A GIF (a muted MP4 loop) keeps looping here too; viewer.js mutes it ([data-animation]: the attribute alone
+                           does not, on an element made by script). *@
                         <video class="viewer__video" src="@MediaUrls.ContentUrl(item.Media)" poster="@PosterOf(item.Media)"
-                               autoplay playsinline preload="auto" disablepictureinpicture></video>
+                               autoplay playsinline preload="auto" disablepictureinpicture loop="@item.Media.IsAnimation" muted="@item.Media.IsAnimation"
+                               data-animation="@(item.Media.IsAnimation ? "" : null)"></video>
                         @* Shown while the video is paused or has ended (viewer.js sets data-vstate on the viewer). *@
                         <button type="button" class="viewer__play" data-vplay aria-label="@L["media.viewer.play"]" title="@L["media.viewer.play"]">
                             <Icon Name="@IconNames.Play" Size="30" Class="viewer__i-play" />
@@ -93,18 +96,22 @@
             }
             @if (isVideo)
             {
-                @* Our own controls; viewer.js plays/pauses, paints the progress (--vp) and the times, and seeks on drags. *@
-                <div class="viewer__vbar" data-vbar data-no-gesture>
+                @* Our own controls; viewer.js plays/pauses, paints the progress (--vp) and the times, and seeks on drags. A GIF is a
+                   loop of a second or two: only its pause button, no scrubber or times. *@
+                <div class="viewer__vbar @(item.Media.IsAnimation ? "viewer__vbar--loop" : null)" data-vbar data-no-gesture>
                     <button type="button" class="viewer__vbtn" data-vplay aria-label="@L["media.viewer.playPause"]" title="@L["media.viewer.playPause"]">
                         <Icon Name="@IconNames.Play" Size="20" Class="viewer__i-play" />
                         <Icon Name="@IconNames.Pause" Size="20" Class="viewer__i-pause" />
                     </button>
-                    <span class="viewer__time sm-nums" data-vcur>0:00</span>
-                    <div class="viewer__scrub" data-vscrub role="slider" tabindex="0" aria-label="@L["media.viewer.seek"]" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                        <span class="viewer__rail"><span class="viewer__fill"></span></span>
-                        <span class="viewer__knob-track"><span class="viewer__knob"></span></span>
-                    </div>
-                    <span class="viewer__time viewer__time--total sm-nums" data-vdur>@Format.DurationMs(item.Media.DurationMs)</span>
+                    @if (!item.Media.IsAnimation)
+                    {
+                        <span class="viewer__time sm-nums" data-vcur>0:00</span>
+                        <div class="viewer__scrub" data-vscrub role="slider" tabindex="0" aria-label="@L["media.viewer.seek"]" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                            <span class="viewer__rail"><span class="viewer__fill"></span></span>
+                            <span class="viewer__knob-track"><span class="viewer__knob"></span></span>
+                        </div>
+                        <span class="viewer__time viewer__time--total sm-nums" data-vdur>@Format.DurationMs(item.Media.DurationMs)</span>
+                    }
                 </div>
             }
         </div>

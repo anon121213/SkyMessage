@@ -1,0 +1,36 @@
+/* The sticker is the content: big, on the dialog's calm glass, nothing around it but its emoji and the actions. */
+.sticker-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 22px 18px 18px;
+}
+
+.sticker-preview__art {
+    width: min(15rem, 62vw);
+    aspect-ratio: 1;
+    animation: sm-pop-in var(--sm-dur) var(--sm-spring) both;
+}
+
+.sticker-preview__emoji {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    font-size: 1.5rem;
+    line-height: 1.2;
+}
+
+.sticker-preview__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.sticker-preview__actions ::deep .sticker-preview__fav--on .sm-icon {
+    color: var(--sm-gold);
+    fill: var(--sm-gold);
+}

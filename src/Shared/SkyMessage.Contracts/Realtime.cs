@@ -45,6 +45,13 @@ public interface IRealtimeClient
     /// </summary>
     Task ChatFoldersChanged(ChatFoldersDto state);
 
+    /// <summary>
+    /// My stickers and GIFs changed (installed packs, their order, favorites, recent stickers, saved GIFs, or a pack I
+    /// use was edited or deleted by its creator): the whole new state to all my devices; a copy with a lower
+    /// <see cref="StickerStateDto.Revision"/> than one already seen is older. Apps before stickers ignore it.
+    /// </summary>
+    Task StickersChanged(StickerStateDto state);
+
     Task HistoryCleared(HistoryClearedEvent e);
 
     Task PinnedMessagesChanged(ChatRefEvent e);

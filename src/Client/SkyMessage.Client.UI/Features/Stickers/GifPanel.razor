@@ -1,0 +1,176 @@
+@* The GIF tab: «Мои GIF», the newest first, as their first frames (still pictures: calm, light on old phones). A tap sends
+   one again (nothing is uploaded); a hold (or right-click) offers to send it or to remove it from the list. The server
+   says which ones I can no longer see (SavedGifDto.Unavailable: its message was deleted, I left the chat): those only
+   offer removal. A first frame that does not load is a bad connection, not a gone GIF: a calm placeholder holds its
+   place and it tries again by itself (img[data-retry], app.js). Opening the tab asks for the state again, so what is
+   available is fresh. *@
+@inherits UiComponentBase
+@implements IAsyncDisposable
+@inject IStickerStore Stickers
+@inject IMediaUrlBuilder MediaUrls
+@inject DialogService Dialogs
+@inject ToastService Toasts
+@inject HapticFeedback Haptics
+@inject IJSRuntime JS
+
+<div class="gpanel" style="--panel-h:@Height">
+    @if (!CanSend)
+    {
+        <div class="xempty">
+            <span class="xempty__tile" aria-hidden="true"><Icon Name="@IconNames.Lock" Size="22" /></span>
+            <div class="xempty__text">@L["stickers.panel.noMedia"]</div>
+        </div>
+    }
+    else if (Stickers.State.Gifs.Count == 0)
+    {
+        <div class="xempty">
+            <span class="xempty__tile" aria-hidden="true"><Icon Name="@IconNames.Film" Size="22" /></span>
+            <div class="xempty__title">@L["stickers.gifs.emptyTitle"]</div>
+            <div class="xempty__text">@L["stickers.gifs.emptyText"]</div>
+        </div>
+    }
+    else
+    {
+        var gifs = Stickers.State.Gifs;
+        <div class="gpanel__scroll" @ref="_scroll">
+            <div class="gpanel__grid" role="list" aria-label="@L["stickers.gifs.title"]">
+                @for (var i = 0; i < gifs.Count; i++)
+                {
+                    var gif = gifs[i];
+                    var media = gif.Media;
+                    var label = gif.Unavailable
+                        ? L.Format("stickers.gifs.cellGone", i + 1, gifs.Count)
+                        : L.Format("stickers.gifs.cell", i + 1, gifs.Count);
+                    <div class="gpanel__item" role="listitem" @key="media.Id">
+                        <button type="button" class="gpanel__cell @(gif.Unavailable ? "gpanel__cell--gone" : null)" data-hold="@media.Id"
+                                aria-label="@label" title="@label" @onclick="() => PickAsync(gif)">
+                            @if (media.HasThumbnail && !gif.Unavailable)
+                            {
+                                <img class="gpanel__poster" src="@MediaUrls.ThumbnailUrl(media.Id)" alt="" loading="lazy" decoding="async" draggable="false" data-retry />
+                            }
+                            <span class="gpanel__placeholder" aria-hidden="true">
+                                <Icon Name="@(gif.Unavailable ? IconNames.CircleAlert : IconNames.Film)" Size="22" />
+                                @if (gif.Unavailable)
+                                {
+                                    <span class="gpanel__gone">@L["stickers.gifs.gone"]</span>
+                                }
+                            </span>
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+
+    private ElementReference _scroll;
+    private JsModule? _module;
+    private JsObject? _hold;
+    private DotNetObjectReference<GifPanel>? _self;
+    private bool _attached;
+
+    [Parameter] public EventCallback<MediaDto> OnPick { get; set; }
+    [Parameter] public bool CanSend { get; set; } = true;
+    [Parameter] public string Height { get; set; } = "17rem";
+
+    protected override void OnInitialized()
+    {
+        Action changed = () => InvokeAsync(async () =>
+        {
+            if (IsDisposed) return;
+            if (Stickers.State.Gifs.Count == 0 && _attached) await DetachAsync();
+            StateHasChanged();
+        });
+        Stickers.Changed += changed;
+        OnDispose(() => Stickers.Changed -= changed);
+        RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
+        // Which GIFs I can still see is decided on the server when it builds my state: ask for a fresh one.
+        if (CanSend) Stickers.LoadAsync(force: true).Forget();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_attached || !CanSend || Stickers.State.Gifs.Count == 0) return;
+        _attached = true;
+        _self ??= DotNetObjectReference.Create(this);
+        _module ??= new JsModule(JS, ModulePath);
+        _hold = await _module.AttachAsync("attachHold", _scroll, _self);
+    }
+
+    private async Task DetachAsync()
+    {
+        _attached = false;
+        if (_hold is not null) await _hold.DisposeAsync();
+        _hold = null;
+    }
+
+    private async Task PickAsync(SavedGifDto gif)
+    {
+        if (gif.Unavailable)
+        {
+            await OfferRemovalAsync(gif.Media);
+            return;
+        }
+        Haptics.Tap();
+        await OnPick.InvokeAsync(gif.Media);
+    }
+
+    /// <summary>A GIF I can no longer see (its message was deleted, I left its chat): it cannot go out again, only leave the list.</summary>
+    private async Task OfferRemovalAsync(MediaDto media)
+    {
+        var ok = await Dialogs.ConfirmAsync(L["stickers.gifs.goneTitle"], L["stickers.gifs.goneText"], L["stickers.gifs.removeShort"]);
+        if (!ok) return;
+        await RemoveAsync(media);
+    }
+
+    private async Task RemoveAsync(MediaDto media)
+    {
+        try
+        {
+            await Stickers.RemoveGifAsync(media.Id);
+            Toasts.Success(L["stickers.gifs.removed"]);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    [JSInvokable]
+    public Task OnHold(string key) => InvokeAsync(async () =>
+    {
+        if (!Guid.TryParse(key, out var id)) return;
+        var gif = Stickers.State.Gifs.FirstOrDefault(g => g.Media.Id == id);
+        if (gif is null) return;
+        Haptics.LongPress();
+        if (gif.Unavailable)
+        {
+            await OfferRemovalAsync(gif.Media);
+            return;
+        }
+        var choice = await Dialogs.ChooseAsync(L["stickers.gifs.title"],
+        [
+            new ChoiceOption<string>("send", L["stickers.gifs.send"]) { Icon = IconNames.ArrowUp },
+            new ChoiceOption<string>("remove", L["stickers.gifs.remove"]) { Icon = IconNames.Trash2, Danger = true },
+        ]);
+        if (choice?.Value == "send")
+        {
+            await PickAsync(gif);
+        }
+        else if (choice?.Value == "remove")
+        {
+            await RemoveAsync(gif.Media);
+        }
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        await DetachAsync();
+        if (_module is not null) await _module.DisposeAsync();
+        _self?.Dispose();
+        Dispose();
+    }
+}

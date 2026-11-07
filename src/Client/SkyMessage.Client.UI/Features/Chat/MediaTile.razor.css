@@ -117,3 +117,28 @@
 .tile__progress ::deep .sm-progress-ring__bar {
     stroke: url(#sm-chat-grad-light) #FFFFFF;
 }
+
+/* A GIF's small mark (top left), on the same dark glass as the duration badge. */
+.tile__gif {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(14, 9, 36, 0.5);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+    color: #FFFFFF;
+    font-family: var(--sm-font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+}
+
+.tile--small .tile__gif {
+    top: 5px;
+    left: 5px;
+    padding: 1px 6px;
+    font-size: 0.625rem;
+}
+

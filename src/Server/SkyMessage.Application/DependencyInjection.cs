@@ -4,6 +4,7 @@ using SkyMessage.Application.Calls;
 using SkyMessage.Application.Identity;
 using SkyMessage.Application.MediaFiles;
 using SkyMessage.Application.Messaging;
+using SkyMessage.Application.Stickers;
 using SkyMessage.Application.Updates;
 
 namespace SkyMessage.Application;
@@ -18,6 +19,7 @@ public static class DependencyInjection
         services.AddIdentityFeature();
         services.AddMessagingFeature();
         services.AddMediaFeature();
+        services.AddStickersFeature();
         services.AddCallsFeature();
         services.AddUpdatesFeature();
 

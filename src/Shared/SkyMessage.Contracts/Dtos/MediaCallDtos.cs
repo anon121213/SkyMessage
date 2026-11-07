@@ -13,6 +13,12 @@ public sealed record CreateUploadRequest
     public int? DurationMs { get; init; }
     /// <summary>Optional client-computed waveform for voice messages (the server may recompute it).</summary>
     public byte[]? Waveform { get; init; }
+    /// <summary>
+    /// A photo that is an animated GIF becomes a muted looping MP4 (Kind Video, <see cref="MediaDto.IsAnimation"/>). Apps
+    /// set it for chat attachments only; without it (apps before GIFs, profile and group photos, covers) a GIF stays the
+    /// photo it is, which avatars and covers need.
+    /// </summary>
+    public bool ConvertAnimation { get; init; }
 }
 
 public sealed record UploadSessionDto

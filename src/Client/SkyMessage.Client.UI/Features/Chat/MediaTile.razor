@@ -27,7 +27,16 @@
     {
         <span class="tile__placeholder"><Icon Name="@(IsVideo ? IconNames.Film : IconNames.Image)" Size="28" /></span>
     }
-    @if (IsVideo && !Pending)
+    @if (IsAnimation)
+    {
+        @* A GIF loops by itself (muted) while on screen; without autoplay its first frame waits for a tap. *@
+        @if (AutoplayUrl is null && !Pending)
+        {
+            <span class="tile__play" aria-hidden="true"><Icon Name="@IconNames.Play" Size="@(Small ? 18 : 24)" /></span>
+        }
+        <span class="tile__gif" aria-hidden="true">GIF</span>
+    }
+    else if (IsVideo && !Pending)
     {
         <span class="tile__play" aria-hidden="true"><Icon Name="@IconNames.Play" Size="@(Small ? 18 : 24)" /></span>
         @if (DurationMs > 0)
@@ -79,6 +88,12 @@
 
     private bool IsGif => Media is not null && Media.ContentType.Equals("image/gif", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>A GIF made into a muted MP4 loop (MediaDto.IsAnimation).</summary>
+    private bool IsAnimation => Media?.IsAnimation == true;
+
+    /// <summary>The loop was asked for with a tap (autoplay off, lite mode, reduced motion, data saving).</summary>
+    private bool _playRequested;
+
     private string? ImageUrl
     {
         get
@@ -101,11 +116,22 @@
         }
     }
 
-    private string? AutoplayUrl => Autoplay && IsVideo && Media is not null && Ready && Downloads.ShouldAutoDownload(Media)
+    private string? AutoplayUrl => IsVideo && Media is not null && Ready
+                                   && (IsAnimation && _playRequested || Autoplay && Downloads.ShouldAutoDownload(Media))
         ? MediaUrls.ContentUrl(Media)
         : null;
 
     protected override void OnInitialized() => RenderOn(h => MediaUrls.Changed += h, h => MediaUrls.Changed -= h);
 
-    private Task OpenAsync() => CanOpen ? OnOpen.InvokeAsync() : Task.CompletedTask;
+    private Task OpenAsync()
+    {
+        if (!CanOpen) return Task.CompletedTask;
+        // A GIF that waits for a tap plays in place first; the next tap opens the viewer.
+        if (IsAnimation && AutoplayUrl is null)
+        {
+            _playRequested = true;
+            return Task.CompletedTask;
+        }
+        return OnOpen.InvokeAsync();
+    }
 }

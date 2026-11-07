@@ -12,8 +12,8 @@ public interface IMediaAccessService
     /// Yes for the owner; for the current avatar, an avatar-history photo (while there is a current one) or the cover
     /// photo of a user whose profile photo the viewer may see; for the current avatar of a chat the viewer is a member of
     /// and its history photos (while it has a current one; always for who may change its info); and for an attachment
-    /// of a non-deleted message that is visible to the viewer in a chat they are a member of. Positive answers are
-    /// cached for 60 s.
+    /// of a non-deleted message that is visible to the viewer in a chat they are a member of; and for anyone signed in, the
+    /// image of a sticker of an existing pack (stickers are shared by nature). Positive answers are cached for 60 s.
     /// </summary>
     Task<bool> CanViewAsync(Guid viewerId, Guid mediaId, Guid ownerId, CancellationToken cancellationToken = default);
 }
@@ -36,23 +36,30 @@ internal sealed class MediaAccessService(IAppDbContext db, IPrivacyService priva
         return true;
     }
 
+    /// <summary>
+    /// The media attached to a message <paramref name="viewerId"/> can see: not deleted, in a chat they are a member of
+    /// (not deleted), after their cleared history and not hidden for them. The attachment part of
+    /// <see cref="CanViewAsync"/>, for checking many media at once (saved GIFs).
+    /// </summary>
+    internal static IQueryable<Guid> AttachmentsVisibleTo(IAppDbContext db, Guid viewerId) =>
+        from attachment in db.MessageAttachments
+        join message in db.Messages on attachment.MessageId equals message.Id
+        join member in db.ChatMembers on message.ChatId equals member.ChatId
+        join chat in db.Chats on message.ChatId equals chat.Id
+        where message.DeletedAt == null
+              && member.UserId == viewerId
+              && message.Seq > member.ClearedUpToSeq
+              && !chat.IsDeleted
+              && !db.HiddenMessages.Any(h => h.MessageId == message.Id && h.UserId == viewerId)
+        select attachment.MediaId;
+
     private async Task<bool> IsAllowedAsync(Guid viewerId, Guid mediaId, Guid ownerId, CancellationToken cancellationToken)
     {
         // Most reads are chat attachments: attachment → message → the viewer's membership of that chat.
-        var inVisibleMessage = await (
-                from attachment in db.MessageAttachments
-                join message in db.Messages on attachment.MessageId equals message.Id
-                join member in db.ChatMembers on message.ChatId equals member.ChatId
-                join chat in db.Chats on message.ChatId equals chat.Id
-                where attachment.MediaId == mediaId
-                      && message.DeletedAt == null
-                      && member.UserId == viewerId
-                      && message.Seq > member.ClearedUpToSeq
-                      && !chat.IsDeleted
-                      && !db.HiddenMessages.Any(h => h.MessageId == message.Id && h.UserId == viewerId)
-                select attachment.Id)
-            .AnyAsync(cancellationToken);
-        if (inVisibleMessage) return true;
+        if (await AttachmentsVisibleTo(db, viewerId).AnyAsync(id => id == mediaId, cancellationToken)) return true;
+
+        // A sticker of a pack that exists: anyone may look at the pack before installing it.
+        if (await db.Stickers.AnyAsync(s => s.MediaId == mediaId, cancellationToken)) return true;
 
         // A group's earlier photos: while it has a current one, or for who may change its info (ChatPolicy.CanChangeInfo),
         // as their list is (ChatService.GetAvatarsAsync).

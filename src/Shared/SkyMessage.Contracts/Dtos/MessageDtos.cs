@@ -34,6 +34,16 @@ public sealed record MediaDto
     public byte[]? MiniThumbnail { get; init; }
     public bool HasThumbnail { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+    /// <summary>
+    /// Set when this photo is a sticker (a WebP with transparency, shown without a bubble). Apps before stickers
+    /// (0.2.61) ignore it and show a plain photo.
+    /// </summary>
+    public StickerInfoDto? Sticker { get; init; }
+    /// <summary>
+    /// A GIF the server turned into a muted looping MP4 (Kind Video): shown as an autoplaying loop with a "GIF" mark.
+    /// Apps before GIFs (0.2.61) ignore it and show a plain video.
+    /// </summary>
+    public bool IsAnimation { get; init; }
 }
 
 public sealed record ReplyPreviewDto
@@ -161,6 +171,16 @@ public sealed record SendMessageRequest
     public Guid? ReplyToMessageId { get; init; }
     /// <summary>Uploaded, Ready media owned by the sender.</summary>
     public IReadOnlyList<Guid> MediaIds { get; init; } = [];
+    /// <summary>
+    /// Sends this sticker (of a pack that still exists): a Photo message whose media carries <see cref="MediaDto.Sticker"/>.
+    /// Nothing goes with it (no text, no media); a reply is fine.
+    /// </summary>
+    public Guid? StickerId { get; init; }
+    /// <summary>
+    /// Sends one of my saved GIFs again without uploading it: the animation media (<see cref="MediaDto.IsAnimation"/>),
+    /// which I must still be able to see. A Video message; nothing goes with it; a reply is fine.
+    /// </summary>
+    public Guid? GifMediaId { get; init; }
 }
 
 public sealed record EditMessageRequest

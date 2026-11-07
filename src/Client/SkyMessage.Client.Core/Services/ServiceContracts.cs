@@ -173,6 +173,11 @@ public sealed class MediaUploadRequest
     public int? Height { get; init; }
     public int? DurationMs { get; init; }
     public byte[]? Waveform { get; init; }
+    /// <summary>
+    /// An animated GIF photo becomes a muted looping MP4 (CreateUploadRequest.ConvertAnimation): chat attachments only —
+    /// profile and group photos and covers must stay photos.
+    /// </summary>
+    public bool ConvertAnimation { get; init; }
 }
 
 /// <summary>Chunked, resumable upload; waits until the server reports the media Ready. Used for avatars too.</summary>
@@ -217,6 +222,8 @@ public interface ILinkBuilder
 {
     string ProfileLink(string username);
     string InviteLink(string token);
+    /// <summary>A sticker pack's link: <c>{public base url}/addstickers/{slug}</c>.</summary>
+    string StickerPackLink(string slug);
 }
 
 /// <summary>
@@ -281,6 +288,8 @@ public interface IRealtimeService
     event Action<PinnedChatsOrderDto>? PinnedChatsReordered;
     /// <summary>My folders or chat list settings changed (on any device, this one included): the whole new state.</summary>
     event Action<ChatFoldersDto>? ChatFoldersChanged;
+    /// <summary>My stickers and GIFs changed (on any device, or a pack I use was edited): the whole new state.</summary>
+    event Action<StickerStateDto>? StickersChanged;
     event Action<HistoryClearedEvent>? HistoryCleared;
     event Action<ChatRefEvent>? PinnedMessagesChanged;
     event Action<PresenceChangedEvent>? PresenceChanged;

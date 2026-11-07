@@ -32,6 +32,18 @@ internal static class CoreStrings
     public static string Preview(MessageDto message, bool ru)
     {
         if (message.IsDeleted) return ru ? "Сообщение удалено" : "Message deleted";
+        // As MessagePreviewFormatter: "Стикер 😺" with its own emoji (a sticker has no caption); a GIF is "GIF".
+        if (message is { Type: MessageType.Photo, Attachments: [{ Sticker: { } sticker }] })
+        {
+            var word = ru ? "Стикер" : "Sticker";
+            return string.IsNullOrEmpty(sticker.Emoji) ? word : $"{word} {sticker.Emoji}";
+        }
+        var gif = message is { Type: MessageType.Video, Attachments.Count: > 0 } && message.Attachments.All(a => a.IsAnimation);
+        if (gif)
+        {
+            var caption = message.Text?.ReplaceLineEndings(" ").Trim() ?? "";
+            return caption.Length == 0 ? "GIF" : "GIF " + (caption.Length > 120 ? caption[..120] + "…" : caption);
+        }
         if (!string.IsNullOrWhiteSpace(message.Text))
         {
             var text = message.Text.ReplaceLineEndings(" ").Trim();

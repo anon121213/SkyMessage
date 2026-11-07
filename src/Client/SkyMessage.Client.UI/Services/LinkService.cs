@@ -16,6 +16,7 @@ public sealed class LinkService(
     ToastService toasts,
     IExternalLauncher launcher,
     IServerEndpointService endpoints,
+    IAuthService auth,
     ILocalizer localizer,
     ILogger<LinkService> logger)
 {
@@ -59,6 +60,13 @@ public sealed class LinkService(
             return;
         }
 
+        // A sticker pack link tapped in the app opens the pack's sheet over the chat (the page is for links from outside).
+        if (IsOwnLink(uri) && auth.State == AuthState.SignedIn && DeepLinks.TryParse(uri, out var target)
+            && target is { Kind: DeepLinkKind.StickerPack } pack && StickerRules.IsValidSlug(pack.Value))
+        {
+            await Features.Stickers.StickerPackSheet.ShowBySlugAsync(dialogs, pack.Value);
+            return;
+        }
         if (IsOwnLink(uri) && navigation.HandleDeepLink(uri)) return;
         if (uri.Scheme.Equals(DeepLinks.AppScheme, StringComparison.OrdinalIgnoreCase))
         {

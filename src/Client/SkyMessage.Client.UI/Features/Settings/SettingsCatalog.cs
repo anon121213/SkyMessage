@@ -7,8 +7,8 @@ namespace SkyMessage.Client.UI.Features.Settings;
 public sealed record SettingsSectionInfo(string Key, string TitleKey, string Icon, string Color);
 
 /// <summary>
-/// The settings menu, grouped. "blocked" and "passcode" are sub-pages of privacy, "folder" one of folders: none of them
-/// has a menu row of its own.
+/// The settings menu, grouped. "blocked" and "passcode" are sub-pages of privacy, "folder" one of folders, "stickerpack"
+/// one of stickers: none of them has a menu row of its own.
 /// </summary>
 public static class SettingsCatalog
 {
@@ -26,6 +26,7 @@ public static class SettingsCatalog
         new(SettingsRoutes.Appearance, "settings.appearance.title", IconNames.Palette, SettingsTones.Orchid),
         new(SettingsRoutes.Chats, "settings.chats.title", IconNames.MessageCircle, SettingsTones.Sky),
         new(SettingsRoutes.Folders, "folders.settings.title", IconNames.FolderOpen, SettingsTones.Mint),
+        new(SettingsRoutes.Stickers, "stickers.settings.title", IconNames.Smile, SettingsTones.Periwinkle),
         new(SettingsRoutes.Devices, "settings.devices.title", IconNames.Headphones, SettingsTones.Peach),
         new(SettingsRoutes.Data, "settings.data.title", IconNames.HardDrive, SettingsTones.Gold),
         new(SettingsRoutes.Language, "settings.language.title", IconNames.Languages, SettingsTones.Lagoon),
@@ -40,9 +41,10 @@ public static class SettingsCatalog
     private static readonly SettingsSectionInfo BlockedInfo = new(SettingsRoutes.Blocked, "settings.blocked.title", IconNames.Ban, SettingsTones.Rose);
     private static readonly SettingsSectionInfo PasscodeInfo = new(SettingsRoutes.Passcode, "passcode.title", IconNames.Lock, SettingsTones.Violet);
     private static readonly SettingsSectionInfo FolderInfo = new(SettingsRoutes.Folder, "folders.edit.title", IconNames.FolderOpen, SettingsTones.Mint);
+    private static readonly SettingsSectionInfo StickerPackInfo = new(SettingsRoutes.StickerPack, "stickers.edit.title", IconNames.Smile, SettingsTones.Periwinkle);
 
     public static IEnumerable<SettingsSectionInfo> All =>
-        Account.Concat(App).Concat(Help).Append(BlockedInfo).Append(PasscodeInfo).Append(FolderInfo);
+        Account.Concat(App).Concat(Help).Append(BlockedInfo).Append(PasscodeInfo).Append(FolderInfo).Append(StickerPackInfo);
 
     /// <summary>Known section key (case-insensitive) in its canonical form, else null.</summary>
     public static string? Normalize(string? key) =>
@@ -53,6 +55,7 @@ public static class SettingsCatalog
     {
         SettingsRoutes.Blocked or SettingsRoutes.Passcode => SettingsRoutes.Privacy,
         SettingsRoutes.Folder => SettingsRoutes.Folders,
+        SettingsRoutes.StickerPack => SettingsRoutes.Stickers,
         _ => key,
     };
 
@@ -61,6 +64,7 @@ public static class SettingsCatalog
     {
         SettingsRoutes.Blocked or SettingsRoutes.Passcode => SettingsRoutes.PathOf(SettingsRoutes.Privacy),
         SettingsRoutes.Folder => SettingsRoutes.PathOf(SettingsRoutes.Folders),
+        SettingsRoutes.StickerPack => SettingsRoutes.PathOf(SettingsRoutes.Stickers),
         _ => "/settings",
     };
 }

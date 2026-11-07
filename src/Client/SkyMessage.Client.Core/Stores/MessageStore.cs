@@ -631,7 +631,7 @@ internal sealed partial class MessageStore : IMessageStore, IAccountScoped
             Type = record.Type,
             Text = record.Text,
             Entities = record.Entities,
-            Attachments = forward && source is not null ? source.Attachments : [],
+            Attachments = forward && source is not null ? source.Attachments : record.SharedMedia is { } shared ? [shared] : [],
             ReplyTo = record.ReplyPreview,
             Forward = forward ? ForwardInfoFor(source, record.ForwardFromChatId) : null,
             CreatedAt = record.CreatedAt,

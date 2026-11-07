@@ -21,9 +21,12 @@ internal sealed record MediaCleanupReport(int StaleUploads, int FailedMedia, int
 /// <summary>
 /// Hourly: deletes uploads still Uploading after <c>Storage:IncompleteUploadTtlHours</c>, Failed media older than the
 /// same TTL (they can never be attached), Ready media older than 7 days that nothing references (no message
-/// attachment, not a current user or chat avatar) and orphaned processing temp directories. Chunks and thumbnails go
-/// with the media row (ON DELETE CASCADE). The reference checks are repeated inside each DELETE and attachments
-/// reference media with ON DELETE RESTRICT, so a media attached concurrently is never lost.
+/// attachment, not a current user or chat avatar, no sticker of a pack, not among its own uploader's saved GIFs) and
+/// orphaned processing temp directories. Someone else's saved GIF does not keep a media alive: with no message left
+/// that shows it, they could no longer see it nor send it (a GIF deleted for everyone leaves the server; their saved
+/// entry goes with it). Chunks, thumbnails and saved-GIF entries go with the media row (ON DELETE CASCADE). The
+/// reference checks are repeated inside each DELETE and attachments reference media with ON DELETE RESTRICT, so a
+/// media attached concurrently is never lost.
 /// </summary>
 internal sealed class MediaCleanupService(
     IServiceScopeFactory scopeFactory,
@@ -86,7 +89,9 @@ internal sealed class MediaCleanupService(
                                       && !db.MessageAttachments.Any(a => a.MediaId == m.Id)
                                       && !db.Users.Any(u => u.AvatarMediaId == m.Id || u.CoverMediaId == m.Id)
                                       && !db.Chats.Any(c => c.AvatarMediaId == m.Id)
-                                      && !db.AvatarPhotos.Any(a => a.MediaId == m.Id)),
+                                      && !db.AvatarPhotos.Any(a => a.MediaId == m.Id)
+                                      && !db.Stickers.Any(s => s.MediaId == m.Id)
+                                      && !db.SavedGifs.Any(g => g.MediaId == m.Id && g.UserId == m.OwnerId)),
             cancellationToken);
         var tempDirectories = temp.DeleteStaleJobs(TempRetention, now);
 

@@ -19,6 +19,8 @@ internal sealed class SendMessageRequestValidator : AbstractValidator<SendMessag
             .Must(ids => ids is null || (ids.Distinct().Count() == ids.Count && !ids.Contains(Guid.Empty)))
             .WithMessage("Media ids must be distinct and not empty.");
         RuleFor(x => x.ReplyToMessageId).NotEqual(Guid.Empty).When(x => x.ReplyToMessageId is not null);
+        RuleFor(x => x.StickerId).NotEqual(Guid.Empty).When(x => x.StickerId is not null);
+        RuleFor(x => x.GifMediaId).NotEqual(Guid.Empty).When(x => x.GifMediaId is not null);
     }
 
     internal static void AddContentErrors<T>(string? text, IReadOnlyList<MessageEntityDto>? entities, ValidationContext<T> context)

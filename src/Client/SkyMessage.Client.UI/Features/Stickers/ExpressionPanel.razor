@@ -1,0 +1,113 @@
+@* The composer's panel behind the emoji button: «Эмодзи · Стикеры · GIF». The switch sits at the bottom, under the
+   thumb, as a capsule track whose pill glides to the open tab (the emoji picker's own tabs stay on top); arrow keys move
+   between its tabs. The last tab is remembered on this device. While a message is being edited only emoji make sense
+   (a sticker or a GIF is a message of its own): the switch steps aside and the emoji take the whole panel. *@
+@inherits UiComponentBase
+@inject AppJs Js
+
+<div class="xpanel" style="--xpanel-h:@Height">
+    <div class="xpanel__body" id="@BodyId" role="@(Editing ? null : "tabpanel")" aria-labelledby="@(Editing ? null : TabId(Shown))">
+        @switch (Shown)
+        {
+            case Tab.Stickers:
+                <StickerPanel Height="@BodyHeight" CanSend="CanSendMedia" OnPick="OnSticker" OnLeave="OnLeave" />
+                break;
+            case Tab.Gifs:
+                <GifPanel Height="@BodyHeight" CanSend="CanSendMedia" OnPick="OnGif" />
+                break;
+            default:
+                <EmojiPicker OnPick="OnEmoji" Height="@BodyHeight" />
+                break;
+        }
+    </div>
+    @if (!Editing)
+    {
+        <div class="xpanel__switch" role="tablist" aria-label="@L["stickers.panel.label"]" @onkeydown="OnKeyDownAsync">
+            <div class="xpanel__track" style="--tab:@((int)_tab)">
+                <span class="xpanel__pill" aria-hidden="true"></span>
+                @foreach (var tab in Tabs)
+                {
+                    var value = tab;
+                    var active = _tab == value;
+                    <button type="button" role="tab" id="@TabId(value)" aria-controls="@BodyId" aria-selected="@(active ? "true" : "false")"
+                            tabindex="@(active ? 0 : -1)" class="xpanel__tab @(active ? "xpanel__tab--active" : null)"
+                            @ref="_tabRefs[(int)value]" @onclick="() => SelectAsync(value)">
+                        @L[LabelKey(value)]
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private enum Tab
+    {
+        Emoji = 0,
+        Stickers = 1,
+        Gifs = 2,
+    }
+
+    private const string TabKey = "sm.panel.tab";
+    private static readonly Tab[] Tabs = [Tab.Emoji, Tab.Stickers, Tab.Gifs];
+    private readonly ElementReference[] _tabRefs = new ElementReference[3];
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8];
+    private Tab _tab;
+
+    [Parameter] public EventCallback<string> OnEmoji { get; set; }
+    [Parameter] public EventCallback<StickerDto> OnSticker { get; set; }
+    [Parameter] public EventCallback<MediaDto> OnGif { get; set; }
+    /// <summary>A sticker tab action leaves the chat (a new pack, the settings).</summary>
+    [Parameter] public EventCallback OnLeave { get; set; }
+    [Parameter] public bool CanSendMedia { get; set; } = true;
+    /// <summary>A message is being edited: emoji only.</summary>
+    [Parameter] public bool Editing { get; set; }
+    /// <summary>The whole panel's height (the switch included).</summary>
+    [Parameter] public string Height { get; set; } = "19.5rem";
+
+    private Tab Shown => Editing ? Tab.Emoji : _tab;
+
+    private string BodyHeight => Editing ? "var(--xpanel-h)" : "calc(var(--xpanel-h) - 3.25rem)";
+
+    private string BodyId => $"xpanel-{_id}";
+
+    private string TabId(Tab tab) => $"xpanel-{_id}-{(int)tab}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var saved = await Js.LocalGetAsync(TabKey);
+        if (Enum.TryParse<Tab>(saved, out var tab) && Tabs.Contains(tab)) _tab = tab;
+    }
+
+    private static string LabelKey(Tab tab) => tab switch
+    {
+        Tab.Stickers => "stickers.panel.stickers",
+        Tab.Gifs => "stickers.panel.gifs",
+        _ => "stickers.panel.emoji",
+    };
+
+    private async Task SelectAsync(Tab tab)
+    {
+        if (_tab == tab) return;
+        _tab = tab;
+        await Js.LocalSetAsync(TabKey, tab.ToString());
+    }
+
+    /// <summary>The tabs as one control (WAI-ARIA tabs): arrows move to the neighbour (wrapping), Home and End to the ends.</summary>
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        var index = (int)_tab;
+        var next = e.Key switch
+        {
+            "ArrowRight" => (index + 1) % Tabs.Length,
+            "ArrowLeft" => (index + Tabs.Length - 1) % Tabs.Length,
+            "Home" => 0,
+            "End" => Tabs.Length - 1,
+            _ => -1,
+        };
+        if (next < 0 || next == index) return;
+        await SelectAsync(Tabs[next]);
+        StateHasChanged();
+        await Js.FocusAsync(_tabRefs[next]);
+    }
+}

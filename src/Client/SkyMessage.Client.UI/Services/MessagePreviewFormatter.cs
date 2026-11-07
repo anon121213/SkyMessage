@@ -29,8 +29,13 @@ public sealed class MessagePreviewFormatter(ILocalizer localizer, FormatService 
         {
             case MessageType.Text:
                 return caption.Length > 0 ? caption : localizer["message.preview.empty"];
+            // "Стикер 😺" with the sticker's own emoji; a GIF is a looping video ("GIF" plus its caption).
+            case MessageType.Photo when message.Attachments is [{ Sticker: { } sticker }]:
+                return string.IsNullOrEmpty(sticker.Emoji) ? localizer["stickers.preview.sticker"] : $"{localizer["stickers.preview.sticker"]} {sticker.Emoji}";
             case MessageType.Photo:
                 return WithCaption("🖼", localizer["message.preview.photo"], caption);
+            case MessageType.Video when message.Attachments.Count > 0 && message.Attachments.All(a => a.IsAnimation):
+                return caption.Length > 0 ? $"GIF {caption}" : "GIF";
             case MessageType.Video:
                 return WithCaption("🎬", localizer["message.preview.video"], caption);
             case MessageType.Album:

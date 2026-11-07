@@ -35,6 +35,31 @@ public static class Limits
     /// <summary>Chats a folder includes by id, excludes by id, or pins (each list).</summary>
     public const int MaxChatFolderChats = 200;
 
+    public const int StickerPackTitleMaxLength = 64;
+    public const int MaxStickersPerPack = 120;
+    /// <summary>A sticker's source upload (PNG, WebP or JPEG).</summary>
+    public const long StickerSourceMaxBytes = 5L * 1024 * 1024;
+    /// <summary>Each side of a sticker's source image at least this many pixels.</summary>
+    public const int StickerSourceMinSide = 64;
+    /// <summary>
+    /// Each side of a sticker's source image at most this many pixels (it is decoded while the request waits; a larger
+    /// picture is cropped on the device first, which makes it 512 px).
+    /// </summary>
+    public const int StickerSourceMaxSide = 4096;
+    /// <summary>Stickers are stored as WebP of at most this many pixels on the long side.</summary>
+    public const int StickerMaxSide = 512;
+    /// <summary>Emoji of one sticker.</summary>
+    public const int StickerEmojiMax = 8;
+    public const int MaxFavoriteStickers = 50;
+    public const int MaxRecentStickers = 20;
+    public const int MaxSavedGifs = 200;
+    /// <summary>Packs one user may have installed.</summary>
+    public const int MaxInstalledStickerPacks = 200;
+    /// <summary>Packs one user may make.</summary>
+    public const int MaxOwnStickerPacks = 100;
+    /// <summary>GIFs become MP4 loops of at most this many pixels on the long side.</summary>
+    public const int AnimationMaxSide = 720;
+
     public const int GroupTitleMaxLength = 128;
     public const int GroupDescriptionMaxLength = 500;
     public const int MaxGroupMembers = 1000;

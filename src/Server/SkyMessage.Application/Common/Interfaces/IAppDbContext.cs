@@ -30,6 +30,14 @@ public interface IAppDbContext
     DbSet<MediaThumbnail> MediaThumbnails { get; }
     DbSet<MediaChunk> MediaChunks { get; }
 
+    DbSet<StickerPack> StickerPacks { get; }
+    DbSet<Sticker> Stickers { get; }
+    DbSet<InstalledStickerPack> InstalledStickerPacks { get; }
+    DbSet<FavoriteSticker> FavoriteStickers { get; }
+    DbSet<RecentSticker> RecentStickers { get; }
+    DbSet<SavedGif> SavedGifs { get; }
+    DbSet<StickerPreferences> StickerPreferences { get; }
+
     DbSet<Call> Calls { get; }
     DbSet<CallParticipant> CallParticipants { get; }
 

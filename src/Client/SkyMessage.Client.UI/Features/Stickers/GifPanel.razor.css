@@ -1,0 +1,91 @@
+/* Saved GIFs as still first frames in two or three columns, rounded like the chat's media tiles. Under each frame a calm
+   placeholder (the film glyph) shows while it loads or cannot; the frame fades in over it (app.js marks [data-loaded]). */
+.gpanel {
+    display: flex;
+    flex-direction: column;
+    height: var(--panel-h, 17rem);
+    min-height: 0;
+}
+
+.gpanel__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 8px 8px 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.gpanel__scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.gpanel__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 6px;
+}
+
+.gpanel__item {
+    display: block;
+}
+
+.gpanel__cell {
+    position: relative;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--sm-text) 6%, transparent);
+    -webkit-touch-callout: none;
+    transition: transform 320ms var(--sm-spring);
+}
+
+.gpanel__poster {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms var(--sm-ease-out);
+}
+
+.gpanel__poster[data-loaded] {
+    opacity: 1;
+}
+
+.gpanel__cell:active {
+    transform: scale(0.94);
+    transition-duration: 70ms;
+}
+
+.gpanel__placeholder {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--sm-text-3);
+}
+
+.gpanel__cell--gone .gpanel__placeholder {
+    color: var(--sm-text-2);
+}
+
+.gpanel__gone {
+    padding: 0 8px;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    text-align: center;
+}
+
+html[data-reduce-motion="true"] .gpanel__poster {
+    transition: none;
+}

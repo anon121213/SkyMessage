@@ -436,7 +436,8 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
   change it, `ChatDetailsDto.EarlierAvatarCount`), `ViewMine(currentId)` (null: my earlier photos while I have no
   photo, `MeDto.EarlierAvatarCount`), `HasPhoto(chat, earlierPhotos)` — the full-screen avatar viewer with the
   history (set as main / delete when `CanManage`); `byte[]? jpeg = await AvatarOverlays.EditAsync(pickedFile)` opens
-  the crop editor directly. Removing a profile or group photo asks with a checkbox "Удалить и прежние фото (N)"
+  the crop editor directly; `EditStickerAsync(pickedFile)` opens it in its sticker mode (a square window, a transparent
+  512 px PNG, above dialogs: z-index 905, so it can open from one). Removing a profile or group photo asks with a checkbox "Удалить и прежние фото (N)"
   (`ISkyApi.DeleteAllMyAvatarsAsync` / `DeleteAllChatAvatarsAsync`) and says that earlier photos stay otherwise.
 * `ProfileLook` (static, Features/Profile): `Accent(key)`, `TintStyle(key)` (`--pc/--pc2` for a profile's ring and
   main action, `--pc-ink` the main action's own ink, so a profile looks the same to every viewer), `NameColor(userId, key)` (sender names), `CoverCss(key, dark)`, `BirthdayText(format, birthday)`.
@@ -457,8 +458,9 @@ named link hides its target); opens via `IExternalLauncher`. `LinkService.TryPar
   `user.IsOnline()`, `user.Handle()` ("@name").
 * `AvatarPalette`: `Background(id)` (gradient), `Color(id)` (sender name color), `Initials(name)`.
 * `SettingsRoutes`: section keys `profile, phone, privacy, blocked, passcode, sessions, notifications, appearance,
-  chats, folders, folder, devices, data, language, connection, about` (`blocked` and `passcode` are sub-pages of
-  `privacy`, `folder` one of `folders`; the folder editor reads `?id=`); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`.
+  chats, folders, folder, stickers, stickerpack, devices, data, language, connection, about` (`blocked` and `passcode` are
+  sub-pages of `privacy`, `folder` one of `folders`, `stickerpack` one of `stickers`; the folder and pack editors read
+  `?id=`); `SettingsRoutes.PathOf(SettingsRoutes.Privacy)`.
   Other screens link to these (profile "Edit" → `/settings/profile`) — the settings feature must render them. A
   sub-page that should keep its back button next to the menu passes `Back="true"` to `SettingsScaffold`.
 * `FolderUi` (static, Features/ChatList): the folder icons (`Icons`: our keys → Lucide glyphs; anything else non-empty
@@ -787,6 +789,21 @@ into a `[data-folder-peek="1|-1"]` child of the pane, which the CSS places a wid
 peek panes may go); `attachHandleReorder(list, ref)` — rows `[data-reorder-key]` dragged by `[data-drag-handle]`,
 `OnReorderLift()` / `OnReorder(keys)`.
 
+`js/stickers.js` (Features/Stickers, through `JsModule`): `attachHold(root, ref)` — one delegated long-press (450 ms, 10 px
+slop) and right-click for every `[data-hold="<key>"]` cell inside `root` → `OnHold(key)` once per touch (Android's own
+long-press `contextmenu`, before or after our timer, is the same hold), swallowing the click that ends it wherever it
+lands (window, capture: the preview just opened under the finger); its logic is `holdGesture(clock, fire)`, checked by
+`tools/ui-check/sticker-hold.mjs`; `attachStripWheel(strip)` — a vertical wheel scrolls a horizontal strip;
+`revealInStrip(strip, key)`, `scrollToSection(scroller, section)`; `calmMotion()` — reduced motion or `data-fx="lite"`
+(GIFs then wait for a tap); `readImage(streamRef, type)` → `{ url, width, height }` of a picked picture (an object URL:
+`revokeImage(url)`).
+
+Pictures that try again (`js/app.js`, installed by `init()`): an `img[data-retry]` gets `[data-loaded]` once it is there
+and `[data-failed]` when it fails, then reloads by itself (its URL's fragment changes: signed URLs and the app's media
+proxy see the same request) after 2, 4, 8 … s up to a minute, at once on `online`, when the app comes to the front and on
+`AppJs.RetryImagesAsync()` (Routes calls it when the realtime connection resyncs). Give such a picture `alt=""` and a
+placeholder of its own until `[data-loaded]` (as `StickerImage` and the GIF panel do).
+
 Every `JsHandle` must be disposed (`await h.DisposeAsync()`), every `DotNetObjectReference` too. All calls
 swallow "page gone" errors. Your own feature JS (`chat.js`, `recorder.js`, `calls.js`, `devices.js`…) is a
 separate ES module you import yourself (`IJSRuntime.InvokeAsync<IJSObjectReference>("import",
@@ -831,6 +848,33 @@ it with `Class = "sm-dialog--solid"` — its previews and actions stay in view o
 notes when the readability floor dims a theme), `BackdropPreview` (a mock app screen or chat over a `BackdropPaint` in
 either theme), `BubbleColorsDialog`. Dialog modifier `sm-dialog--solid` (app.css): an opaque dialog.
 
+Stickers and GIFs (Features/Stickers, imported by `_Imports.razor`; SPEC §6.6 and §8.2): `<StickerImage Media Full Eager Title Class />`
+(a sticker's ≤ 256 px WebP preview, or the full ≤ 512 px one; transparent, contained, no frame; a calm squircle until it
+is there or while it cannot load, then it fades in; it retries by itself — `img[data-retry]`; its alt is empty, so the
+button or tile around it carries the name; use it everywhere a sticker shows),
+`StickerPackSheet.ShowAsync(dialogs, packId, protectedChat)` / `ShowBySlugAsync(dialogs, slug)` (the pack's sheet:
+«Добавить N стикеров» / «Удалить набор», for its creator «Изменить» / «Убрать из панели»; share, and on wide screens
+the close button beside it (`ShowClose = false`); `protectedChat`: no favorites from its preview; a pack link tapped in
+the app opens it by slug, `LinkService`), the same `StickerPackView PackId|Slug Protected OnDone OnClose Card` (`Card`:
+shown as a card with no header band, room above the title row as at its sides; the title is never cut) the
+`/addstickers/{Slug}` page shows, `StickerPreviewDialog.ShowAsync(dialogs, sticker, canSend, canFavorite, showPack)` →
+"send" / "pack" / null (the sticker large; the favorite toggle inside), `<ExpressionPanel OnEmoji OnSticker OnGif OnLeave
+CanSendMedia Editing Height />` (the composer's «Эмодзи · Стикеры · GIF»; `Editing`: emoji only, no switch; `StickerPanel`
+and `GifPanel` are its tabs, their empty states the compact `.xempty` block), `<StickerSuggestions Items OnPick />`
+(absolutely placed over the composer, like the mention list; holds open the preview), `NewStickerDialog.ShowAsync(dialogs,
+l, file, waiting)` / `EditAsync(dialogs, l, sticker)` → `NewStickerResult(File, Emoji, StopAll)` (`waiting` > 0 offers
+«Отменить остальные»), `StickerUploads` (scoped: `Add(packId, file, emoji)`, `For(packId)` with each one's `Progress`,
+`Cancel(packId)` before deleting a pack, `Changed`; the editor's queue, kept while the app runs; a pack that leaves my
+packs or that the server no longer has takes its pictures along by itself), `StickerFlows.CreatePackAsync(...)` /
+`RenamePackAsync(...)`
+(title prompt, then the editor) / `RemoveFromPanelAsync(l, stickers, toasts, packId, title, held)` (out of the panel with
+an Undo that restores its place), and `StickerUi` (`StickerOf(message)`, `IsSticker`, `GifOf`, `AsSticker(media)`,
+`EmojiLine`, `IsStickerImage`, `IsHeif`, `EditorPath(packId)`, `SettingsPath`). In the chat: `MessageBubble` draws
+`BubbleKind.Sticker` (no bubble, the time on a pill like round notes), `ChatController.OpenStickerAsync(item, media)` opens
+the pack, `MediaTile` loops a GIF (`MediaDto.IsAnimation`) with a «GIF» mark when `Autoplay` (`ChatView.AutoplayGifs` =
+the setting and not `calmMotion()`; `AlbumGrid AutoplayGifs` passes it to album tiles), else its first frame plays on a
+first tap; the media viewer loops a GIF muted with only its pause button; `MessageRules.CanEdit` is false for stickers.
+`ILinkBuilder.StickerPackLink(slug)` builds a pack's link.
 ---
 
 ## 10. Checking screens without a server

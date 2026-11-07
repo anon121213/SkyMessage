@@ -1,0 +1,14 @@
+@page "/addstickers/{Slug}"
+@* A pack link (<public base url>/addstickers/{slug}, routed like invite links): the same view as the pack sheet. *@
+@inherits UiComponentBase
+@inject NavigationService Nav
+
+<AppPage Title="@L["stickers.pack.pageTitle"]" BackFallback="/" Padded="true">
+    <div class="spack-page sm-card">
+        <StickerPackView Slug="@Slug" OnDone="() => Task.CompletedTask" />
+    </div>
+</AppPage>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+}

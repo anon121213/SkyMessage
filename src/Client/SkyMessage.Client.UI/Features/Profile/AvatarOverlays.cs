@@ -12,7 +12,8 @@ namespace SkyMessage.Client.UI.Features.Profile;
 public sealed record AvatarSubject(Guid? UserId, Guid? ChatId, string Title, Guid? CurrentMediaId, bool CanManage);
 
 /// <summary>An open crop editor and who waits for its result (JPEG bytes, null when cancelled).</summary>
-internal sealed record AvatarEditorRequest(PickedFile Source, TaskCompletionSource<byte[]?> Result);
+/// <param name="Sticker">A sticker's crop: a plain square and a transparent PNG instead of the avatar's squircle and JPEG.</param>
+internal sealed record AvatarEditorRequest(PickedFile Source, TaskCompletionSource<byte[]?> Result, bool Sticker = false);
 
 /// <summary>
 /// The full-screen avatar viewer (history, zoom, swipes) and the crop editor, rendered once by the shell
@@ -78,6 +79,19 @@ public sealed class AvatarOverlays(IAuthService auth, IChatListStore chats, IUse
     {
         Editor?.Result.TrySetResult(null);
         var request = new AvatarEditorRequest(source, new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously));
+        Editor = request;
+        Changed?.Invoke();
+        return request.Result.Task;
+    }
+
+    /// <summary>
+    /// The same crop editor for a sticker (Features/Stickers): a square window, transparency kept; completes with a
+    /// <see cref="Limits.StickerMaxSide"/> px PNG drawn on the device, or null when cancelled.
+    /// </summary>
+    public Task<byte[]?> EditStickerAsync(PickedFile source)
+    {
+        Editor?.Result.TrySetResult(null);
+        var request = new AvatarEditorRequest(source, new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously), Sticker: true);
         Editor = request;
         Changed?.Invoke();
         return request.Result.Task;

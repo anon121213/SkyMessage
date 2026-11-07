@@ -54,6 +54,7 @@ public static class UiSetup
         services.TryAddScoped<AppUpdatePrompts>();
         services.TryAddScoped<AvatarOverlays>();
         services.TryAddScoped<AvatarFlows>();
+        services.TryAddScoped<Features.Stickers.StickerUploads>();
         return services;
     }
 }

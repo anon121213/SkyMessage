@@ -177,6 +177,8 @@
     private ElementReference _scroller;
     private ElementReference _content;
     private JsModule? _module;
+    /// <summary>Reduced motion or the lite mode (read from the page once): GIFs wait for a tap.</summary>
+    private bool _calmMotion;
     private JsObject? _list;
     private JsObject? _autoplay;
     private PlayerBridge? _player;
@@ -308,6 +310,7 @@
             await _player.InitAsync(_rate);
             _autoplayEnabled = AutoplayAllowed;
             _autoplay = await _player.ObserveAsync(_content, _autoplayEnabled);
+            await ReadCalmMotionAsync();
             _lastActive = Active;
             if (!Active) await _list.InvokeVoidAsync("setActive", false);
         }
@@ -349,7 +352,8 @@
             Settings.Current.Chats.AutoplayVideoNotes,
             Settings.Current.Chats.AutoplayVideos,
             _mediaVersion,
-            ContentProtectionRules.IsProtected(chat));
+            ContentProtectionRules.IsProtected(chat),
+            Settings.Current.Chats.AutoplayGifs && !_calmMotion);
 
         var rows = new List<ListRow>(Math.Min(items.Count, MaxRendered) + 16);
         if (items.Count == 0)
@@ -893,6 +897,20 @@
             _rate = rate;
             await _player.SetRateAsync(rate);
         }
+        // The Animations setting may have just changed reduced motion (the theme applies it to the page first).
+        await Task.Yield();
+        await ReadCalmMotionAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>Reduced motion or the lite mode, as the page applies them: GIFs then wait for a tap (ChatView.AutoplayGifs).</summary>
+    private async Task ReadCalmMotionAsync()
+    {
+        if (IsDisposed) return;
+        await using var stickersJs = new JsModule(JS, "./_content/SkyMessage.Client.UI/js/stickers.js");
+        var calm = await stickersJs.InvokeAsync<bool>("calmMotion");
+        if (calm == _calmMotion) return;
+        _calmMotion = calm;
         StateHasChanged();
     }
 

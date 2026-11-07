@@ -102,6 +102,11 @@ logo is simply there, finished, its cut open:
 | Bottom sheet, phone menu | drag down | close (existing) |
 | In-app notification banner | swipe up | dismiss (existing) |
 | Toast | swipe sideways | dismiss |
+| Composer panel switch («Эмодзи · Стикеры · GIF») | tap | the gradient pill glides to the tab (440 ms, `--sm-spring-soft`), the tab's content swaps in place |
+| Sticker or GIF in the panel, a suggested sticker, a sticker in a pack's sheet | tap / hold 450 ms (right-click) | send at once (in the sheet: the large view) / the sticker large in a dialog (it pops in, `sm-pop-in`) with favorite, send, its pack — for a GIF: send or remove (a haptic marks the hold; one delegated listener, `js/stickers.js`: one touch opens one dialog whether our timer or Android's own long-press comes first, and the click that ends the hold never reaches the dialog) |
+| Sticker panel's strip | tap | the pill glides to the pack (440 ms, `--sm-spring-soft`, like the emoji picker's), its stickers scroll to the top |
+| Sticker in a chat | tap / long-press | its pack's sheet / the message menu (like any message; swipe to reply works) |
+| GIF in a chat (alone or in an album) | tap | the media viewer (a muted loop there too, only a pause button); without autoplay the first tap plays it in place |
 
 Coexistence:
 - A pinned row lifted by its long-press owns the touch: it moves only vertically, the row swipe leaves it alone and the

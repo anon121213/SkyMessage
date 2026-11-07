@@ -188,6 +188,13 @@ public interface IMessageStore
     /// voice/video notes one message each. Probe (instant preview) → compression → chunked upload → send.
     /// </summary>
     Task SendAttachmentsAsync(Guid chatId, IReadOnlyList<OutgoingAttachment> attachments, string? caption = null, Guid? replyToMessageId = null);
+    /// <summary>
+    /// A sticker of a pack (nothing to upload): the pending bubble shows the sticker itself at once; the server sends it as
+    /// a Photo whose media carries the sticker attributes, and puts it first among my recent stickers.
+    /// </summary>
+    Task SendStickerAsync(Guid chatId, StickerDto sticker, Guid? replyToMessageId = null);
+    /// <summary>One of my saved GIFs again (nothing to upload): the server reuses the stored animation while I can still see it.</summary>
+    Task SendGifAsync(Guid chatId, MediaDto gif, Guid? replyToMessageId = null);
     Task RetryAsync(Guid chatId, Guid key);
     /// <summary>Cancels an upload in progress / removes a pending or failed item.</summary>
     Task CancelAsync(Guid chatId, Guid key);
@@ -412,4 +419,61 @@ public interface IChatFolderStore
     Task UpdateSettingsAsync(UpdateChatListSettingsRequest change);
     /// <summary>Marks every chat of the folder read (null = "All chats"); the counters follow the server's MessagesRead events.</summary>
     Task MarkReadAsync(Guid? folderId);
+}
+
+/// <summary>
+/// My stickers and GIFs, synced across my devices (SPEC §8.1 "Stickers and GIFs"): installed packs in my order, packs I
+/// made, favorites, recent stickers and saved GIFs. Starts from the per-account cache ("stickers"), then the server; a
+/// StickersChanged event replaces the state when its revision is newer, and every resync reloads it (or retries a first
+/// load that failed). My changes show at once and are put back (and rethrown) when the server refuses them. The stickers
+/// of each installed pack are kept by pack version ("sticker-packs") and fetched again when the state names a newer one.
+/// </summary>
+public interface IStickerStore
+{
+    /// <summary>The newest server state with my pending changes on top.</summary>
+    StickerStateDto State { get; }
+    bool IsLoaded { get; }
+    /// <summary>Raised when the state or a pack's stickers changed (any thread).</summary>
+    event Action? Changed;
+
+    Task LoadAsync(bool force = false, CancellationToken cancellationToken = default);
+    /// <summary>A pack's stickers when known (installed packs are kept up to date; others after <see cref="LoadPackAsync"/>).</summary>
+    StickerPackDto? GetPack(Guid packId);
+    /// <summary>The pack from the server (cached; <paramref name="refresh"/> asks again). 404 sticker_pack_not_found once deleted.</summary>
+    Task<StickerPackDto> LoadPackAsync(Guid packId, bool refresh = false, CancellationToken cancellationToken = default);
+    Task<StickerPackDto> LoadPackBySlugAsync(string slug, CancellationToken cancellationToken = default);
+
+    bool IsInstalled(Guid packId);
+    bool IsFavorite(Guid stickerId);
+    bool IsSavedGif(Guid mediaId);
+    /// <summary>Stickers of my installed packs standing for <paramref name="emoji"/> (<see cref="StickerRules.Matches"/>), in my order.</summary>
+    IReadOnlyList<StickerDto> Suggest(string emoji, int max = 24);
+
+    /// <summary>Installs a pack (it goes first).</summary>
+    Task InstallAsync(StickerPackDto pack);
+    Task UninstallAsync(Guid packId);
+    /// <summary>My installed packs in the order I want them (the listed ones take the places they held).</summary>
+    Task ReorderAsync(IReadOnlyList<Guid> packIds);
+    /// <summary>A new favorite goes first; past <see cref="Limits.MaxFavoriteStickers"/> the oldest one goes.</summary>
+    Task SetFavoriteAsync(StickerDto sticker, bool favorite);
+    /// <summary>"Сохранить в GIF" from a message (403 forward_restricted from a protected chat); it goes first.</summary>
+    Task SaveGifAsync(Guid chatId, Guid messageId, MediaDto gif);
+    Task RemoveGifAsync(Guid mediaId);
+
+    // Packs I make. These wait for the server; the pack's stickers here and my state (StickersChanged) follow. An edit
+    // answered 404 sticker_pack_not_found (deleted on another device) takes the pack out of my lists at once, as a
+    // delete does.
+    /// <summary>A new pack of mine (installed for me); its id is made here, so a retry is harmless.</summary>
+    Task<StickerPackDto> CreatePackAsync(string title);
+    Task<StickerPackDto> RenamePackAsync(Guid packId, string title);
+    /// <summary>
+    /// Uploads <paramref name="image"/> (PNG, WebP or JPEG of at most <see cref="Limits.StickerSourceMaxBytes"/>, its original
+    /// bytes) and makes it the pack's last sticker; the server keeps its own WebP and drops the upload.
+    /// </summary>
+    Task<StickerPackDto> AddStickerAsync(Guid packId, PickedFile image, IReadOnlyList<string> emoji, IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default);
+    Task<StickerPackDto> SetStickerEmojiAsync(Guid packId, Guid stickerId, IReadOnlyList<string> emoji);
+    Task<StickerPackDto> DeleteStickerAsync(Guid packId, Guid stickerId);
+    Task<StickerPackDto> ReorderStickersAsync(Guid packId, IReadOnlyList<Guid> stickerIds);
+    Task DeletePackAsync(Guid packId);
 }

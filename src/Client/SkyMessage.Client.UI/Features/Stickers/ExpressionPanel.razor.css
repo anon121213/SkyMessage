@@ -1,0 +1,124 @@
+/* Emoji · Stickers · GIF. The switch is the emoji picker's capsule track turned into three labelled columns: the
+   gradient pill glides (spring) to the open one. */
+.xpanel {
+    display: flex;
+    flex-direction: column;
+    height: var(--xpanel-h, 19.5rem);
+}
+
+.xpanel__body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.xpanel__switch {
+    flex: 0 0 auto;
+    padding: 6px 10px 8px;
+}
+
+.xpanel__track {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--sm-text) 5%, transparent);
+    box-shadow: inset 0 0 0 1px var(--sm-divider);
+}
+
+.xpanel__pill {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc((100% - 6px) / 3);
+    border-radius: 999px;
+    background: var(--sm-grad);
+    transform: translateX(calc(var(--tab, 0) * 100%));
+    transition: transform 440ms var(--sm-spring-soft);
+    pointer-events: none;
+}
+
+.xpanel__tab {
+    position: relative;
+    z-index: 1;
+    height: 2.125rem;
+    border-radius: 999px;
+    color: var(--sm-text-2);
+    font-family: var(--sm-font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    transition: color var(--sm-dur) ease, transform var(--sm-dur) var(--sm-spring);
+}
+
+.xpanel__tab--active {
+    color: var(--sm-on-accent);
+}
+
+@media (hover: hover) {
+    .xpanel__tab:hover:not(.xpanel__tab--active) {
+        color: var(--sm-text);
+    }
+}
+
+.xpanel__tab:active {
+    transform: scale(0.92);
+}
+
+/* An empty or closed Stickers / GIF tab: a small tile, a title, two or three lines and its one action, centred in the
+   panel and never cut by it (the panel body is only ~260 px tall on phones; it scrolls when a large font needs it). */
+.xpanel__body ::deep .xempty {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: safe center;
+    gap: 6px;
+    min-height: 0;
+    padding: 12px 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: var(--sm-text-2);
+    text-align: center;
+    scrollbar-width: none;
+    animation: sm-rise-in var(--sm-dur-xslow) var(--sm-ease-out) both;
+}
+
+.xpanel__body ::deep .xempty::-webkit-scrollbar {
+    display: none;
+}
+
+.xpanel__body ::deep .xempty__tile {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 2px;
+    background: var(--sm-accent-soft);
+    color: var(--sm-accent-text);
+    -webkit-mask: var(--sm-squircle) center / 100% 100% no-repeat;
+    mask: var(--sm-squircle) center / 100% 100% no-repeat;
+}
+
+.xpanel__body ::deep .xempty__title {
+    color: var(--sm-text);
+    font-family: var(--sm-font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.xpanel__body ::deep .xempty__text {
+    max-width: 19rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.xpanel__body ::deep .xempty__actions {
+    display: flex;
+    flex: 0 0 auto;
+    justify-content: center;
+    margin-top: 6px;
+}

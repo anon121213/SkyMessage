@@ -19,6 +19,10 @@ public static class SettingsRoutes
     public const string Folders = "folders";
     /// <summary>The folder editor (a sub-page of <see cref="Folders"/>): <c>?id=</c> an existing folder, none for a new one.</summary>
     public const string Folder = "folder";
+    /// <summary>Stickers and GIFs: my packs, installed packs (their order), suggestions and GIF autoplay.</summary>
+    public const string Stickers = "stickers";
+    /// <summary>A pack's editor (a sub-page of <see cref="Stickers"/>): <c>?id=</c> the pack.</summary>
+    public const string StickerPack = "stickerpack";
     public const string Devices = "devices";
     public const string Data = "data";
     public const string Language = "language";

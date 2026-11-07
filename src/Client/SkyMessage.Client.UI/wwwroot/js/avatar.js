@@ -232,6 +232,27 @@ export async function attachEditor(stage, ref, streamRef, options) {
       apply(true);
       reportZoom();
     },
+    /** What the square shows, as a `size` px PNG that keeps transparency (a sticker's crop). */
+    async exportPng(size) {
+      const out = Math.max(64, Math.min(4096, Number(size) || 512));
+      const canvas = document.createElement('canvas');
+      canvas.width = out;
+      canvas.height = out;
+      const g = canvas.getContext('2d');
+      if (!g) return null;
+      const f = out / side();
+      const s = baseScale() * zoom * f;
+      g.clearRect(0, 0, out, out);
+      g.imageSmoothingEnabled = true;
+      g.imageSmoothingQuality = 'high';
+      g.translate(out / 2 + tx * f, out / 2 + ty * f);
+      g.scale(flipped ? -1 : 1, 1);
+      g.rotate((-Math.PI / 2) * quarter);
+      g.scale(s, s);
+      g.drawImage(img, -natW / 2, -natH / 2);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+    },
     /** What the square shows, as a `size` px JPEG (bytes). */
     async exportJpeg(size, quality) {
       const out = Math.max(64, Math.min(4096, Number(size) || 1024));

@@ -370,10 +370,18 @@ Messages:
   insert message + attachments + `MessageMention` rows (Mention entities with UserId; `@username` text
   resolved to members; reply to another member's message), `Chat.LastMessageId`, unhide hidden members
   (they get `ChatAdded`), sender `LastReadSeq = seq`, commit → `MessageCreated`, push.
+  A sticker (`StickerId`, of a pack that still exists, else 404 `sticker_not_found`) or one of my saved GIFs again
+  (`GifMediaId`: an animation in my saved GIFs or of my own upload that I can still see, `IMediaAccessService`, else
+  404 `media_not_found`; saving is where content protection is checked, so a GIF seen only in a protected chat cannot
+  be sent on by its id) goes alone (no text, no `MediaIds`, a reply is fine; else 400 `validation_failed`), nothing is
+  uploaded: the existing media is attached (Photo / Video message; groups need the SendMedia permission). A sent
+  sticker then goes first among my recent stickers (§6.6). A sticker's own media never goes in `MediaIds` (its pack's
+  creator owns it: it would be a sticker with a caption nobody sees, or inside an album): 400 `validation_failed`.
 - Forward `POST .../messages/forward` (target chat in route; `ClientMessageIds` parallel to `MessageIds` for
   idempotency): copy text/entities/attachments with `ForwardInfo` (keep the original forward info); skip
   system/call messages.
-- Edit (own, ≤ `EditWindowHours`, not system/call) → `EditedAt`, mentions re-indexed → `MessageUpdated`.
+- Edit (own, ≤ `EditWindowHours`, not system/call, not a sticker: 403 `message_not_editable`) → `EditedAt`, mentions
+  re-indexed → `MessageUpdated`.
 - Delete `POST .../messages/delete`: forEveryone — own always; private chats any message; groups others'
   only for admins → tombstone (clear text/entities/attachments/reactions/mentions/pin), fix
   `Chat.LastMessageId` under `ChatSequence.LockChatAsync` → `MessagesDeleted{ForEveryone=true}`. For me →
@@ -382,7 +390,7 @@ Messages:
   (groups: admin or PinMessages) → system `MessagePinned`, `PinnedMessagesChanged`, `MessageUpdated`.
 - Search: `GET .../messages/search?q=` → `MessagesPageDto` (ILIKE with escaped `%_`, newest first),
   `GET api/search/messages?q=`, `GET api/search?q=` (`GlobalSearchResultDto`; users like users/search).
-  Shared media `GET api/chats/{id}/media?kind=`.
+  Shared media `GET api/chats/{id}/media?kind=` (stickers are not part of a chat's media).
 - `ISystemMessageService`: own transaction, rejects an ambient one, publishes after commit.
 - One batched DTO loader (attachments via projection, reactions ≤ 100 ids, reply previews, pinned flags).
 
@@ -391,6 +399,9 @@ Messages:
 - `POST api/media/uploads`: size 1..`MaxUploadBytes`, sanitized file name, content type per kind (Photo:
   jpeg/png/webp/gif/heic/heif; Video/VideoNote: video/*; Voice: audio/* or video/webm; Audio: audio/*; File:
   any) else `media_unsupported`; `ChunkCount = ceil(size/ChunkSize)`; wrapped data key when encrypting.
+  `ConvertAnimation` (additive, Photo only, kept as `Media.ConvertAnimation`): an animated GIF becomes a loop (below).
+  The apps set it for chat attachments only; apps before GIFs (0.2.61) never send it, and neither do profile photos,
+  covers and group photos — those need a Photo, so their GIFs stay the photos they are, as before.
 - Chunks `PUT .../chunks/{index}` (owner, `Uploading`, exact length else `chunk_invalid`, upsert),
   `GET api/media/uploads/{id}` (owner only; others 404), `POST .../complete` (all chunks or
   `upload_incomplete`) → `Processing`, enqueue.
@@ -399,8 +410,17 @@ Messages:
 - Worker (`BackgroundService`, `Channel<Guid>`, `MaxConcurrency`, re-enqueue `Processing` on start): assemble
   to temp, verify optional SHA-256, then:
   - Photo: SkiaSharp with EXIF orientation. JPEG/PNG/WebP within `PhotoMaxDimension` are kept as uploaded
-    (clients strip metadata); larger or other formats → JPEG q85 (metadata stripped). GIF as is. HEIC →
-    ffmpeg → JPEG, else Failed. Thumbnail ≤ 480 JPEG q75 (`MediaThumbnail`), mini ≈ 24 px (`MiniThumbnail`).
+    (clients strip metadata); larger or other formats → JPEG q85 (metadata stripped). A GIF as is — except an
+    animated one uploaded with `ConvertAnimation`, which becomes a muted looping MP4 (`AnimationProcessor`: ffmpeg
+    through the `gif` demuxer only, file protocol only; the decoder paints transparent pixels white, the frame is
+    scaled first (nothing after the decoder holds a canvas-sized frame), H.264 yuv420p, even sides, long side ≤
+    `Limits.AnimationMaxSide` = 720, no audio, `+faststart`, ≤ 60 s and 3000 frames, 3 min timeout) with its first
+    frame as the poster: the media turns into `Video` with `IsAnimation` (`MediaDto.IsAnimation`). Only within the
+    decoding budget, read from the GIF's header and frame table before anything is decoded (a few bytes of GIF can
+    describe a huge canvas and thousands of frames, each decoded at canvas size): canvas sides ≤ 4096, ≤ 4 Mpx,
+    frames × pixels ≤ 1.5 G (`AnimationProcessor.IsWithinBudget`); a larger GIF, a failed conversion or no ffmpeg
+    keeps the GIF as it was (behind the 50 Mpx guard of every image). HEIC → ffmpeg → JPEG, else Failed. Thumbnail
+    ≤ 480 JPEG q75 (`MediaThumbnail`), mini ≈ 24 px (`MiniThumbnail`).
   - Video: ffprobe; H.264/AAC MP4 within `VideoMaxDimension` → remux `+faststart`; else transcode (CRF
     `VideoCrf`, yuv420p, AAC 128k); poster thumbnail.
   - VideoNote: always transcode to a centered square `VideoNoteSize`², ≤ 60 s, H.264 + AAC 64k mono.
@@ -409,7 +429,8 @@ Messages:
   Replace chunks, update metadata, `Ready`, then `MediaProcessed` to the owner (also on `Failed`). Missing
   ffmpeg → store as-is and log.
 - `GET api/media/{id}/content?t=&download=1`, `.../thumbnail?t=` (anonymous endpoints): require a bearer
-  user or a valid `?t=` signature for that media id. Access: owner; or the current avatar, a photo of the avatar
+  user or a valid `?t=` signature for that media id. Access: owner; or the image of a sticker of an existing pack (anyone
+  signed in, §6.6); or the current avatar, a photo of the avatar
   history or the cover photo of a user whose photo the viewer may see (`CanSeeProfilePhoto`); or the current avatar
   of a chat the viewer is a member of, or a photo of its history while it has a current one (always for who may change
   its info); or attached to a non-deleted message in a chat where the viewer is a member and the message is visible
@@ -418,7 +439,9 @@ Messages:
   dangerous types (html, svg, xml, js) → `attachment` (+ octet-stream when dangerous).
 - `GET api/media/{id}` → `MediaDto` (same access rule).
 - Cleanup hourly: `Uploading` older than `IncompleteUploadTtlHours`; unreferenced `Ready` media older than 7 days
-  (avatar histories and covers count as references).
+  (avatar histories, covers, stickers of packs and its own uploader's saved GIFs count as references). Someone else's
+  saved GIF does not: with no message left that shows it they could neither see nor send it, so a GIF deleted for
+  everyone leaves the server, and their saved entry goes with it (ON DELETE CASCADE).
 
 ### 6.5 Calls (backend-calls)
 
@@ -449,6 +472,68 @@ Messages:
   `room_finished` ends any unfinished call of that room. Dev URL: `http://host.docker.internal:8080/...`.
 - `GET api/calls/{id}`, `GET api/calls/active?chatId=` (204 when none), `GET api/calls/history`.
 
+### 6.6 Stickers and GIFs (`Application/Stickers`, `ApiRoutes.Stickers`)
+
+No stock catalogue and no third-party GIF search (privacy, blocks in Russia, licensing): stickers and GIFs come from
+the users themselves, and there is no built-in pack.
+
+- **How they travel** (compatibility with apps before stickers, 0.2.61): a sticker is a `Photo` message whose single
+  media carries `MediaDto.Sticker` (`StickerInfoDto`: pack, sticker, main emoji); a GIF is a `Video` whose media has
+  `MediaDto.IsAnimation`. Both are additive JSON fields: older apps skip them and show a plain photo (a WebP) or a plain
+  video, so no `MessageType`, `MediaKind` or `TypingAction` value was added and `Server:MinClientVersion` stays.
+  `DeepLinkKind.StickerPack` is app-side only (older apps leave such links alone).
+- **Packs**: `POST api/stickers/packs {Id, Title}` (the app picks the id: a repeat returns the pack; someone else's id →
+  409; title 1..`StickerPackTitleMaxLength` = 64 after `StickerRules.NormalizeTitle`, else 400; ≤ `MaxOwnStickerPacks` =
+  100 per user → 400 `sticker_pack_limit`) makes a pack of mine with a random 10-character slug (`StickerRules.NewSlug`,
+  the link `/addstickers/{slug}`), installed for me first (unless my panel already holds `MaxInstalledStickerPacks`:
+  then it is only among mine). `GET api/stickers/packs/{id}` and `.../by-slug/{slug}` (any
+  signed-in user; 404 `sticker_pack_not_found` once deleted). Only the creator renames (`PATCH`), adds (`POST
+  .../stickers {Id, MediaId, Emoji}`), changes a sticker's emoji (`PATCH .../stickers/{id}`), deletes a sticker,
+  reorders (`PUT .../order`, `StickerRules.Arrange`) and deletes the pack (204); anyone else → 403
+  `not_sticker_pack_creator`. A sticker is made from an upload of the creator (`MediaKind.File`, the original bytes; 404
+  `media_not_found` otherwise): `StickerImageProcessor` (SkiaSharp) accepts only PNG, WebP and JPEG by their bytes, ≤
+  `StickerSourceMaxBytes` = 5 MB, each side from `StickerSourceMinSide` = 64 to `StickerSourceMaxSide` = 4096 px (else
+  400 `sticker_image_invalid`: it is decoded while the request waits, and a few hundred bytes of PNG can describe a
+  canvas of hundreds of megabytes — the apps crop a larger picture first), one picture at a time per server
+  (`StickerMediaFactory`'s gate, ≤ 64 MB of pixels), applies
+  EXIF orientation and stores a lossy WebP with its alpha plane, ≤ `StickerMaxSide` = 512 px (never enlarged), as a
+  media of its own (Photo, `image/webp`, a ≤ 256 px WebP thumbnail, no mini thumbnail, encrypted at rest like any
+  media, the sticker attributes on it); the upload is then deleted when nothing else uses it. 1..`StickerEmojiMax` = 8
+  emoji per sticker (`StickerRules.NormalizeEmoji`: each exactly one emoji, duplicates by `EmojiKey` dropped; the first
+  is the main one, kept on the media too); ≤ `MaxStickersPerPack` = 120 → 400 `sticker_pack_full`. Deleting a pack
+  deletes its stickers, installations, favorites and recent uses; their media stay for the messages that show them
+  (media cleanup takes the rest), and the media keep their sticker attributes, so sent stickers keep showing.
+- **My state** (`StickerStateDto`, `GET api/stickers`): installed packs in my order (refs with title, version, count
+  and cover), packs I made (newest first), favorites (≤ `MaxFavoriteStickers` = 50, newest first; past it the oldest
+  goes), recent stickers (≤ `MaxRecentStickers` = 20, by my sends) and saved GIFs (≤ `MaxSavedGifs` = 200, newest
+  first, their media without the mini thumbnail). `PUT/DELETE api/stickers/installed/{packId}` (a new one goes first;
+  ≤ `MaxInstalledStickerPacks` = 200 → 400 `sticker_pack_limit`), `PUT api/stickers/installed/order`, `PUT/DELETE
+  api/stickers/favorites/{stickerId}`, `POST api/stickers/gifs {ChatId, MessageId}` (the message's ready animation, a
+  message I can see; from a chat with content protection 403 `forward_restricted`; not a GIF → 400), `DELETE
+  api/stickers/gifs/{mediaId}`. Like the folders: every change runs under my `sticker_preferences` row lock (created by
+  `INSERT … ON CONFLICT DO NOTHING`), a real change bumps the revision and sends the whole state to all my devices as
+  `StickersChanged`, a change that changes nothing is silent, and every call answers with the state. Recent stickers
+  change with every sticker sent: their revision moves at once, but their `StickersChanged` waits 2 s and goes once for
+  a burst of sends (`StickerRecentsPublisher`, built when it goes out) — the state carries up to 200 saved GIFs. A
+  pack's edit bumps its `Version` and the revision of everyone it concerns (the creator, who installed it, who keeps an
+  edited or removed sticker among favorites or recent ones) and sends them their states (connected ones; the others
+  load it when they connect). Lock order: the pack row first (an edit `FOR UPDATE`, a user's change that adds rows
+  pointing into packs `FOR SHARE`), then the users' rows in id order — so a pack edit never deadlocks with its users'
+  own changes. Each saved GIF says whether I can still see it (`SavedGifDto.Unavailable`: not my upload and in no
+  message I can see — deleted for everyone, in a chat I left or cleared; decided when the state is built, in one query
+  with the rule of `IMediaAccessService`), so it can change without a new revision: the apps take a state they asked
+  for at the same revision when its saved GIFs differ (events at the same revision stay ignored).
+- **Access**: anyone signed in sees and installs any existing pack and its images; sending a sticker needs a sticker of
+  an existing pack; a GIF goes out by its id only from my saved GIFs (or my own upload) and while its media is still
+  visible to me (a message I can see — when its message is deleted for everyone and I have no other copy, it can no
+  longer go out, the state marks it unavailable and the app offers to remove it). Content protection blocks
+  «Сохранить в GIF» on the server (403 `forward_restricted`, so a protected chat's GIF cannot be sent on by its id
+  either), like forwarding. Favorites from a protected chat are an app rule only: the message menu and the pack sheet
+  opened from such a chat offer no «В избранное» (taking one out stays possible). The server cannot tell where a
+  sticker was seen, and a sticker is public by nature — anyone may open and add its pack (that stays allowed) and
+  favorite it from there — so `PUT api/stickers/favorites/{id}` takes any existing sticker. Deleting an account removes
+  its installations, favorites, recent stickers and saved GIFs; the packs it made stay for whoever installed them.
+
 ## 7. Realtime event matrix
 
 | Event | Sent to | When |
@@ -465,6 +550,7 @@ Messages:
 | ChatSettingsChanged | caller's user; a member whose archived chat a new message brought back | pin/archive/mute/contact bar closed |
 | PinnedChatsReordered | caller's user (all devices) | pinned chats rearranged (`PUT api/chats/pinned-order`) |
 | ChatFoldersChanged | caller's user (all devices) | folders, folder pins or chat list settings changed (whole state, by revision) |
+| StickersChanged | the user's devices; everyone a pack edit concerns | installed packs, their order, favorites, recent stickers, saved GIFs, or a pack I use edited or deleted (whole state, by revision) |
 | HistoryCleared | caller / both | clear history |
 | PinnedMessagesChanged | members | pin/unpin |
 | PresenceChanged | related users (per-viewer privacy, not blocked) | online/offline |
@@ -548,6 +634,21 @@ per store, isolated event invocation, merge rules, buffered replay during resync
   dock: the dock = everything not muted, "All chats" = the main list, the archive row = the archive, each folder = its
   chats (muted ones only when nothing else, shown grey). `ChatBehaviorSettings.ChatSwipe` (per device): Auto = switch
   folders once there are folders, else the chat actions.
+- **IStickerStore** (stickers and GIFs, `Stores/StickerStore.cs`): the folder store's pattern — restored from the cache
+  ("stickers"), loaded at sign-in and on every resync, newest server state by revision with my pending changes laid on
+  top (`StickerEdits`), a refused change put back and rethrown. The stickers of installed packs are kept by `Version`
+  ("sticker-packs") and fetched again when a state names a newer one; a state it asked for (a load) at the revision it
+  holds is still taken when its saved GIFs differ (which ones I can still see, §6.6). `LoadPackAsync`/
+  `LoadPackBySlugAsync` for a pack's sheet; `Suggest(emoji)` = the installed packs' stickers whose emoji match
+  (`StickerRules.Matches`: variation selectors and skin tones ignored), in my order. `AddStickerAsync` uploads the
+  picture as a `MediaKind.File` (its original bytes) and adds it. An edit of a pack answered 404
+  `sticker_pack_not_found` (deleted on another device before this one heard) takes the pack out of my lists at once, as
+  deleting it does, and asks for my state again. `IMessageStore.SendStickerAsync` / `SendGifAsync` go
+  through the outbox like text (nothing to upload; the pending bubble shows the media itself; a queued one survives a
+  restart with its sticker / media id). Chat attachments upload with `ConvertAnimation` (`MediaUploadRequest`), so an
+  animated GIF becomes a loop; profile photos, covers and group photos (`AvatarUploader`) never ask.
+  Settings (per device): `ChatBehaviorSettings.SuggestStickers` and `AutoplayGifs` (both on). GIFs follow the photos'
+  auto-download switch (`MediaDownloadService.ShouldAutoDownload`): they are small loops shown like pictures.
 - **ICallService**: per its doc. Before starting/accepting request Microphone (and Camera for video) via
   `IPermissionService`; call `ICallPlatformService.OnCallStartedAsync` only while in foreground. Incoming
   while in a call → `DeclineCallAsync(busy: true)`. Outgoing gets `JoinInfo` immediately. Ended calls stay 2 s with `EndStatus`. `ICallPlatformService` start/media/end;
@@ -715,7 +816,7 @@ previews). `ThemeService` calls `ISystemUiService.SetSystemBarsStyleAsync` on th
 for what lies under the bars; a chat with its own background holds them while on screen); tap feedback
 uses `IHapticsService` when `InAppVibrate`.
 
-**Routes**: `/`, `/welcome`, `/login`, `/register`, `/chat/{ChatId:guid}`, `/chat/{ChatId:guid}/info`,
+**Routes**: `/`, `/welcome`, `/login`, `/register`, `/chat/{ChatId:guid}`, `/chat/{ChatId:guid}/info`, `/addstickers/{Slug}`,
 `/chat/{ChatId:guid}/media`, `/user/{UserId:guid}`, `/u/{Username}`, `/join/{Token}`, `/contacts`,
 `/contacts/import`, `/new-group`, `/search`, `/calls`, `/settings`, `/settings/{Section}` (the folder editor is
 `/settings/folder?id=`).
@@ -855,6 +956,66 @@ stays reachable: "Back to the call" expands the call screen, which goes above th
 opens it by itself), with the toasts it raises above it (`shell--call-over-lock`); minimizing it shows the lock again.
 Android Back on the lock screen otherwise moves the app to the background.
 
+**Stickers and GIFs** (`Features/Stickers`, §6.6): the composer's emoji button opens `ExpressionPanel`, «Эмодзи ·
+Стикеры · GIF» with the switch at the bottom (the last tab remembered per device; WAI-ARIA tabs: a tabpanel, arrow
+keys, Home/End). While a message is being edited only emoji make sense: the switch steps aside and the emoji take the
+whole panel. Stickers: a strip — the emoji picker's capsule track and gliding pill — of «Недавние», «Избранные» and
+every installed pack's face (its first sticker), with «Создать набор» and the settings pinned at its end (the track
+runs on under a soft edge); then all of them in one scroll with sticky name chips. A pack's stickers are drawn once the
+scroll comes within ~600 px of it (an empty block of its rows keeps its place meanwhile; about two screens are drawn at
+once), so a hundred packs of 120 cost what is on screen; a jump from the strip draws its pack first; the panel
+re-renders only when what it shows changed (recent stickers keep their order while it is open). A tap sends at once (as
+a reply when one is set); a hold or right-click (`js/stickers.js` `attachHold`, one delegated listener; one touch fires
+once whether our 450 ms timer or Android's own long-press — its `contextmenu`, before or after — comes first, and the
+click that ends a hold is swallowed wherever it lands) opens `StickerPreviewDialog`: the sticker large with favorite /
+send / its pack. The same hold works in the suggestion strip and a pack's grid. An empty or closed tab is a compact
+block (a small tile, two lines, its one action) that fits the ~260 px panel on any phone. GIF: «Мои GIF» as still first
+frames (labelled «GIF 3 из 12»); a tap sends one again, a hold offers send or remove; one the server says I can no
+longer see (`SavedGifDto.Unavailable`) shows as unavailable and only offers removal — a first frame that fails to load
+is a bad connection, never that; opening the tab asks for the state again. Sticker pictures (`StickerImage`, everywhere)
+and the GIF frames wait on a calm squircle (never the browser's broken-image glyph: their alt is empty, the button or
+tile carries the name), fade in when they come and, when they fail, try again by themselves (`img[data-retry]`,
+app.js: after 2, 4, 8 … s up to a minute, at once when the device is back online, the app comes back to the front or
+the realtime connection resyncs). With exactly one emoji in the field (`SuggestStickers`), `StickerSuggestions` floats
+the matching stickers over the composer (a group of buttons); a tap sends one in its place; on wide screens the strip
+stays away while the panel's popover is open (the panel offers the stickers itself). A sticker message has no bubble:
+the picture at about 160 px (180 on wide screens), sender / forward / reply as pills above it and the time on a chip
+below (like round notes); a tap opens `StickerPackSheet` (`StickerPackView`: the whole title, never cut (one past 32
+characters a step smaller, so a 64-character one usually takes three lines on a 360 px phone), count, every sticker,
+«Добавить N стикеров» or «Удалить набор»; its creator gets «Изменить» and «Убрать из панели» — deleting the pack for
+everyone is the editor's; share the link; on wide screens the close button sits beside «share», no header band, with
+as much room above that row as at the card's sides; a deleted pack says so). Opened from a chat with content
+protection the sheet's preview offers no «В избранное». The message menu adds favorite (not in protected chats) and
+«Набор стикеров»; stickers are not editable and stay out of the media viewer's sequence. A GIF tile loops muted while
+on screen (`MediaTile`, player.js autoplay) with a
+«GIF» mark, alone or in an album (`AlbumGrid AutoplayGifs`); with `AutoplayGifs` off, in lite mode or with reduced
+motion its first frame waits for a tap, the next tap opens the viewer, which loops it muted too (viewer.js mutes it:
+the attribute alone does not on an element made by script) with only a pause button — no scrubber or times. The menu
+has «Сохранить в GIF» (not in protected chats) or «Убрать из «Моих GIF»». Previews: «Стикер 😺» (its main emoji),
+«GIF» — Core's own fallback (`CoreStrings`, hosts without the UI) says the same. A pack link tapped in the app
+(`LinkService`) opens the pack's sheet over the chat; `/addstickers/{Slug}` (`StickerPackPage`) shows the same view
+for links opened from outside and on the web (remembered through sign-in like invite links; an unknown slug: «Набор не
+найден — его удалили, или ссылка неверная»). Settings › «Стикеры и GIF» (`/settings/stickers`): the two switches, my
+packs and «Создать набор», the installed packs in the panel's order (moved by their handle, `attachHandleReorder`; the
+bin takes one out of the panel with an Undo that puts it back in its place; with none, only the hint), how many GIFs I
+keep; the editor (`/settings/stickerpack?id=`): rename and share in the header, stickers as rows (handle; a tap changes
+the emoji or deletes), «Добавить стикеры» from the gallery or files — each picture in `NewStickerDialog` (its picture
+as it is — a HEIC photo, which the web view cannot show, is first made a JPEG on the device as for profile photos —
+problems named: not PNG/WebP/JPG, under 64 px, over 4096 px, over 5 MB; «Обрезать квадратом» = the avatar crop
+editor's sticker mode, `AvatarOverlays.EditStickerAsync`: a square window and a transparent 512 px PNG; its emoji, at
+least one; «Отменить остальные» while more pictures of the batch wait) — uploaded one after another with their
+progress by `StickerUploads` (outside the editor: leaving it does not stop them, a failure is told in a toast, signing
+out drops the rest; a pack that goes takes its pictures along quietly and stops the one on its way — deleted in its
+editor, which stops them before it deletes, on another device, once my state no longer lists it among mine, or found
+gone by the server), then «Удалить набор»; a pack deleted on another device while its editor is open turns the editor
+into «Набор удалён». The chrome stays calm: no frames, glows or sparkles around stickers; they are the content.
+
+GIFs a keyboard inserts (Gboard and others, Android): the composer takes what the web view delivers as a paste (an
+image file in the clipboard data goes to the tray like any pasted picture, and a GIF becomes a loop). Whether Android's
+WebView turns a keyboard's image (`commitContent`) into such a paste depends on the WebView; the app adds no
+`OnReceiveContentListener` of its own, and it was not checked on a device. Where it is not delivered, the keyboard says
+the field takes no images, and the GIF can be saved and attached from the gallery.
+
 **Localization**: `ILocalizer` reads embedded JSON `Localization/{lang}/{area}.json` (flat keys like
 `"chat.composer.placeholder"`); areas owned as in §4; error codes → `errors.json` (`"error.<code>"`).
 
@@ -981,6 +1142,6 @@ Android Back on the lock screen otherwise moves the app to the background.
 Push delivery (FCM/APNs, encrypted payloads — iOS first: until then iPhones only get messages/calls while the
 app is open; the UI says so), CallKit/ConnectionService system call UI, relays in Russia (a plain reverse
 proxy works for REST/SignalR/media/signaling, but calls also need TURN over TLS on the relay), E2E secret chats,
-channels, bots, stickers/GIFs, polls, scheduled messages, link previews, 2FA, multi-account,
+channels, bots, animated stickers, polls, scheduled messages, link previews, 2FA, multi-account,
 translation, certificate pinning, production deployment (Caddy TLS, TURN over TLS on 443 via SNI routing,
 backups, separate prod compose with mandatory secrets), app links (`assetlinks.json`, AASA).

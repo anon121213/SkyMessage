@@ -126,6 +126,9 @@ public sealed class AppJs(IJSRuntime js, ILogger<AppJs> logger) : IAsyncDisposab
     /// <summary>Installs global listeners (Escape = Back while overlays are open, keyboard inset). Idempotent.</summary>
     public ValueTask InitAsync() => InvokeVoidAsync("init");
 
+    /// <summary>Pictures that failed (img[data-retry]: stickers, saved GIFs) try again now, e.g. once the connection is back.</summary>
+    public ValueTask RetryImagesAsync() => InvokeVoidAsync("retryImages");
+
     // ---- History entries for overlays (see NavigationService) ----
 
     internal ValueTask HistoryAttachAsync<T>(DotNetObjectReference<T> target) where T : class => InvokeVoidAsync("historyAttach", target);
