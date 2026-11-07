@@ -1,10 +1,10 @@
-@* One sticker pack as anyone sees it before (or after) adding it: its title (up to two lines), how many stickers, all of
-   them in a grid (a tap or a hold shows one large, with favorites — not when the pack was opened from a chat with
-   content protection, where only taking one out of the favorites stays), and the one action that matters — «Добавить N
-   стикеров», or «Удалить набор» once it is in my panel; its creator gets «Изменить» and «Убрать из панели» instead
-   (deleting the pack for everyone is the editor's). A deleted pack says so; a link to no pack says it is not there
-   (deleted, or a wrong link). The pack's link can be shared. Used by the pack sheet (a tap on a sticker or a pack link
-   in a chat) and the /addstickers/{slug} page. *@
+@* One sticker pack as anyone sees it before (or after) adding it: its whole title (a long one a step smaller), how many
+   stickers, all of them in a grid (a tap or a hold shows one large, with favorites — not when the pack was opened from
+   a chat with content protection, where only taking one out of the favorites stays), and the one action that matters —
+   «Добавить N стикеров», or «Удалить набор» once it is in my panel; its creator gets «Изменить» and «Убрать из панели»
+   instead (deleting the pack for everyone is the editor's). A deleted pack says so; a link to no pack says it is not
+   there (deleted, or a wrong link). The pack's link can be shared. Used by the pack sheet (a tap on a sticker or a pack
+   link in a chat) and the /addstickers/{slug} page. *@
 @inherits UiComponentBase
 @implements IAsyncDisposable
 @inject IStickerStore Stickers
@@ -17,14 +17,14 @@
 @inject NavigationService Nav
 @inject IJSRuntime JS
 
-<div class="spack @Class">
+<div class="spack @(Card ? "spack--card" : null) @Class">
     @if (_pack is { } pack)
     {
         var installed = Stickers.IsInstalled(pack.Id);
         var mine = pack.CreatorId == Auth.UserId;
         <div class="spack__head">
             <div class="spack__titles">
-                <h2 class="spack__title" dir="auto">@pack.Title</h2>
+                <h2 class="spack__title @(pack.Title.Length > LongTitle ? "spack__title--long" : null)" dir="auto">@pack.Title</h2>
                 <div class="spack__meta">
                     <span>@L.Plural("stickers.count", pack.Stickers.Count)</span>
                     @if (mine)
@@ -105,6 +105,10 @@
 
 @code {
     private const string ModulePath = "./_content/SkyMessage.Client.UI/js/stickers.js";
+    /// <summary>
+    /// Past this many characters the title steps down a size, so the longest (64) usually takes three lines on a phone.
+    /// </summary>
+    private const int LongTitle = 32;
 
     private StickerPackDto? _pack;
     private bool _gone;
@@ -126,6 +130,11 @@
     [Parameter] public EventCallback OnDone { get; set; }
     /// <summary>A close button beside «share» (the card on wide screens; a sheet is closed by its handle and Back).</summary>
     [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>
+    /// Shown as a card with no header band (the pack sheet on wide screens): as much room above the title row as at its
+    /// sides. A bottom sheet's grabber gives that room itself.
+    /// </summary>
+    [Parameter] public bool Card { get; set; }
     [Parameter] public string? Class { get; set; }
 
     protected override void OnInitialized()

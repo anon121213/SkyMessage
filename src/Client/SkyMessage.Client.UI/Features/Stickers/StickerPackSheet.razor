@@ -1,10 +1,11 @@
 @* The pack sheet (DialogService content; a sheet on phones, a card on wide screens): a tap on a sticker in a chat, a pack
    link tapped in the app, a pack in the panel or the settings opens it over the current screen. The card has no header
-   band of its own: its close button sits beside «share» in the pack's own title row. *@
+   band of its own: its close button sits beside «share» in the pack's own title row, with as much room above that row
+   as at the card's sides. *@
 @inherits UiComponentBase
 @inject LayoutService Layout
 
-<StickerPackView PackId="PackId" Slug="@Slug" Protected="Protected" OnDone="() => Dialog.Cancel()"
+<StickerPackView PackId="PackId" Slug="@Slug" Protected="Protected" Card="@(!Layout.IsPhone)" OnDone="() => Dialog.Cancel()"
                  OnClose="@(Layout.IsPhone ? default(EventCallback) : EventCallback.Factory.Create(this, () => Dialog.Cancel()))" />
 
 @code {
@@ -22,6 +23,21 @@
         ShowClose = false,
         Presentation = OverlayPresentation.Auto,
     };
+
+    protected override void OnInitialized()
+    {
+        // The dialog turns from a card into a sheet (and back) when the window crosses the phone width: the close button
+        // and the room above the title follow it.
+        var phone = Layout.IsPhone;
+        Action changed = () =>
+        {
+            if (Layout.IsPhone == phone) return;
+            phone = Layout.IsPhone;
+            RequestRender();
+        };
+        Layout.Changed += changed;
+        OnDispose(() => Layout.Changed -= changed);
+    }
 
     public static Task ShowAsync(DialogService dialogs, Guid packId, bool protectedChat = false) =>
         dialogs.ShowAsync<StickerPackSheet>(null, new Dictionary<string, object?>
