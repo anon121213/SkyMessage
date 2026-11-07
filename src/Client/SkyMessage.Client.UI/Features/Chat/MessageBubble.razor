@@ -356,7 +356,8 @@ else
         {
             <div class="msg__media msg__media--album" data-no-dbltap>
                 <AlbumGrid Items="@(Attachments.Count > 0 ? Attachments : null)" Locals="@(Attachments.Count > 0 ? null : Locals)" Interactive="Interactive"
-                           Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync" OnOpen="index => Controller.OpenMediaAsync(Item, index)" Overlay="overlay" />
+                           AutoplayGifs="View.AutoplayGifs" Pending="Pending" Progress="Item.Progress" OnCancel="CancelSendAsync"
+                           OnOpen="index => Controller.OpenMediaAsync(Item, index)" Overlay="overlay" />
             </div>
         }
     };

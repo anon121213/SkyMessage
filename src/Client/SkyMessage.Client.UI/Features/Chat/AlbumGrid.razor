@@ -10,8 +10,9 @@
             {
                 var index = tile.Index;
                 <div class="album__cell" style="flex:@Num(tile.Aspect) 1 0%">
+                    @* A GIF in an album loops like one alone (other videos wait for a tap, as before). *@
                     <MediaTile Media="MediaAt(index)" Local="LocalAt(index)" Small="@(row.Tiles.Count > 1)" Interactive="Interactive"
-                               OnOpen="() => OnOpen.InvokeAsync(index)" />
+                               Autoplay="@(AutoplayGifs && MediaAt(index)?.IsAnimation == true)" OnOpen="() => OnOpen.InvokeAsync(index)" />
                 </div>
             }
         </div>
@@ -36,6 +37,8 @@
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback<int> OnOpen { get; set; }
     [Parameter] public bool Interactive { get; set; } = true;
+    /// <summary>GIFs (MediaDto.IsAnimation) loop by themselves (ChatView.AutoplayGifs).</summary>
+    [Parameter] public bool AutoplayGifs { get; set; }
     [Parameter] public RenderFragment? Overlay { get; set; }
     [Parameter] public string? Class { get; set; }
 
